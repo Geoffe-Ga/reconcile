@@ -32,6 +32,42 @@ beforeEach(() => {
   document.title = 'Banks too · Reconcile';
 });
 
+describe('CoalitionProgress, for a motion from further up (#122)', () => {
+  it('reads each coalition on its way, nearest first, then the one whose motion it is', async () => {
+    const near = progress({
+      seats: 2,
+      passed: 1,
+      needed: 2,
+      mine: 'pass',
+      deciding: ['Oak St Co-op'],
+    });
+    const top = progress({ seats: 2, needed: 2, deciding: ['Eastside Housing', 'Elm Row'] });
+    render(
+      <CoalitionProgress
+        progress={top}
+        steps={[{ name: 'Eastside Housing', progress: near }]}
+        top="Metro Renters"
+      />,
+    );
+    const section = screen.getByRole('region', { name: messages.coalitions.progressTitle });
+    expect(section).toHaveTextContent(
+      'In Eastside HousingYour group passed this. Waiting for 1 more group.' +
+        'In Metro Renters0 of 2 groups have passed. Waiting for Eastside Housing and Elm Row.' +
+        messages.coalitions.nestedLine,
+    );
+    expect(section).not.toHaveTextContent(messages.coalitions.motionLine);
+    expect(screen.getByText('Metro Renters').tagName).toBe('BDI');
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('reads one line, with what crosses group lines, for a coalition’s own motion', () => {
+    render(<CoalitionProgress progress={progress()} />);
+    const section = screen.getByRole('region', { name: messages.coalitions.progressTitle });
+    expect(section).toHaveTextContent(messages.coalitions.motionLine);
+    expect(section).not.toHaveTextContent('In ');
+  });
+});
+
 describe('ProgressLine', () => {
   it('says how many of up to 4 groups passed, naming the groups still deciding', () => {
     expect(lineFor(progress({ passed: 2, deciding: ['Oak St Co-op'] }))).toBe(

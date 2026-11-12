@@ -497,6 +497,63 @@ a[data-focus-visible] {
   color: var(--primary);
 }
 
+/* Add a section here's choices (#103): a floating menu on surface, with the one soft
+ * shadow DESIGN.md allows floating layers, from the scrim as a dialog's is. */
+.menu-popover {
+  min-width: 13rem;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: 0 12px 32px var(--scrim);
+}
+
+.menu {
+  display: grid;
+  padding: var(--space-1);
+  outline: none;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  min-height: var(--touch);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  font: var(--type-ui);
+  cursor: pointer;
+  outline: none;
+}
+
+.menu-item[data-focused] {
+  background: var(--primary-soft);
+}
+
+.menu-item[data-focus-visible] {
+  outline: 3px solid var(--ochre);
+  outline-offset: -3px;
+}
+
+/* A section header (#103) opens a part of the Document: a little more room above it. */
+.document > .atom-heading:not(:first-child) {
+  padding-block-start: var(--space-3);
+}
+
+/* Move this section and Protect this section (#103, #116) start a row of their own under the
+ * section's change actions, so a wide screen never leaves one of them alone on a second row. */
+.atom-actions-break {
+  flex-basis: 100%;
+  height: 0;
+}
+
+/* Why Move this section and Protect this section wait (#103, #116): one line under the
+ * section's actions. */
+.atom-actions .wait-reason {
+  flex-basis: 100%;
+  min-height: 0;
+  margin-block-start: calc(-1 * var(--space-2));
+}
+
 /* Copy as Markdown, after the Document, and its fallback when the clipboard is blocked. */
 .copy-markdown {
   justify-items: start;
@@ -521,6 +578,44 @@ a[data-focus-visible] {
   min-height: var(--touch);
 }
 
+/* A protected section's badge (#116; DESIGN.md Atom block): an eyebrow at the top of its
+ * block, in the gutter its text starts from. Entrenched has a clay outline and a lock glyph;
+ * eternal a double ink rule above and below. The word says the class, never the color alone. */
+/* As wide as its word wherever it sits: the Document, a composer's section or a result. */
+.atom-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  width: fit-content;
+  padding: var(--space-1) var(--space-2);
+}
+
+.atom-badge-entrenched {
+  border: 1px solid var(--clay);
+  border-radius: var(--radius-sm);
+  color: var(--clay);
+}
+
+.atom-badge-eternal {
+  padding-inline: 0;
+  border-block: 3px double var(--ink);
+  color: var(--ink);
+}
+
+.atom-badge-glyph {
+  flex: none;
+}
+
+/* Under Protect this section's choice (#116): while Eternal is chosen, that it's permanent, in
+ * body text set off by a clay rule, warm emphasis rather than an alert. */
+.protect-permanent {
+  max-width: 30em;
+  padding-inline-start: var(--space-3);
+  border-inline-start: 3px solid var(--clay);
+  color: var(--ink);
+  font: var(--type-body);
+}
+
 /* An Atom's Markdown, built by <AtomText> from an allowlist of elements. */
 .atom-text {
   display: grid;
@@ -541,6 +636,11 @@ a[data-focus-visible] {
   color: var(--ink);
   font: var(--type-heading-2);
   text-wrap: balance;
+}
+
+/* A subsection header raised a level in a Document's outline keeps its own look (#103). */
+.atom-text .atom-subheading {
+  font: var(--type-heading-3);
 }
 
 .atom-text :where(h3, h4, h5, h6) {
@@ -864,6 +964,17 @@ a[data-focus-visible] {
 
 .level-option[data-disabled]:not([data-selected]) {
   opacity: 0.6;
+}
+
+/* Where a moving section is now (#103): shown in full, with a dashed edge, but not chosen. */
+.level-option.place-here[data-disabled] {
+  border-style: dashed;
+  background: transparent;
+  opacity: 1;
+}
+
+.place-here .level-button::before {
+  border-style: dashed;
 }
 
 /* The line under each level's name starts where the name does, after the ring. */
@@ -1384,4 +1495,31 @@ a[data-focus-visible] {
   display: grid;
   gap: var(--space-2);
   max-width: 34em;
+}
+
+/* Create group's Document blocks (#92): each Document's title and first draft, under its
+ * "Document N" heading and a hairline, as the form's other rows are spaced. The legend floats,
+ * so it sits in the block's grid as its first row rather than in its border. */
+.document-block {
+  display: grid;
+  gap: var(--space-5);
+  min-width: 0;
+  margin: 0;
+  padding: var(--space-5) 0 0;
+  border: 0;
+  border-top: 1px solid var(--hairline);
+}
+
+.document-block > legend {
+  float: left;
+  padding: 0;
+}
+
+/* The Document a Proposal changes or creates (#92), leading its card, ballot and result:
+ * one quiet line in caption type, the title in <bdi>. */
+.document-of {
+  color: var(--muted);
+  font: var(--type-caption);
+  font-weight: 600;
+  overflow-wrap: anywhere;
 }

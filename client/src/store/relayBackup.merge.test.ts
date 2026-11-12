@@ -3,16 +3,19 @@
  * backup key, so they keep one relay copy under one id, while each keeps
  * its own personal Documents (#93). Before each upload a device reads the
  * relay copy and merges its personal Documents into its own, so neither
- * device's upload drops the other's.
+ * device's upload drops the other's. Each keeps its own groups too, once one
+ * joins a group after the link (#327), so an upload carries the copy's entry
+ * for a group this device doesn't hold, and leaves out one it left.
  *
- * First the merge rule itself (`mergePersonal`), then the refresh on real
- * stores, the real seal and the fake relay: one GET a refresh day, a
- * Document deleted here leaving the copy, and every way the read can fail
- * falling back to uploading this device's own copy, as before.
+ * First the merge rules themselves (`mergePersonal`, `carriedGroups`), then
+ * the refresh on real stores, the real seal and the fake relay: one GET a
+ * refresh day, a Document deleted or a group left here leaving the copy, and
+ * every way the read can fail falling back to uploading this device's own
+ * copy, as before.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { backupIdFor, sealRelayBackup } from '../crypto/relayBackup';
+import { backupIdFor, groupTagFor, sealRelayBackup } from '../crypto/relayBackup';
 import { sha256 } from '../crypto/hash';
 import { xchachaSeal } from '../crypto/seal';
 import { newSigningKeys } from '../crypto/sign';
@@ -21,18 +24,26 @@ import { createRelay, type Fetch } from '../net/relay';
 import { SHARE_TTL_DAYS } from '../share/shareLink';
 import { local, text, utf8 } from '../test/bytes';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
+import { testGroup } from '../test/groups';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { signedAs, testKeys } from '../test/keys';
-import { openStore, type Store } from './db';
+import { type BackedUpGroup, openStore, type Store } from './db';
 import type { PersonalDocument, ShareState } from './personal';
 import {
+  carriedGroups,
   fetchRelayBackup,
   mergePersonal,
   refreshRelayBackup,
   type RelayBackupServices,
   startRelayBackup,
 } from './relayBackup';
-import { importSnapshot, takeSnapshot } from './snapshot';
+import {
+  decodeRelayCopy,
+  encodeSnapshot,
+  importSnapshot,
+  type RelayGroup,
+  takeSnapshot,
+} from './snapshot';
 import { createSync, type Sync } from './sync';
 
 freshIndexedDBPerTest();
@@ -154,6 +165,79 @@ describe('mergePersonal (#247)', () => {
   });
 });
 
+describe('carriedGroups (#327)', () => {
+  const KEY = new Uint8Array(32).fill(0x5c);
+  const ANA = testKeys('ana').author;
+  const BEA = testKeys('bea').author;
+
+  /**
+   * The relay copy's entry for the group named `name`, as `holder` holds it,
+   * read as the relay backup reads it: one a restore reads whole (#336).
+   */
+  function entry(name: string, holder = 'ana'): RelayGroup {
+    const { state, records } = testGroup({ name });
+    const { secretKey, author } = testKeys(holder);
+    const group: BackedUpGroup = {
+      groupId: state.group ?? '',
+      secret: sha256(utf8(`${name}'s secret`)),
+      signingKey: secretKey,
+      me: { author, name: holder },
+      log: [...records],
+      cursor: records.length,
+      relayNow: null,
+      instance: null,
+      lastSyncAt: null,
+      missingHistory: false,
+    };
+    const [read] = decodeRelayCopy(encodeSnapshot({ groups: [group], personal: [] }))?.groups ?? [];
+    if (read === undefined) throw new Error(`Expected ${name}'s entry to read.`);
+    return read;
+  }
+
+  /** `group`'s entry with its log replaced by something no restore reads, as anyone holding the key could plant (#336). */
+  function broken(group: RelayGroup): RelayGroup {
+    return { ...group, entry: { ...group.entry, log: 'not a log' } };
+  }
+
+  const [G1, G2, G3] = ['Riverside Tenants', 'Allotment Society', 'Oak St Co-op'].map((name) =>
+    entry(name),
+  ) as [RelayGroup, RelayGroup, RelayGroup];
+
+  /** What an upload carries of `relay` when this device holds `held` and uploaded `left` before. */
+  function carry(
+    relay: readonly RelayGroup[],
+    held: readonly RelayGroup[] = [],
+    left: readonly (readonly [RelayGroup, string])[] = [],
+  ): RelayGroup[] {
+    const tags = left.map(([group, author]) => groupTagFor(KEY, group.groupId, author));
+    const holds = new Set(held.map((group) => group.groupId));
+    return carriedGroups(relay, { held: holds, left: new Set(tags), key: KEY });
+  }
+
+  it('carries each group this device neither holds nor uploaded before, whole and in the copy’s order', () => {
+    expect(carry([G3, G1])).toEqual([G3, G1]);
+    expect(carry([])).toEqual([]);
+  });
+
+  it('leaves out one this device holds, in any state, and one it uploaded and no longer holds', () => {
+    expect(carry([G1, G2, G3], [G1], [[G2, ANA]])).toEqual([G3]);
+  });
+
+  it('carries a group rejoined under another author, though this device left it as the first', () => {
+    const rejoined = entry('Riverside Tenants', 'bea');
+
+    expect(rejoined.author).toBe(BEA);
+    expect(carry([rejoined], [], [[G1, ANA]])).toEqual([rejoined]);
+  });
+
+  it('leaves out an entry a restore wouldn’t read, and of two for one group, the first a restore reads (#336)', () => {
+    const again = entry('Allotment Society', 'bea');
+
+    expect(carry([broken(G1), G2, again, G3])).toEqual([G2, G3]);
+    expect(carry([broken(G2), again, G2])).toEqual([again]);
+  });
+});
+
 const opened: Sync[] = [];
 
 afterEach(() => {
@@ -190,23 +274,27 @@ async function openDevice(
   return { store, sync, services };
 }
 
-/** Ana founds a group on `device` and syncs, so the relay has a day for the schedule. */
-async function found(device: Device): Promise<void> {
+/**
+ * Ana founds group `name` on `device` and syncs, so the relay has a day for
+ * the schedule; returns its id.
+ */
+async function found(device: Device, name = 'Riverside Tenants'): Promise<string> {
   const genesis: SignedEvent = signedAs('ana', {
     type: 'genesis',
     group: '',
     ts: TS,
-    body: { name: 'Riverside Tenants', founder: 'Ana', title: 'House rules', atoms: ['Quiet.'] },
+    body: { name, founder: 'Ana', documents: [{ title: 'House rules', atoms: ['Quiet.'] }] },
   });
   const { secretKey, author } = testKeys('ana');
   await device.store.addGroup({
     groupId: genesis.id,
-    secret: sha256(utf8('group secret')),
+    secret: sha256(utf8(`${name}'s secret`)),
     signingKey: secretKey,
     me: { author, name: 'Ana' },
   });
   await device.store.enqueue(genesis.id, genesis.record);
   expect(await device.sync.syncOnce()).toBe(true);
+  return genesis.id;
 }
 
 /** `from`'s groups and backup key on `to`, as a link carries them (#96): the same backup. */
@@ -228,6 +316,20 @@ async function titlesOnRelay(fake: FakeRelay, key: Uint8Array): Promise<string[]
   if (plaintext === null) throw new Error('Expected a relay copy.');
   const copy = JSON.parse(text(plaintext)) as { personal: { title: string }[] };
   return copy.personal.map((document) => document.title);
+}
+
+/** The ids of the groups the relay copy under `key` holds, sorted. */
+async function groupsOnRelay(fake: FakeRelay, key: Uint8Array): Promise<string[]> {
+  const plaintext = await fetchRelayBackup(createRelay({ fetch: fake.fetch }), key);
+  if (plaintext === null) throw new Error('Expected a relay copy.');
+  const copy = JSON.parse(text(plaintext)) as { groups: { groupId: string }[] };
+  return copy.groups.map((group) => group.groupId).sort();
+}
+
+/** The tags under `key` of groups `ids`, as Ana, sorted: what `uploadedGroups` notes (#327). */
+function tagsOf(key: Uint8Array, ...ids: string[]): string[] {
+  const { author } = testKeys('ana');
+  return ids.map((id) => groupTagFor(key, id, author)).sort();
 }
 
 /** The backup requests the fake relay took, as their method. */
@@ -453,7 +555,7 @@ describe('a relay backup kept before #247', () => {
     expect((await before.store.getRelayBackup())?.uploaded).toEqual([A, B]);
     before.sync.stop();
     before.store.close();
-    await withoutUploaded('phone');
+    await withoutField('phone', 'uploaded');
     const phone = await openDevice(fake, 'phone');
     expect(await phone.store.getRelayBackup()).not.toHaveProperty('uploaded');
 
@@ -462,6 +564,166 @@ describe('a relay backup kept before #247', () => {
 
     expect(await titlesOnRelay(fake, key)).toEqual(['Kept']);
     expect((await phone.store.getRelayBackup())?.uploaded).toEqual([A]);
+  });
+});
+
+describe('the refresh keeps a group only the relay copy holds, and never one this device left (#327)', () => {
+  it('carries a group joined on the other device after the link, never taking it in, and notes only its own tags', async () => {
+    const fake = createFakeRelay({ minute: NOON });
+    const { phone, laptop, key } = await phoneAndLaptop(fake);
+    const [first] = (await phone.store.listGroups()).map((group) => group.groupId);
+    if (first === undefined) throw new Error('Expected the group both hold.');
+    const joined = await found(phone, 'Allotment Society');
+    await nextDay(fake, phone);
+
+    await nextDay(fake, laptop);
+
+    expect(await groupsOnRelay(fake, key)).toEqual([first, joined].sort());
+    expect(await laptop.store.getGroup(joined)).toBeUndefined();
+    const [laptopState, phoneState] = await Promise.all([
+      laptop.store.getRelayBackup(),
+      phone.store.getRelayBackup(),
+    ]);
+    expect(laptopState?.uploadedGroups).toEqual(tagsOf(key, first));
+    expect(phoneState?.uploadedGroups).toEqual(tagsOf(key, first, joined));
+    // A tag names no group: the record never holds a group's id.
+    expect(JSON.stringify(phoneState?.uploadedGroups)).not.toContain(joined);
+    expect(JSON.stringify(phoneState?.uploadedGroups)).not.toContain(first);
+  });
+
+  it('uploads nothing on a day neither device changed anything, with a group carried', async () => {
+    const fake = createFakeRelay({ minute: NOON });
+    const { phone, laptop } = await phoneAndLaptop(fake);
+    await found(phone, 'Allotment Society');
+    for (let day = 0; day < 3; day += 1) {
+      await nextDay(fake, phone);
+      await nextDay(fake, laptop);
+    }
+    const before = backupCalls(fake).length;
+
+    await nextDay(fake, phone);
+    await nextDay(fake, laptop);
+
+    expect(backupCalls(fake).slice(before)).toEqual(['GET', 'GET']);
+  });
+
+  it('uploads nothing more for a carried group whose entry moved only by when the other device last synced', async () => {
+    const fake = createFakeRelay({ minute: NOON });
+    const { phone, laptop } = await phoneAndLaptop(fake);
+    await found(phone, 'Allotment Society');
+    for (let day = 0; day < 3; day += 1) {
+      await nextDay(fake, phone);
+      await nextDay(fake, laptop);
+    }
+    // The laptop writes a Document, so the phone's next upload merges it, its groups only synced since.
+    await laptop.store.savePersonal(doc(B, 'Written on the laptop', TS, 2));
+    await nextDay(fake, laptop);
+    await nextDay(fake, phone);
+    const before = backupCalls(fake).length;
+
+    await nextDay(fake, laptop);
+
+    expect(backupCalls(fake).slice(before)).toEqual(['GET']);
+  });
+
+  it('uploads again when a linked device’s late upload lacks a group it holds, though nothing changed here', async () => {
+    const fake = createFakeRelay({ minute: NOON });
+    const { phone, key } = await phoneAndLaptop(fake);
+    const without = Uint8Array.from(fake.backup(backupIdFor(key)) ?? []);
+    const joined = await found(phone, 'Allotment Society');
+    await nextDay(fake, phone);
+    await nextDay(fake, phone);
+    await createRelay({ fetch: fake.fetch }).putBackup(backupIdFor(key), without);
+    expect(await groupsOnRelay(fake, key)).not.toContain(joined);
+    const before = backupCalls(fake).length;
+
+    await nextDay(fake, phone);
+
+    expect(backupCalls(fake).slice(before)).toEqual(['GET', 'PUT']);
+    expect(await groupsOnRelay(fake, key)).toContain(joined);
+  });
+
+  it('leaves out a group it holds as a read-only copy (#108), and once removed, even from a late upload that brings it back', async () => {
+    const fake = createFakeRelay({ minute: NOON });
+    const { phone, laptop, key } = await phoneAndLaptop(fake);
+    const joined = await found(phone, 'Allotment Society');
+    await nextDay(fake, phone);
+    await nextDay(fake, laptop);
+    const stale = Uint8Array.from(fake.backup(backupIdFor(key)) ?? []);
+
+    await phone.store.markArchived(joined, 'dissolved');
+    await nextDay(fake, phone);
+    await nextDay(fake, laptop);
+    expect(await groupsOnRelay(fake, key)).not.toContain(joined);
+
+    // Remove from this device, then the laptop's late upload lands: the same day's next pass reads again.
+    await phone.store.purgeGroup(joined);
+    await createRelay({ fetch: fake.fetch }).putBackup(backupIdFor(key), stale);
+    const before = backupCalls(fake).length;
+    expect(await phone.sync.syncOnce()).toBe(true);
+
+    expect(backupCalls(fake).slice(before)).toEqual(['GET', 'PUT']);
+    expect(await groupsOnRelay(fake, key)).not.toContain(joined);
+    await nextDay(fake, laptop);
+    expect(await groupsOnRelay(fake, key)).not.toContain(joined);
+  });
+
+  it('lets a group’s tag go once a read finds the copy without it, so nothing on the device marks it', async () => {
+    const fake = createFakeRelay({ minute: NOON });
+    const phone = await openDevice(fake, 'phone');
+    const first = await found(phone);
+    const left = await found(phone, 'Allotment Society');
+    await startRelayBackup(phone.services);
+    const key = await keyOf(phone.store);
+    expect((await phone.store.getRelayBackup())?.uploadedGroups).toEqual(tagsOf(key, first, left));
+
+    await phone.store.purgeGroup(left);
+    expect(await phone.sync.syncOnce()).toBe(true);
+    // The copy it read still held the group, so a late upload could bring it back: the tag stays.
+    expect(await groupsOnRelay(fake, key)).toEqual([first]);
+    expect((await phone.store.getRelayBackup())?.uploadedGroups).toEqual(tagsOf(key, first, left));
+
+    await nextDay(fake, phone);
+    expect((await phone.store.getRelayBackup())?.uploadedGroups).toEqual(tagsOf(key, first));
+  });
+
+  it('keeps every tag, and uploads its own groups as before, when it can’t read the copy', async () => {
+    const fake = createFakeRelay({ minute: NOON });
+    const phone = await openDevice(fake, 'phone', failingBackupReads);
+    const first = await found(phone);
+    const left = await found(phone, 'Allotment Society');
+    await startRelayBackup(phone.services);
+    const key = await keyOf(phone.store);
+
+    await phone.store.purgeGroup(left);
+    expect(await phone.sync.syncOnce()).toBe(true);
+    await nextDay(fake, phone);
+
+    expect(await groupsOnRelay(fake, key)).toEqual([first]);
+    expect((await phone.store.getRelayBackup())?.uploadedGroups).toEqual(tagsOf(key, first, left));
+  });
+
+  it('carries nothing on the first upload of a state kept before #327, then carries as it should', async () => {
+    const fake = createFakeRelay({ minute: NOON });
+    const { phone, laptop, key } = await phoneAndLaptop(fake);
+    const [first] = (await laptop.store.listGroups()).map((group) => group.groupId);
+    if (first === undefined) throw new Error('Expected the group both hold.');
+    const joined = await found(phone, 'Allotment Society');
+    await nextDay(fake, phone);
+    laptop.sync.stop();
+    laptop.store.close();
+    await withoutField('laptop', 'uploadedGroups');
+    const before = await openDevice(fake, 'laptop');
+    expect(await before.store.getRelayBackup()).not.toHaveProperty('uploadedGroups');
+
+    // It can't tell a group it left from one the phone joined, so it keeps only its own, as before.
+    await nextDay(fake, before);
+    expect(await groupsOnRelay(fake, key)).toEqual([first]);
+    expect((await before.store.getRelayBackup())?.uploadedGroups).toEqual(tagsOf(key, first));
+    await nextDay(fake, phone);
+    await nextDay(fake, before);
+
+    expect(await groupsOnRelay(fake, key)).toEqual([first, joined].sort());
   });
 });
 
@@ -478,16 +740,20 @@ function rawDatabase(name: string): Promise<IDBDatabase> {
   });
 }
 
-/** Rewrites database `name`'s relay backup record as an app from before #247 kept it: no `uploaded`. */
-async function withoutUploaded(name: string): Promise<void> {
+/**
+ * Rewrites database `name`'s relay backup record without `field`, as an app
+ * from before #247 kept it (`uploaded`), or from before #327 (`uploadedGroups`).
+ */
+async function withoutField(name: string, field: 'uploaded' | 'uploadedGroups'): Promise<void> {
   const db = await rawDatabase(name);
   const tx = db.transaction('device', 'readwrite');
   const records = tx.objectStore('device');
   const read = records.get('relay-backup');
   await new Promise<void>((resolve, reject) => {
     read.onsuccess = () => {
-      const record = { ...(read.result as Record<string, unknown>) };
-      delete record.uploaded;
+      const record = Object.fromEntries(
+        Object.entries(read.result as Record<string, unknown>).filter(([name]) => name !== field),
+      );
       records.put(record, 'relay-backup');
     };
     tx.oncomplete = () => {

@@ -208,16 +208,29 @@ const SHARE_WORDS = {
   copyFailed: messages.home.copyFailed,
 };
 
-/** The member groups in seat order, each this device is in marked "Your group". */
+/** The badge beside a member: yours, a group's or a coalition's (#122), or a coalition's. */
+function badgeOf(member: CoalitionHomeView['members'][number]): string | null {
+  if (member.mine) return member.coalition ? coalitions.yourCoalition : coalitions.yourGroup;
+  return member.coalition ? coalitions.coalitionSeat : null;
+}
+
+/**
+ * The members in seat order, each this device is in marked "Your group", a
+ * coalition in it marked "Coalition", or "Your coalition" when this device
+ * takes part through it (#122).
+ */
 function MemberGroups({ view }: { readonly view: CoalitionHomeView }) {
   return (
     <ul className="coalition-groups">
-      {view.members.map((member, index) => (
-        <li key={index} className="coalition-group">
-          <bdi>{member.name}</bdi>
-          {member.mine ? <span className="badge">{coalitions.yourGroup}</span> : null}
-        </li>
-      ))}
+      {view.members.map((member, index) => {
+        const badge = badgeOf(member);
+        return (
+          <li key={index} className="coalition-group">
+            <bdi>{member.name}</bdi>
+            {badge === null ? null : <span className="badge">{badge}</span>}
+          </li>
+        );
+      })}
     </ul>
   );
 }

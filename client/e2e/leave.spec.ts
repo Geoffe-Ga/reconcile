@@ -101,7 +101,7 @@ test('A tells the group a vote is open; B finds it under Needs your vote, then l
 
   await test.step('A proposes, then Tell your group shares no content and no title', async () => {
     const { page } = ana;
-    await page.getByRole('link', { name: TITLE }).click();
+    await page.getByRole('link', { name: TITLE, exact: true }).click();
     await page.getByRole('button', { name: 'Propose a change to section 1' }).click();
     await page.getByRole('textbox', { name: 'Title' }).fill(PROPOSAL);
     await page.getByRole('textbox', { name: 'Why' }).fill('Weekday evenings run later now.');

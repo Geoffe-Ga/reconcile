@@ -13,6 +13,17 @@ const LOCALE = 'en-GB';
 /** A whole number as this language writes it, such as "2,000". */
 const count = (n: number): string => n.toLocaleString(LOCALE);
 
+/**
+ * What a restore or a link says of the group entries it left out because
+ * they didn't check out (#336), `where` they were, or null for none.
+ */
+function leftOut(skipped: number, where: string): string | null {
+  if (skipped === 0) return null;
+  return skipped === 1
+    ? `One group ${where} couldn’t be read and was left out.`
+    : `${count(skipped)} groups ${where} couldn’t be read and were left out.`;
+}
+
 /** What a result says once a device has deleted its ballots: by expiry (#111), or in an archive (#108). */
 const CLEARED_ON = 'Individual scores and notes were cleared on';
 
@@ -119,7 +130,7 @@ export const messages = {
     pageTitle: 'Create a group',
     eyebrow: 'New group',
     title: 'Create a group',
-    lede: 'You write the first draft of your group’s Document. After that, it changes only when a Proposal passes your group’s vote.',
+    lede: 'You write the first draft of your group’s Documents. After that, each one changes only when a Proposal passes your group’s vote.',
     groupName: 'Group name',
     groupNameMissing: 'Give your group a name.',
     yourName: 'Your name',
@@ -128,17 +139,27 @@ export const messages = {
     chat: 'Chat link (optional)',
     chatHint: 'Where your group already talks, such as a Discord, Signal or WhatsApp group.',
     chatInvalid: 'Use a web link that starts with https:// or http://.',
+    /** Each Document block's heading (#92), numbered from 1. */
+    documentBlock: (number: number) => `Document ${String(number)}`,
+    /** The first block's title until the founder changes it (#92). */
+    defaultTitle: 'Mission statement',
     documentTitle: 'Document title',
     documentTitleHint: 'For example, House rules or Our mission.',
     documentTitleMissing: 'Give the Document a title.',
+    documentTitleTooLong: (max: number) => `Keep the title to ${count(max)} characters or fewer.`,
+    addDocument: 'Add another Document',
+    removeDocument: 'Remove',
+    /** A block's Remove starts with its visible word (WCAG 2.5.3). */
+    removeDocumentLabel: (number: number) => `Remove Document ${String(number)}`,
     documentText: 'Document text',
     documentTextHint:
       'Leave a blank line between sections. Your group proposes changes one section at a time.',
     documentTextMissing: 'Write at least one section.',
-    section: (section: number) => `Section ${String(section)}`,
     tooLarge: 'This Document is too long to send. Shorten it, then try again.',
-    visibility:
-      'Everyone you invite sees the group name, your name, the chat link and this Document.',
+    /** Said under the longest block's text when the Documents fit only apart (#92). */
+    tooLargeTogether: 'Together, your Documents are too long to send. Shorten one, then try again.',
+    visibility: (documents: number) =>
+      `Everyone you invite sees the group name, your name, the chat link and ${documents === 1 ? 'this Document' : 'these Documents'}.`,
     submit: 'Create group',
     failed: 'Your group couldn’t be saved on this device. Try again.',
   },
@@ -199,7 +220,9 @@ export const messages = {
   home: {
     pageTitle: 'Your group',
     eyebrow: 'Your group',
-    documentLabel: 'Document',
+    /** Over the list of the group's Documents (#92). */
+    documentsLabel: 'Documents',
+    proposeDocument: 'Propose a new Document',
     needsYourVote: 'Needs your vote',
     openProposals: 'Open Proposals',
     /** The open Proposals after 'Needs your vote', when it lists any. */
@@ -317,12 +340,105 @@ export const messages = {
     removeVersionVisibility: 'Everyone in your group sees this version and that you added it.',
     removalOnBallotTitle: 'Removing this section is already on the ballot',
     removalOnBallot: 'Score it on the section’s open Proposal.',
+    /** A section with an open move (#103) takes no change, removal or version until it closes. */
+    movingTitle: 'This section is being moved',
+    moving: 'Score its move on the open Proposal. You can propose a change once that vote closes.',
+    /** Add a section here's header choices (#103): one line, built into `# …` or `## …`. */
+    headerPageTitle: 'Add a section header',
+    headerTitle: 'Add a section header',
+    subheaderPageTitle: 'Add a subsection header',
+    subheaderTitle: 'Add a subsection header',
+    headingLabel: 'Heading',
+    headerHint: 'One line. If your group passes it, it shows as a section header.',
+    subheaderHint: 'One line. If your group passes it, it shows as a subsection header.',
+    headingMissing: 'Write the heading.',
+    /** The Proposal title a header's heading prefills, until it's changed by hand. */
+    headerProposalTitle: (heading: string) => `Add section header: ${heading}`,
+    subheaderProposalTitle: (heading: string) => `Add subsection header: ${heading}`,
+    headerSubmit: 'Propose this header',
+    /** Move this section (#103). */
+    movePageTitle: 'Move a section',
+    moveTitle: 'Move this section',
+    moveLede:
+      'If your group passes it, this section comes out of its place and goes where you choose. Its words stay as they are.',
+    movePlaceLabel: 'Where it goes',
+    moveFirst: 'Put it first',
+    /** Before the first words of the section it would follow, which go in `<bdi>`. */
+    moveAfter: 'Put it after:',
+    moveHere: 'It’s here now.',
+    movePlaceMissing: 'Choose where the section goes.',
+    moveSubmit: 'Propose this move',
+    moveBusyTitle: 'This section has an open Proposal',
+    moveBusy: 'You can propose moving it once that vote closes.',
+    moveAloneTitle: 'There’s nowhere to move this section',
+    moveAlone: 'It’s the only section in its Document.',
+    /** Protect this section, or change its protection (#116). */
+    protectPageTitle: 'Protect a section',
+    protectTitle: 'Protect this section',
+    protectChangeTitle: 'Change this section’s protection',
+    protectLede:
+      'A protected section is harder to change. If your group passes this, its words stay as they are, and what it takes to change it is what you choose here.',
+    /** The bar a class Proposal needs, from the rules: "an average of 3.0 or more, with zeros under 5%". */
+    protectBar: (average: string, zeros: string) =>
+      `Protecting a section, or removing its protection, needs your group’s higher bar: an average of ${average} or more, with zeros under ${zeros}.`,
+    protectLabel: 'Protection',
+    /** Each choice's name, then its one line, by the class it gives the section. */
+    protectChoices: {
+      entrenched: {
+        name: 'Entrenched',
+        line: 'Later changes need a higher bar and a longer vote.',
+      },
+      eternal: { name: 'Eternal', line: 'No vote can ever change, move or remove it.' },
+    },
+    /** An entrenched section's choices: eternal, or back to ordinary. */
+    protectChangeChoices: {
+      eternal: { name: 'Make it eternal', line: 'No vote can ever change, move or remove it.' },
+      ordinary: {
+        name: 'Remove the protection',
+        line: 'Later changes go back to the usual bar and vote.',
+      },
+    },
+    protectMissing: 'Choose how to protect this section.',
+    protectChangeMissing: 'Choose what happens to this section’s protection.',
+    /** Under the choice while Eternal is chosen (ADR-0015 §3). */
+    permanent: 'This is permanent. Once it passes, the only way out is to leave the group.',
+    protectSubmit: 'Propose this protection',
+    protectChangeSubmit: 'Propose this change',
+    eternalTitle: 'This section is eternal',
+    eternal: 'No vote can change, move or remove it, or its protection.',
+    protectBusyTitle: 'This section has an open Proposal',
+    protectBusy: 'You can propose protecting it once that vote closes.',
+    protectingTitle: 'This section’s protection is being decided',
+    protecting: 'Score it on the open Proposal. You can propose a change once that vote closes.',
+    /** Over a composer for a change, move or removal of an entrenched section (#116). */
+    entrenchedNote: (average: string, zeros: string) =>
+      `This section is entrenched. Changing, moving or removing it needs your group’s higher bar: an average of ${average} or more, with zeros under ${zeros}, and a longer vote.`,
     /** The checkbox that adds a Dispatch to a Proposal (#112). */
     dispatchLabel: 'Send a Dispatch if this passes',
     dispatchHint:
       'If your group passes this, everyone in it gets the Dispatch. Voters see it on the ballot first.',
     /** Where a carried Dispatch's title starts: the Document's own title, set in the field. */
     dispatchTitle: (document: string) => `Updated: ${document}`,
+    /** Where a new Document's carried Dispatch title starts (#92). */
+    dispatchNewTitle: (document: string) => `New Document: ${document}`,
+    newDocumentPageTitle: 'Propose a new Document',
+    newDocumentTitle: 'Propose a new Document',
+    newDocumentLede:
+      'If your group passes it, your group has a new Document, listed after the others. What you write here becomes its first sections.',
+    documentTitleLabel: 'Document title',
+    documentTitleHint: 'For example, Budget or Chores.',
+    documentTitleMissing: 'Give the new Document a title.',
+    documentTitleTooLong: (max: number) =>
+      `Keep the Document title to ${count(max)} characters or fewer.`,
+    sectionsLabel: 'First sections',
+    sectionsHint: 'Leave a blank line between sections.',
+    sectionsMissing: 'Write at least one section.',
+    section: (section: number) => `Section ${String(section)}`,
+    newDocumentSubmit: 'Propose this Document',
+    newDocumentVersionLede:
+      'This new Document has an open Proposal. Your wording goes on its ballot beside the others, and everyone scores each version.',
+    newDocumentVersionHint:
+      'If your group passes it, these become the new Document’s first sections. Leave a blank line between sections.',
     dispatchTitleLabel: 'Dispatch title',
     dispatchTextLabel: 'Dispatch text (optional)',
   },
@@ -363,10 +479,37 @@ export const messages = {
     proposedBy: 'Proposed by',
     changes: (section: number) => `Changes to section ${String(section)}`,
     newSection: 'New section',
+    /** What a new Document's ballot shows: its first sections, wholly added (#92). */
+    firstSections: 'First sections',
     removes: 'Removes this section',
     addsAfter: (words: string) => `Adds a section after ‘${words}’`,
     addsAtStart: 'Adds a section at the start',
     addsAtEnd: 'Adds a section at the end',
+    /** What a header add does (#103): a section header for `#`, a subsection header for deeper. */
+    addsHeaderAfter: (sub: boolean, heading: string, words: string) =>
+      `Adds a ${sub ? 'subsection' : 'section'} header ‘${heading}’ after ‘${words}’`,
+    addsHeaderAtStart: (sub: boolean, heading: string) =>
+      `Adds a ${sub ? 'subsection' : 'section'} header ‘${heading}’ at the start`,
+    addsHeaderAtEnd: (sub: boolean, heading: string) =>
+      `Adds a ${sub ? 'subsection' : 'section'} header ‘${heading}’ at the end`,
+    /** What a move does (#103), heading its one card. */
+    movesAfter: (words: string) => `Moves this section after ‘${words}’`,
+    movesToStart: 'Moves this section to the start',
+    movesToEnd: 'Moves this section to the end',
+    /** Over an open move's card: the section it moves, by its number now. */
+    moving: (section: number) => `Moving section ${String(section)}`,
+    /** Over an open class Proposal's card (#116): the section it protects, by its number now. */
+    protecting: (section: number) => `Protection for section ${String(section)}`,
+    /** What a class Proposal does (#116), heading its one card, by the class it gives. */
+    marksEntrenched: 'Marks this section entrenched',
+    marksEternal: 'Marks this section eternal. This can’t be undone.',
+    removesProtection: 'Removes this section’s protection',
+    /** The higher bar, in words, over a class Proposal's ballot (#116). */
+    protectionBar: (average: string, zeros: string) =>
+      `A section’s protection changes only at your group’s higher bar: an average of ${average} or more, with zeros under ${zeros}.`,
+    /** The higher bar, in words, over a change, move or removal of an entrenched section (#116). */
+    entrenchedBar: (average: string, zeros: string) =>
+      `This section is entrenched, so this needs your group’s higher bar: an average of ${average} or more, with zeros under ${zeros}.`,
     readsAs: 'How it will read',
     proposed: 'Proposed text',
     onBallot: 'On the ballot',
@@ -440,6 +583,16 @@ export const messages = {
     passedRemoval: 'This passed. The Document no longer has this section.',
     passedVersionRemoval: (version: number) =>
       `Version ${String(version)} passed. The Document no longer has this section.`,
+    /** A move's pass (#103), before the section it moved. */
+    passedMove: 'This passed. The section has moved.',
+    /** A class Proposal's pass (#116), by the class it gave, before the section. */
+    passedEntrenched: 'This passed. The section is now entrenched.',
+    passedEternal: 'This passed. The section is now eternal.',
+    passedUnprotected: 'This passed. The section is no longer protected.',
+    /** A new Document's pass (#92), before its first sections. */
+    passedDocument: 'This passed. The new Document reads:',
+    passedVersionDocument: (version: number) =>
+      `Version ${String(version)} passed. The new Document reads:`,
     failed: 'This didn’t pass.',
     failedVersions: 'No version passed.',
     lapsed: 'Not enough people weighed in. This isn’t a no.',
@@ -603,6 +756,13 @@ export const messages = {
     notProposing: 'You vote on changes here. Choose Co-Creator to propose them.',
     change: 'Change your involvement',
   },
+  /** Several Documents per group (#92): what leads a Proposal that changes or creates one. */
+  documents: {
+    /** Before a new Document's title, as in "New Document: Budget". */
+    newPrefix: 'New Document:',
+    missingTitle: 'This Document isn’t in this group',
+    missing: 'Go back to your group to see its Documents.',
+  },
   document: {
     pageTitle: 'Document',
     eyebrow: 'Document',
@@ -618,6 +778,30 @@ export const messages = {
     addAfterLabel: (section: number) => `Add a section here, after section ${String(section)}`,
     remove: 'Propose removing this section',
     removeLabel: (section: number) => `Propose removing this section, section ${String(section)}`,
+    /** Move this section (#103), disabled with its reason while the section is busy. */
+    move: 'Move this section',
+    moveLabel: (section: number) => `Move this section, section ${String(section)}`,
+    moving: 'This section has an open move.',
+    /**
+     * Protect this section (#116), or Change its protection on an entrenched
+     * one; disabled, with Move, while the section is busy.
+     */
+    protect: 'Protect this section',
+    protectLabel: (section: number) => `Protect this section, section ${String(section)}`,
+    changeProtection: 'Change its protection',
+    changeProtectionLabel: (section: number) => `Change its protection, section ${String(section)}`,
+    /** Why Move and Protect wait, one line for both (#103, #116). */
+    busy: (movable: boolean) =>
+      movable
+        ? 'You can move or protect this section once its open Proposal closes.'
+        : 'You can protect this section once its open Proposal closes.',
+    protecting: 'This section has an open vote on its protection.',
+    /** In place of every action on an eternal section (#116). */
+    eternal: 'This section is eternal. It can’t be changed.',
+    /** Add a section here's choices (#103), in a menu its button names. */
+    addSection: 'Section',
+    addHeader: 'Section header',
+    addSubheader: 'Subsection header',
     copy: 'Copy as Markdown',
     copyHint:
       'To start a fresh group from this Document, copy it, then paste it into Create group.',
@@ -625,6 +809,71 @@ export const messages = {
     copyFailed:
       'Copying is blocked here. The Document is selected below, so you can copy it yourself.',
     markdownLabel: 'The Document as Markdown',
+  },
+  /** A protected section's badge (#116; DESIGN.md Atom block), set as an eyebrow. */
+  atomBadge: {
+    entrenched: 'Entrenched',
+    eternal: 'Eternal',
+  },
+  /**
+   * A section's history, in its side sheet, and a Document's change log
+   * (#104). Where a person's name or a date sits inside a line, the words
+   * around it are kept apart, so the screen sets the name in `<bdi>` and the
+   * date in `<time>`.
+   */
+  history: {
+    open: 'History',
+    /** Each section's History button: its visible word, then the section (WCAG 2.5.3). */
+    openLabel: (section: number) => `History of section ${String(section)}`,
+    title: (section: number) => `History of section ${String(section)}`,
+    /** The sheet's heading for a section a pass has since removed, opened from the change log. */
+    removedTitle: 'History of a removed section',
+    close: 'Close',
+    /** Under the heading while nothing has changed the section since it began. */
+    unchanged: 'No Proposal has changed this section since it began.',
+    founding: 'Founding text',
+    writtenBy: 'Written by',
+    founded: 'Founded',
+    proposedBy: 'Proposed by',
+    decided: 'Decided',
+    /** In place of the text, for the pass that removed the section (#75). */
+    removed: 'This removed the section.',
+    /**
+     * Where a passed move put the section (#103), over its text in its history
+     * and in the change log: after the first words of the section it follows,
+     * to the top, or to the end once that section had gone.
+     */
+    movedAfter: (words: string) => `Moved after ‘${words}’`,
+    movedToTop: 'Moved to the top',
+    movedToEnd: 'Moved to the end',
+    /**
+     * What a passed class change gave the section (#116), over its text in its
+     * history and in the change log, by the class it gave: the names #116's
+     * badges use, and lifting its protection for ordinary.
+     */
+    classChanged: {
+      entrenched: 'Entrenched',
+      eternal: 'Made eternal',
+      ordinary: 'Protection lifted',
+    },
+    /** A group that hadn't posted a result on a coalition motion once results stopped counting. */
+    noResult: 'No result',
+    seeResult: 'See the full result',
+    notPassed: (proposals: number) => `Proposals that didn’t pass (${count(proposals)})`,
+  },
+  changeLog: {
+    pageTitle: 'Change log',
+    eyebrow: 'Change log',
+    /** The Document view's link to its change log. */
+    link: 'Change log',
+    lede: 'Every change that passed, newest first. Open one to see its section’s history.',
+    /** In place of the lede while the log holds only the Document's beginning. */
+    unchanged: 'Nothing has changed this Document since it began.',
+    founded: 'Founding text',
+    created: 'Started this Document',
+    added: 'Added a section',
+    changed: (words: string) => `Changed ‘${words}’`,
+    removed: (words: string) => `Removed ‘${words}’`,
   },
   /**
    * Stewards and suspensions (#102). Where a person's name sits inside a
@@ -805,6 +1054,23 @@ export const messages = {
     cleared: (date: string) => `${CLEARED_ON} ${date}.`,
   },
   /**
+   * A group a restore brought back that hasn't heard from the group since its
+   * copy was made (#231; ADR-0051's 2026-11-11 amendment). It may have
+   * dissolved meanwhile, so it reads only until this device hears something
+   * new, or the person opens a new invite link from someone in it.
+   */
+  unconfirmed: {
+    eyebrow: 'Read-only for now',
+    note: 'This copy came from a backup, and nothing new from your group has reached this device since. If your group dissolved after the backup was made, this copy stays read-only.',
+    opens:
+      'It opens as usual as soon as this device sees anything new from your group. To open it sooner, ask someone in your group for a new invite link and open it here.',
+    noVoting:
+      'This copy came from a backup and hasn’t heard from your group since, so you can’t vote here yet.',
+    readOnlyTitle: 'This group is read-only for now',
+    readOnly:
+      'This copy came from a backup and hasn’t heard from your group since. Nothing new can be proposed or sent until it does.',
+  },
+  /**
    * The group's opt-ins (#117; ADR-0038, ADR-0039, ADR-0040): the Discord chat
    * bot and the front door. Each changes only by a Proposal, so nothing here
    * reads as a switch. Each warning says what the outside platform would hold.
@@ -840,6 +1106,8 @@ export const messages = {
     homeHeading: 'Rules',
     homeLink: 'Chat bot and front door',
     homeSummary: (bot: string, door: string) => `Chat bot: ${bot} · Front door: ${door}`,
+    /** Group home's word for the front door once a membership's end closed it (#288). */
+    closedByLeave: 'Closed when a member left',
     /** What each change does, as its ballot is headed and its title starts. */
     motions: {
       chatBot: {
@@ -889,6 +1157,18 @@ export const messages = {
     narrowedBallot: {
       before: 'Steward',
       after: 'turned this off at once. It stays off while your group votes.',
+    },
+    /** Group rules' front door, once a membership's end closed it (#288). */
+    doorClosedByLeave:
+      'The front door closed because a member left, and they still have its keys. A new Proposal to open it reopens it, with new keys and a new link.',
+    /**
+     * A front door Proposal that was open when a member left (#288): what
+     * passing it does, after its line, and its pass, which opens no door.
+     */
+    exposed: {
+      line: 'A member left while this vote was open, and they have the keys it carries, so if it passes the front door stays closed. A new Proposal to open it reopens it.',
+      passed:
+        'This passed, but the front door stays closed: a member left while the vote was open, and they have its keys. A new Proposal to open it reopens it.',
     },
     composerPageTitle: 'Propose a rules change',
     nowTitle: (motion: string) => `${motion} now`,
@@ -1040,6 +1320,8 @@ export const messages = {
     sharedLine: 'Shared by link',
     /** In place of sharedLine while a restore has paused the Document's share (#328). */
     pausedLine: 'Link paused after a restore',
+    /** In place of sharedLine once this device hasn't posted to the share for 30 days (#339). */
+    idleLine: 'Link paused after 30 days without an update',
     /** In place of documentPrivacy while the Document is shared (#105). */
     sharedPrivacy:
       'This stays on this device, and a sealed copy of its latest version waits on the relay for its link. Nothing here is sent to your groups. A backup file you save includes it.',
@@ -1090,6 +1372,12 @@ export const messages = {
        * backup may predate Stop sharing, so nothing is sent until the person chooses.
        */
       paused: 'This link was live when the backup was made. Keep sharing?',
+      /**
+       * In place of paused once this device hasn't posted to the share for 30
+       * days (#339): another device may have stopped it, and its tombstone lapsed.
+       */
+      pausedIdle:
+        'This device hasn’t updated this link in 30 days, so it may have been stopped on another device. Keep sharing?',
       pausedNote:
         'Nothing goes to the link until you choose. Keep sharing sends it this Document’s latest version.',
       keep: 'Keep sharing',
@@ -1108,6 +1396,12 @@ export const messages = {
        */
       lockedPaused:
         'This link was live when the backup was made, and nothing goes to it until you choose. Your keys on this device are locked with your passkey. Close Reconcile, open it again and unlock it to keep sharing, stop sharing or delete this Document.',
+      /**
+       * In place of pausedIdle while the device's keys are locked (#255, #339): this device
+       * hasn't posted to the share for 30 days, and nothing goes to the link meanwhile.
+       */
+      lockedIdle:
+        'This device hasn’t updated this link in 30 days, so it may have been stopped on another device, and nothing goes to it until you choose. Your keys on this device are locked with your passkey. Close Reconcile, open it again and unlock it to keep sharing, stop sharing or delete this Document.',
       /** When Share link, Stop sharing or Keep sharing finds the keys locked, as another tab can lock them (#255). */
       lockedNow:
         'Your keys on this device are locked with your passkey, so nothing changed. Close Reconcile, open it again and unlock it, then try again.',
@@ -1303,12 +1597,26 @@ export const messages = {
     passphraseMissing: 'Enter the passphrase this backup was saved with.',
     submit: 'Restore',
     restoring: 'Opening your backup…',
-    restored: (groups: number) => {
-      if (groups === 0) return 'This backup holds no groups.';
-      return groups === 1
-        ? '1 group is back on this device.'
-        : `${count(groups)} groups are back on this device.`;
+    /**
+     * How many groups came back, then how many group entries didn't check out
+     * and were left out (#336), when any were: only that, when none came back.
+     */
+    restored: (groups: number, skipped: number) => {
+      const left = leftOut(skipped, 'in this backup');
+      if (groups === 0) return left ?? 'This backup holds no groups.';
+      const back =
+        groups === 1
+          ? '1 group is back on this device.'
+          : `${count(groups)} groups are back on this device.`;
+      return left === null ? back : `${back} ${left}`;
     },
+    /**
+     * After a restore from a file saved before #98, which holds no encryption
+     * key: once another device of the person's has given a group theirs, only
+     * that one counts, so this device misses each new key (#225).
+     */
+    older:
+      'This backup is from an older version of Reconcile. If you’ve used Reconcile on another device since you saved it, this device won’t get a group’s new key when someone leaves. Ask someone in that group for a new invite link then, or restore a newer backup saved on that device.',
     failed: 'That passphrase doesn’t open this backup, or the file is damaged.',
   },
   erase: {
@@ -1377,10 +1685,15 @@ export const messages = {
     waitingOther: 'Waiting for your other device…',
     check: 'Check that your other device shows the same number, then confirm there.',
     cancel: 'Cancel',
-    linked: (groups: number) =>
-      groups === 1
-        ? 'Linked. This device now has 1 group.'
-        : `Linked. This device now has ${count(groups)} groups.`,
+    /** How many groups the device now has, then how many from the bundle were left out (#336). */
+    linked: (groups: number, skipped: number) => {
+      const now =
+        groups === 1
+          ? 'Linked. This device now has 1 group.'
+          : `Linked. This device now has ${count(groups)} groups.`;
+      const left = leftOut(skipped, 'from your other device');
+      return left === null ? now : `${now} ${left}`;
+    },
     mismatch: 'That code didn’t match. Start again on your other device.',
     damaged: 'Your groups didn’t arrive in one piece. Start again on your other device.',
     joinExpired: 'That code has expired. Start again on your other device.',
@@ -1557,6 +1870,21 @@ export const messages = {
     another: 'Make a card for another group',
     failedAnother: 'Can’t reach the relay right now, so there’s no card yet. Try again.',
     anotherLede: 'Bring in another group: they vote, then every group in the coalition does.',
+    /** Reconcile with another coalition (#122): the same card, from a coalition's row. */
+    coalitionTitle: 'Reconcile with another coalition',
+    coalitionLede:
+      'Propose a coalition of coalitions. Every group in your coalition votes on it, then the other side votes. It forms only if both pass.',
+    coalitionWhyHint: 'Tell every group in your coalition why you’d reconcile.',
+    coalitionNameHint: 'A name of its own, apart from either side’s.',
+    coalitionStatementHint:
+      'What both sides would stand for together. Leave a blank line between sections.',
+    coalitionWarning:
+      'Anyone who opens this link in the next 2 days can read the new coalition from then on. Send it only to someone in the group or coalition you want to reconcile with.',
+    coalitionLink: 'Open your coalition',
+    coalitionCant:
+      'Only someone who takes part in this coalition and can propose there makes its card, and a coalition already three levels up can’t join another.',
+    coalitionKeyWaits:
+      'This coalition’s key hasn’t reached this device yet. You can make its card once it arrives.',
   },
   /** Opening a card and bringing it to one of your groups (#114). */
   bring: {
@@ -1569,14 +1897,23 @@ export const messages = {
     admitLede:
       'This coalition has already formed. Your group votes first, then every group in it votes on letting yours in.',
     question: 'Bring this to one of your groups?',
+    /** When a coalition this person takes part in may take it too (#122). */
+    questionBoth: 'Bring this to one of your groups or coalitions?',
     groupLabel: 'Your group',
     groupHint: 'It votes on this card. Only groups where you can propose are listed.',
+    /** When a coalition this person takes part in can take the card too (#122). */
+    groupOrCoalitionLabel: 'Your group or coalition',
+    groupOrCoalitionHint:
+      'It votes on this card. A coalition votes group by group. Only those where you can propose are listed.',
+    /** Under a coalition's name in the picker (#122). */
+    coalitionOption: 'Coalition',
     noGroups:
       'None of your groups on this device can take this card. You need to be able to propose there, and it can’t hold this card already.',
     yourNameLabel: 'Your name in the coalition',
     yourNameHint: 'This name is only shown in this coalition.',
     yourNameMissing: 'Add the name the coalition will see.',
     submit: 'Bring to my group',
+    submitCoalition: 'Bring to my coalition',
     notNow: 'Not now',
     failed: 'Bringing the card didn’t finish. Try again.',
     badLinkTitle: 'This card doesn’t work',
@@ -1657,9 +1994,30 @@ export const messages = {
       'Not enough people in your group weighed in, so the coalition counts your group as not passing it.',
     /** Opens the coalition's home from group home's row (#120). */
     open: 'Open the coalition',
+    /** From a coalition's row (#122): the card flow one level up. */
+    reconcileCoalition: 'Reconcile with another coalition',
+    /** Between the names of a chain, as in "Riverside Tenants · in Eastside Housing" (#122). */
+    chainIn: 'in',
+    /** Above the coalitions a coalition is in or asks into (#122). */
+    above: 'Coalitions it’s in',
+    /** A coalition still waiting for its own groups' vote on joining one above (#122). */
+    waitingOwn: 'Waiting for its groups’ vote.',
     /** Over a coalition motion in a group's lists and on its page, before the coalition's name (#120). */
     voteTag: 'Coalition vote',
     tagSeparator: '·',
+    /** After the tag's coalition, around the coalitions a motion came through (#122). */
+    through: '(through',
+    throughEnd: ')',
+    then: 'then',
+    /** Before a coalition's name on a nested motion's progress lines (#122). */
+    progressIn: 'In',
+    /** Under a nested motion's progress (#122): what crosses each line. */
+    nestedLine:
+      'Your group’s pass or fail goes to the coalition it’s in. Only that coalition’s pass or fail goes on up.',
+    /** On an admit ballot for a coalition (#122), before its member groups. */
+    admitsCoalition: 'A coalition of',
+    admitsTitle: 'Asking to join',
+    admitsLevel: (level: number) => `Level ${count(level)}`,
     /** The coalition's home (#120). */
     missingTitle: 'This coalition isn’t on this device',
     missing: 'Go back to your groups, and open it from a group that’s in it.',
@@ -1668,6 +2026,9 @@ export const messages = {
     groups: 'Member groups',
     /** Beside a member group this person is in. */
     yourGroup: 'Your group',
+    /** Beside a member that is a coalition (#122), and one this person takes part in. */
+    coalitionSeat: 'Coalition',
+    yourCoalition: 'Your coalition',
     documents: 'Documents',
     openMotions: 'Open Proposals',
     noOpen: 'Nothing is open in the coalition right now.',

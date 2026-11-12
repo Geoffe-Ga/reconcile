@@ -28,8 +28,7 @@ const VALUES = {
   groupName: 'Riverside Tenants',
   yourName: 'Ana',
   chat: null,
-  title: 'House rules',
-  text: 'Quiet hours start at ten.',
+  documents: [{ title: 'House rules', text: 'Quiet hours start at ten.' }],
 };
 
 /** A group created on `owner` and sent to the relay. */
@@ -81,6 +80,8 @@ describe('App', () => {
       ['Document text', 'Quiet hours start at ten.'],
     ];
     for (const [label, value] of entries) {
+      // The first Document starts titled Mission statement (#92), so each field is cleared.
+      await user.clear(screen.getByRole('textbox', { name: label }));
       await user.click(screen.getByRole('textbox', { name: label }));
       await user.paste(value);
     }
@@ -132,6 +133,20 @@ describe('App', () => {
     render(<App services={ana.services} />);
     expect(await screen.findByRole('heading', { level: 1, name: 'House rules' })).toBeVisible();
     expect(screen.getByText('Quiet hours start at ten.')).toBeVisible();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('opens a Document’s change log from the Document view, and its founding text from there (#104)', async () => {
+    const user = userEvent.setup();
+    const ana = await device(createFakeRelay(), 'ana');
+    const groupId = await existingGroup(ana);
+    at(`#/g/${groupId}/doc/${groupId}`);
+    render(<App services={ana.services} />);
+    await user.click(await screen.findByRole('link', { name: 'Change log' }));
+    expect(window.location.hash).toBe(`#/g/${groupId}/doc/${groupId}/log`);
+    expect(await screen.findByRole('heading', { level: 1, name: 'House rules' })).toBeVisible();
+    expect(screen.getByText('Nothing has changed this Document since it began.')).toBeVisible();
+    expect(screen.getByRole('list', { name: 'Change log' })).toHaveTextContent('Founding text');
     expect(await axeViolations()).toEqual([]);
   });
 

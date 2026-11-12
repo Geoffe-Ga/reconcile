@@ -14,12 +14,17 @@
  */
 import { MAX_RECORD_BYTES } from '../crypto/record';
 import { newBallotSalt } from '../crypto/salt';
-import { normalizeAtomText } from '../engine/atomText';
+import { type HeadingLevel, normalizeAtomText } from '../engine/atomText';
 import type { Level } from '../engine/capabilities';
 import {
   type AddTarget,
   base64url,
+  type ClassTarget,
   type EventDraft,
+  type MoveTarget,
+  type NewDocumentTarget,
+  type ProposalBody,
+  type ProposalEventBody,
   type Score,
   type SignedEvent,
   signEvent,
@@ -32,9 +37,15 @@ export type ProposalServices = Pick<Services, 'store' | 'sync' | 'now'>;
 
 /**
  * Where a Proposal goes (#75): the Atom whose text it would replace, where
- * blank text proposes removing the Atom, or where a new section goes.
+ * blank text proposes removing the Atom, where a new section goes, a new
+ * Document (#92), a section's new place (#103) or its class (#116).
  */
-export type ProposalPlace = { readonly atom: string } | { readonly target: AddTarget };
+export type ProposalPlace =
+  | { readonly atom: string }
+  | { readonly target: AddTarget }
+  | { readonly target: NewDocumentTarget }
+  | { readonly target: MoveTarget }
+  | { readonly target: ClassTarget };
 
 /** A Proposal's entries: title and why trimmed, the link null when blank. */
 export type ProposalValues = ProposalPlace & {
@@ -55,6 +66,8 @@ export type ProposalValues = ProposalPlace & {
   readonly versions?: readonly string[];
   /** The Dispatch to send if it passes (#112), its title and text trimmed; none when absent. */
   readonly dispatch?: DispatchWords;
+  /** For an add written as a header (#103), its level, whose draft it was written in. */
+  readonly heading?: HeadingLevel;
 };
 
 /** A Dispatch's words (#112): its title and text, trimmed and already within their limits. */
@@ -73,20 +86,74 @@ export function removalDraft(atom: string): string {
   return `remove:${atom}`;
 }
 
-/** The draft key of a new section after Atom `after`, or first for null (#75). */
-export function addDraft(after: string | null): string {
-  return `add:${after ?? ''}`;
+/**
+ * The draft key of a new section (#75): after Atom `after`, or, for null,
+ * first in the Document `document` (#92), so each Document's start keeps its
+ * own draft. A header's (#103) is kept apart from a section's at the same
+ * spot, by its level.
+ */
+export function addDraft(
+  { document, after }: Pick<AddTarget, 'document' | 'after'>,
+  heading?: HeadingLevel,
+): string {
+  const spot = after === null ? `add-first:${document}` : `add:${after}`;
+  if (heading === undefined) return spot;
+  return `${heading === 1 ? 'header' : 'subheader'}:${spot}`;
 }
+
+/** The draft key of a move of Atom `atom` (#103), apart from any change drafted for it. */
+export function moveDraft(atom: string): string {
+  return `move:${atom}`;
+}
+
+/** The draft key of a class Proposal on Atom `atom` (#116), apart from any change drafted for it. */
+export function protectDraft(atom: string): string {
+  return `protect:${atom}`;
+}
+
+/** The draft key of a new Document's Proposal (#92): one per group, as the issue names it. */
+export const NEW_DOCUMENT_DRAFT = 'new-document';
 
 /**
  * The private draft a Proposal is written in (spec §8): the lapsed
  * Proposal's when proposing again, else its Atom's for a change, the
- * removal's when its text is blank, or the add's for its spot.
+ * removal's when its text is blank, the add's for its spot, a header's by
+ * its level (#103), the move's (#103), the class Proposal's (#116), or the
+ * new Document's (#92).
  */
 function draftOf(values: ProposalValues, text: string): string {
   if (values.again !== undefined) return againDraft(values.again);
-  if ('target' in values) return addDraft(values.target.after);
-  return text === '' ? removalDraft(values.atom) : values.atom;
+  if (!('target' in values)) return text === '' ? removalDraft(values.atom) : values.atom;
+  const { target } = values;
+  if (target.kind === 'move') return moveDraft(target.atom);
+  if (target.kind === 'class') return protectDraft(target.atom);
+  return target.kind === 'add' ? addDraft(target, values.heading) : NEW_DOCUMENT_DRAFT;
+}
+
+/**
+ * A Proposal's body: where it goes first, its Atom or its target (#75, #92),
+ * then its words, in the order every device has signed them. A move (#103)
+ * and a class Proposal (#116) carry no text.
+ */
+function bodyAt(place: ProposalPlace, fields: Omit<ProposalBody, 'atom'>): ProposalEventBody {
+  if (!('target' in place)) return { atom: place.atom, ...fields };
+  const { target } = place;
+  if (target.kind === 'move') return { target, ...withoutText(fields) };
+  if (target.kind === 'class') return { target, ...withoutText(fields) };
+  // The branches match on purpose: the check narrows `target`, so each body types as one member of the union.
+  return target.kind === 'add' ? { target, ...fields } : { target, ...fields };
+}
+
+/** A targeted Proposal's words with no text (#103, #116): its title, why, and any link, window and Dispatch. */
+function withoutText(fields: Omit<ProposalBody, 'atom'>) {
+  const { title, why, link, window, dispatch } = fields;
+  return {
+    title,
+    why,
+    ...(link === undefined ? {} : { link }),
+    ...(window === undefined ? {} : { window }),
+    ...(dispatch === undefined ? {} : { dispatch }),
+  };
 }
 
 /** A queued Proposal's id, or why it wasn't queued. */
@@ -150,8 +217,8 @@ function allFit(events: readonly SignedEvent[]): boolean {
 }
 
 /**
- * Proposes new text for one Atom, its removal (blank text), or a new section
- * (#75), as this device's member of `groupId`, for the voting window the
+ * Proposes new text for one Atom, its removal (blank text), a new section
+ * (#75), or a new Document (#92), as this device's member of `groupId`, for the voting window the
  * proposer chose, if any (#106). Every string is NFC-normalized before the
  * event is signed, and the text goes through `normalizeAtomText` (spec §4).
  * Queuing the Proposal clears the private draft it was written in in the same
@@ -174,9 +241,7 @@ export async function propose(
 ): Promise<ProposeResult> {
   const { title, why, link, window, versions = [], dispatch } = values;
   const text = normalizeAtomText(values.text);
-  const place = 'target' in values ? { target: values.target } : { atom: values.atom };
-  const body = {
-    ...place,
+  const fields = {
     title: nfc(title),
     why: nfc(why),
     text,
@@ -189,7 +254,7 @@ export async function propose(
     type: 'proposal',
     group: log,
     ts: services.now(),
-    body,
+    body: bodyAt(values, fields),
   });
   const others = await Promise.all(
     versions.map((version) =>

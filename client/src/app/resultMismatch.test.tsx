@@ -45,7 +45,7 @@ async function riversideSeat(ana: TestDevice, riverside: string) {
   const group = await ana.services.store.getGroup(riverside);
   const state = fold(group?.log ?? [], null);
   for (const p of state.proposals) {
-    if (p.target.kind === 'reconcile')
+    if (p.target.kind === 'reconcile' && 'seat' in p.target)
       return { secret: fromBase64url(p.target.seat), key: p.target.key };
   }
   throw new Error('Expected Riverside’s reconcile Proposal.');

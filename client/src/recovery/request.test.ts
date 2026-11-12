@@ -10,13 +10,13 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { base64url } from '../crypto/base64url';
 import { kxPublicKeyOf } from '../crypto/box';
 import { parseRecoveryCode, recoveryChannel, recoveryCheck, sealRelease } from '../crypto/recovery';
-import { backupIdFor, newScrubBlob } from '../crypto/relayBackup';
+import { backupIdFor, newScrubBlob, sealRelayBackup } from '../crypto/relayBackup';
 import { xchachaSeal } from '../crypto/seal';
 import { newSplitId, type RecoveryShare } from '../crypto/shares';
 import { chooseContacts, openHeldShare } from '../store/recovery';
 import { fetchRelayBackup } from '../store/relayBackup';
 import { type TestDevice, testDevice } from '../test/appServices';
-import { local } from '../test/bytes';
+import { local, text, utf8 } from '../test/bytes';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { groupOn, HOLD, keyOf, recoveryWorld, type RecoveryWorld } from '../test/recovery';
@@ -134,7 +134,7 @@ describe('recovering on a new device', DEVICES, () => {
     expect(await fresh.services.store.listGroups()).toEqual([]);
     await cal.services.sync.syncOnce();
 
-    expect(await session.poll()).toEqual({ kind: 'restored', groups: 2 });
+    expect(await session.poll()).toEqual({ kind: 'restored', groups: 2, skipped: 0 });
     const groups = await fresh.services.store.listGroups();
     expect(groups.map(({ groupId: id }) => id).sort()).toEqual([groupId, allotment].sort());
     for (const group of groups) {
@@ -189,7 +189,11 @@ describe('recovering on a new device', DEVICES, () => {
     await release(fake, world.cal, shown.code, { ...bad, share: corrupted });
     for (const share of good) await release(fake, world.ben, shown.code, share);
 
-    expect(await recoverSession(fresh.services).poll()).toEqual({ kind: 'restored', groups: 2 });
+    expect(await recoverSession(fresh.services).poll()).toEqual({
+      kind: 'restored',
+      groups: 2,
+      skipped: 0,
+    });
     // The corrupted share with each good one, then the two good ones.
     expect(backupReads(fake)).toBe(3);
   });
@@ -223,6 +227,34 @@ describe('recovering on a new device', DEVICES, () => {
       needed: 3,
     });
     expect(backupReads(fake)).toBe(0);
+  });
+
+  it('leaves out a group entry someone planted in the relay copy, restores the rest and counts it (#336)', async () => {
+    const { fake, world, fresh, shown } = await setUp();
+    const key = await anaKey(world);
+    const copy = await fetchRelayBackup(world.ana.services.relay, key);
+    if (copy === null) throw new Error('Expected Ana’s relay copy.');
+    const json = JSON.parse(text(copy)) as { groups: unknown[] };
+    const planted = { groupId: base64url(new Uint8Array(32).fill(0x50)), log: 'not a log' };
+    const groups = [planted, ...json.groups];
+    await world.ana.services.relay.putBackup(
+      backupIdFor(key),
+      sealRelayBackup(key, utf8(JSON.stringify({ ...json, groups }))),
+    );
+    await release(fake, world.ben, shown.code, await heldBy(world, world.ben, world.groupId));
+    await release(fake, world.dee, shown.code, await heldBy(world, world.dee, world.groupId));
+
+    expect(await recoverSession(fresh.services).poll()).toEqual({
+      kind: 'restored',
+      groups: 2,
+      skipped: 1,
+    });
+    const held = (await fresh.services.store.listGroups()).map(({ groupId }) => groupId);
+    expect(held.sort()).toEqual([world.groupId, world.allotment].sort());
+    expect(local((await fresh.services.store.getRelayBackup())?.key ?? new Uint8Array())).toEqual(
+      key,
+    );
+    expect(await fresh.services.store.getRecoveredAt()).toBeTypeOf('number');
   });
 
   it('leaves the device empty when the backup won’t open, and keeps waiting', async () => {

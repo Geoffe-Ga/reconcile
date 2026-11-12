@@ -81,7 +81,12 @@ describe('foldInvite', () => {
 describe('genesisDocument', () => {
   it('takes only the Atoms of the genesis Document', () => {
     const state = groupLog().state();
-    const other = { id: 'other.0', documentId: 'other', text: 'Another Document.' };
+    const other = {
+      id: 'other.0',
+      documentId: 'other',
+      text: 'Another Document.',
+      class: 'ordinary',
+    } as const;
     const document = genesisDocument({ ...state, atoms: [...state.atoms, other] });
     expect(document?.map((atom) => atom.id)).toEqual([
       `${state.group ?? ''}.0`,

@@ -48,6 +48,28 @@ export function normalizeAtomText(text: string): string {
 }
 
 /**
+ * A header's level as Add a section here offers it (#103): 1 for a section
+ * header, `# …`, and 2 for a subsection header, `## …`.
+ */
+export type HeadingLevel = 1 | 2;
+
+/**
+ * One ATX heading of level 1–6 with a word in it, on one line that ends the
+ * text (ADR-0023): CommonMark needs the space after the `#`s.
+ */
+const HEADING_ONLY = /^#{1,6} [^\n]*\S[^\n]*\n$/u;
+
+/**
+ * True when normalized Atom text is a section header and nothing more (#103):
+ * one line, `# Values\n` or `## Organization\n`, as Add a section here's
+ * header choices build it. The fold treats a header as any other Atom; the
+ * screens read this to show it as a header and to say what an add does.
+ */
+export function isHeadingOnly(text: string): boolean {
+  return HEADING_ONLY.test(text);
+}
+
+/**
  * Splits a founding Document into its Atoms at blank lines (`splitAtoms`),
  * then normalizes each one, so every genesis Atom ends in one LF.
  */

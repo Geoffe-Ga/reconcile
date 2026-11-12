@@ -2,7 +2,8 @@
  * What a personal Document's editor asks of sharing by link (#105), on the
  * app's services: read whether it's shared, Share link, send the link on,
  * Stop sharing, post an edit once the editor closes, and Keep sharing a
- * share a restore paused (#328).
+ * share that waits for the person: one a restore paused (#328), or one this
+ * device hasn't posted to for 30 days (#339).
  *
  * The link goes out through `shareOrCopy` with fixed words beside it, never
  * the Document's title or text, and only once the relay holds the first copy.
@@ -11,7 +12,9 @@
  */
 import {
   keepSharing,
+  pauseOf,
   postEdits,
+  type SharePause,
   type ShareServices,
   shareLinkOf,
   startSharing,
@@ -32,8 +35,12 @@ export interface ShareView {
   readonly link: string | null;
   /** Whether an edit, or a failed post, hasn't reached the link yet. */
   readonly pending: boolean;
-  /** Whether a restore brought the share back and nothing goes to the link until the person chooses (#328). */
-  readonly paused: boolean;
+  /**
+   * Why nothing goes to the link until the person chooses: a restore brought
+   * the share back (#328), or this device hasn't posted to it for 30 days
+   * (#339). Null while the share is live.
+   */
+  readonly paused: SharePause | null;
 }
 
 /** How Share link went: shared, with the link, or why not. */
@@ -61,7 +68,7 @@ export interface PersonalSharing {
   send(link: string): Promise<ShareOutcome>;
   /** Stop sharing: posts a tombstone and drops the share, or changes nothing, as when locked (#255). */
   stop(id: string): Promise<StopOutcome>;
-  /** Keep sharing a share a restore paused (#328): records the choice, then posts the latest copy. */
+  /** Keep sharing a paused share (#328, #339): records the choice, then posts the latest copy. */
   keep(id: string): Promise<SharingKeep>;
   /** Posts Document `id`'s latest copy in the background if an edit waits for its link. */
   leave(id: string): void;
@@ -77,12 +84,13 @@ export type SharingServices = ShareServices &
   };
 
 /**
- * A share as its editor shows it: `link`, or null while the device's keys
- * are locked (#255), and its mark's flags, so a paused share reads paused
- * either way (#328).
+ * A share as its editor shows it at `now`: `link`, or null while the
+ * device's keys are locked (#255), whether an edit waits, and why it's
+ * paused, if it is ({@link pauseOf}), read from its mark, so a paused share
+ * reads paused either way (#328, #339).
  */
-function viewOf(mark: ShareMark, link: string | null): ShareView {
-  return { link, pending: mark.pending, paused: mark.paused === true };
+function viewOf(mark: ShareMark, link: string | null, now: number): ShareView {
+  return { link, pending: mark.pending, paused: pauseOf(mark, now) };
 }
 
 /** Sharing by link on `services`. */
@@ -93,13 +101,13 @@ export function personalSharing(services: SharingServices): PersonalSharing {
     async read(id) {
       try {
         const share = (await services.store.getPersonal(id))?.share;
-        return share === undefined ? null : viewOf(share, linkOf(share));
+        return share === undefined ? null : viewOf(share, linkOf(share), services.now());
       } catch (error) {
         if (!(error instanceof VaultLocked)) throw error;
         // Only a shared Document's read needs the vault: its mark says it's on (#255).
         const entries = await services.store.listPersonalEntries();
         const mark = entries.find((entry) => entry.id === id)?.share;
-        return mark === undefined ? null : viewOf(mark, null);
+        return mark === undefined ? null : viewOf(mark, null, services.now());
       }
     },
     async start(id) {

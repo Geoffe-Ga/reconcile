@@ -1,0 +1,542 @@
+{
+  "kind": "fold",
+  "vectors": [
+    {
+      "name": "documents-genesis-two: a genesis founds two Documents in order; the first keeps the genesis id and its Atoms @1.i, and the second is @1:1, with Atoms @1:1.i",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "Mission statement",
+                  "atoms": ["We share.\n", "We meet weekly.\n"]
+                },
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "relayNow": 29375001,
+      "expect": {
+        "group": "@1",
+        "documents": [
+          {
+            "id": "@1",
+            "title": "Mission statement"
+          },
+          {
+            "id": "@1:1",
+            "title": "House rules"
+          }
+        ],
+        "atoms": [
+          {
+            "id": "@1.0",
+            "documentId": "@1",
+            "text": "We share.\n"
+          },
+          {
+            "id": "@1.1",
+            "documentId": "@1",
+            "text": "We meet weekly.\n"
+          },
+          {
+            "id": "@1:1.0",
+            "documentId": "@1:1",
+            "text": "Quiet after 11pm.\n"
+          },
+          {
+            "id": "@1:1.1",
+            "documentId": "@1:1",
+            "text": "Bins out on Sunday.\n"
+          }
+        ],
+        "ignored": []
+      }
+    },
+    {
+      "name": "documents-genesis-none: a genesis with no Documents founds nothing, and the next valid genesis founds the group",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": []
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "Mission statement",
+                  "atoms": ["We share.\n"]
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "relayNow": 29375002,
+      "expect": {
+        "group": "@2",
+        "documents": [
+          {
+            "id": "@2",
+            "title": "Mission statement"
+          }
+        ],
+        "atoms": [
+          {
+            "id": "@2.0",
+            "documentId": "@2",
+            "text": "We share.\n"
+          }
+        ],
+        "members": [
+          {
+            "author": "%ana",
+            "name": "Ana"
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 1,
+            "id": "@1"
+          }
+        ]
+      }
+    },
+    {
+      "name": "documents-genesis-blank-title: a genesis with an empty Document title, or one of spaces alone, founds nothing, whichever Document has it",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "Mission statement",
+                  "atoms": ["We share.\n", "We meet weekly.\n"]
+                },
+                {
+                  "title": "",
+                  "atoms": ["Quiet.\n"]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "   ",
+                  "atoms": ["We share.\n"]
+                },
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "Mission statement",
+                  "atoms": ["We share.\n", "We meet weekly.\n"]
+                },
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "relayNow": 29375003,
+      "expect": {
+        "group": "@3",
+        "documents": [
+          {
+            "id": "@3",
+            "title": "Mission statement"
+          },
+          {
+            "id": "@3:1",
+            "title": "House rules"
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 1,
+            "id": "@1"
+          },
+          {
+            "seq": 2,
+            "id": "@2"
+          }
+        ]
+      }
+    },
+    {
+      "name": "documents-genesis-title-length: a genesis with a Document title of 121 code points founds nothing, and one of 120 founds the group, counting code points, not UTF-16 units",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "Mission statement",
+                  "atoms": ["We share.\n", "We meet weekly.\n"]
+                },
+                {
+                  "title": "𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞",
+                  "atoms": ["Quiet.\n"]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "Mission statement",
+                  "atoms": ["We share.\n", "We meet weekly.\n"]
+                },
+                {
+                  "title": "𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞",
+                  "atoms": ["Quiet.\n"]
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "relayNow": 29375002,
+      "expect": {
+        "group": "@2",
+        "documents": [
+          {
+            "id": "@2",
+            "title": "Mission statement"
+          },
+          {
+            "id": "@2:1",
+            "title": "𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞𝄞"
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 1,
+            "id": "@1"
+          }
+        ]
+      }
+    },
+    {
+      "name": "documents-genesis-no-atoms: a genesis with a Document that has no sections founds nothing",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "Mission statement",
+                  "atoms": ["We share.\n", "We meet weekly.\n"]
+                },
+                {
+                  "title": "House rules",
+                  "atoms": []
+                }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "Mission statement",
+                  "atoms": ["We share.\n", "We meet weekly.\n"]
+                },
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "relayNow": 29375002,
+      "expect": {
+        "group": "@2",
+        "documents": [
+          {
+            "id": "@2",
+            "title": "Mission statement"
+          },
+          {
+            "id": "@2:1",
+            "title": "House rules"
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 1,
+            "id": "@1"
+          }
+        ]
+      }
+    },
+    {
+      "name": "documents-genesis-edit-second: a change to a section of the second Document opens on that section and, once it passes, changes it alone",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "Mission statement",
+                  "atoms": ["We share.\n", "We meet weekly.\n"]
+                },
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "atom": "@1:1.0",
+              "title": "Change a section",
+              "why": "It reads better.",
+              "text": "Quiet after 10pm.\n"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501200000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501260000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3": 4
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29375021,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@3",
+            "atom": "@1:1.0",
+            "target": {
+              "kind": "edit"
+            },
+            "final": true,
+            "outcome": {
+              "kind": "pass",
+              "version": "@3"
+            }
+          }
+        ],
+        "documents": [
+          {
+            "id": "@1",
+            "title": "Mission statement"
+          },
+          {
+            "id": "@1:1",
+            "title": "House rules"
+          }
+        ],
+        "atoms": [
+          {
+            "id": "@1.0",
+            "documentId": "@1",
+            "text": "We share.\n"
+          },
+          {
+            "id": "@1.1",
+            "documentId": "@1",
+            "text": "We meet weekly.\n"
+          },
+          {
+            "id": "@1:1.0",
+            "documentId": "@1:1",
+            "text": "Quiet after 10pm.\n"
+          },
+          {
+            "id": "@1:1.1",
+            "documentId": "@1:1",
+            "text": "Bins out on Sunday.\n"
+          }
+        ]
+      }
+    }
+  ]
+}

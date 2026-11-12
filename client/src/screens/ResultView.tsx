@@ -18,8 +18,9 @@
  * when they were cleared. A priority vote's result is PriorityResult.tsx's
  * (#107); the two share ResultParts.tsx.
  */
-import { useId } from 'react';
+import { type ReactNode, useId } from 'react';
 
+import { AtomBadge } from '../app/AtomBadge';
 import { OutcomeSentence } from '../app/CoalitionProgress';
 import { formatAverage, formatAverageLine, formatShortfall } from '../app/format';
 import { messages } from '../app/messages';
@@ -34,7 +35,7 @@ import {
   versionViews,
 } from '../app/versionViews';
 import type { CoalitionProgress } from '../engine/coalitionProgress';
-import { proposalTally } from '../engine/fold';
+import { type Proposal, proposalTally } from '../engine/fold';
 import { isPriority } from '../engine/priority';
 import { removalTarget } from '../engine/removal';
 import type { Bar } from '../engine/rules';
@@ -61,11 +62,29 @@ interface OutcomeProps {
   readonly versions: readonly VersionView[];
 }
 
-/** A pass's sentence: it names the winning version when there were several, and a removal says the section is gone (#75). */
-function passSentence(versions: number, winner: number, removed: boolean): string {
+/** What a pass did: changed a section, removed it (#75), or made a new Document (#92). */
+type PassKind = 'changed' | 'removed' | 'created';
+
+/**
+ * A pass's sentence: it names the winning version when there were several, a
+ * removal says the section is gone (#75), and a new Document that it reads
+ * as its winning text (#92).
+ */
+function passSentence(versions: number, winner: number, kind: PassKind): string {
   const { result } = messages;
-  if (removed) return versions > 1 ? result.passedVersionRemoval(winner) : result.passedRemoval;
-  return versions > 1 ? result.passedVersion(winner) : result.passed;
+  const several = versions > 1;
+  if (kind === 'removed')
+    return several ? result.passedVersionRemoval(winner) : result.passedRemoval;
+  if (kind === 'created') {
+    return several ? result.passedVersionDocument(winner) : result.passedDocument;
+  }
+  return several ? result.passedVersion(winner) : result.passed;
+}
+
+/** What a passed Proposal did with its winning `text`. */
+function passKind(proposal: Proposal, text: string): PassKind {
+  if (proposal.target.kind === 'new-document') return 'created';
+  return text === '' ? 'removed' : 'changed';
 }
 
 /** A steward Proposal's pass: who is now steward for the seat, or who no longer is (#102). */
@@ -78,6 +97,36 @@ function StewardPassed({ steward }: { readonly steward: StewardView }) {
       <p className="outcome-sentence">
         <Named parts={parts} name={motion.name} />
       </p>
+    </div>
+  );
+}
+
+/**
+ * What a section's pass says first (#103, #116): that it has moved, or the
+ * class a class Proposal gave it, by the line its card led with.
+ */
+function sectionPassed(version: VersionView): string {
+  const { result } = messages;
+  const to = version.protect?.to;
+  if (to === undefined) return result.passedMove;
+  if (to === 'eternal') return result.passedEternal;
+  return to === 'ordinary' ? result.passedUnprotected : result.passedEntrenched;
+}
+
+/**
+ * A move's pass (#103) or a class Proposal's (#116): that the section has
+ * moved, or what it is now, with its new badge, the section as it reads, and
+ * thanks to whoever proposed it.
+ */
+function SectionPassed({ version }: { readonly version: VersionView }) {
+  const text = (version.move ?? version.protect)?.text ?? null;
+  const to = version.protect?.to;
+  return (
+    <div className="result-outcome">
+      <p className="outcome-sentence">{sectionPassed(version)}</p>
+      {to === 'entrenched' || to === 'eternal' ? <AtomBadge cls={to} /> : null}
+      {text === null ? null : <AtomText text={text} className="atom-card result-text" />}
+      <Thanks names={[version.author]} />
     </div>
   );
 }
@@ -105,7 +154,9 @@ function Passed({ props, versions, winner }: OutcomeProps & { readonly winner: s
   const names = [shown?.author ?? '', ...(byProposer ? [] : [versions[0]?.author ?? ''])];
   return (
     <div className="result-outcome">
-      <p className="outcome-sentence">{passSentence(versions.length, index + 1, text === '')}</p>
+      <p className="outcome-sentence">
+        {passSentence(versions.length, index + 1, passKind(proposal, text))}
+      </p>
       {text === '' ? null : <AtomText text={text} className="atom-card result-text" />}
       <Thanks names={names} />
     </div>
@@ -211,18 +262,29 @@ function DecisionPassed({ proposal }: { readonly proposal: OutcomeProps['props']
  * coalition (#120), whose own result says what changed.
  */
 function PassOutcome({ props, winner }: { props: OutcomeProps; winner: string }) {
-  const { steward, rules, dissolve, removal, decision } = props.versions[0] ?? {};
+  const first = props.versions[0];
   const { proposal, me } = props.props;
-  if (removal !== undefined) {
-    return <RemovalPassed removal={removal} you={removalTarget(proposal) === me} />;
+  if (first?.removal !== undefined) {
+    return <RemovalPassed removal={first.removal} you={removalTarget(proposal) === me} />;
   }
-  if (decision !== undefined || proposal.target.kind === 'motion') {
+  if (first?.decision !== undefined || proposal.target.kind === 'motion') {
     return <DecisionPassed proposal={proposal} />;
   }
+  const decided = first === undefined ? null : oneCardPassed(first);
+  return decided ?? <Passed {...props} winner={winner} />;
+}
+
+/**
+ * What a one-card ballot's pass says: a section's move (#103) or protection
+ * (#116), dissolving (#108), a steward (#102) or an opt-in (#117); null for
+ * a ballot of text.
+ */
+function oneCardPassed(first: VersionView): ReactNode {
+  const { steward, rules, dissolve, move, protect } = first;
+  if (move !== undefined || protect !== undefined) return <SectionPassed version={first} />;
   if (dissolve !== undefined) return <DissolvePassed />;
   if (steward !== undefined) return <StewardPassed steward={steward} />;
-  if (rules !== undefined) return <RulesPassed rules={rules} />;
-  return <Passed {...props} winner={winner} />;
+  return rules === undefined ? null : <RulesPassed rules={rules} />;
 }
 
 /** The outcome block the result leads with. */

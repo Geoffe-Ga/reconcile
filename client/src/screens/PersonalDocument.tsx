@@ -140,7 +140,7 @@ function DeleteDialog(props: DeleteProps) {
 
 /**
  * The editor's line on where its Document goes: whether a share by link sends
- * it (#105; not while a restore has it paused, #328), and whether the device
+ * it (#105; not while it's paused, #328, #339), and whether the device
  * keeps a relay backup key (#97, #248).
  */
 function keptLine(shared: boolean, relayBackup: boolean): string {
@@ -173,8 +173,8 @@ interface KeptAndSharedProps {
 function KeptAndShared({ saved, values, share, onDelete, relayBackup }: KeptAndSharedProps) {
   const { view } = share;
   const shared = view !== null && view !== undefined;
-  // A share a restore paused sends nothing until the person keeps it (#328).
-  const sending = shared && !view.paused;
+  // A paused share sends nothing until the person keeps it (#328, #339).
+  const sending = shared && view.paused === null;
   const locked = view?.link === null;
   const fits = fitsShare({ title: values.title.trim(), text: normalizeAtomText(values.text) });
   return (
@@ -211,8 +211,9 @@ function BackToPersonal() {
  * them once the device keeps one (#97, #248), unless the person shares it
  * by link (#105): then its latest version goes, sealed, to the share's
  * mailbox when the share starts and each time the editor closes after an
- * edit, and Delete stops the share first. A share a restore brought back
- * sends nothing until the person keeps it (#328).
+ * edit, and Delete stops the share first. A share a restore brought back,
+ * or one this device hasn't posted to for 30 days, sends nothing until the
+ * person keeps it (#328, #339).
  */
 export function PersonalDocument({
   id,

@@ -85,14 +85,17 @@ export function openMoment(
   return addedVersion && proposal.author !== me ? 'version' : 'open';
 }
 
+/** The targets whose titles say what changes in a Document, never who (#75, #92, #103, #116). */
+const DOCUMENT_KINDS: readonly string[] = ['edit', 'add', 'new-document', 'move', 'class'];
+
 /**
- * The title Include the title may add: a change to the Document's, an add's
- * included (#75), or null for any other target, such as a steward Proposal,
- * whose title names a member.
+ * The title Include the title may add: a change to a Document's, an add's
+ * (#75), a new Document's (#92), a move's (#103) and a class Proposal's
+ * (#116) included, or null for any other target, such as a steward
+ * Proposal, whose title names a member.
  */
 export function shareableTitle(proposal: ChatSource): string | null {
-  const { kind } = proposal.target;
-  return kind === 'edit' || kind === 'add' ? proposal.title : null;
+  return DOCUMENT_KINDS.includes(proposal.target.kind) ? proposal.title : null;
 }
 
 /** What a share of `proposal` says: its deadline, and its title only when `includeTitle`. */

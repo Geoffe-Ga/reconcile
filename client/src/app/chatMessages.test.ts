@@ -159,6 +159,38 @@ describe('shareableTitle and chatDetails', () => {
     expect(chatDetails(add, true)).toEqual({ deadline: add.deadline, title: 'Guests' });
   });
 
+  it('offers the title of a new Document’s Proposal, as of an add (#92)', () => {
+    const log = groupLog();
+    log.newDocument('ana', 'Budget', { title: 'Start a budget' });
+    const [created] = log.state().proposals;
+    if (created === undefined) throw new Error('Expected the Proposal.');
+
+    expect(shareableTitle(created)).toBe('Start a budget');
+    expect(chatDetails(created, true)).toEqual({
+      deadline: created.deadline,
+      title: 'Start a budget',
+    });
+  });
+
+  it('offers the title of a class Proposal, as of any change to the Document (#116)', () => {
+    const log = groupLog();
+    log.protect('ana', `${log.group}.1`, 'eternal', { title: 'Bins forever' });
+    const [protecting] = log.state().proposals;
+    if (protecting === undefined) throw new Error('Expected the class Proposal.');
+    expect(protecting.target.kind).toBe('class');
+    expect(shareableTitle(protecting)).toBe('Bins forever');
+  });
+
+  it('offers the title of a move, as of any change to the Document (#103)', () => {
+    const log = groupLog();
+    log.move('ana', `${log.group}.1`, null, { title: 'Bins first' });
+    const [moved] = log.state().proposals;
+    if (moved === undefined) throw new Error('Expected the move.');
+
+    expect(shareableTitle(moved)).toBe('Bins first');
+    expect(chatDetails(moved, true)).toEqual({ deadline: moved.deadline, title: 'Bins first' });
+  });
+
   it('never offers a steward Proposal’s title, which names a member', () => {
     const log = groupLog({ members: ['Ben', 'Cal'] });
     log.steward('ana', 1, 'Ben', { title: 'Make Ben steward (seat 1)' });

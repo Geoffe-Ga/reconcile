@@ -154,7 +154,7 @@ test('a double tap on a busy Send your vote or Propose submits once', async ({ o
   });
 
   await test.step('A proposes, and a double tap on Send your vote sends one ballot (#192)', async () => {
-    await page.getByRole('link', { name: TITLE }).click();
+    await page.getByRole('link', { name: TITLE, exact: true }).click();
     await page.getByRole('button', { name: 'Propose a change to section 1' }).click();
     await page.getByRole('textbox', { name: 'Title' }).fill(PROPOSAL);
     await page.getByRole('textbox', { name: 'Why' }).fill('Weekday evenings run later now.');
@@ -178,7 +178,7 @@ test('a double tap on a busy Send your vote or Propose submits once', async ({ o
 
   await test.step('a double tap on Propose that can’t be saved submits once', async () => {
     await page.getByRole('link', { name: GROUP }).click();
-    await page.getByRole('link', { name: TITLE }).click();
+    await page.getByRole('link', { name: TITLE, exact: true }).click();
     await page.getByRole('button', { name: 'Propose a change to section 2' }).click();
     await expect(heading(page, 'Propose a change')).toBeVisible();
     await page.getByRole('textbox', { name: 'Title' }).fill('Bins on Monday');

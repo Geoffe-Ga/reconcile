@@ -13,6 +13,7 @@
  */
 import { useSyncExternalStore } from 'react';
 
+import type { HeadingLevel } from '../engine/atomText';
 import { isOptIn, type OptIn } from '../engine/optIns';
 import { SEATS, type SeatNumber } from '../engine/stewards';
 
@@ -45,12 +46,32 @@ export type Route =
   /** A group's front door (#121): what follows `#door/`, as written. */
   | { readonly name: 'door'; readonly payload: string }
   | { readonly name: 'group'; readonly groupId: string }
-  | { readonly name: 'document'; readonly groupId: string }
+  /** One of the group's Documents (#92), by its id; without one, the group's first. */
+  | { readonly name: 'document'; readonly groupId: string; readonly documentId?: string }
+  /** Propose a new Document (#92). */
+  | { readonly name: 'newDocument'; readonly groupId: string }
+  /** A Document's change log (#104): every change that passed, newest first. */
+  | { readonly name: 'documentLog'; readonly groupId: string; readonly documentId: string }
   | { readonly name: 'propose'; readonly groupId: string; readonly atomId: string }
   | { readonly name: 'priority'; readonly groupId: string }
   | { readonly name: 'proposal'; readonly groupId: string; readonly proposalId: string }
-  | { readonly name: 'add'; readonly groupId: string; readonly after: string | null }
+  /**
+   * Add a section (#75): after the Atom `after`, in its Document, or at the
+   * start of `document` (#92), or of the group's first Document without one.
+   * `heading` makes it a section header (1) or a subsection header (2) (#103).
+   */
+  | {
+      readonly name: 'add';
+      readonly groupId: string;
+      readonly after: string | null;
+      readonly document?: string;
+      readonly heading?: HeadingLevel;
+    }
   | { readonly name: 'remove'; readonly groupId: string; readonly atomId: string }
+  /** Move this section (#103). */
+  | { readonly name: 'move'; readonly groupId: string; readonly atomId: string }
+  /** Protect this section, or change its protection (#116). */
+  | { readonly name: 'protect'; readonly groupId: string; readonly atomId: string }
   | { readonly name: 'again'; readonly groupId: string; readonly proposalId: string }
   | {
       readonly name: 'steward';
@@ -86,6 +107,10 @@ export type Route =
     }
   /** Propose a change to one of a coalition's sections (#120). */
   | { readonly name: 'coalitionPropose'; readonly coalitionId: string; readonly atomId: string }
+  /** Reconcile with another coalition (#122): the card's form, one level up. */
+  | { readonly name: 'coalitionReconcile'; readonly coalitionId: string }
+  /** A coalition Document's change log (#104). */
+  | { readonly name: 'coalitionLog'; readonly coalitionId: string; readonly documentId: string }
   /** A coalition's room (#125). */
   | { readonly name: 'coalitionRoom'; readonly coalitionId: string };
 
@@ -98,13 +123,16 @@ export type CoalitionRoute = Extract<Route, { readonly coalitionId: string }>;
 /** Ids and invite payloads are base64url, joined by at most a dot. */
 const SEGMENT = /^[A-Za-z0-9_.-]+$/;
 const ID = /^[A-Za-z0-9_-]+$/;
-/** A genesis Atom's id is `${genesisId}.${index}`; an added Atom's is its Proposal's id (#75). */
-const ATOM_ID = /^[A-Za-z0-9_-]+(\.[0-9]+)?$/;
 /**
- * A Document's id (#120): its group's or coalition's genesis id for the first,
- * and `${genesisId}:${k}` for each later one, as several Documents name them (#92).
+ * A Document's id (#92): the genesis id, `${genesisId}:${k}` for founding
+ * Document k ≥ 1, or a new Document's Proposal id.
  */
 const DOCUMENT_ID = /^[A-Za-z0-9_-]+(:[0-9]+)?$/;
+/**
+ * An Atom's id: `${documentId}.${index}` for a Document's first sections, or
+ * an added Atom's Proposal id (#75, #92).
+ */
+const ATOM_ID = /^[A-Za-z0-9_-]+(:[0-9]+)?(\.[0-9]+)?$/;
 /** A personal Document's id (#93): 16 bytes in canonical unpadded base64url, 22 characters. */
 const PERSONAL_ID = /^[A-Za-z0-9_-]{21}[AQgw]$/;
 
@@ -128,16 +156,16 @@ function optInPage(groupId: string, narrow: boolean, arg: string): Route {
 
 /**
  * The pages inside a group, Group home apart, that take nothing but the
- * group: the Document, the rules (#117), dissolving (#108), the Dispatches
- * and Send a Dispatch (#112), Ask what to focus on (#107), and Reconcile
- * with another group (#114).
+ * group: the rules (#117), dissolving (#108), the Dispatches and Send a
+ * Dispatch (#112), Propose a new Document (#92), Ask what to focus on (#107),
+ * and Reconcile with another group (#114).
  */
 const FIXED_NAMES = [
-  'document',
   'rules',
   'dissolve',
   'dispatches',
   'sendDispatch',
+  'newDocument',
   'priority',
   'reconcile',
 ] as const;
@@ -147,11 +175,11 @@ type FixedName = (typeof FIXED_NAMES)[number];
 
 /** Each fixed page's path after `#/g/{groupId}/`. */
 const FIXED_PATHS: Readonly<Record<FixedName, string>> = {
-  document: 'doc',
   rules: 'rules',
   dissolve: 'dissolve',
   dispatches: 'dispatches',
   sendDispatch: 'dispatch/new',
+  newDocument: 'doc/new',
   priority: 'priority',
   reconcile: 'reconcile',
 };
@@ -169,13 +197,40 @@ function idPage(pattern: RegExp, make: (groupId: string, id: string) => Route): 
   return (groupId, arg) => (pattern.test(arg) ? make(groupId, arg) : START);
 }
 
+/** A header's page (#103): after the Atom it names, or, `first`, at the start of the Document it names. */
+function headerPage(heading: HeadingLevel, first: boolean): ArgPage {
+  return first
+    ? idPage(DOCUMENT_ID, (groupId, document) => ({
+        name: 'add',
+        groupId,
+        after: null,
+        document,
+        heading,
+      }))
+    : idPage(ATOM_ID, (groupId, after) => ({ name: 'add', groupId, after, heading }));
+}
+
 /** The pages inside a group that take one argument. */
 const ARG_PAGES: ReadonlyMap<string, ArgPage> = new Map<string, ArgPage>([
+  [
+    'doc',
+    idPage(DOCUMENT_ID, (groupId, documentId) => ({ name: 'document', groupId, documentId })),
+  ],
+  [
+    'add-first',
+    idPage(DOCUMENT_ID, (groupId, document) => ({ name: 'add', groupId, after: null, document })),
+  ],
   ['propose', idPage(ATOM_ID, (groupId, atomId) => ({ name: 'propose', groupId, atomId }))],
   ['p', idPage(ID, (groupId, proposalId) => ({ name: 'proposal', groupId, proposalId }))],
   ['again', idPage(ID, (groupId, proposalId) => ({ name: 'again', groupId, proposalId }))],
   ['add', idPage(ATOM_ID, (groupId, after) => ({ name: 'add', groupId, after }))],
+  ['add-header', headerPage(1, false)],
+  ['add-subheader', headerPage(2, false)],
+  ['add-first-header', headerPage(1, true)],
+  ['add-first-subheader', headerPage(2, true)],
   ['remove', idPage(ATOM_ID, (groupId, atomId) => ({ name: 'remove', groupId, atomId }))],
+  ['move', idPage(ATOM_ID, (groupId, atomId) => ({ name: 'move', groupId, atomId }))],
+  ['protect', idPage(ATOM_ID, (groupId, atomId) => ({ name: 'protect', groupId, atomId }))],
   ['steward', (groupId, arg) => stewardPage(groupId, false, arg)],
   ['recall', (groupId, arg) => stewardPage(groupId, true, arg)],
   ['rules', (groupId, arg) => optInPage(groupId, false, arg)],
@@ -184,24 +239,51 @@ const ARG_PAGES: ReadonlyMap<string, ArgPage> = new Map<string, ArgPage>([
 ]);
 
 /**
- * A page inside a group: one of the fixed pages, such as `doc`, `priority`
- * (#107) or `dispatch/new`, `add` (a new first section, #75), or
- * `propose/{atomId}`, `p/{proposalId}`, `again/{proposalId}`, `add/{atomId}`
- * (a new section after that Atom), `remove/{atomId}` (#75), `steward/{seat}`,
- * `recall/{seat}`, `rules/{optIn}`, `narrow/{optIn}` or
- * `remove-member/{member}` (#115), which a section's own `remove` can't share:
- * an added Atom's id is a Proposal's.
+ * The pages inside a group that take nothing, and say so by taking nothing:
+ * the group's first Document (`doc`), and a new first section in it (`add`).
+ */
+const BARE_PAGES: ReadonlyMap<string, ArgPage> = new Map<string, ArgPage>([
+  ['doc', (groupId) => ({ name: 'document', groupId })],
+  ['add', (groupId) => ({ name: 'add', groupId, after: null })],
+]);
+
+/**
+ * A page inside a group: one of the fixed pages, such as `dispatch/new`,
+ * `priority` (#107) or `doc/new` (#92), `doc` (the first Document) or `add` (a new first section
+ * in it, #75), or `doc/{documentId}` (#92), `add-first/{documentId}` (a new
+ * first section in that Document, #92), `propose/{atomId}`, `p/{proposalId}`,
+ * `again/{proposalId}`, `add/{atomId}` (a new section after that Atom),
+ * `remove/{atomId}` (#75), `add-header/{atomId}`, `add-subheader/{atomId}`,
+ * `add-first-header/{documentId}`, `add-first-subheader/{documentId}` and
+ * `move/{atomId}` (#103), `steward/{seat}`, `recall/{seat}`, `rules/{optIn}`,
+ * `narrow/{optIn}` or `remove-member/{member}` (#115), which a section's own
+ * `remove` can't share: an added Atom's id is a Proposal's.
  */
 function groupPage(groupId: string, page: string, arg: string | undefined): Route {
   const fixed = FIXED_PAGES.get(arg === undefined ? page : `${page}/${arg}`);
   if (fixed !== undefined) return { name: fixed, groupId };
-  if (arg === undefined) return page === 'add' ? { name: 'add', groupId, after: null } : START;
-  return ARG_PAGES.get(page)?.(groupId, arg) ?? START;
+  const make = arg === undefined ? BARE_PAGES.get(page) : ARG_PAGES.get(page);
+  return make?.(groupId, arg ?? '') ?? START;
 }
 
+/**
+ * The Document id of a change log's path, `doc/{documentId}/log` (#104), from
+ * a route's page, its argument and what follows them; null for any other path.
+ */
+function logOf(page: string | undefined, arg: string | undefined, extra: readonly string[]) {
+  const [last, ...more] = extra;
+  const fits = page === 'doc' && last === 'log' && more.length === 0;
+  return fits && arg !== undefined && DOCUMENT_ID.test(arg) ? arg : null;
+}
+
+/** `#/g/{groupId}`, Group home, or one of its pages, the deepest being a change log (#104). */
 function groupRoute(rest: readonly string[]): Route {
   const [groupId, page, arg, ...extra] = rest;
-  if (groupId === undefined || !ID.test(groupId) || extra.length > 0) return START;
+  if (groupId === undefined || !ID.test(groupId)) return START;
+  if (extra.length > 0) {
+    const documentId = logOf(page, arg, extra);
+    return documentId === null ? START : { name: 'documentLog', groupId, documentId };
+  }
   return page === undefined ? { name: 'group', groupId } : groupPage(groupId, page, arg);
 }
 
@@ -219,15 +301,28 @@ const COALITION_PAGES: ReadonlyMap<string, (coalitionId: string, arg: string) =>
   ],
 ]);
 
+/** The pages inside a coalition that take no argument: its card's form (#122), and its room (#125). */
+const COALITION_PLAIN_PAGES: ReadonlyMap<string, 'coalitionReconcile' | 'coalitionRoom'> = new Map([
+  ['reconcile', 'coalitionReconcile'],
+  ['room', 'coalitionRoom'],
+]);
+
 /**
- * `#/c/{coalitionId}`, a coalition's home, or one of its pages: `doc/{documentId}` or
- * `propose/{atomId}` (#120), or `room` (#125).
+ * `#/c/{coalitionId}`, a coalition's home, or one of its pages:
+ * `doc/{documentId}` or `propose/{atomId}` (#120), `doc/{documentId}/log`,
+ * a Document's change log (#104), `reconcile`, its card's form (#122), or
+ * `room` (#125).
  */
 function coalitionRoute(rest: readonly string[]): Route {
   const [coalitionId, page, arg, ...extra] = rest;
-  if (coalitionId === undefined || !ID.test(coalitionId) || extra.length > 0) return START;
+  if (coalitionId === undefined || !ID.test(coalitionId)) return START;
+  if (extra.length > 0) {
+    const documentId = logOf(page, arg, extra);
+    return documentId === null ? START : { name: 'coalitionLog', coalitionId, documentId };
+  }
   if (page === undefined) return { name: 'coalition', coalitionId };
-  if (page === 'room') return arg === undefined ? { name: 'coalitionRoom', coalitionId } : START;
+  const plain = COALITION_PLAIN_PAGES.get(page);
+  if (plain !== undefined) return arg === undefined ? { name: plain, coalitionId } : START;
   const open = COALITION_PAGES.get(page);
   return open === undefined || arg === undefined ? START : open(coalitionId, arg);
 }
@@ -386,22 +481,66 @@ function optInPath(route: Extract<Route, { readonly name: 'optIn' }>): string {
   return `/${route.narrow ? 'narrow' : 'rules'}/${route.optIn}`;
 }
 
-/** A section composer's path (#75): proposing a change, adding a section, or removing one. */
-function sectionPath(
-  route: Extract<Route, { readonly name: 'propose' | 'add' | 'remove' }>,
-): string {
+/** What a header's page adds to `add` or `add-first` (#103): nothing for a section. */
+function headerSuffix(heading: HeadingLevel | undefined): string {
+  if (heading === undefined) return '';
+  return heading === 1 ? '-header' : '-subheader';
+}
+
+/**
+ * An add's path (#75): after its anchor, or at the start of the Document it
+ * names (#92), or of the group's first Document when it names none; a
+ * header's names its level (#103).
+ */
+function addPath(route: Extract<Route, { readonly name: 'add' }>): string {
+  const suffix = headerSuffix(route.heading);
+  if (route.after === null && route.document !== undefined) {
+    return `/add-first${suffix}/${route.document}`;
+  }
+  return `/add${suffix}${idPath(route.after)}`;
+}
+
+/**
+ * A section composer's path (#75): proposing a change, adding, removing,
+ * moving (#103) or protecting a section (#116).
+ */
+function sectionPath(route: SectionRoute): string {
   switch (route.name) {
     case 'propose':
       return `/propose/${route.atomId}`;
     case 'add':
-      return `/add${idPath(route.after)}`;
+      return addPath(route);
     case 'remove':
       return `/remove/${route.atomId}`;
+    case 'move':
+      return `/move/${route.atomId}`;
+    case 'protect':
+      return `/protect/${route.atomId}`;
   }
+}
+
+/** The section composers' routes (#75, #103, #116), whose paths {@link sectionPath} builds. */
+type SectionRoute = Extract<
+  GroupRoute,
+  { readonly name: 'propose' | 'add' | 'remove' | 'move' | 'protect' }
+>;
+
+const SECTION_ROUTES: ReadonlySet<string> = new Set([
+  'propose',
+  'add',
+  'remove',
+  'move',
+  'protect',
+]);
+
+/** True for a section composer's route. */
+function isSectionRoute(route: GroupRoute): route is SectionRoute {
+  return SECTION_ROUTES.has(route.name);
 }
 
 /** The path of a page inside a group, after `#/g/{groupId}`. */
 function groupPath(route: GroupRoute): string {
+  if (isSectionRoute(route)) return sectionPath(route);
   switch (route.name) {
     case 'group':
       return '';
@@ -415,13 +554,22 @@ function groupPath(route: GroupRoute): string {
       return optInPath(route);
     case 'removal':
       return `/remove-member/${route.member}`;
-    case 'propose':
-    case 'add':
-    case 'remove':
-      return sectionPath(route);
     default:
-      return `/${FIXED_PATHS[route.name]}`;
+      return pagePath(route);
   }
+}
+
+/**
+ * The path of a group page that names at most a Document (#92): one of the
+ * group's Documents, a Document's change log (#104), or a fixed page.
+ */
+function pagePath(
+  route: Extract<GroupRoute, { readonly name: 'document' | 'documentLog' | FixedName }>,
+): string {
+  if (route.name === 'documentLog') return `/doc/${route.documentId}/log`;
+  return route.name === 'document'
+    ? `/doc${idPath(route.documentId ?? null)}`
+    : `/${FIXED_PATHS[route.name]}`;
 }
 
 /** The `href` of a page inside a coalition (#120). */
@@ -434,6 +582,10 @@ function coalitionHref(route: CoalitionRoute): string {
       return `${home}/doc/${route.documentId}`;
     case 'coalitionPropose':
       return `${home}/propose/${route.atomId}`;
+    case 'coalitionReconcile':
+      return `${home}/reconcile`;
+    case 'coalitionLog':
+      return `${home}/doc/${route.documentId}/log`;
     case 'coalitionRoom':
       return `${home}/room`;
   }

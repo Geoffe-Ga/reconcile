@@ -59,13 +59,19 @@ async function enter(user: UserEvent, label: string, value: string): Promise<voi
 }
 
 describe('Create group', () => {
-  const NAMES = { name: 'Riverside Tenants', founder: 'Ana', title: 'House rules' };
+  const NAMES = { name: 'Riverside Tenants', founder: 'Ana', title: 'Mission statement' };
   const genesis = (text: string): EventDraft => ({
     type: 'genesis',
     group: '',
     ts: NOW,
     // Create group adds the founder's encryption key (#98): 43 characters, whatever the key.
-    body: { ...NAMES, atoms: genesisAtoms(text), rules: DEFAULT_RULES, kx: 'k'.repeat(43) },
+    body: {
+      name: NAMES.name,
+      founder: NAMES.founder,
+      documents: [{ title: NAMES.title, atoms: genesisAtoms(text) }],
+      rules: DEFAULT_RULES,
+      kx: 'k'.repeat(43),
+    },
   });
 
   it('refuses a founding Document whose record is 64,001 bytes, tied to its text, and queues nothing', async () => {

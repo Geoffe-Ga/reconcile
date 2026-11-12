@@ -5,6 +5,9 @@ import { Ballot, type Scores } from '../app/Ballot';
 import { ChatLink } from '../app/ChatLink';
 import { type ChatDetails, type ChatMoment, openMoment } from '../app/chatMessages';
 import { Countdown } from '../app/Countdown';
+import { DocumentLine } from '../app/DocumentLine';
+import { documentLead, sectionPlace } from '../app/documentLines';
+import { formatAverageLine, formatZeroLine } from '../app/format';
 import { latestLink } from '../app/latestLink';
 import { ChangeInvolvement } from '../app/LevelPicker';
 import { isHttpLink } from '../app/links';
@@ -23,6 +26,8 @@ import { RemovalResponse } from '../app/RemovalResponse';
 import { Named, SuspendedNote } from '../app/stewards';
 import {
   dissolveView,
+  moveView,
+  protectView,
   removalView,
   stewardView,
   versionDoes,
@@ -36,7 +41,10 @@ import { composeOption } from '../engine/composeOption';
 import { closedByDissolve } from '../engine/dissolve';
 import {
   isAddProposal,
+  isClassProposal,
   isDissolveProposal,
+  isMoveProposal,
+  isNewDocumentProposal,
   isPriorityProposal,
   isReconcileProposal,
   isRemovalProposal,
@@ -44,6 +52,7 @@ import {
   isStewardProposal,
   type ParsedEvent,
   type AddProposalBody,
+  type NewDocumentProposalBody,
   type ProposalBody,
   type ProposalEventBody,
   type RulesProposalBody,
@@ -60,11 +69,13 @@ import type { TallyDetail } from '../engine/tally';
 import {
   motionView,
   type MotionView,
+  type MotionWords,
   motionWords,
   reconcileView,
   type ReconcileView,
 } from '../app/coalitionLines';
 import { CoalitionProgress } from '../app/CoalitionProgress';
+import { MotionTagText } from '../app/MotionTag';
 import { decisionOf } from '../app/versionViews';
 import type { HeldCoalition } from '../store/coalitions';
 import { ConsentMeter } from './ConsentMeter';
@@ -94,6 +105,8 @@ export interface ProposalViewProps {
   readonly onTell: (moment: ChatMoment, details: ChatDetails) => Promise<ShareOutcome>;
   /** Whether this device's leave waits for the relay (#77): then it takes no ballot or version. */
   readonly leaving?: boolean;
+  /** Whether this copy came back from a backup and hasn't heard from its group (#231): the same. */
+  readonly unconfirmed?: boolean;
   /**
    * Queues this member's one response on the removal of them (#115); rejects
    * when it couldn't be saved. Without it, no response form shows.
@@ -159,43 +172,83 @@ interface Comparison {
 const OPTIONS: Comparison = { title: messages.proposal.options, current: null };
 
 /**
- * Each version is a word diff against the section's text now, or for an add
- * (`atom` null, #75), against nothing, so its whole text shows as added. Once
- * a pass has changed the section, or when the section is gone, each version
- * shows as it reads instead.
+ * Each version is a word diff against the section's text now, numbered within
+ * its Document (#92), or for an add (`atom` null, #75) or a new Document's
+ * first sections, against nothing, so its whole text shows as added under
+ * `adding`. Once a pass has changed the section, or when the section is gone,
+ * each version shows as it reads instead.
  */
-function comparisonFor(state: GroupState, atom: string | null, passed: boolean): Comparison {
+function comparisonFor(
+  state: GroupState,
+  atom: string | null,
+  passed: boolean,
+  adding: string = messages.proposal.newSection,
+): Comparison {
   if (passed) return { title: messages.proposal.onBallot, current: null };
-  if (atom === null) return { title: messages.proposal.newSection, current: '' };
-  const index = state.atoms.findIndex((candidate) => candidate.id === atom);
-  const now = state.atoms[index];
-  if (now === undefined) return { title: messages.proposal.proposed, current: null };
-  return { title: messages.proposal.changes(index + 1), current: now.text };
+  if (atom === null) return { title: adding, current: '' };
+  const place = sectionPlace(state, atom);
+  if (place === null) return { title: messages.proposal.proposed, current: null };
+  return { title: messages.proposal.changes(place.number), current: place.atom.text };
 }
 
 /** A steward or rules ballot shows what it decides, never a diff: it changes no section (#102, #117). */
 const STEWARD_BALLOT: Comparison = { title: messages.proposal.onBallot, current: null };
 
-/** True for a Proposal with text: an edit or an add (#75), not a steward or rules one (#102, #117). */
-function writesText(proposal: Proposal): boolean {
-  const { kind } = proposal.target;
-  return kind === 'edit' || kind === 'add';
+/**
+ * A move's one card is shown under "Moving section N" while its section is
+ * in place and it hasn't passed, else under "On the ballot" (#103). It shows
+ * no diff: a move changes no words.
+ */
+function moveComparison(state: GroupState, atom: string, passed: boolean): Comparison {
+  const place = passed ? null : sectionPlace(state, atom);
+  if (place === null) return STEWARD_BALLOT;
+  return { title: messages.proposal.moving(place.number), current: null };
 }
 
-/** The section a Proposal changes, or null when it adds one (#75). */
+/**
+ * A class Proposal's one card is shown under "Protection for section N"
+ * while its section is in place and it hasn't passed, else under "On the
+ * ballot" (#116). It shows no diff: protecting a section changes no words.
+ */
+function classComparison(state: GroupState, atom: string, passed: boolean): Comparison {
+  const place = passed ? null : sectionPlace(state, atom);
+  if (place === null) return STEWARD_BALLOT;
+  return { title: messages.proposal.protecting(place.number), current: null };
+}
+
+/**
+ * True for a Proposal with text: an edit, an add (#75) or a new Document
+ * (#92), not a steward or rules one (#102, #117).
+ */
+function writesText(proposal: Proposal): boolean {
+  const { kind } = proposal.target;
+  return kind === 'edit' || kind === 'add' || kind === 'new-document';
+}
+
+/** The section a Proposal changes, or null when it adds one (#75) or a new Document (#92). */
 function changedAtom(proposal: Proposal): string | null {
-  return proposal.target.kind === 'add' ? null : proposal.atom;
+  const { kind } = proposal.target;
+  return kind === 'add' || kind === 'new-document' ? null : proposal.atom;
+}
+
+/** What a ballot of added text is headed: a new section (#75), or a new Document's first sections (#92). */
+function addingTitle(proposal: Pick<Proposal, 'target'>): string {
+  const { proposal: words } = messages;
+  return proposal.target.kind === 'new-document' ? words.firstSections : words.newSection;
 }
 
 /**
  * What a folded Proposal's versions are shown against: a section, nothing for
- * an add, whose whole text shows as added (#75), nothing for a steward one,
- * or for a priority vote, its options as they are (#107).
+ * an add or a new Document, whose whole text shows as added (#75, #92),
+ * nothing for a steward one, a move (#103) or a class Proposal (#116), or
+ * for a priority vote, its options as they are (#107).
  */
 function comparisonOf(state: GroupState, proposal: Proposal, passed: boolean): Comparison {
   if (isPriority(proposal)) return OPTIONS;
+  if (proposal.target.kind === 'move') return moveComparison(state, proposal.atom, passed);
+  if (proposal.target.kind === 'class') return classComparison(state, proposal.atom, passed);
   return writesText(proposal)
-    ? comparisonFor(state, changedAtom(proposal), passed)
+    ? comparisonFor(state, changedAtom(proposal), passed, addingTitle(proposal))
     : STEWARD_BALLOT;
 }
 
@@ -222,6 +275,24 @@ function OptInWarning({ optIn }: { readonly optIn: OptIn | null }) {
   return optIn === null ? null : (
     <p className="opt-in-warning">{messages.optIns.warnings[optIn]}</p>
   );
+}
+
+/**
+ * The higher bar in words over a ballot that needs it for a section (#116):
+ * a class Proposal, whatever it asks, or a change, move or removal of an
+ * entrenched section. The consent meter draws the same lines, from the
+ * Proposal's own bar.
+ */
+function HigherBar({ proposal }: { readonly proposal: Proposal }) {
+  const { kind } = proposal.target;
+  const { bar } = proposal.outcome;
+  const { proposal: words } = messages;
+  if (proposal.class !== 'entrenched') return null;
+  const lines = [formatAverageLine(bar), formatZeroLine(bar)] as const;
+  if (kind === 'class') return <p className="caption">{words.protectionBar(...lines)}</p>;
+  return kind === 'edit' || kind === 'move' ? (
+    <p className="caption">{words.entrenchedBar(...lines)}</p>
+  ) : null;
 }
 
 /**
@@ -299,6 +370,7 @@ function whyEligibleCantVote(props: ProposalViewProps, proposal: Proposal): stri
 function whyNoVote(props: ProposalViewProps, proposal: Proposal): string | null {
   const { state, me } = props;
   if (props.leaving === true) return messages.leave.noVoting;
+  if (props.unconfirmed === true) return messages.unconfirmed.noVoting;
   if (proposal.eligible.includes(me)) return whyEligibleCantVote(props, proposal);
   if (removalTarget(proposal) === me) return messages.removal.ownRemoval;
   if (removedFrom(state, me) !== undefined) return messages.removal.readOnly;
@@ -345,6 +417,14 @@ function NoVote({ state, me, reason, leaving }: NoVoteProps) {
   );
 }
 
+/**
+ * True while this device takes nothing new for the group: its leave waits
+ * (#77), or its copy back from a backup hasn't heard from the group (#231).
+ */
+function readsOnly(props: ProposalViewProps): boolean {
+  return props.leaving === true || props.unconfirmed === true;
+}
+
 /** True while the vote takes ballots and versions, as far as this device can tell. */
 function isOpen(props: ProposalViewProps, proposal: Proposal): boolean {
   return !proposal.final && props.now < proposal.deadline;
@@ -352,7 +432,7 @@ function isOpen(props: ProposalViewProps, proposal: Proposal): boolean {
 
 /** Whether this member can still add wording: the vote is open, they may propose, and they're staying. */
 function isOpenToVersions(props: ProposalViewProps, proposal: Proposal): boolean {
-  return isOpen(props, proposal) && props.leaving !== true && can(props.state, props.me, 'propose');
+  return isOpen(props, proposal) && !readsOnly(props) && can(props.state, props.me, 'propose');
 }
 
 /**
@@ -363,7 +443,7 @@ function isOpenToVersions(props: ProposalViewProps, proposal: Proposal): boolean
  * unticked Include the title.
  */
 function Tell({ props, proposal }: { props: ProposalViewProps; proposal: Proposal }) {
-  if (!isOpen(props, proposal) || props.leaving === true) return null;
+  if (!isOpen(props, proposal) || readsOnly(props)) return null;
   const moment = openMoment(proposal, props.me, props.now);
   return <TellYourGroup key={moment} moment={moment} proposal={proposal} onTell={props.onTell} />;
 }
@@ -437,6 +517,7 @@ function Vote({ props, proposal, versions, motion }: VoteProps) {
   return (
     <Block title={comparison.title} className="vote">
       <OptInWarning optIn={rulesChangeOf(proposal)?.optIn ?? null} />
+      <HigherBar proposal={proposal} />
       <NarrowedNote state={state} proposal={proposal} />
       <Legend comparison={comparison} open={!proposal.final} />
       {ballotShown(reason, proposal) ? (
@@ -461,7 +542,7 @@ function Vote({ props, proposal, versions, motion }: VoteProps) {
             {meters}
           </ChoiceList>
           {reason === null ? null : (
-            <NoVote state={state} me={me} reason={reason} leaving={props.leaving === true} />
+            <NoVote state={state} me={me} reason={reason} leaving={readsOnly(props)} />
           )}
         </>
       )}
@@ -479,7 +560,7 @@ function PendingVersions({ props, proposal }: { props: ProposalViewProps; propos
       : [],
   );
   if (mine.length === 0) return null;
-  const { current } = comparisonFor(state, changedAtom(proposal), false);
+  const { current } = comparisonFor(state, changedAtom(proposal), false, addingTitle(proposal));
   return (
     <Block title={messages.proposal.yourVersion} className="text-block">
       {mine.map(({ id, text }) =>
@@ -585,7 +666,9 @@ function CutOff(props: { props: ProposalViewProps; proposal: Proposal; words: Cu
         eyebrow={eyebrowOf(proposal, closed)}
         title={proposal.title}
         pageTitle={messages.proposal.pageTitle}
-      />
+      >
+        <DocumentLine lead={documentLead(state, proposal)} groupId={state.group ?? ''} />
+      </PageHeader>
       <div className="stack">
         <div className="meta-lines">
           <p className="meta">
@@ -655,6 +738,29 @@ function Why({ why }: { readonly why: string }) {
 }
 
 /**
+ * A coalition asking into the coalition this motion is from (#122): its
+ * name, its level and its member groups, as its admit motion states them,
+ * which each group's vote checks.
+ */
+function AdmitsCoalition({ words }: { readonly words: MotionWords | null }) {
+  if (words === null || words.admits === null || words.admitsLevel === 0) return null;
+  const { coalitions } = messages;
+  return (
+    <Block title={coalitions.admitsTitle} className="card admits-coalition">
+      <p className="heading-3">
+        <bdi>{words.admits}</bdi>
+      </p>
+      <p className="caption">{coalitions.admitsLevel(words.admitsLevel)}</p>
+      {words.admitsGroups.length === 0 ? null : (
+        <p>
+          {coalitions.admitsCoalition} <bdi>{words.admitsGroups.join(', ')}</bdi>
+        </p>
+      )}
+    </Block>
+  );
+}
+
+/**
  * A reconcile Proposal's coalition (#114): its name and statement as the
  * card set them, then, once its genesis names them, the other groups it
  * reconciles with.
@@ -686,16 +792,6 @@ function ReconcileStatement({ view }: { readonly view: ReconcileView | null }) {
   );
 }
 
-/** "Coalition vote · <coalition>", the coalition's name in its own `<bdi>` (#120). */
-function MotionTag({ coalition }: { readonly coalition: string }) {
-  const { voteTag, tagSeparator } = messages.coalitions;
-  return (
-    <>
-      {voteTag} {tagSeparator} <bdi>{coalition}</bdi>
-    </>
-  );
-}
-
 /**
  * The coalition's own result once it has decided a motion (#120), above the
  * group's: what changed, and each group's pass or fail.
@@ -707,10 +803,15 @@ function MotionResult({ motion }: { readonly motion: MotionView | null }) {
   );
 }
 
-/** A coalition motion's progress while the coalition is still deciding it (#120). */
+/**
+ * A coalition motion's progress while the coalition is still deciding it
+ * (#120), and for one from further up, each coalition it came through (#122).
+ */
 function MotionProgress({ motion }: { readonly motion: MotionView | null }) {
   if (motion === null || motion.progress.outcome !== undefined) return null;
-  return <CoalitionProgress progress={motion.progress} />;
+  return (
+    <CoalitionProgress progress={motion.progress} steps={motion.steps} top={motion.coalition} />
+  );
 }
 
 /** A removal's response block on its ballot (#115): the response, or the one-time form to its target. */
@@ -742,8 +843,9 @@ function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Propo
   const { state } = props;
   const cutOff = cutOffOf(props, proposal);
   if (cutOff !== null) return <CutOff props={props} proposal={proposal} words={cutOff} />;
-  const readOnly = props.leaving === true || isArchived(state, props.me);
-  const motion = motionView(proposal, state, props.coalitions ?? []);
+  const readOnly = readsOnly(props) || isArchived(state, props.me);
+  const coalitions = props.coalitions ?? [];
+  const motion = motionView(proposal, state, coalitions);
   const names = motion?.state ?? state;
   const versions = versionViews(state, proposal, names);
   return (
@@ -753,12 +855,14 @@ function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Propo
           motion === null ? (
             eyebrowOf(proposal, proposal.final)
           ) : (
-            <MotionTag coalition={motion.coalition} />
+            <MotionTagText coalition={motion.coalition} through={motion.through} />
           )
         }
         title={proposal.title}
         pageTitle={messages.proposal.pageTitle}
-      />
+      >
+        <DocumentLine lead={documentLead(state, proposal)} groupId={state.group ?? ''} />
+      </PageHeader>
       <MotionResult motion={motion} />
       {proposal.final ? (
         <ResultView
@@ -779,7 +883,8 @@ function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Propo
       </div>
       <Response props={props} proposal={proposal} readOnly={readOnly} />
       <MotionProgress motion={motion} />
-      <ReconcileStatement view={reconcileView(proposal, props.coalitions ?? [])} />
+      <ReconcileStatement view={reconcileView(proposal, coalitions)} />
+      <AdmitsCoalition words={motionWords(proposal, coalitions)} />
       <CarriedDispatch proposal={proposal} />
       <ChatLink href={discussionLink(state, proposal)} />
       <Tell props={props} proposal={proposal} />
@@ -792,6 +897,8 @@ function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Propo
 interface WaitingProps {
   readonly state: GroupState;
   readonly me: string;
+  /** The Proposal's event id, which is its id once the relay has it. */
+  readonly id: string;
   readonly body: ProposalEventBody;
   readonly pending: boolean;
   readonly reachable: boolean;
@@ -823,8 +930,9 @@ function waitingRules(state: GroupState, author: string, body: RulesProposalBody
 
 /**
  * What a waiting ballot decides other than a section's text: a steward,
- * rules, dissolve, member removal or coalition card (#102, #117, #108, #115,
- * #114), or a priority vote's options (#107); null for one that changes text.
+ * rules, dissolve, member removal, move, class or coalition card (#102,
+ * #117, #108, #115, #103, #116, #114), or a priority vote's options (#107);
+ * null for one that changes text.
  */
 function waitingDecision(state: GroupState, author: string, body: ProposalEventBody) {
   if (isStewardProposal(body)) {
@@ -850,6 +958,15 @@ function waitingDecision(state: GroupState, author: string, body: ProposalEventB
     const versions = [{ id: '', number: 1, author, text: '', dissolve }];
     return { comparison: STEWARD_BALLOT, versions, optIn: null };
   }
+  if (isMoveProposal(body)) {
+    const versions = [{ id: '', number: 1, author, text: '', move: moveView(state, body.target) }];
+    return { comparison: moveComparison(state, body.target.atom, false), versions, optIn: null };
+  }
+  if (isClassProposal(body)) {
+    const protect = protectView(state, body.target);
+    const versions = [{ id: '', number: 1, author, text: '', protect }];
+    return { comparison: classComparison(state, body.target.atom, false), versions, optIn: null };
+  }
   if (isRemovalProposal(body)) {
     const removal = removalView(state, body.target.member);
     const versions = [{ id: '', number: 1, author, text: '', removal }];
@@ -865,9 +982,14 @@ function waitingDecision(state: GroupState, author: string, body: ProposalEventB
   return null;
 }
 
-/** True for a Proposal whose versions hold text: an edit, a section's removal or an add (#75). */
-function changesText(body: ProposalEventBody): body is ProposalBody | AddProposalBody {
-  return !('target' in body) || isAddProposal(body);
+/**
+ * True for a Proposal whose versions hold text: an edit, a section's removal,
+ * an add (#75) or a new Document (#92).
+ */
+function changesText(
+  body: ProposalEventBody,
+): body is ProposalBody | AddProposalBody | NewDocumentProposalBody {
+  return !('target' in body) || isAddProposal(body) || isNewDocumentProposal(body);
 }
 
 /** How a waiting Proposal's one version shows: its text against the section, or what its ballot decides. */
@@ -877,12 +999,27 @@ function waitingVersions(state: GroupState, me: string, body: ProposalEventBody)
   if (decided !== null) return decided;
   // An admit target is only ever a coalition's (#114), so it waits in no group's outbox.
   if (!changesText(body)) return { comparison: STEWARD_BALLOT, versions: [], optIn: null };
-  // An add's whole text shows as added, and it says where it goes (#75); a section's removal says so too.
-  const add = isAddProposal(body);
-  const comparison = comparisonFor(state, add ? null : body.atom, false);
-  const does = versionDoes(state, add ? body.target : { kind: 'edit' }, body.text);
+  // An add's or a new Document's whole text shows as added, and an add says where it goes
+  // (#75, #92); a section's removal says so too.
+  const target = 'target' in body ? body.target : ({ kind: 'edit' } as const);
+  const atom = 'atom' in body ? body.atom : null;
+  const comparison = comparisonFor(state, atom, false, addingTitle({ target }));
+  const does = versionDoes(state, target, body.text);
   const version = { id: '', number: 1, author, text: body.text };
   return { comparison, versions: [does === null ? version : { ...version, does }], optIn: null };
+}
+
+/** What a waiting Proposal changes or creates, as its page leads with it (#92), or null for none. */
+function waitingLead(state: GroupState, id: string, body: ProposalEventBody) {
+  if (isAddProposal(body) || isNewDocumentProposal(body)) {
+    return documentLead(state, { id, atom: id, target: body.target });
+  }
+  if (isMoveProposal(body) || isClassProposal(body)) {
+    return documentLead(state, { id, atom: body.target.atom, target: { kind: 'edit' } });
+  }
+  return 'atom' in body
+    ? documentLead(state, { id, atom: body.atom, target: { kind: 'edit' } })
+    : null;
 }
 
 /** A waiting reconcile Proposal's coalition, as its card set it: no other group is named yet (#114). */
@@ -893,7 +1030,7 @@ function waitingReconcile(body: ProposalEventBody): ReconcileView | null {
 }
 
 /** A Proposal this device made that the relay hasn't ordered yet: no deadline, no ballot. */
-function Waiting({ state, me, body, pending, reachable }: WaitingProps) {
+function Waiting({ state, me, id, body, pending, reachable }: WaitingProps) {
   const { comparison, versions, optIn } = waitingVersions(state, me, body);
   return (
     <Screen state={state}>
@@ -901,7 +1038,9 @@ function Waiting({ state, me, body, pending, reachable }: WaitingProps) {
         eyebrow={messages.proposal.eyebrowNew}
         title={body.title}
         pageTitle={messages.proposal.pageTitle}
-      />
+      >
+        <DocumentLine lead={waitingLead(state, id, body)} groupId={state.group ?? ''} />
+      </PageHeader>
       <Why why={body.why} />
       <ReconcileStatement view={waitingReconcile(body)} />
       <Block title={comparison.title} className="vote">
@@ -948,6 +1087,7 @@ export function ProposalView(props: ProposalViewProps) {
       <Waiting
         state={state}
         me={props.me}
+        id={proposalId}
         body={waiting.body}
         pending={waiting.pending}
         reachable={reachable}

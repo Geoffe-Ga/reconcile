@@ -27,6 +27,7 @@ import { COALITION_STATEMENT, seatSecret, testSecret } from '../test/coalitions'
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { authorOf, signedAs, testKeys, testKx } from '../test/keys';
+import { relayTook } from '../test/outbox';
 import { MINUTE_MS, shownState, sweepArchives } from './archive';
 import { type BackedUpGroup, type Group, openStore, type Store } from './db';
 import { foldGroup } from './expiry';
@@ -58,8 +59,7 @@ function founding() {
     body: {
       name: 'Riverside Tenants',
       founder: 'Ana',
-      title: 'House rules',
-      atoms: ['Quiet after 11pm.'],
+      documents: [{ title: 'House rules', atoms: ['Quiet after 11pm.'] }],
       kx: testKx('ana').kx,
     },
   });
@@ -281,7 +281,7 @@ describe('removing a member on this device (#115)', () => {
     await device.store.enqueue(groupId, last.record);
     await device.sync.syncOnce();
     const outbox = (await device.store.getGroup(groupId))?.outbox ?? [];
-    await device.store.markSent(groupId, outbox[0] ?? new Uint8Array());
+    await relayTook(device.store, groupId, outbox.slice(0, 1));
     await device.store.markLeaving(groupId, leave.record);
     await settleRemoval(device.store, groupId, () => TS);
     expect((await outboxOf(device.store, groupId)).map((e) => e?.type)).toEqual(['leave']);
@@ -358,7 +358,11 @@ describe('a removed member’s group and backup files (#78)', () => {
     });
     opened.push(sync);
 
-    expect(await importGroups(other, file, 'a long walk')).toBe(1);
+    expect(await importGroups(other, file, 'a long walk')).toEqual({
+      groups: 1,
+      skipped: 0,
+      older: false,
+    });
 
     const restored = (await other.getGroup(groupId)) ?? never();
     expect(restored.archived).toEqual({ reason: 'removed' });
@@ -643,5 +647,89 @@ describe('settleRemoval with no push upkeep', () => {
     await settleRemoval(store, groupId, () => TS);
 
     expect((await store.getGroup(groupId))?.archived).toEqual({ reason: 'removed' });
+  });
+});
+
+describe('a removal in a restored copy that hasn’t heard from its group (#231)', () => {
+  /** `name`'s copy of the group as a store-level restore takes it: its log, genesis first, last synced at START + 1. */
+  function copyOf(group: Founded, name: 'ana' | 'cal', events: readonly SignedEvent[]) {
+    const { secretKey, author } = testKeys(name);
+    const log = [group.genesis, ...events].map((event, i) => ({
+      seq: i + 1,
+      received: START,
+      bytes: event.record,
+    }));
+    const copy: BackedUpGroup = {
+      groupId: group.genesis.id,
+      secret: group.secret,
+      signingKey: secretKey,
+      kxKey: testKx(name).kxKey,
+      me: { author, name: name === 'ana' ? 'Ana' : 'Cal' },
+      log,
+      cursor: log.length,
+      relayNow: START + 1,
+      instance: 'i',
+      lastSyncAt: TS,
+      missingHistory: false,
+    };
+    return copy;
+  }
+
+  /** A store that took `copy` back from a backup file, read-only for now. */
+  async function restoring(copy: BackedUpGroup) {
+    const store = await openStore(DB);
+    stores.push(store);
+    await store.restoreGroups([copy]);
+    expect((await store.getGroup(copy.groupId))?.archived?.reason).toBe('unconfirmed');
+    return store;
+  }
+
+  it('archives it as removed, for good, once its fold holds this member’s remove, and forgets no push', async () => {
+    const group = founding();
+    const { events, last, remove } = history(group);
+    const store = await restoring(copyOf(group, 'cal', [...events, last, remove('ben')]));
+    const forgot: Group[] = [];
+
+    await settleRemoval(
+      store,
+      group.genesis.id,
+      () => TS,
+      (held) => forgot.push(held),
+    );
+
+    expect((await store.getGroup(group.genesis.id))?.archived).toEqual({ reason: 'removed' });
+    // A forget would DELETE its registration, naming the group's mailboxes; it sends nothing.
+    expect(forgot).toEqual([]);
+  });
+
+  it('queues no remove while it reads only, though its removal’s pass is final', async () => {
+    const group = founding();
+    const groupId = group.genesis.id;
+    const { events, last, removal } = history(group);
+    const store = await restoring(copyOf(group, 'ana', [...events, last]));
+
+    await settleRemoval(store, groupId, () => TS);
+
+    expect(await outboxOf(store, groupId)).toEqual([]);
+    // The control: once an invite's merge opens it, the same fold queues Ana's remove.
+    await store.mergeLog(groupId, [], (bytes) => parseRecord(bytes)?.id ?? null);
+    await settleRemoval(store, groupId, () => TS);
+    expect((await outboxOf(store, groupId)).map((event) => event?.body)).toEqual([
+      { proposal: removal.id },
+    ]);
+  });
+
+  it('is no archive for the launch sweep to clear, whatever its fold holds', async () => {
+    const group = founding();
+    const groupId = group.genesis.id;
+    const { events, last, remove } = history(group);
+    const store = await restoring(copyOf(group, 'cal', [...events, last, remove('ben')]));
+    const later = (START + 400 * DAY_MINUTES) * MINUTE_MS;
+
+    await sweepArchives(store, () => later);
+
+    const held = (await store.getGroup(groupId)) ?? never();
+    expect(held.archived?.reason).toBe('unconfirmed');
+    expect(held.log).toHaveLength(7);
   });
 });

@@ -11,10 +11,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { local, text, utf8 } from '../test/bytes';
 import { base64url } from './base64url';
 import {
+  BACKUP_GROUP_TAG_INFO,
   BACKUP_ID_INFO,
   BACKUP_KEY_BYTES,
   BACKUP_SEAL_INFO,
   backupIdFor,
+  groupTagFor,
   MAX_RELAY_BACKUP_PLAINTEXT,
   newBackupKey,
   newScrubBlob,
@@ -28,12 +30,23 @@ import {
 /** `vectors/relayBackup.json`: derivations and one sealed blob, computed outside @noble. */
 interface RelayBackupFile {
   readonly kind: 'relayBackup';
-  readonly infos: { readonly backupId: string; readonly sealKey: string };
+  readonly infos: {
+    readonly backupId: string;
+    readonly sealKey: string;
+    readonly groupTag: string;
+  };
   readonly vectors: readonly {
     readonly name: string;
     readonly key: readonly number[];
     readonly backupId: readonly number[];
     readonly sealKey: readonly number[];
+  }[];
+  readonly groupTags: readonly {
+    readonly name: string;
+    readonly key: readonly number[];
+    readonly groupId: readonly number[];
+    readonly author: readonly number[];
+    readonly tag: readonly number[];
   }[];
   readonly sealed: {
     readonly key: readonly number[];
@@ -64,11 +77,12 @@ afterEach(() => {
 });
 
 /** HKDF-SHA-256 with an empty salt by the platform's WebCrypto: a second implementation. */
-async function platformHkdf(secret: Uint8Array, info: string): Promise<Uint8Array> {
+async function platformHkdf(secret: Uint8Array, info: string | Uint8Array): Promise<Uint8Array> {
   const key = await crypto.subtle.importKey('raw', Uint8Array.from(secret), 'HKDF', false, [
     'deriveBits',
   ]);
-  const params = { name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(0), info: utf8(info) };
+  const infoBytes = typeof info === 'string' ? utf8(info) : Uint8Array.from(info);
+  const params = { name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(0), info: infoBytes };
   return new Uint8Array(await crypto.subtle.deriveBits(params, key, 256));
 }
 
@@ -85,13 +99,27 @@ function nextRandom(bytes: readonly number[]): void {
 describe('relayBackup.json', () => {
   it('names the labels and pins the id of each key', () => {
     expect(vector.kind).toBe('relayBackup');
-    expect(vector.infos).toEqual({ backupId: BACKUP_ID_INFO, sealKey: BACKUP_SEAL_INFO });
-    expect([BACKUP_ID_INFO, BACKUP_SEAL_INFO]).toEqual([
+    expect(vector.infos).toEqual({
+      backupId: BACKUP_ID_INFO,
+      sealKey: BACKUP_SEAL_INFO,
+      groupTag: BACKUP_GROUP_TAG_INFO,
+    });
+    expect([BACKUP_ID_INFO, BACKUP_SEAL_INFO, BACKUP_GROUP_TAG_INFO]).toEqual([
       'reconcile/v1/backup-id',
       'reconcile/v1/backup-seal',
+      'reconcile/v1/backup-group-tag',
     ]);
     for (const { key, backupId } of vector.vectors) {
       expect(backupIdFor(Uint8Array.from(key))).toBe(base64url(Uint8Array.from(backupId)));
+    }
+  });
+
+  it('pins the tag of a group under each key, for each author (#327)', () => {
+    expect(vector.groupTags).toHaveLength(2);
+    for (const { key, groupId, author, tag } of vector.groupTags) {
+      const id = base64url(Uint8Array.from(groupId));
+      const member = base64url(Uint8Array.from(author));
+      expect(groupTagFor(Uint8Array.from(key), id, member)).toBe(base64url(Uint8Array.from(tag)));
     }
   });
 
@@ -130,6 +158,59 @@ describe('backupIdFor', () => {
 
   it.each([0, 16, 31, 33])('refuses a %i-byte key', (length) => {
     expect(() => backupIdFor(new Uint8Array(length))).toThrow(
+      new RangeError('A backup key is 32 bytes.'),
+    );
+  });
+});
+
+describe('groupTagFor (#327)', () => {
+  const ids = fc.uint8Array({ minLength: 32, maxLength: 32 }).map(base64url);
+
+  it('is WebCrypto’s HKDF of the key under its label, a zero byte, the group id, a zero byte and the author', async () => {
+    await fc.assert(
+      fc.asyncProperty(keys, ids, ids, async (key, groupId, author) => {
+        const info = utf8(`${BACKUP_GROUP_TAG_INFO}\u0000${groupId}\u0000${author}`);
+
+        const tag = groupTagFor(key, groupId, author);
+
+        expect(tag).toBe(base64url(await platformHkdf(key, info)));
+        expect(tag).toMatch(/^[A-Za-z0-9_-]{43}$/);
+        expect([groupId, author, backupIdFor(key)]).not.toContain(tag);
+      }),
+      { numRuns: 30 },
+    );
+  });
+
+  it('differs for another key, another group, or another author in the same group', () => {
+    const [groupId, author, other] = ['a', 'b', 'c'].map((fill) =>
+      base64url(utf8(fill.repeat(32))),
+    );
+    if (groupId === undefined || author === undefined || other === undefined) {
+      throw new Error('Expected three ids.');
+    }
+    const tag = groupTagFor(KEY, groupId, author);
+
+    expect(groupTagFor(KEY, groupId, author)).toBe(tag);
+    expect(groupTagFor(OTHER_KEY, groupId, author)).not.toBe(tag);
+    expect(groupTagFor(KEY, other, author)).not.toBe(tag);
+    expect(groupTagFor(KEY, groupId, other)).not.toBe(tag);
+    expect(groupTagFor(KEY, author, groupId)).not.toBe(tag);
+  });
+
+  it.each([
+    ['a short group id', 'x'.repeat(42), 'y'.repeat(43)],
+    ['a long group id', 'x'.repeat(44), 'y'.repeat(43)],
+    ['a group id outside base64url', `${'x'.repeat(42)}=`, 'y'.repeat(43)],
+    ['a short author', 'x'.repeat(43), 'y'.repeat(42)],
+    ['an author outside base64url', 'x'.repeat(43), `${'y'.repeat(42)}\u0000`],
+  ])('refuses %s', (_, groupId, author) => {
+    expect(() => groupTagFor(KEY, groupId, author)).toThrow(
+      new RangeError('A group id and an author are each 43 base64url characters.'),
+    );
+  });
+
+  it('refuses a key that isn’t 32 bytes', () => {
+    expect(() => groupTagFor(new Uint8Array(31), 'x'.repeat(43), 'y'.repeat(43))).toThrow(
       new RangeError('A backup key is 32 bytes.'),
     );
   });

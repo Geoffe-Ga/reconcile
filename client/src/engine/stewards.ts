@@ -21,7 +21,14 @@
  */
 import { can, isSuspended, type Roster, votingRightsCount, wouldVote } from './capabilities';
 import type { AdmitChange, MotionTarget, ReconcileChange } from './coalition';
-import type { AddTarget, DissolveTarget, RemoveTarget } from './event';
+import type {
+  AddTarget,
+  DissolveTarget,
+  MoveTarget,
+  NewDocumentTarget,
+  RemoveTarget,
+  SealedReconcileTarget,
+} from './event';
 import {
   effectiveOptIn,
   isOff,
@@ -34,7 +41,7 @@ import {
   rulesChangeOf,
 } from './optIns';
 import { type Closing, isOpenAt } from './open';
-import { DAY_MINUTES, type Rules } from './rules';
+import { type ClassChange, DAY_MINUTES, type Rules } from './rules';
 import { codePointLength } from './text';
 
 /** The steward seats, in order (ADR-0049). */
@@ -99,20 +106,26 @@ export interface StewardChange {
 
 /**
  * What a Proposal changes: an Atom's text, where `""` removes it (#63, #72,
- * #75), a new section after an anchor (#75), a steward seat (#102), an opt-in
+ * #75), a new section after an anchor (#75), a new Document (#92), a
+ * section's place (#103) or class (#116), a steward seat (#102), an opt-in
  * (#117), whether the group goes on (#108), or who is in it (#115). Or it
- * reconciles the group into a coalition, or is a coalition's motion, which its
- * seats decide (#100), or in a coalition admits a group (#114). A priority
- * vote changes nothing: its top option becomes the focus (#107).
+ * reconciles the group into a coalition, or is a coalition's motion, which
+ * its seats decide (#100), or in a coalition admits a group (#114) or takes a
+ * seat above, its secrets sealed (#122). A priority vote changes nothing: its
+ * top option becomes the focus (#107).
  */
 export type ProposalTarget =
   | { readonly kind: 'edit' }
   | AddTarget
+  | NewDocumentTarget
+  | MoveTarget
+  | ClassChange
   | StewardChange
   | RulesChange
   | DissolveTarget
   | RemoveTarget
   | ReconcileChange
+  | SealedReconcileTarget
   | MotionTarget
   | { readonly kind: 'priority' }
   | AdmitChange;

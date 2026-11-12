@@ -1,17 +1,16 @@
-import { type ReactNode, type SyntheticEvent, useRef, useState } from 'react';
+import { type SyntheticEvent, useRef, useState } from 'react';
 import { Button, Form, Link } from 'react-aria-components';
 
 import { CopyLink } from '../app/CopyLink';
 import { messages } from '../app/messages';
 import type { CardValues } from '../app/reconcile';
-import { routeHref } from '../app/router';
-import { AtomText } from '../app/text/AtomText';
+import { type Route, routeHref } from '../app/router';
+import { sectionsCheck, sectionsPreview } from '../app/sectionsPreview';
 import { MarkdownField } from '../app/text/MarkdownField';
 import { BackLink, Field, PageHeader } from '../app/ui';
-import { genesisAtoms } from '../engine/atomText';
 import { WHY_MAX } from '../engine/fold';
 import { NAME_MAX } from '../invite/envelope';
-import { nfcLength, splitAtoms } from '../engine/text';
+import { nfcLength } from '../engine/text';
 
 /** Where making a card got to: refused as too large, or queued with its post still to run. */
 export type CardStep =
@@ -29,6 +28,11 @@ export interface ReconcileCardProps {
   readonly groupId: string;
   /** The group's name, for the way back. */
   readonly groupName: string;
+  /**
+   * For Reconcile with another coalition (#122), the coalition's genesis id:
+   * the way back, and the way on once the card is made, go to its home.
+   */
+  readonly coalitionId?: string;
   /** Queues the group's reconcile Proposal and keeps the coalition's entry, from valid entries. */
   readonly onMake: (values: CardValues) => Promise<CardStep>;
   /** Puts text on the clipboard; rejects when the browser blocks it. */
@@ -48,25 +52,7 @@ const { card } = messages;
 const checkName = required(card.nameMissing, NAME_MAX, card.nameTooLong(NAME_MAX));
 const checkWhy = required(card.whyMissing, WHY_MAX, card.whyTooLong(WHY_MAX));
 const checkYourName = (value: string) => (value.trim() === '' ? card.yourNameMissing : null);
-const checkStatement = (value: string) =>
-  splitAtoms(value).length === 0 ? card.statementMissing : null;
-
-/** The statement as its sections will read, split and normalized as the genesis will be. */
-function preview(value: string): ReactNode {
-  const atoms = genesisAtoms(value);
-  if (atoms.length === 0) return null;
-  return (
-    <div className="document">
-      {atoms.map((atom, index) => (
-        // Sections are numbered by position, as the Document view numbers them.
-        <div key={index} className="atom">
-          <p className="eyebrow">{messages.create.section(index + 1)}</p>
-          <AtomText text={atom} />
-        </div>
-      ))}
-    </div>
-  );
-}
+const checkStatement = sectionsCheck(card.statementMissing);
 
 function readValues(form: HTMLFormElement, statement: string): CardValues {
   const data = new FormData(form);
@@ -75,6 +61,21 @@ function readValues(form: HTMLFormElement, statement: string): CardValues {
     return typeof value === 'string' ? value.trim() : '';
   };
   return { name: read('name'), statement, why: read('why'), yourName: read('yourName') };
+}
+
+/** The form's title, lede and hints: a group's card's, or a coalition's (#122). */
+function wordsFor(coalitionId: string | undefined) {
+  if (coalitionId === undefined) {
+    const { title, lede, nameHint, statementHint, whyHint } = card;
+    return { title, lede, nameHint, statementHint, whyHint };
+  }
+  return {
+    title: card.coalitionTitle,
+    lede: card.coalitionLede,
+    nameHint: card.coalitionNameHint,
+    statementHint: card.coalitionStatementHint,
+    whyHint: card.coalitionWhyHint,
+  };
 }
 
 /** Where the screen is: the form, posting the card, a post that failed, or the link. */
@@ -91,27 +92,33 @@ interface MadeProps {
   readonly proposalId: string;
   readonly link: string;
   readonly copyText: ReconcileCardProps['copyText'];
+  /** A coalition's card (#122): its home, where its reconcile motion shows. */
+  readonly coalitionId?: string | undefined;
 }
 
 /**
  * The card's link, once the relay holds its envelope: a read-only field with
  * Copy beside the warning about who can read it, then the way to the group's
- * own Proposal.
+ * own Proposal, or for a coalition's card, to the coalition's home (#122).
  */
-export function CardMade({ groupId, proposalId, link, copyText }: MadeProps) {
+export function CardMade({ groupId, proposalId, link, copyText, coalitionId }: MadeProps) {
+  const next =
+    coalitionId === undefined
+      ? { href: routeHref({ name: 'proposal', groupId, proposalId }), label: card.proposalLink }
+      : { href: routeHref({ name: 'coalition', coalitionId }), label: card.coalitionLink };
   return (
     <div className="stack">
       <CopyLink
         link={link}
         label={card.linkLabel}
-        hint={card.warning}
+        hint={coalitionId === undefined ? card.warning : card.coalitionWarning}
         button={card.copy}
         primary
         copyText={copyText}
       />
       <p>
-        <Link className="forward-link" href={routeHref({ name: 'proposal', groupId, proposalId })}>
-          {card.proposalLink}
+        <Link className="forward-link" href={next.href}>
+          {next.label}
           <span aria-hidden="true">{messages.app.forward}</span>
         </Link>
       </p>
@@ -122,10 +129,12 @@ export function CardMade({ groupId, proposalId, link, copyText }: MadeProps) {
 interface FormProps {
   readonly onSubmit: (form: HTMLFormElement, statement: string) => Promise<void>;
   readonly refused: Record<string, string>;
+  /** The hints under the name, the statement and Why: a group's, or a coalition's (#122). */
+  readonly hints: Pick<ReturnType<typeof wordsFor>, 'nameHint' | 'statementHint' | 'whyHint'>;
 }
 
 /** The coalition's name, its first statement, why, and your name in it. */
-function CardForm({ onSubmit, refused }: FormProps) {
+function CardForm({ onSubmit, refused, hints }: FormProps) {
   const [statement, setStatement] = useState('');
   const submit = (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -136,7 +145,7 @@ function CardForm({ onSubmit, refused }: FormProps) {
       <Field
         name="name"
         label={card.nameLabel}
-        hint={card.nameHint}
+        hint={hints.nameHint}
         autoComplete="off"
         isRequired
         validate={checkName}
@@ -144,17 +153,17 @@ function CardForm({ onSubmit, refused }: FormProps) {
       <MarkdownField
         name="statement"
         label={card.statementLabel}
-        hint={card.statementHint}
+        hint={hints.statementHint}
         value={statement}
         onChange={setStatement}
         isRequired
         validate={checkStatement}
-        preview={preview}
+        preview={sectionsPreview}
       />
       <Field
         name="why"
         label={card.whyLabel}
-        hint={card.whyHint}
+        hint={hints.whyHint}
         multiline
         isRequired
         validate={checkWhy}
@@ -203,9 +212,12 @@ function Unsent({ phase, onRetry }: { readonly phase: Phase; readonly onRetry: (
  * your name in the coalition. Submit queues the group's reconcile Proposal,
  * then posts the card; only once the relay holds it does its link show, with
  * Copy and the warning about who can read it. When posting fails, the
- * Proposal stays queued and Try again posts the same card.
+ * Proposal stays queued and Try again posts the same card. Given a
+ * `coalitionId`, it is Reconcile with another coalition
+ * (`#/c/{coalitionId}/reconcile`; #122), the same form one level up.
  */
-export function ReconcileCard({ groupId, groupName, onMake, copyText }: ReconcileCardProps) {
+export function ReconcileCard(props: ReconcileCardProps) {
+  const { groupId, groupName, onMake, copyText, coalitionId } = props;
   const busy = useRef(false);
   const [phase, setPhase] = useState<Phase>({ kind: 'form' });
   const [refused, setRefused] = useState<Record<string, string>>({});
@@ -234,18 +246,21 @@ export function ReconcileCard({ groupId, groupName, onMake, copyText }: Reconcil
   };
 
   const made = phase.kind === 'made';
+  const words = wordsFor(coalitionId);
+  const back: Route =
+    coalitionId === undefined ? { name: 'group', groupId } : { name: 'coalition', coalitionId };
   return (
     <main className="shell">
-      <BackLink to={{ name: 'group', groupId }} label={groupName} />
+      <BackLink to={back} label={groupName} />
       <PageHeader
-        title={made ? card.madeTitle : card.title}
-        pageTitle={card.pageTitle}
+        title={made ? card.madeTitle : words.title}
+        pageTitle={words.title}
         eyebrow={messages.coalitions.heading}
       />
       {phase.kind === 'form' ? (
         <>
-          <p className="lede">{card.lede}</p>
-          <CardForm onSubmit={make} refused={refused} />
+          <p className="lede">{words.lede}</p>
+          <CardForm onSubmit={make} refused={refused} hints={words} />
         </>
       ) : null}
       {phase.kind === 'posting' || phase.kind === 'unsent' ? (
@@ -262,6 +277,7 @@ export function ReconcileCard({ groupId, groupName, onMake, copyText }: Reconcil
           proposalId={phase.step.proposalId}
           link={phase.link}
           copyText={copyText}
+          coalitionId={coalitionId}
         />
       ) : null}
     </main>

@@ -16,8 +16,7 @@
             "body": {
               "name": "Riverside Tenants",
               "founder": "Ana",
-              "title": "House rules",
-              "atoms": ["Quiet after 11pm."]
+              "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
             }
           }
         },
@@ -76,8 +75,12 @@
             "body": {
               "kind": "coalition",
               "name": "Eastside Housing",
-              "title": "Mission statement",
-              "atoms": ["Everyone on the east side has a safe home."],
+              "documents": [
+                {
+                  "title": "Mission statement",
+                  "atoms": ["Everyone on the east side has a safe home."]
+                }
+              ],
               "seats": [
                 {
                   "name": "Riverside Tenants",

@@ -7,7 +7,9 @@
  * the entrenched bar is never easier than the ordinary one, and neither depends on the order
  * ballots arrive in. And of windows (#106): a Proposal opens only for a window its class
  * allows, and runs exactly that long. And of epochs (#98): a record read from another epoch's
- * mailbox changes nothing, not even relay time. And of removal (#115): nothing the member a
+ * mailbox changes nothing, not even relay time, and a leave stranded in the old mailbox after a
+ * key change ends a membership only through its copy in the new one, so a device that never
+ * read the old copy folds the same (#225). And of removal (#115): nothing the member a
  * removal names sends on it counts, they are taken out once whoever posts the remove, and after
  * the pass only their leave counts; removal's bar is never harder than the entrenched one and
  * never depends on ballot order. And of coalitions (#100): a motion's outcome doesn't depend on
@@ -16,20 +18,48 @@
  * options that pass, best first, its first is always the tally's winner, and the order ballots
  * arrive in never changes it. And of ballot expiry (#111): a device that has cleared a closed
  * Proposal's ballots, keeping its result, folds the same Document and outcomes as one that still
- * holds them, even for an event in the closing minute before the closing ballot (#289).
+ * holds them, even for an event in the closing minute before the closing ballot (#289), and reads
+ * the same section history. And of section history (#104): replaying a section's passed texts,
+ * oldest first, ends at its current text or its removal, and a Document's change log holds each
+ * final pass once. And of the front door (#288): no door ever stands whose secrets a record
+ * sealed under a key someone who has left held carried, whatever order Proposals, ballots, leaves
+ * and key changes come in. And of moves (#103): passed moves only ever reorder a Document,
+ * keeping its Atom ids and their bytes, and every device that folds the same records builds the
+ * same order, which follows close time, then the moves' relay order, whatever order their ballots
+ * arrive in. And of section classes (#116): every Proposal on a section opens at the class its
+ * section's last passed class Proposal gave it, a section's class is that Proposal's, and once a
+ * section is eternal no Proposal on it ever opens again.
  */
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { folded, foldLogs, Logs, seatOf } from '../test/coalitions';
+import {
+  folded,
+  foldLogs,
+  Logs,
+  NestedLogs,
+  type NestedSeat,
+  seatKey,
+  seatOf,
+} from '../test/coalitions';
+import { doorOf } from '../test/door';
 import { authorOf, signedAs, testKx } from '../test/keys';
 import { LEVELS } from './capabilities';
 import { coalitionOutcome, RESULT_GRACE_MINUTES } from './coalition';
-import { resultsToReport } from './crossing';
+import { resultsToReport, seatIn } from './crossing';
 import { VERSIONS_MAX } from './composeOption';
-import { type EventDraft, parseRecord, type Score } from './event';
+import { type EventDraft, type FoundingDocument, parseRecord, type Score } from './event';
 import { expiringProposal, resultFor } from './expiry';
-import { fold, type GroupState, heldRecord, type LogRecord } from './fold';
+import {
+  closeTime,
+  fold,
+  type GroupState,
+  heldRecord,
+  type LogRecord,
+  type Proposal,
+} from './fold';
+import { changeLog, sectionHistory } from './history';
+import { type FrontDoor, isFrontDoor } from './optIns';
 import { OPTIONS_MAX, OPTIONS_MIN } from './priority';
 import { type Bar, DAY_MINUTES, DEFAULT_RULES, defaultWindowMinutes, validWindow } from './rules';
 import { rank, tally, tallyDetail, type TallyInput } from './tally';
@@ -57,12 +87,15 @@ const score = fc.constantFrom<Score>(0, 1, 2, 3, 4);
 class Log {
   readonly records: LogRecord[] = [];
   group = '';
+  /** The epoch whose mailboxes the next record is read from (#98). */
+  epoch = 0;
 
   /** Appends `input`, signed by `author`'s test key. */
   add(received: number, author: string, input: Unstamped): string {
     const draft = { ...input, group: this.group, ts: received * 60_000 };
     const { record, id } = signedAs(author, draft);
-    this.records.push({ seq: this.records.length + 1, received, bytes: record });
+    const epoch = this.epoch === 0 ? {} : { epoch: this.epoch };
+    this.records.push({ seq: this.records.length + 1, received, bytes: record, ...epoch });
     return id;
   }
 
@@ -71,10 +104,14 @@ class Log {
    * minutes before R, and members 0 and 1 vouch for each joiner after the
    * bootstrap's first two, so everyone holds voting rights by R (#101).
    */
-  static founded(count: number, atoms: readonly string[] = ['A0', 'A1']): Log {
+  static founded(
+    count: number,
+    atoms: readonly string[] = ['A0', 'A1'],
+    more: readonly FoundingDocument[] = [],
+  ): Log {
     const log = new Log();
     const start = R - SETTLED;
-    const body = { name: 'G', founder: 'Founder', title: 'Doc', atoms };
+    const body = { name: 'G', founder: 'Founder', documents: [{ title: 'Doc', atoms }, ...more] };
     log.group = log.add(start, member(0), { type: 'genesis', body });
     for (let i = 1; i < count; i += 1) {
       log.add(start + i, member(i), { type: 'join', body: { name: member(i) } });
@@ -93,10 +130,31 @@ class Log {
     return this.add(received, member(0), { type: 'proposal', body });
   }
 
-  /** An add of a new section after `after`, or first for null (#75). */
-  addSection(received: number, after: string | null, text: string): string {
-    const body = { target: { kind: 'add', after } as const, title: 'T', why: 'W', text };
+  /** An add of a new section after `after`, or first for null (#75), in `document`, the first by default (#92). */
+  addSection(received: number, after: string | null, text: string, document = this.group): string {
+    const body = { target: { kind: 'add', document, after } as const, title: 'T', why: 'W', text };
     return this.add(received, member(0), { type: 'proposal', body });
+  }
+
+  /** A move of `atom` right after `after`, or first for null (#103), by member 0. */
+  move(received: number, atom: string, after: string | null): string {
+    const body = { target: { kind: 'move', atom, after } as const, title: 'T', why: 'W' };
+    return this.add(received, member(0), { type: 'proposal', body });
+  }
+
+  /** A class Proposal giving `atom` the class `to` (#116), by member 0. */
+  classify(received: number, atom: string, to: string): string {
+    const body = { target: { kind: 'class', atom, to } as const, title: 'T', why: 'W' };
+    return this.add(received, member(0), { type: 'proposal', body });
+  }
+
+  /** A new Document titled `title`, whose text is its first sections (#92). */
+  newDocument(received: number, title: string, text: string): string {
+    const target = { kind: 'new-document', title } as const;
+    return this.add(received, member(0), {
+      type: 'proposal',
+      body: { target, title: 'T', why: 'W', text },
+    });
   }
 
   leave(received: number, who: number): string {
@@ -193,6 +251,85 @@ const LATE = {
 
 /** The kinds of late event, for fast-check to pick from. */
 const LATE_KINDS = Object.keys(LATE) as (keyof typeof LATE)[];
+
+/** A step of the front door property (#288). */
+type DoorStep =
+  | { readonly kind: 'propose'; readonly door: number }
+  | { readonly kind: 'vote' }
+  | { readonly kind: 'leave'; readonly who: number }
+  | { readonly kind: 'rotate' }
+  | { readonly kind: 'wait' };
+
+/** What the front door property plays on: a log, its size, the relay minute, and the latest Proposal. */
+interface DoorPlay {
+  readonly log: Log;
+  readonly count: number;
+  at: number;
+  latest: string;
+}
+
+/**
+ * Plays one step a minute after the last: member 0 proposes one of three
+ * doors, everyone scores the latest Proposal 4, a member other than the
+ * founder leaves, member 0 changes the key into the next epoch (#98), from
+ * which later records are read when it lands, or an entrenched window passes.
+ */
+function playDoorStep(play: DoorPlay, step: DoorStep): void {
+  const { log, count } = play;
+  play.at += 1;
+  switch (step.kind) {
+    case 'propose': {
+      const value = doorOf(0x10 + step.door, 0x20 + step.door);
+      const body = { target: { kind: 'rules', optIn: 'frontDoor', value }, title: 'T', why: 'W' };
+      play.latest = log.add(play.at, member(0), { type: 'proposal', body } as Unstamped);
+      return;
+    }
+    case 'vote':
+      for (let voter = 0; voter < count; voter += 1) log.vote(play.at, voter, play.latest, 4);
+      return;
+    case 'leave':
+      log.leave(play.at, 1 + (step.who % (count - 1)));
+      return;
+    case 'rotate':
+      log.add(play.at, member(0), {
+        type: 'key-rotate',
+        body: { ...LATE_ROTATE, epoch: log.epoch + 1 },
+      });
+      log.epoch = fold(log.records, play.at).epoch;
+      return;
+    case 'wait':
+      play.at += defaultWindowMinutes(DEFAULT_RULES, 'entrenched');
+  }
+}
+
+/** The front door a record's rules Proposal carries, whether the fold applied it or not, or null. */
+function doorCarriedBy(record: LogRecord): FrontDoor | null {
+  const event = parseRecord(record.bytes)?.event;
+  if (event?.type !== 'proposal' || !('target' in event.body)) return null;
+  const { target } = event.body;
+  return target.kind === 'rules' && isFrontDoor(target.value) ? target.value : null;
+}
+
+/**
+ * Expects that no record carrying either secret of the door standing in
+ * `state` was sealed under a key anyone who left held: each was read from a
+ * later epoch than every leave the fold applied.
+ */
+function expectNoExposedDoor(log: Log, state: GroupState): void {
+  const standing = state.rules.optIns.frontDoor;
+  if (standing === false) return;
+  const ignored = new Set(state.ignored.map((record) => record.seq));
+  const leaves = log.records.filter(
+    (record) => !ignored.has(record.seq) && parseRecord(record.bytes)?.event.type === 'leave',
+  );
+  const carriers = log.records.filter((record) => {
+    const carried = doorCarriedBy(record);
+    return carried?.sign === standing.sign || carried?.box === standing.box;
+  });
+  for (const leave of leaves) {
+    for (const carrier of carriers) expect(carrier.epoch ?? 0).toBeGreaterThan(leave.epoch ?? 0);
+  }
+}
 
 /** Relay minutes after R: anywhere in the window, or right at the deadline of a Proposal made at R + 20. */
 const minutesAfterR = fc.oneof(
@@ -318,19 +455,31 @@ describe('properties of the fold', { timeout: 60_000 }, () => {
     );
   });
 
-  it('only adds or takes out whole Atoms: each id at most once, founded or a passed add’s, in founded order', () => {
+  it('only adds, takes out or moves whole Atoms: each id at most once, founded, a passed add’s or a passed new Document’s, in founded order unless a move passed on it, and Document by Document', () => {
     fc.assert(
       fc.property(arbitraryLog, ({ records, relayNow }) => {
         const state = fold(records, relayNow);
         const ids = state.atoms.map((atom) => atom.id);
         expect(new Set(ids).size).toBe(ids.length);
-        const founded = [0, 1, 2].map((i) => `${state.group ?? ''}.${String(i)}`);
-        const added = state.proposals
-          .filter((p) => p.target.kind === 'add' && p.final && p.outcome.kind === 'pass')
-          .map((p) => p.id);
-        for (const id of ids) expect([...founded, ...added]).toContain(id);
-        const kept = ids.filter((id) => founded.includes(id));
+        const group = state.group ?? '';
+        const founded = [...FIRST_SECTIONS.map((_, i) => `${group}.${String(i)}`)];
+        founded.push(...SECOND_SECTIONS.map((_, i) => `${group}:1.${String(i)}`));
+        const passed = state.proposals.filter((p) => p.final && p.outcome.kind === 'pass');
+        const added = passed.filter((p) => p.target.kind === 'add').map((p) => p.id);
+        const created = passed.filter((p) => p.target.kind === 'new-document').map((p) => p.id);
+        for (const id of ids) {
+          const fromNew = created.some((document) => id.startsWith(`${document}.`));
+          expect(fromNew || [...founded, ...added].includes(id), id).toBe(true);
+        }
+        // A passed move reorders its own section alone (#103): every other keeps its founded order.
+        const moved = passed.filter((p) => p.target.kind === 'move').map((p) => p.atom);
+        const kept = ids.filter((id) => founded.includes(id) && !moved.includes(id));
         expect(kept).toEqual(founded.filter((id) => kept.includes(id)));
+        const order = state.documents.map((document) => document.id);
+        const places = state.atoms.map((atom) => order.indexOf(atom.documentId));
+        expect(places.every((place, i) => place >= Math.max(0, places[i - 1] ?? 0))).toBe(true);
+        expect(order.slice(0, 2)).toEqual([group, `${group}:1`]);
+        expect([...order.slice(2)].sort()).toEqual([...created].sort());
       }),
     );
   });
@@ -391,6 +540,48 @@ describe('properties of the fold', { timeout: 60_000 }, () => {
         const state = fold([...records.slice(0, at), stale, ...records.slice(at)], relayNow);
         expect(state.ignored).toContainEqual({ seq: 0, id: parseRecord(source.bytes)?.id ?? null });
         expect({ ...state, ignored: [] }).toEqual({ ...fold(records, relayNow), ignored: [] });
+      }),
+    );
+  });
+
+  it('ends a membership whose leave was stranded after a key change only where its copy reaches the new mailbox, alike with or without the old copy (#225)', () => {
+    const scenario = fc.record({
+      count: fc.integer({ min: 3, max: 6 }),
+      who: fc.nat(),
+      proposalFirst: fc.boolean(),
+      gap: fc.integer({ min: 0, max: 3 * DAY_MINUTES }),
+    });
+    fc.assert(
+      fc.property(scenario, ({ count, who, proposalFirst, gap }) => {
+        const log = Log.founded(count);
+        log.leave(R + 1, count - 1);
+        log.add(R + 2, member(0), { type: 'key-rotate', body: LATE_ROTATE });
+        const leaver = 1 + (who % (count - 2));
+        const stranded = log.leave(R + 3, leaver);
+        // A Proposal in the new mailbox lands before the copy, or after it.
+        log.propose(proposalFirst ? R + 4 : R + 5 + gap, `${log.group}.0`, 'New text');
+        const [rotated, leave, proposal] = [log.records.slice(0, -2), ...log.records.slice(-2)];
+        if (leave === undefined || proposal === undefined) throw new Error('two records');
+        const copyAt = proposalFirst ? R + 5 + gap : R + 4;
+        const copy = { seq: 0, received: copyAt, bytes: leave.bytes, epoch: 1 };
+        const newer = { ...proposal, epoch: 1 };
+        const ordered = proposalFirst ? [newer, copy] : [copy, newer];
+        const after = ordered.map((record, i) => ({ ...record, seq: leave.seq + 1 + i }));
+        const now = R + 10 * DAY_MINUTES;
+        const both = fold([...rotated, leave, ...after], now);
+        const copyOnly = fold([...rotated, ...after], now);
+        expect({ ...both, ignored: [] }).toEqual({ ...copyOnly, ignored: [] });
+        expect(both.former.map((m) => m.author)).toContain(authorOf(member(leaver)));
+        expect([both.epoch, both.rotationDue, both.strandedLeaves]).toEqual([1, true, []]);
+        const withoutCopy = after.filter((record) => record.bytes !== leave.bytes);
+        const alone = fold([...rotated, leave, ...withoutCopy], now);
+        expect(alone.strandedLeaves).toEqual([
+          { id: stranded, seq: leave.seq, author: authorOf(member(leaver)) },
+        ]);
+        expect({ ...alone, ignored: [], strandedLeaves: [] }).toEqual({
+          ...fold([...rotated, ...withoutCopy], now),
+          ignored: [],
+        });
       }),
     );
   });
@@ -699,13 +890,34 @@ describe('properties of the fold', { timeout: 60_000 }, () => {
     );
   });
 
+  it('never lets a front door stand whose secrets someone who has left could read (#288)', () => {
+    const step = fc.oneof(
+      fc.record({ kind: fc.constant('propose' as const), door: fc.nat({ max: 2 }) }),
+      fc.record({ kind: fc.constant('vote' as const) }),
+      fc.record({ kind: fc.constant('leave' as const), who: fc.nat({ max: 2 }) }),
+      fc.record({ kind: fc.constant('rotate' as const) }),
+      fc.record({ kind: fc.constant('wait' as const) }),
+    );
+    const scenario = fc.record({
+      count: fc.integer({ min: 3, max: 4 }),
+      steps: fc.array(step, { maxLength: 10 }),
+    });
+    fc.assert(
+      fc.property(scenario, ({ count, steps }) => {
+        const play: DoorPlay = { log: Log.founded(count), count, at: R + 20, latest: '' };
+        for (const next of steps) playDoorStep(play, next);
+        expectNoExposedDoor(play.log, fold(play.log.records, play.at + 1));
+      }),
+    );
+  });
+
   it('gives every Proposal its class’s window and tallies it at its class’s bar', () => {
     fc.assert(
       fc.property(arbitraryLog, ({ records, relayNow }) => {
         const { proposals, rules } = fold(records, relayNow);
         for (const p of proposals) {
-          // The log proposes only edits, which are ordinary; dissolving is entrenched (#108).
-          expect(p.class).toBe('ordinary');
+          // A class Proposal is entrenched, and so is a change or move of an entrenched section (#116).
+          expect(p.class).toBe(classAtOpening(proposals, p));
           expect(p.window).toBe(rules.windows[p.class].default);
           expect(p.deadline).toBe(p.received + defaultWindowMinutes(rules, p.class));
           expect(p.outcome.bar).toEqual(rules.bars[p.class]);
@@ -768,7 +980,247 @@ describe('properties of the fold', { timeout: 60_000 }, () => {
       }),
     );
   });
+
+  it('leaves every other Document’s Atoms byte-identical on a final pass in one Document (#92)', () => {
+    const words = fc.string({ unit: 'grapheme', minLength: 1, maxLength: 12 });
+    const scenario = fc.record({
+      documents: fc.array(fc.array(words, { minLength: 1, maxLength: 3 }), {
+        minLength: 2,
+        maxLength: 3,
+      }),
+      kind: fc.constantFrom('edit', 'remove', 'add', 'new-document'),
+      document: fc.nat(),
+      section: fc.nat(),
+      first: fc.boolean(),
+      text: words,
+      electorate,
+      minutes: minutesAfterR,
+    });
+    fc.assert(
+      fc.property(scenario, (s) => {
+        const [first = [], ...rest] = s.documents;
+        const more = rest.map((atoms, k) => ({ title: `Doc ${String(k + 1)}`, atoms }));
+        const log = Log.founded(s.electorate.count, first, more);
+        const before = fold(log.records, R);
+        const target = before.documents[s.document % before.documents.length]?.id ?? '';
+        const sections = before.atoms.filter((atom) => atom.documentId === target);
+        const section = sections[s.section % sections.length]?.id ?? '';
+        const proposal = proposeIn(log, { ...s, target, section });
+        s.electorate.ballots.forEach(({ voter, value }, i) => {
+          log.vote(R + 30 + i, voter, proposal, value);
+        });
+        const after = fold(log.records, R + s.minutes);
+        const changed = s.kind === 'new-document' ? null : target;
+        for (const { id } of before.documents.filter((document) => document.id !== changed)) {
+          const was = before.atoms.filter((atom) => atom.documentId === id);
+          const now = after.atoms.filter((atom) => atom.documentId === id);
+          expect(now.map((atom) => encoder.encode(atom.text))).toEqual(
+            was.map((atom) => encoder.encode(atom.text)),
+          );
+          expect(now).toEqual(was);
+        }
+        expect(after.documents.slice(0, before.documents.length)).toEqual(before.documents);
+      }),
+    );
+  });
 });
+
+/** `ids` with `id` taken out and put right after `after`, first for null, as a passed move does. */
+function movedIds(ids: readonly string[], id: string, after: string | null): string[] {
+  const rest = ids.filter((other) => other !== id);
+  const index = after === null ? -1 : rest.indexOf(after);
+  return [...rest.slice(0, index + 1), id, ...rest.slice(index + 1)];
+}
+
+/** Each section's id and bytes, sorted by id: a Document's contents, whatever their order. */
+function contents(atoms: readonly { readonly id: string; readonly text: string }[]) {
+  return [...atoms]
+    .sort((a, b) => (a.id < b.id ? -1 : 1))
+    .map((atom) => [atom.id, Array.from(encoder.encode(atom.text))]);
+}
+
+/** A Document of 2–6 sections, and moves: each picks a section and an anchor among them, or none. */
+const moves = fc.record({
+  sections: fc.array(fc.string({ unit: 'grapheme', minLength: 1, maxLength: 8 }), {
+    minLength: 2,
+    maxLength: 6,
+  }),
+  picks: fc.array(fc.record({ section: fc.nat(), anchor: fc.option(fc.nat(), { nil: null }) }), {
+    minLength: 1,
+    maxLength: 6,
+  }),
+});
+
+describe('properties of moves (#103)', { timeout: 60_000 }, () => {
+  it('keeps every Atom id and its bytes through any sequence of passed moves: only the order changes, as each move says', () => {
+    fc.assert(
+      fc.property(moves, ({ sections, picks }) => {
+        const log = Log.founded(2, sections);
+        const before = fold(log.records, R).atoms;
+        let order = before.map((atom) => atom.id);
+        picks.forEach(({ section, anchor }, i) => {
+          const at = R + 20 + 10 * i;
+          const id = order[section % order.length] ?? '';
+          const after = anchor === null ? null : (order[anchor % order.length] ?? null);
+          const move = log.move(at, id, after);
+          log.vote(at + 1, 0, move, 4);
+          log.vote(at + 2, 1, move, 4);
+          // A move anchored on its own section is ignored, so it moves nothing (#103).
+          if (after !== id) order = movedIds(order, id, after);
+        });
+        const after = fold(log.records, R + 20 + 10 * picks.length).atoms;
+        expect(after.map((atom) => atom.id)).toEqual(order);
+        expect(contents(after)).toEqual(contents(before));
+      }),
+    );
+  });
+
+  it('builds the same order whatever order the moves’ ballots arrive in: close time, then the moves’ relay order', () => {
+    const scenario = moves.chain(({ sections, picks }) => {
+      const count = Math.min(picks.length, sections.length);
+      const ballots = Array.from({ length: 2 * count }, (_, i) => i);
+      return fc.record({
+        sections: fc.constant(sections),
+        picks: fc.constant(picks.slice(0, count)),
+        arrival: fc.shuffledSubarray(ballots, { minLength: ballots.length }),
+        sameMinute: fc.boolean(),
+      });
+    });
+    fc.assert(
+      fc.property(scenario, ({ sections, picks, arrival, sameMinute }) => {
+        const log = Log.founded(2, sections);
+        const founded = fold(log.records, R).atoms.map((atom) => atom.id);
+        // Each move takes a section of its own, so all of them are open at once.
+        const free = [...founded];
+        const planned = picks.map(({ section, anchor }, i) => {
+          const [id = ''] = free.splice(section % free.length, 1);
+          const others = founded.filter((other) => other !== id);
+          const after = anchor === null ? null : (others[anchor % others.length] ?? null);
+          return { id, after, proposal: log.move(R + 20 + i, id, after) };
+        });
+        const closes = new Map<number, number>();
+        arrival.forEach((ballot, place) => {
+          const index = Math.floor(ballot / 2);
+          const at = sameMinute ? R + 100 : R + 100 + place;
+          log.vote(at, ballot % 2, planned[index]?.proposal ?? '', 4);
+          closes.set(index, at);
+        });
+        const inPassOrder = planned
+          .map((move, index) => ({ ...move, close: closes.get(index) ?? 0, index }))
+          .sort((a, b) => a.close - b.close || a.index - b.index);
+        const order = inPassOrder.reduce<string[]>(
+          (ids, move) => movedIds(ids, move.id, move.after),
+          founded,
+        );
+        const state = fold(log.records, R + 100 + arrival.length);
+        expect(state.proposals.every((p) => p.final && p.outcome.kind === 'pass')).toBe(true);
+        expect(state.atoms.map((atom) => atom.id)).toEqual(order);
+      }),
+    );
+  });
+});
+
+/** One Proposal of a section-history scenario (#104): its kind, what it picks, its text, three ballots and a wait. */
+const historyStep = fc.record({
+  kind: fc.constantFrom<InDocument['kind']>('edit', 'remove', 'add', 'new-document'),
+  pick: fc.nat(),
+  first: fc.boolean(),
+  text: fc.constantFrom('X', 'Y\n', '# Z\n\nW', 'V\n\nU\n\nT'),
+  scores: fc.array(fc.option(score, { nil: null }), { minLength: 3, maxLength: 3 }),
+  wait: fc.oneof(fc.integer({ min: 1, max: 60 }), fc.constant(WINDOW + 10)),
+});
+
+/**
+ * A log of three members and two founded Documents, then one Proposal per
+ * step in a Document's section, or a new Document, each scored by up to three
+ * ballots, folded once every Proposal has closed.
+ */
+const historyLog = fc.array(historyStep, { maxLength: 12 }).map((steps) => {
+  const log = Log.founded(3, FIRST_SECTIONS, [{ title: 'Second', atoms: SECOND_SECTIONS }]);
+  let received = R + 10;
+  for (const s of steps) {
+    const now = fold(log.records, received);
+    const target = now.documents[s.pick % now.documents.length]?.id ?? log.group;
+    const sections = now.atoms.filter((atom) => atom.documentId === target);
+    const section = sections[s.pick % Math.max(1, sections.length)]?.id ?? `${target}.0`;
+    const proposal = proposeIn(log, { ...s, target, section }, received);
+    s.scores.forEach((value, voter) => {
+      if (value !== null) log.vote(received + 1 + voter, voter, proposal, value);
+    });
+    received += 4 + s.wait;
+  }
+  return fold(log.records, received + WINDOW + 10);
+});
+
+/** Every section id a history scenario could have made: founded, added, or a new Document's. */
+function everySection(state: GroupState): string[] {
+  const founded = state.founding?.atoms.map((atom) => atom.id) ?? [];
+  const made = state.proposals.flatMap((p) => {
+    if (p.target.kind === 'add') return [p.id];
+    if (p.target.kind !== 'new-document') return [];
+    return [0, 1, 2, 3].map((i) => `${p.id}.${String(i)}`);
+  });
+  return [...founded, ...made];
+}
+
+describe('properties of section history (#104)', { timeout: 60_000 }, () => {
+  it('replays a section’s passed texts, oldest first, to its current text or its removal', () => {
+    fc.assert(
+      fc.property(historyLog, (state) => {
+        for (const id of everySection(state)) {
+          const oldestFirst = [...sectionHistory(state, id).passed].reverse();
+          const now = state.atoms.find((atom) => atom.id === id);
+          if (oldestFirst.length === 0) {
+            expect(now, id).toBeUndefined();
+            continue;
+          }
+          expect(['founded', 'added', 'created']).toContain(oldestFirst[0]?.change.kind);
+          expect(oldestFirst.slice(1).map((entry) => entry.change.kind)).not.toContain('founded');
+          expect(oldestFirst.at(-1)?.text, id).toBe(now?.text ?? '');
+          const dates = oldestFirst.map((entry) => entry.decidedAt);
+          expect(dates).toEqual([...dates].sort((a, b) => a - b));
+        }
+      }),
+    );
+  });
+
+  it('logs each final pass once, in the Document it changed, opening a history that holds it', () => {
+    fc.assert(
+      fc.property(historyLog, (state) => {
+        const rows = state.documents.flatMap((document) => changeLog(state, document.id));
+        const logged = rows.flatMap((row) => (row.proposalId === null ? [] : [row.proposalId]));
+        const passed = state.proposals.filter((p) => p.final && p.outcome.kind === 'pass');
+        expect([...logged].sort()).toEqual(passed.map((p) => p.id).sort());
+        for (const row of rows) {
+          if (row.section === null) continue;
+          const history = sectionHistory(state, row.section).passed;
+          expect(history.map((entry) => entry.proposalId)).toContain(row.proposalId);
+        }
+      }),
+    );
+  });
+});
+
+/** What {@link proposeIn} proposes: its kind, its Document, a section of it, and its text. */
+interface InDocument {
+  readonly kind: 'edit' | 'remove' | 'add' | 'new-document';
+  readonly target: string;
+  readonly section: string;
+  readonly first: boolean;
+  readonly text: string;
+}
+
+/** One Proposal at `at` (R + 20 by default) in the Document `target` (#92), or a new Document beside it. */
+function proposeIn(
+  log: Log,
+  { kind, target, section, first, text }: InDocument,
+  at = R + 20,
+): string {
+  if (kind === 'edit') return log.propose(at, section, text);
+  if (kind === 'remove') return log.propose(at, section, '');
+  if (kind === 'add') return log.addSection(at, first ? null : section, text, target);
+  return log.newDocument(at, 'New', text);
+}
 
 /**
  * One step of a random log, after a wait: a join, a level change (to a known level or not), a
@@ -782,6 +1234,9 @@ const step = fc.record({
     'propose',
     'remove',
     'add',
+    'new-document',
+    'move',
+    'class',
     'version',
     'vote',
     'repeat',
@@ -824,16 +1279,40 @@ const STEP_WRITERS: Readonly<Record<Step['kind'], StepWriter>> = {
     log.level(received, s.who, s.level);
   },
   propose: (log, proposals, s, received) => {
-    proposals.push(log.propose(received, `${log.group}.${String(s.target)}`, 'X'));
+    proposals.push(log.propose(received, sectionOf(log, s), 'X'));
   },
   remove: (log, proposals, s, received) => {
-    proposals.push(log.propose(received, `${log.group}.${String(s.target)}`, ''));
+    proposals.push(log.propose(received, sectionOf(log, s), ''));
   },
-  // Anchored on a genesis Atom, an earlier add's Atom (once it may have passed), or the start.
+  // In a founded Document or a new one (once it may have passed, #92), anchored on a founded
+  // Atom of either, an earlier add's Atom (once it may have passed), or the start.
   add: (log, proposals, s, received) => {
-    const anchors = [null, `${log.group}.${String(s.target)}`, ...proposals];
+    const documents = [log.group, `${log.group}:1`, ...proposals];
+    const document = documents[s.score % documents.length] ?? log.group;
+    const anchors = [null, sectionOf(log, s), ...proposals];
     const after = anchors[s.who % anchors.length] ?? null;
-    proposals.push(log.addSection(received, after, s.score === 0 ? '' : `Add ${String(s.score)}`));
+    const text = s.score === 0 ? '' : `Add ${String(s.score)}`;
+    proposals.push(log.addSection(received, after, text, document));
+  },
+  // A founded section or an earlier add's, after a founded section of either Document, an earlier
+  // add's, itself, or the start (#103).
+  move: (log, proposals, s, received) => {
+    const sections = [sectionOf(log, s), ...proposals];
+    const atom = sections[s.score % sections.length] ?? sectionOf(log, s);
+    const anchors = [null, sectionOf(log, s), atom, ...proposals];
+    const after = anchors[s.who % anchors.length] ?? null;
+    proposals.push(log.move(received, atom, after));
+  },
+  // A founded section or an earlier add's, to any class or one the fold doesn't know (#116).
+  class: (log, proposals, s, received) => {
+    const sections = [sectionOf(log, s), ...proposals];
+    const atom = sections[s.who % sections.length] ?? sectionOf(log, s);
+    const to = ['ordinary', 'entrenched', 'eternal', 'sacred'][s.score % 4] ?? 'eternal';
+    proposals.push(log.classify(received, atom, to));
+  },
+  'new-document': (log, proposals, s, received) => {
+    const text = s.score === 0 ? ' \n\n' : `N${String(s.score)}\n\nM${String(s.who)}\n`;
+    proposals.push(log.newDocument(received, s.target === 3 ? '' : `Doc ${String(s.who)}`, text));
   },
   version: (log, proposals, s, received) => {
     log.version(received, s.who, proposals[s.target] ?? 'unknown', `V${String(s.score)}`);
@@ -845,6 +1324,17 @@ const STEP_WRITERS: Readonly<Record<Step['kind'], StepWriter>> = {
   forge: rawRecord(copyOf),
   garbage: rawRecord(() => encoder.encode('{')),
 };
+
+/** The founded Document sections the random log starts with (#92). */
+const FIRST_SECTIONS = ['A0', 'A1', 'A2'];
+const SECOND_SECTIONS = ['B0', 'B1'];
+
+/** A founded section a step names: one of the first Document's, or the second's for an odd `who`. */
+function sectionOf(log: Log, s: Step): string {
+  return s.who % 2 === 0
+    ? `${log.group}.${String(s.target)}`
+    : `${log.group}:1.${String(s.target % SECOND_SECTIONS.length)}`;
+}
 
 /** Appends one random step to the log at relay minute `received`. */
 function applyStep(log: Log, proposals: string[], s: Step, received: number): void {
@@ -858,7 +1348,7 @@ const arbitraryLog = fc
     after: fc.option(fc.integer({ min: 0, max: 20_000 }), { nil: null }),
   })
   .map(({ steps, after }) => {
-    const log = Log.founded(2, ['A0', 'A1', 'A2']);
+    const log = Log.founded(2, FIRST_SECTIONS, [{ title: 'Second', atoms: SECOND_SECTIONS }]);
     const proposals: string[] = [];
     let received = R + 10;
     for (const s of steps) {
@@ -867,6 +1357,128 @@ const arbitraryLog = fc
     }
     return { records: log.records, relayNow: after === null ? null : received + after };
   });
+
+/** The passed class Proposals on `atom` before `p` in relay order, the last of them last (#116). */
+function passedClassesBefore(proposals: readonly Proposal[], atom: string, seq: number) {
+  return proposals.filter(
+    (q) =>
+      q.target.kind === 'class' &&
+      q.atom === atom &&
+      q.seq < seq &&
+      q.final &&
+      q.outcome.kind === 'pass',
+  );
+}
+
+/**
+ * The class a kept Proposal should have opened at, by a model of #116's rule: entrenched for a
+ * class Proposal, and for a change or move of a section whose last passed class Proposal before
+ * it made it entrenched; ordinary otherwise. A kept Proposal on a section never overlaps a class
+ * Proposal on it, so every earlier one had closed by the time it opened.
+ */
+function classAtOpening(proposals: readonly Proposal[], p: Proposal): 'ordinary' | 'entrenched' {
+  const { kind } = p.target;
+  if (kind === 'class') return 'entrenched';
+  if (kind !== 'edit' && kind !== 'move') return 'ordinary';
+  const last = passedClassesBefore(proposals, p.atom, p.seq).at(-1)?.target;
+  return last?.kind === 'class' && last.to === 'entrenched' ? 'entrenched' : 'ordinary';
+}
+
+/**
+ * One step of a log built around section classes (#116): a class Proposal, a change, a removal or a
+ * move of one of three sections, which both members then pass, fail or leave open, after a wait.
+ */
+const classStep = fc.record({
+  kind: fc.constantFrom('class', 'class', 'edit', 'remove', 'move'),
+  section: fc.nat({ max: 2 }),
+  to: fc.constantFrom('ordinary', 'entrenched', 'entrenched', 'eternal'),
+  ballots: fc.constantFrom('pass', 'pass', 'fail', 'none'),
+  wait: fc.integer({ min: 0, max: 30_000 }),
+});
+
+/** A random log of class Proposals and Proposals on the same sections (#116), and a relay time. */
+const classLog = fc
+  .record({ steps: fc.array(classStep, { maxLength: 12 }), after: fc.nat({ max: 30_000 }) })
+  .map(({ steps, after }) => {
+    const log = Log.founded(2, FIRST_SECTIONS);
+    let received = R + 10;
+    for (const s of steps) {
+      received += s.wait;
+      const atom = `${log.group}.${String(s.section)}`;
+      const proposal =
+        s.kind === 'class'
+          ? log.classify(received, atom, s.to)
+          : s.kind === 'move'
+            ? log.move(received, atom, null)
+            : log.propose(received, atom, s.kind === 'remove' ? '' : `New ${String(s.wait)}`);
+      if (s.ballots === 'none') continue;
+      const score = s.ballots === 'pass' ? 4 : 2;
+      log.vote(received + 1, 0, proposal, score);
+      log.vote(received + 2, 1, proposal, score);
+    }
+    return { records: log.records, relayNow: received + after };
+  });
+
+/** Random logs of every kind, and logs built around section classes (#116). */
+const anyLog = fc.oneof(arbitraryLog, classLog);
+
+describe('properties of section classes (#116)', { timeout: 120_000 }, () => {
+  it('opens every Proposal at the class a model of the rule gives: entrenched for a class Proposal, and for a change, removal or move of an entrenched section', () => {
+    fc.assert(
+      fc.property(anyLog, ({ records, relayNow }) => {
+        const { proposals, rules } = fold(records, relayNow);
+        for (const p of proposals) {
+          expect(p.class).toBe(classAtOpening(proposals, p));
+          expect(p.outcome.bar).toEqual(rules.bars[p.class]);
+        }
+      }),
+    );
+  });
+
+  it('gives each section the class of its last passed class Proposal, in close order, or ordinary', () => {
+    fc.assert(
+      fc.property(anyLog, ({ records, relayNow }) => {
+        const { atoms, proposals } = fold(records, relayNow);
+        for (const atom of atoms) {
+          const passed = passedClassesBefore(proposals, atom.id, Number.POSITIVE_INFINITY);
+          const closed = [...passed].sort((a, b) => closeTime(a) - closeTime(b));
+          const last = closed.at(-1)?.target;
+          expect(atom.class).toBe(last?.kind === 'class' ? last.to : 'ordinary');
+        }
+      }),
+    );
+  });
+
+  it('keeps an eternal section for good: it stays, eternal, and no Proposal on it opens after the one that made it so', () => {
+    fc.assert(
+      fc.property(anyLog, ({ records, relayNow }) => {
+        const { atoms, proposals } = fold(records, relayNow);
+        const eternal = proposals.filter(
+          (q) =>
+            q.target.kind === 'class' &&
+            q.target.to === 'eternal' &&
+            q.final &&
+            q.outcome.kind === 'pass',
+        );
+        for (const q of eternal) {
+          expect(atoms.find((atom) => atom.id === q.atom)?.class).toBe('eternal');
+          expect(proposals.filter((p) => p.atom === q.atom && p.seq > q.seq)).toEqual([]);
+        }
+      }),
+    );
+  });
+
+  it('makes sections entrenched and eternal often enough in its logs to test the rule', () => {
+    const samples = fc.sample(classLog, { numRuns: 200, seed: 116 });
+    const states = samples.map(({ records, relayNow }) => fold(records, relayNow));
+    const eternal = states.filter((state) => state.atoms.some((a) => a.class === 'eternal'));
+    const entrenched = states.filter((state) =>
+      state.proposals.some((p) => p.class === 'entrenched' && p.target.kind !== 'class'),
+    );
+    expect(eternal.length).toBeGreaterThan(20);
+    expect(entrenched.length).toBeGreaterThan(20);
+  });
+});
 
 /**
  * A ballot set: each voter's row scores some of up to three versions (null: not scored), and the
@@ -1121,7 +1733,10 @@ describe('properties of ballot expiry', { timeout: 60_000 }, () => {
         const now = Math.max(resultAt, ...full.map((record) => record.received)) + scenario.later;
         const held = fold(full, now);
         expect(held.proposals.find((candidate) => candidate.id === pId)?.result).not.toBeNull();
-        expect(decided(fold(cleared, now, [], [pId]))).toEqual(decided(held));
+        const after = fold(cleared, now, [], [pId]);
+        expect(decided(after)).toEqual(decided(held));
+        // A section's history shows totals and never a ballot, so it reads the same (#104).
+        expect(sectionHistory(after, `${group}.0`)).toEqual(sectionHistory(held, `${group}.0`));
       }),
     );
   });
@@ -1395,8 +2010,7 @@ describe('properties of coalitions (#100)', { timeout: 120_000 }, () => {
         const genesis = {
           name: `Group ${mark}`,
           founder: `Ana ${mark}`,
-          title: `Rules ${mark}`,
-          atoms: [mark],
+          documents: [{ title: `Rules ${mark}`, atoms: [mark] }],
         };
         logs.add('A', R, 'ana', { type: 'genesis', body: genesis });
         for (const voter of voters.slice(1)) {
@@ -1446,6 +2060,193 @@ describe('properties of coalitions (#100)', { timeout: 120_000 }, () => {
         }
       }),
       { numRuns: 25 },
+    );
+  });
+});
+
+/** A result a seat may report, or none. */
+const maybeResult = fc.option(fc.constantFrom<'pass' | 'fail'>('pass', 'fail'), { nil: null });
+
+/** The outcome kind `results` reach over `seats` seats, as `coalitionOutcome` decides it. */
+function outcomeOver(results: readonly ('pass' | 'fail' | null)[], expired: boolean) {
+  const passes = results.filter((r) => r === 'pass').length;
+  const fails = results.filter((r) => r === 'fail').length;
+  return coalitionOutcome({ seats: results.length, passes, fails, expired }).kind;
+}
+
+const STATEMENT_D = { name: 'Metro Renters', title: 'Shared ground', atoms: ['Rent stays fair.'] };
+
+/** The groups of the nested canary property: each log, its three voters, first the founder. */
+const CANARY_GROUPS = [
+  ['A', ['ana', 'ben', 'cal']],
+  ['B', ['dee', 'eve', 'fay']],
+] as const;
+
+/**
+ * Groups A and B, every name, title, Atom and note carrying `mark`, form C;
+ * C and E form D; a motion opens in D, and A and B score it with
+ * `scores[0]` and `scores[1]` (#122).
+ */
+function canaryLines(mark: string, scores: readonly (readonly Score[])[]) {
+  const logs = new NestedLogs();
+  const statementC = { name: `C ${mark}`, title: `T ${mark}`, atoms: [mark] };
+  for (const [log, voters] of CANARY_GROUPS) {
+    const documents = [{ title: mark, atoms: [mark] }];
+    const body = { name: `Group ${mark}`, founder: `F ${mark}`, documents };
+    logs.add(log, R, voters[0], { type: 'genesis', body });
+    for (const voter of voters.slice(1)) {
+      const join = { name: `${voter} ${mark}`, level: CREATING };
+      logs.add(log, R + 1, voter, { type: 'join', body: join });
+    }
+    const held = logs.reconcileInto(log, R + 2, voters[0], 'C', log, statementC);
+    voters.forEach((voter) => logs.vote(log, R + 3, voter, held, 4));
+  }
+  logs.formedIn('C', R + 5, [['A'], ['B']], ['ca', 'cb'], statementC);
+  const into = logs.sealedInto('C', R + 9, 'ca', 'D', STATEMENT_D);
+  logs.resultIn('C', R + 10, 'ca', into, 'A', 'pass');
+  logs.resultIn('C', R + 10, 'cb', into, 'B', 'pass');
+  logs.formedIn('D', R + 11, [['C', 1], ['E']], ['q', 'e'], STATEMENT_D);
+  const motion = logs.motionIn('D', R + 20, 'e', 'Rent stays fair for everyone.');
+  CANARY_GROUPS.forEach(([log, voters], g) => {
+    voters.forEach((voter, i) => {
+      logs.vote(log, R + 21, voter, motion, scores[g]?.[i] ?? 4, `Note ${mark}`);
+    });
+  });
+  return { logs, motion };
+}
+
+/** What `lower` owes `upper` for the seat it holds there, folded in `states`, or nothing. */
+function owedUp(states: Readonly<Record<string, GroupState>>, lower: string, upper: string) {
+  const [below, above] = [states[lower], states[upper]];
+  const seat = below === undefined || above === undefined ? null : seatIn(below, above);
+  return seat === null || below === undefined || above === undefined
+    ? []
+    : resultsToReport(below, above, seat);
+}
+
+describe('properties of nested coalitions (#122)', { timeout: 120_000 }, () => {
+  it('decides a motion in D the same whatever order the lower results arrive in, C’s and its groups’ alike', () => {
+    const scenario = fc.record({
+      lower: fc.array(maybeResult, { minLength: 6, maxLength: 6 }),
+      lowerSeats: fc.integer({ min: 2, max: 6 }),
+      others: fc.array(maybeResult, { minLength: 4, maxLength: 4 }),
+      otherSeats: fc.integer({ min: 1, max: 4 }),
+      orderLower: fc.array(fc.nat(), { minLength: 6, maxLength: 6 }),
+      orderUpper: fc.array(fc.nat(), { minLength: 5, maxLength: 5 }),
+      expired: fc.boolean(),
+    });
+    fc.assert(
+      fc.property(scenario, (s) => {
+        const lower = s.lower.slice(0, s.lowerSeats);
+        const others = s.others.slice(0, s.otherSeats);
+        const byOrder = (order: readonly number[]) => (a: number, b: number) =>
+          (order[a] ?? 0) - (order[b] ?? 0) || a - b;
+        const lowerIn = (sorted: boolean) => {
+          const seats = lower.map((_, i) => i);
+          return sorted ? seats : [...seats].sort(byOrder(s.orderLower));
+        };
+        // Index 0 stands for C's own result, the rest for D's other seats.
+        const upperIn = (sorted: boolean) => {
+          const seats = [0, ...others.map((_, i) => i + 1)];
+          return sorted ? seats : [...seats].sort(byOrder(s.orderUpper));
+        };
+        const decide = (sorted: boolean) => {
+          const logs = new NestedLogs();
+          const cSeats = lower.map((_, i) => [`L${String(i)}`] as const);
+          logs.formedIn(
+            'C',
+            R,
+            cSeats,
+            lower.map((_, i) => `l${String(i)}`),
+          );
+          const into = logs.sealedInto('C', R + 5, 'l0', 'D', STATEMENT_D);
+          cSeats.forEach(([seat], i) =>
+            logs.resultIn('C', R + 6, `l${String(i)}`, into, seat, 'pass'),
+          );
+          const dSeats: NestedSeat[] = [
+            ['C', 1],
+            ...others.map((_, i) => [`E${String(i)}`] as const),
+          ];
+          const dWho = ['q', ...others.map((_, i) => `e${String(i)}`)];
+          logs.formedIn('D', R + 7, dSeats, dWho, STATEMENT_D);
+          const motion = logs.motionIn('D', R + 20, 'e0', 'Rent stays fair for everyone.');
+          lowerIn(sorted).forEach((i, n) => {
+            const result = lower[i];
+            if (result !== undefined && result !== null) {
+              logs.resultIn('C', R + 21 + n, `l${String(i)}`, motion, `L${String(i)}`, result);
+            }
+          });
+          const at = R + 40;
+          const upper = upperIn(sorted);
+          upper.forEach((i, n) => {
+            const when = at + n;
+            if (i === 0) {
+              const states = logs.foldAll(when);
+              const [c, d] = [states.C, states.D];
+              if (c === undefined || d === undefined) throw new Error('Expected C and D.');
+              const seat = seatIn(c, d);
+              if (seat === null) throw new Error('Expected C’s seat in D.');
+              for (const body of resultsToReport(c, d, seat)) {
+                logs.add('D', when, 'q', { type: 'group-result', body });
+              }
+              return;
+            }
+            const result = others[i - 1];
+            if (result !== undefined && result !== null) {
+              logs.resultIn('D', when, `e${String(i - 1)}`, motion, `E${String(i - 1)}`, result);
+            }
+          });
+          const deadline = R + 20 + WINDOW;
+          const now = s.expired ? deadline + RESULT_GRACE_MINUTES : deadline;
+          const d = logs.foldAll(now).D;
+          const p = d?.proposals.find((proposal) => proposal.id === motion);
+          return { outcome: p?.outcome.kind, final: p?.final, atoms: d?.atoms };
+        };
+        const first = decide(true);
+        expect(decide(false)).toEqual(first);
+        const fromC = outcomeOver(lower, false);
+        const crossed = fromC === 'open' ? null : fromC;
+        const kind = outcomeOver([crossed, ...others], s.expired);
+        expect(first.outcome).toBe(kind === 'open' ? 'lapse' : kind);
+        expect(first.final).toBe(kind === 'fail' || s.expired);
+      }),
+      { numRuns: 30 },
+    );
+  });
+
+  it('carries only a pass or fail for one motion and seat up each line, never a ballot, note, name or count', () => {
+    const scenario = fc.record({
+      canary: fc.stringMatching(/^[a-z0-9]{8}$/),
+      scoresA: fc.array(score, { minLength: 3, maxLength: 3 }),
+      scoresB: fc.array(score, { minLength: 3, maxLength: 3 }),
+    });
+    fc.assert(
+      fc.property(scenario, ({ canary, scoresA, scoresB }) => {
+        const mark = `canary${canary}`;
+        const { logs, motion } = canaryLines(mark, [scoresA, scoresB]);
+        const states = logs.foldAll(R + 20 + WINDOW);
+        const owed = (['A', 'B'] as const).flatMap((log) => owedUp(states, log, 'C'));
+        expect(owed.filter((body) => body.motion === motion)).toHaveLength(2);
+        owed.forEach((body, i) => {
+          const who = body.seat === seatKey('A') ? 'ca' : 'cb';
+          logs.add('C', R + 30 + i, who, { type: 'group-result', body });
+        });
+        const after = logs.foldAll(R + 40 + WINDOW);
+        const upward = owedUp(after, 'C', 'D');
+        expect(upward.map((body) => body.motion)).toContain(motion);
+        const voters = CANARY_GROUPS.flatMap(([, names]) => names);
+        const forbidden = [mark, ...voters.map(authorOf), 'scores', 'note'];
+        for (const body of [...owed, ...upward]) {
+          expect(Object.keys(body).sort()).toEqual(['motion', 'result', 'seat']);
+          expect(['pass', 'fail']).toContain(body.result);
+          const text = JSON.stringify(body);
+          for (const secret of forbidden) expect(text).not.toContain(secret);
+        }
+        // D's log never names a lower group's seat: only C's and E's results reach it.
+        const seatsInD = new Set(after.D?.coalition?.results.map((r) => r.seat));
+        expect([...seatsInD].sort()).toEqual([seatKey('C'), seatKey('E')].sort());
+      }),
+      { numRuns: 15 },
     );
   });
 });

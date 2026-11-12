@@ -53,6 +53,8 @@ interface AddOptions {
   readonly onPropose?: OnPropose;
   readonly drafts?: Readonly<Record<string, Draft>>;
   readonly again?: Proposal;
+  /** A header's level (#103), or none for a section. */
+  readonly heading?: 1 | 2;
 }
 
 /** Renders Add a section after Atom `after` (default: at the start) and waits for its heading. */
@@ -71,6 +73,7 @@ async function addSection(options: AddOptions = {}) {
       now={NOW}
       onPropose={onPropose}
       {...(options.again === undefined ? {} : { again: options.again })}
+      {...(options.heading === undefined ? {} : { heading: options.heading })}
     />,
   );
   await screen.findByRole('heading', { level: 1 });
@@ -130,7 +133,7 @@ describe('AddSection', () => {
     expect(box('Discussion link (optional)')).toHaveValue(CHAT);
     expect(screen.getByRole('link', { name: 'House rules' })).toHaveAttribute(
       'href',
-      `#/g/${state.group ?? ''}/doc`,
+      `#/g/${state.group ?? ''}/doc/${state.group ?? ''}`,
     );
     expect(screen.getByRole('button', { name: 'Propose this section' })).toBeEnabled();
     expect(await axeViolations()).toEqual([]);
@@ -148,7 +151,7 @@ describe('AddSection', () => {
   });
 
   it('hands over the add, with its spot as the target in place of an Atom', async () => {
-    const { user, afterId, onPropose } = await addSection({ after: 0 });
+    const { user, afterId, onPropose, state } = await addSection({ after: 0 });
     await fill(user, {
       Title: ' Guests ',
       Why: 'Guests come often.',
@@ -157,7 +160,7 @@ describe('AddSection', () => {
     });
     await user.click(screen.getByRole('button', { name: 'Propose this section' }));
     expect(onPropose).toHaveBeenCalledWith({
-      target: { kind: 'add', after: afterId },
+      target: { kind: 'add', document: state.group, after: afterId },
       title: 'Guests',
       why: 'Guests come often.',
       text: 'Guests leave by 11pm.',
@@ -202,6 +205,7 @@ describe('AddSection', () => {
   it('keeps a draft for each spot, apart from the drafts of the sections themselves', async () => {
     const group = groupLog().state();
     const atom = `${group.group ?? ''}.0`;
+    const spot = addDraft({ document: group.group ?? '', after: atom });
     const atomDraft = { title: 'Mine', why: 'Mine.', text: 'Quiet after 9pm.', link: '' };
     const { user, memory } = await addSection({
       state: group,
@@ -211,10 +215,10 @@ describe('AddSection', () => {
     expect(box('Title')).toHaveValue('');
     await replace(user, 'Section text', 'Guests leave by 11pm.');
     await waitFor(() => {
-      expect(memory.shelf.get(addDraft(atom))).toMatchObject({ text: 'Guests leave by 11pm.' });
+      expect(memory.shelf.get(spot)).toMatchObject({ text: 'Guests leave by 11pm.' });
     });
     expect(memory.shelf.get(atom)).toEqual(atomDraft);
-    expect(memory.drafts.load).toHaveBeenCalledWith(addDraft(atom));
+    expect(memory.drafts.load).toHaveBeenCalledWith(spot);
   });
 
   it('says when the section it would follow isn’t in the Document', async () => {
@@ -249,6 +253,113 @@ describe('AddSection', () => {
   });
 });
 
+describe('AddSection: headers (#103)', () => {
+  it('asks for one Heading line in place of the section text, and nothing else new', async () => {
+    await addSection({ after: 0, heading: 1 });
+    expect(screen.getByRole('heading', { level: 1, name: 'Add a section header' })).toBeVisible();
+    expect(document.title).toBe('Add a section header · Reconcile');
+    expect(
+      screen.getByText('If your group passes it, your section goes right after section 1.'),
+    ).toBeVisible();
+    expect(screen.queryByRole('textbox', { name: 'Section text' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument();
+    const heading = box('Heading');
+    expect(heading.tagName).toBe('INPUT');
+    expect(heading).toBeRequired();
+    expect(heading).toHaveAccessibleDescription(
+      'One line. If your group passes it, it shows as a section header.',
+    );
+    const order = Array.from(document.querySelectorAll('form .field label')).map(
+      (label) => label.textContent,
+    );
+    expect(order.slice(0, 4)).toEqual(['Title', 'Why', 'Heading', 'Discussion link (optional)']);
+    expect(screen.getByRole('button', { name: 'Propose this header' })).toBeEnabled();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('prefills the title from the heading, which stays editable, and hands over “# <heading>”', async () => {
+    const { user, state, afterId, onPropose } = await addSection({ after: 0, heading: 1 });
+    await user.click(box('Heading'));
+    await user.paste('Values');
+    expect(box('Title')).toHaveValue('Add section header: Values');
+    await fill(user, { Why: 'An outline first.' });
+    await user.click(screen.getByRole('button', { name: 'Propose this header' }));
+    expect(onPropose).toHaveBeenCalledWith({
+      target: { kind: 'add', document: state.group, after: afterId },
+      heading: 1,
+      title: 'Add section header: Values',
+      why: 'An outline first.',
+      text: '# Values',
+      link: CHAT,
+      window: 7,
+    });
+  });
+
+  it('stops following the heading once the title is changed by hand', async () => {
+    const { user, onPropose } = await addSection({ heading: 1 });
+    await user.click(box('Heading'));
+    await user.paste('Values');
+    await fill(user, { Title: 'Our values first', Why: 'An outline.' });
+    await user.click(box('Heading'));
+    await user.paste(' we share');
+    expect(box('Title')).toHaveValue('Our values first');
+    await user.click(screen.getByRole('button', { name: 'Propose this header' }));
+    expect(onPropose.mock.calls[0]?.[0]).toMatchObject({
+      title: 'Our values first',
+      text: '# Values we share',
+    });
+  });
+
+  it('builds a subsection header as “## <heading>”, titled as one', async () => {
+    const { user, onPropose } = await addSection({ after: 1, heading: 2 });
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'Add a subsection header' }),
+    ).toBeVisible();
+    expect(box('Heading')).toHaveAccessibleDescription(
+      'One line. If your group passes it, it shows as a subsection header.',
+    );
+    await user.click(box('Heading'));
+    await user.paste('Organization');
+    expect(box('Title')).toHaveValue('Add subsection header: Organization');
+    await fill(user, { Why: 'How we work.' });
+    await user.click(screen.getByRole('button', { name: 'Propose this header' }));
+    expect(onPropose.mock.calls[0]?.[0]).toMatchObject({ heading: 2, text: '## Organization' });
+  });
+
+  it('refuses a blank heading, with the reason tied to the field', async () => {
+    const { user, onPropose } = await addSection({ heading: 1 });
+    await fill(user, { Title: 'A header', Why: 'An outline.' });
+    await user.click(box('Heading'));
+    await user.paste('   ');
+    await user.click(screen.getByRole('button', { name: 'Propose this header' }));
+    expect(onPropose).not.toHaveBeenCalled();
+    expect(box('Heading')).toHaveAccessibleDescription(
+      'One line. If your group passes it, it shows as a section header. Write the heading.',
+    );
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('keeps its draft apart from a section’s at the same spot, and brings it back', async () => {
+    const state = groupLog({ chat: CHAT }).state();
+    const place = { document: state.group ?? '', after: null };
+    const section = { title: 'Guests', why: 'They visit.', text: 'Guests by 11.', link: '' };
+    const header = {
+      title: 'Add section header: Values',
+      why: 'An outline.',
+      text: '# Values',
+      link: '',
+    };
+    await addSection({
+      state,
+      heading: 1,
+      drafts: { [addDraft(place)]: section, [addDraft(place, 1)]: header },
+    });
+    expect(await screen.findByText(/Your draft is back/)).toBeVisible();
+    expect(box('Heading')).toHaveValue('Values');
+    expect(box('Title')).toHaveValue('Add section header: Values');
+  });
+});
+
 describe('RemoveSection', () => {
   it('asks for a title and why beside the section struck through, with no text to write', async () => {
     const { state } = await removeSection();
@@ -269,7 +380,7 @@ describe('RemoveSection', () => {
     expect(screen.queryByRole('textbox', { name: /text/i })).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'House rules' })).toHaveAttribute(
       'href',
-      `#/g/${state.group ?? ''}/doc`,
+      `#/g/${state.group ?? ''}/doc/${state.group ?? ''}`,
     );
     expect(await axeViolations()).toEqual([]);
   });
@@ -391,6 +502,16 @@ describe('RemoveSection', () => {
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
 
+  it('says the section is being moved, with no form, while a move of it is open (#103)', async () => {
+    const log = groupLog();
+    log.move('ben', `${log.group}.1`, null);
+    await removeSection({ state: log.state() });
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'This section is being moved' }),
+    ).toBeVisible();
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
+
   it('says the ballot is full once it holds three versions', async () => {
     const log = groupLog();
     const proposal = log.propose('ben', { atom: 1 });
@@ -426,6 +547,47 @@ describe('RemoveSection', () => {
       screen.getByRole('heading', { level: 1, name: 'You can’t propose changes here' }),
     ).toBeVisible();
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+  });
+});
+
+/** Ana and Ben's group with its first section made `to` by a passed class Proposal (#116). */
+function protectedGroup(to: 'entrenched' | 'eternal'): GroupState {
+  const log = groupLog({ chat: CHAT });
+  const proposal = log.protect('Ana', `${log.group}.0`, to);
+  log.vote('Ana', proposal, 4);
+  log.vote('Ben', proposal, 4);
+  return log.state();
+}
+
+const ENTRENCHED_NOTE =
+  'This section is entrenched. Changing, moving or removing it needs your group’s higher bar: an average of 3.0 or more, with zeros under 5%, and a longer vote.';
+
+describe('RemoveSection on a protected section (#116)', () => {
+  it('says removing an entrenched section needs the higher bar, and runs 14 days to start', async () => {
+    await removeSection({ state: protectedGroup('entrenched'), atom: 0 });
+    expect(screen.getByText(ENTRENCHED_NOTE)).toBeVisible();
+    expect(box('Voting time (days)')).toHaveValue('14');
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('shows no form for an eternal section', async () => {
+    await removeSection({ state: protectedGroup('eternal'), atom: 0 });
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'This section is eternal' }),
+    ).toBeVisible();
+    expect(screen.queryByRole('button', { name: /Propose removing it|Add removal/ })).toBeNull();
+  });
+
+  it('shows no form while a vote on the section’s protection is open', async () => {
+    const log = groupLog({ chat: CHAT });
+    log.protect('Ana', `${log.group}.1`, 'eternal');
+    await removeSection({ state: log.state() });
+    expect(
+      screen.getByRole('heading', {
+        level: 1,
+        name: 'This section’s protection is being decided',
+      }),
+    ).toBeVisible();
   });
 });
 
@@ -493,12 +655,105 @@ describe('Adding or removing as a newcomer still earning a vote (#101)', () => {
   });
 });
 
+describe('AddSection and RemoveSection in a group of several Documents (#92)', () => {
+  const DOCUMENTS = [
+    { title: 'Mission statement', atoms: ['We share.\n'] },
+    { title: 'House rules', atoms: ['Quiet after 11pm.\n', 'Bins go out on Tuesday.\n'] },
+  ];
+  const ENTRIES = { Title: 'Guests', Why: 'They visit.', 'Section text': 'Guests leave.' };
+
+  /** Renders Add a section with the route's `after` and `document`, as App passes them. */
+  async function addIn(state: GroupState, after: string | null, document?: string) {
+    const onPropose = vi.fn<OnPropose>(() => Promise.resolve('proposed'));
+    render(
+      <AddSection
+        state={state}
+        me={authorOf('ana')}
+        after={after}
+        {...(document === undefined ? {} : { document })}
+        drafts={memoryDrafts().drafts}
+        now={NOW}
+        onPropose={onPropose}
+      />,
+    );
+    await screen.findByRole('heading', { level: 1 });
+    return { user: userEvent.setup(), onPropose };
+  }
+
+  it('adds at the start of the Document the route names, and links back to it', async () => {
+    const state = groupLog({ documents: DOCUMENTS }).state();
+    const second = `${state.group ?? ''}:1`;
+    const { user, onPropose } = await addIn(state, null, second);
+    expect(screen.getByRole('link', { name: 'House rules' })).toHaveAttribute(
+      'href',
+      `#/g/${state.group ?? ''}/doc/${second}`,
+    );
+    await fill(user, ENTRIES);
+    await user.click(screen.getByRole('button', { name: 'Propose this section' }));
+    expect(onPropose.mock.calls[0]?.[0]).toMatchObject({
+      target: { kind: 'add', document: second, after: null },
+    });
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('adds after a section of the second Document, in that Document, numbered within it', async () => {
+    const state = groupLog({ documents: DOCUMENTS }).state();
+    const second = `${state.group ?? ''}:1`;
+    const { user, onPropose } = await addIn(state, `${second}.1`);
+    expect(
+      screen.getByText('If your group passes it, your section goes right after section 2.'),
+    ).toBeVisible();
+    expect(screen.getByRole('region', { name: 'Section 2 now reads' })).toHaveTextContent(
+      'Bins go out on Tuesday.',
+    );
+    await fill(user, ENTRIES);
+    await user.click(screen.getByRole('button', { name: 'Propose this section' }));
+    expect(onPropose.mock.calls[0]?.[0]).toMatchObject({
+      target: { kind: 'add', document: second, after: `${second}.1` },
+    });
+  });
+
+  it('says a Document the route names isn’t in this group, with no form', async () => {
+    const state = groupLog({ documents: DOCUMENTS }).state();
+    await addIn(state, null, `${state.group ?? ''}:2`);
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'This Document isn’t in this group' }),
+    ).toBeVisible();
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Riverside Tenants' })).toBeVisible();
+  });
+
+  it('removes a section of the second Document, numbered within it, and links back to it', async () => {
+    const state = groupLog({ documents: DOCUMENTS }).state();
+    const second = `${state.group ?? ''}:1`;
+    render(
+      <RemoveSection
+        state={state}
+        me={authorOf('ana')}
+        atomId={`${second}.1`}
+        drafts={memoryDrafts().drafts}
+        now={NOW}
+        onPropose={vi.fn()}
+        onAddVersion={vi.fn()}
+      />,
+    );
+    await screen.findByRole('heading', { level: 1 });
+    expect(screen.getByRole('region', { name: 'Section 2 now reads' })).toHaveTextContent(
+      'Bins go out on Tuesday.',
+    );
+    expect(screen.getByRole('link', { name: 'House rules' })).toHaveAttribute(
+      'href',
+      `#/g/${state.group ?? ''}/doc/${second}`,
+    );
+  });
+});
+
 describe('Send a Dispatch if this passes, on an add or a removal (#75, #112)', () => {
   const { composer } = messages;
   const choice = () => screen.getByRole('checkbox', { name: composer.dispatchLabel });
 
   it('offers it unchecked on Add a section, and the add carries what it opens', async () => {
-    const { user, afterId, onPropose } = await addSection({ after: 0 });
+    const { user, afterId, onPropose, state } = await addSection({ after: 0 });
     expect(choice()).not.toBeChecked();
     await fill(user, {
       Title: 'Guests',
@@ -513,7 +768,7 @@ describe('Send a Dispatch if this passes, on an add or a removal (#75, #112)', (
     await user.click(screen.getByRole('button', { name: 'Propose this section' }));
     expect(onPropose).toHaveBeenCalledWith(
       expect.objectContaining({
-        target: { kind: 'add', after: afterId },
+        target: { kind: 'add', document: state.group, after: afterId },
         dispatch: { title: 'Updated: House rules', text: 'A rule for guests.' },
       }),
     );
@@ -587,7 +842,7 @@ describe('Proposing an add or a removal again (#74)', () => {
     expect(await axeViolations()).toEqual([]);
     await user.click(screen.getByRole('button', { name: 'Propose this section' }));
     expect(onPropose).toHaveBeenCalledWith({
-      target: { kind: 'add', after: afterId },
+      target: { kind: 'add', document: state.group, after: afterId },
       title: 'Guests',
       why: 'They visit.',
       text: 'Guests leave by 11pm.\n',

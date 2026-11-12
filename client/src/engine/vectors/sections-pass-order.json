@@ -16,8 +16,7 @@
             "body": {
               "name": "Riverside Tenants",
               "founder": "Ana",
-              "title": "House rules",
-              "atoms": ["A\n", "B\n"]
+              "documents": [{ "title": "House rules", "atoms": ["A\n", "B\n"] }]
             }
           }
         },
@@ -104,6 +103,7 @@
             "body": {
               "target": {
                 "kind": "add",
+                "document": "@1",
                 "after": "@1.0"
               },
               "title": "Add X",
@@ -124,6 +124,7 @@
             "body": {
               "target": {
                 "kind": "add",
+                "document": "@1",
                 "after": "@1.0"
               },
               "title": "Add Y",
@@ -302,8 +303,7 @@
             "body": {
               "name": "Riverside Tenants",
               "founder": "Ana",
-              "title": "House rules",
-              "atoms": ["A\n", "B\n"]
+              "documents": [{ "title": "House rules", "atoms": ["A\n", "B\n"] }]
             }
           }
         },
@@ -348,6 +348,7 @@
             "body": {
               "target": {
                 "kind": "add",
+                "document": "@1",
                 "after": "@1.0"
               },
               "title": "Add X",
@@ -368,6 +369,7 @@
             "body": {
               "target": {
                 "kind": "add",
+                "document": "@1",
                 "after": "@1.0"
               },
               "title": "Add Y",

@@ -16,7 +16,7 @@
  */
 import { parseRecord, signEvent } from '../engine/event';
 import { mayRemove, removalDue, removedFrom } from '../engine/removal';
-import type { Group, Store } from './db';
+import { type Group, isArchive, type Store, takesNew } from './db';
 import { retireCoalitionsOf } from './coalitions';
 import { foldGroup } from './expiry';
 
@@ -29,13 +29,27 @@ function removeQueued(group: Group, proposal: string): boolean {
 }
 
 /**
+ * Archives `group`, whose fold holds a `remove` of this device's member, as
+ * removed (#115), and the coalitions only it held here, calling `forget`
+ * with it first so its push registration goes (#99). A restored copy that
+ * hasn't heard from its group (#231) sends nothing, so it forgets nothing:
+ * `markArchived` drops its registration, which the relay lets expire.
+ */
+async function archiveRemoved(store: Store, group: Group, forget: (group: Group) => void) {
+  if (group.archived === undefined) forget(group);
+  await store.markArchived(group.groupId, 'removed');
+  await retireCoalitionsOf(store, group);
+}
+
+/**
  * Settles a removal for one group after a pass (#115): archives it once a
  * `remove` naming this device's member has folded, calling `forget` with the
  * group first so its push registration goes (#99); or else, when a removal's
  * pass is final and waits for its `remove`, queues this member's, unless one
- * is queued already, the group is leaving, or the fold wouldn't take one from
- * this member (the one it removes, suspended, or not a member). `clock` is the
- * device clock in ms, for the event's `ts`. A read-only archive is left alone.
+ * is queued already, the group is leaving or a restored copy that sends
+ * nothing yet (#231), or the fold wouldn't take one from this member (the
+ * one it removes, suspended, or not a member). `clock` is the device clock
+ * in ms, for the event's `ts`. A group archived for good is left alone.
  */
 export async function settleRemoval(
   store: Store,
@@ -44,18 +58,16 @@ export async function settleRemoval(
   forget: (group: Group) => void = () => undefined,
 ): Promise<void> {
   const group = await store.getGroup(groupId);
-  if (group === undefined || group.archived !== undefined) return;
+  if (group === undefined || isArchive(group.archived)) return;
   // As the screens fold it: a removal whose ballots this device cleared keeps its pass (#111).
   const state = foldGroup(group);
   const me = group.me.author;
   if (removedFrom(state, me) !== undefined) {
-    forget(group);
-    await store.markArchived(groupId, 'removed');
-    await retireCoalitionsOf(store, group);
+    await archiveRemoved(store, group, forget);
     return;
   }
   const due = removalDue(state);
-  if (due === null || group.leaving !== undefined || removeQueued(group, due)) return;
+  if (due === null || !takesNew(group) || removeQueued(group, due)) return;
   if (!mayRemove(state, me, due)) return;
   const remove = signEvent(group.signingKey, {
     type: 'remove',

@@ -62,7 +62,7 @@ async function vote(person: Person, pills: readonly string[]): Promise<void> {
 async function openDocument(person: Person): Promise<void> {
   const { page } = person;
   await page.getByRole('link', { name: GROUP }).click();
-  await page.getByRole('link', { name: TITLE }).click();
+  await page.getByRole('link', { name: TITLE, exact: true }).click();
   await expect(heading(page, TITLE)).toBeVisible();
 }
 
@@ -120,10 +120,12 @@ test('a group adds one section and removes another, and every profile shows the 
 
   await test.step('A proposes a new section after the first, and scores it', async () => {
     const { page } = ana;
-    await page.getByRole('link', { name: TITLE }).click();
+    await page.getByRole('link', { name: TITLE, exact: true }).click();
     await expect(page.getByRole('button', { name: /^Add a section/ })).toHaveCount(3);
     await expectAccessible(ana, 'Document view');
     await page.getByRole('button', { name: 'Add a section here, after section 1' }).click();
+    // Add a section here offers a section or a header (#103).
+    await page.getByRole('menuitem', { name: 'Section', exact: true }).click();
     await expect(heading(page, 'Add a section')).toBeVisible();
     await expectAccessible(ana, 'Add a section');
     await page.getByRole('textbox', { name: 'Title' }).fill(ADD);
@@ -155,7 +157,7 @@ test('a group adds one section and removes another, and every profile shows the 
   await test.step('B proposes removing the second section, which joins its ballot', async () => {
     const { page } = ben;
     // Ben is still on Group home, where he joined.
-    await page.getByRole('link', { name: TITLE }).click();
+    await page.getByRole('link', { name: TITLE, exact: true }).click();
     await expect(page.getByRole('button', { name: 'Add your version to section 2' })).toBeVisible();
     expect(await fitsWidth(page)).toBe(true);
     await expectAccessible(ben, 'Document view, on a phone');

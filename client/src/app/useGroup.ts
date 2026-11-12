@@ -24,8 +24,7 @@ import { parseRecord } from '../engine/event';
 import type { ParsedEvent } from '../engine/event';
 import type { GroupState, LogRecord } from '../engine/fold';
 import type { ReceivedApplication } from '../store/applications';
-import { foldWithCoalitions, type HeldCoalition } from '../store/coalitions';
-import { foldGroup } from '../store/expiry';
+import { foldCoalitions, foldWithCoalitions, type HeldCoalition } from '../store/coalitions';
 import type { ClearedArchive, Group, Me, Store } from '../store/db';
 import { type KeyChange, keyChangeOf } from '../store/epochs';
 import { type HeldShare, heldSharesIn } from '../store/recovery';
@@ -74,6 +73,12 @@ export interface GroupView {
    * only, until the relay has the leave and the sync loop deletes it.
    */
   leaving: boolean;
+  /**
+   * Whether this copy came back from a backup and hasn't heard from the
+   * group since (#231): it reads, and takes nothing new, until a sync brings
+   * word from the group or the person opens a new invite link.
+   */
+  unconfirmed: boolean;
   /**
    * Why this device can't read what the group writes now (#98): `left` when
    * this membership left on another device, `missed` when the group's key
@@ -158,8 +163,9 @@ export function useGroup(groupId: string): GroupView {
 const NO_COALITIONS: readonly HeldCoalition[] = [];
 
 /**
- * Every coalition entry on this device, each with its log folded (#114),
- * read again whenever the store says anything changed.
+ * Every coalition entry on this device, each with its log folded with the
+ * motions it decides from the coalitions above it (#114, #122), read again
+ * whenever the store says anything changed.
  */
 export function useCoalitions(
   store: Pick<GroupServices['store'], 'listCoalitions' | 'subscribe'>,
@@ -184,11 +190,7 @@ export function useCoalitionList(
       store.listCoalitions().then(
         (entries) => {
           if (!live || ticket !== latest) return;
-          setCoalitions(
-            entries.length === 0
-              ? NO_COALITIONS
-              : entries.map((entry) => ({ entry, state: foldGroup(entry) })),
-          );
+          setCoalitions(entries.length === 0 ? NO_COALITIONS : foldCoalitions(entries));
         },
         // A failed read keeps the last list; the next change reads again.
         () => undefined,
@@ -218,17 +220,35 @@ function clearedOf(group: Group | undefined): GroupView['cleared'] {
   return group?.archived?.cleared ?? null;
 }
 
-/** What a stored group says of its syncs, its leave and its backup, or nothing yet before it loads. */
+/**
+ * What a stored group says of its syncs, its leave, whether it has heard from
+ * the group since a restore (#231) and its backup, or nothing yet before it loads.
+ */
 function syncStatusOf(
   group: Group | undefined,
-): Pick<GroupView, 'lastSyncAt' | 'relayNow' | 'missingHistory' | 'leaving' | 'suggestBackup'> {
+): Pick<
+  GroupView,
+  'lastSyncAt' | 'relayNow' | 'missingHistory' | 'leaving' | 'unconfirmed' | 'suggestBackup'
+> {
   return {
     lastSyncAt: group?.lastSyncAt ?? null,
     relayNow: group?.relayNow ?? null,
     missingHistory: group?.missingHistory === true,
     leaving: group?.leaving !== undefined,
-    suggestBackup:
-      group !== undefined && group.backup === undefined && group.archived === undefined,
+    ...standingOf(group),
+  };
+}
+
+/**
+ * Whether a stored group is a copy back from a backup that hasn't heard from
+ * the group (#231), and whether group home suggests a backup of it (#78): not
+ * for a read-only copy, which no backup carries.
+ */
+function standingOf(group: Group | undefined): Pick<GroupView, 'unconfirmed' | 'suggestBackup'> {
+  if (group === undefined) return { unconfirmed: false, suggestBackup: false };
+  return {
+    unconfirmed: group.archived?.reason === 'unconfirmed',
+    suggestBackup: group.backup === undefined && group.archived === undefined,
   };
 }
 

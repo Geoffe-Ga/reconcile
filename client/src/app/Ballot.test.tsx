@@ -80,6 +80,20 @@ describe('Ballot', () => {
     expect(await axeViolations()).toEqual([]);
   });
 
+  it('scores a move like a one-version Proposal: its pills read “Your score” under where it moves the section (#103)', async () => {
+    const move = { line: 'Moves this section to the start', text: 'Bins go out on Tuesday.\n' };
+    const { user, onVote } = setup({
+      versions: [{ id: 'm', number: 1, author: 'Ana', text: '', move }],
+      current: null,
+    });
+    expect(screen.getByRole('region', { name: 'Moves this section to the start' })).toBeVisible();
+    const pills = screen.getByRole('radiogroup', { name: 'Your score' });
+    await user.click(within(pills).getByRole('radio', { name: '3 · Supportive' }));
+    await user.click(send());
+    expect(onVote).toHaveBeenCalledWith({ m: 3 }, '');
+    expect(await axeViolations()).toEqual([]);
+  });
+
   it('colors each pill from its own score token', () => {
     setup();
     const classes = PILLS.map(

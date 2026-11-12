@@ -15,27 +15,36 @@ import { removedFrom } from '../engine/removal';
 import { ownBallot } from '../engine/ownBallot';
 import { isPriority } from '../engine/priority';
 import { Applications } from '../screens/Applications';
+import { GroupChangeLog } from '../screens/ChangeLog';
 import { Composer, type ComposeOutcome } from '../screens/Composer';
 import { CreateGroup, type CreateOutcome } from '../screens/CreateGroup';
 import { Dispatches } from '../screens/Dispatches';
 import { DissolveComposer } from '../screens/DissolveComposer';
-import { DocumentView } from '../screens/DocumentView';
+import { type AddPlace, DocumentView } from '../screens/DocumentView';
 import { FrontDoor } from '../screens/FrontDoor';
 import { GroupHome } from '../screens/GroupHome';
 import { RecoveryContacts } from '../screens/RecoveryContacts';
 import { GroupRules } from '../screens/GroupRules';
-import { GroupArchived, GroupMissing, GroupSettingUp } from '../screens/GroupStatus';
+import {
+  GroupArchived,
+  GroupMissing,
+  GroupSettingUp,
+  GroupUnconfirmed,
+} from '../screens/GroupStatus';
 import { BringCard } from '../screens/BringCard';
 import { Join } from '../screens/Join';
 import { type CardStep, ReconcileCard } from '../screens/ReconcileCard';
 import { LinkNewDevice } from '../screens/LinkNewDevice';
 import { LinkThisDevice } from '../screens/LinkThisDevice';
+import { NewDocumentComposer } from '../screens/NewDocumentComposer';
+import { MoveComposer } from '../screens/MoveComposer';
 import type { OptIn } from '../engine/optIns';
 import { OptInComposer, type OptInOutcome } from '../screens/OptInComposer';
 import { Personal } from '../screens/Personal';
 import { PersonalDocument } from '../screens/PersonalDocument';
 import { PriorityComposer } from '../screens/PriorityComposer';
 import { ProposalView } from '../screens/ProposalView';
+import { ProtectComposer } from '../screens/ProtectComposer';
 import { RemovalComposer } from '../screens/RemovalComposer';
 import { AddSection, RemoveSection } from '../screens/SectionComposer';
 import { SendDispatch } from '../screens/SendDispatch';
@@ -72,6 +81,7 @@ import { coalitionRows, withMotionWords } from './coalitionLines';
 import {
   admitCard,
   bringCard,
+  broughtTo,
   type CardValues,
   type FoundCard,
   lookupCard,
@@ -400,14 +410,18 @@ function HelpRecoverScreen({ services }: { readonly services: AppServices }) {
   );
 }
 
-/** Personal (#93): this device's personal Documents, and the id a new one opens at. */
+/**
+ * Personal (#93): this device's personal Documents, and the id a new one
+ * opens at, at the device time that says which shares wait for the person (#339).
+ */
 function PersonalScreen({ services }: { readonly services: AppServices }) {
   const documents = usePersonalList(services.store);
   const relayBackup = useKeepsRelayBackup(services.store);
+  const now = useNow(services.now);
   // One id per visit: nothing is stored under it until that Document's first save.
   const [newId] = useState(newPersonalId);
   return documents === null ? null : (
-    <Personal documents={documents} newId={newId} relayBackup={relayBackup} />
+    <Personal documents={documents} newId={newId} now={now} relayBackup={relayBackup} />
   );
 }
 
@@ -573,10 +587,30 @@ interface GroupGateProps {
   readonly groupId: string;
   /**
    * True for a screen that writes something new: a dissolved group (#108),
-   * or one a vote removed this member from (#115), shows it only reads.
+   * a group a vote removed this member from (#115), and a copy back from a
+   * backup that hasn't heard from the group (#231), show they only read.
    */
   readonly writes?: boolean;
   readonly children: (group: ReadyGroup) => ReactNode;
+}
+
+/**
+ * What a screen that writes shows in its place for a group that only reads:
+ * a dissolved group's page (#108), a removed member's (#115), or a copy back
+ * from a backup that hasn't heard from the group (#231); null for one that
+ * takes new things. `me` is this member's key.
+ */
+function readOnlyPage(
+  groupId: string,
+  state: GroupState,
+  me: string,
+  unconfirmed: boolean,
+): ReactNode {
+  const removed = removedFrom(state, me) !== undefined;
+  if (state.dissolved !== null || removed) {
+    return <GroupArchived groupId={groupId} name={state.name} removed={removed} />;
+  }
+  return unconfirmed ? <GroupUnconfirmed groupId={groupId} name={state.name} /> : null;
 }
 
 /** Renders `children` once the group is ready, or says why it isn't. */
@@ -586,10 +620,8 @@ function GroupGate({ groupId, writes = false, children }: GroupGateProps) {
   if (!loaded) return null;
   if (state === null || me === null) return <GroupMissing />;
   if (state.group === null) return <GroupSettingUp />;
-  const removed = removedFrom(state, me.author) !== undefined;
-  if (writes && (state.dissolved !== null || removed)) {
-    return <GroupArchived groupId={groupId} name={state.name} removed={removed} />;
-  }
+  const page = writes ? readOnlyPage(groupId, state, me.author, group.unconfirmed) : null;
+  if (page !== null) return page;
   // A coalition motion takes its title and why from its coalition (#114).
   return children({ ...group, state: withMotionWords(state, group.coalitions), me });
 }
@@ -651,6 +683,7 @@ function GroupScreen({ services, groupId }: GroupScreenProps) {
           }}
           pending={group.pending}
           leaving={group.leaving}
+          unconfirmed={group.unconfirmed}
           backupCard={
             group.suggestBackup && !group.leaving ? (
               <BackupCard onNotNow={() => services.store.markBackup([groupId], 'not-now')} />
@@ -696,9 +729,9 @@ function coalitionNames(coalitions: GroupView['coalitions']): Record<string, str
  * the group takes new things and this device reads its current key.
  */
 function Coalitions({ services, group }: { services: AppServices; group: ReadyGroup }) {
-  const { state, me, coalitions, leaving, keyChange } = group;
+  const { state, me, coalitions, leaving, unconfirmed, keyChange } = group;
   const groupId = state.group ?? '';
-  const open = !leaving && state.dissolved === null && keyChange === null;
+  const open = !leaving && !unconfirmed && state.dissolved === null && keyChange === null;
   return (
     <CoalitionSection
       groupId={groupId}
@@ -743,14 +776,18 @@ interface BringScreenProps {
   readonly releaseSeed: () => void;
 }
 
-/** Bring a card (#114): the card, then the group it goes to, whose new Proposal opens after. */
+/**
+ * Bring a card (#114): the card, then the group it goes to, whose new
+ * Proposal opens after, or the coalition, whose home opens (#122).
+ */
 function BringScreen({ services, payload, heldSeed, releaseSeed }: BringScreenProps) {
   const lookup = useCallback((seed: Uint8Array) => lookupCard(services, seed), [services]);
   const onBring = useCallback(
     async (found: FoundCard, groupId: string, name: string) => {
       const proposalId = await bringCard(services, found, groupId, name);
+      const next = await broughtTo(services, found, groupId, proposalId);
       releaseSeed();
-      replaceRoute({ name: 'proposal', groupId, proposalId });
+      replaceRoute(next);
       return true;
     },
     [services, releaseSeed],
@@ -770,27 +807,66 @@ function BringScreen({ services, payload, heldSeed, releaseSeed }: BringScreenPr
   );
 }
 
-function DocumentScreen({ services, groupId }: GroupScreenProps) {
+/** One of the group's Documents (#92), by its id from the route, or its first. */
+function DocumentScreen({
+  services,
+  groupId,
+  documentId,
+}: GroupScreenProps & { readonly documentId?: string }) {
   const openComposer = (atomId: string) => {
     navigate({ name: 'propose', groupId, atomId });
   };
-  const openAdd = (after: string | null) => {
-    navigate({ name: 'add', groupId, after });
+  // After an Atom, its Document is the Atom's; at the start, the route names the Document (#92).
+  // A header's choice names its level (#103).
+  const openAdd = ({ document, after, heading }: AddPlace) => {
+    navigate({
+      name: 'add',
+      groupId,
+      after,
+      ...(after === null ? { document } : {}),
+      ...(heading === undefined ? {} : { heading }),
+    });
   };
   const openRemove = (atomId: string) => {
     navigate({ name: 'remove', groupId, atomId });
   };
+  const openMove = (atomId: string) => {
+    navigate({ name: 'move', groupId, atomId });
+  };
+  const openProtect = (atomId: string) => {
+    navigate({ name: 'protect', groupId, atomId });
+  };
   return (
     <GroupGate groupId={groupId}>
-      {({ state, me, leaving }) => (
+      {({ state, me, leaving, cleared, unconfirmed }) => (
         <DocumentView
           state={state}
           me={me.author}
+          {...(documentId === undefined ? {} : { documentId })}
           onPropose={openComposer}
           onAdd={openAdd}
           onRemove={openRemove}
+          onMove={openMove}
+          onProtect={openProtect}
           copyText={services.copyText}
           leaving={leaving}
+          unconfirmed={unconfirmed}
+          {...(cleared === null ? {} : { kept: cleared.tallies })}
+        />
+      )}
+    </GroupGate>
+  );
+}
+
+/** One of the group's Documents' change log (#104), with a cleared archive's kept tallies (#108). */
+function ChangeLogScreen({ groupId, documentId }: { groupId: string; documentId: string }) {
+  return (
+    <GroupGate groupId={groupId}>
+      {({ state, cleared }) => (
+        <GroupChangeLog
+          state={state}
+          documentId={documentId}
+          {...(cleared === null ? {} : { kept: cleared.tallies })}
         />
       )}
     </GroupGate>
@@ -882,15 +958,24 @@ function Ask({ again, ...props }: ComposeProps & { readonly again?: Proposal }) 
 /**
  * Propose again (#74): the composer for what the lapsed Proposal targets,
  * starting from it. A change opens the composer on its section, a removal the
- * removal composer, an add Add a section at its spot (#75), and a priority
- * vote Ask what to focus on (#107).
+ * removal composer, an add Add a section at its spot in its Document (#75,
+ * #92), a new Document the new-Document composer (#92), a move Move this
+ * section (#103), a class Proposal Protect this section (#116), and a
+ * priority vote Ask what to focus on (#107).
  */
 function ProposeAgain({ againId, ...props }: ComposeProps & { readonly againId: string }) {
   const again = props.state.proposals.find((proposal) => proposal.id === againId);
   if (again === undefined) return <Composer {...props} atomId="" />;
   if (isPriority(again)) return <Ask {...props} again={again} />;
   const { target } = again;
-  if (target.kind === 'add') return <AddSection {...props} after={target.after} again={again} />;
+  if (target.kind === 'new-document') return <NewDocumentComposer {...props} again={again} />;
+  if (target.kind === 'move') return <MoveComposer {...props} atomId={target.atom} again={again} />;
+  if (target.kind === 'class') {
+    return <ProtectComposer {...props} atomId={target.atom} again={again} />;
+  }
+  if (target.kind === 'add') {
+    return <AddSection {...props} after={target.after} document={target.document} again={again} />;
+  }
   if (again.text === '') return <RemoveSection {...props} atomId={again.atom} again={again} />;
   return <Composer {...props} atomId={again.atom} again={again} />;
 }
@@ -924,6 +1009,7 @@ function ProposalScreen({ services, groupId, proposalId }: ProposalScreenProps) 
             now={relayMinuteNow(group, deviceNow)}
             own={ownBallot(group.state, group.log, proposalId, author)}
             leaving={group.leaving}
+            unconfirmed={group.unconfirmed}
             {...(group.cleared === null ? {} : { cleared: group.cleared })}
             coalitions={group.coalitions}
             onVote={onVote}
@@ -940,7 +1026,10 @@ function ProposalScreen({ services, groupId, proposalId }: ProposalScreenProps) 
 /** A route that opens a composer. */
 type ComposeRoute = Extract<
   Route,
-  { readonly name: 'propose' | 'add' | 'remove' | 'again' | 'priority' }
+  {
+    readonly name:
+      'propose' | 'add' | 'remove' | 'move' | 'protect' | 'again' | 'newDocument' | 'priority';
+  }
 >;
 
 /** The composer a route opens, given what every composer is handed. */
@@ -949,7 +1038,20 @@ function composerFor(route: ComposeRoute): (props: ComposeProps) => ReactNode {
     case 'propose':
       return (props) => <Composer {...props} atomId={route.atomId} />;
     case 'add':
-      return (props) => <AddSection {...props} after={route.after} />;
+      return (props) => (
+        <AddSection
+          {...props}
+          after={route.after}
+          {...(route.document === undefined ? {} : { document: route.document })}
+          {...(route.heading === undefined ? {} : { heading: route.heading })}
+        />
+      );
+    case 'move':
+      return (props) => <MoveComposer {...props} atomId={route.atomId} />;
+    case 'protect':
+      return (props) => <ProtectComposer {...props} atomId={route.atomId} />;
+    case 'newDocument':
+      return (props) => <NewDocumentComposer {...props} />;
     case 'remove':
       return (props) => <RemoveSection {...props} atomId={route.atomId} />;
     case 'again':
@@ -1091,13 +1193,14 @@ function RemovalScreen({ services, groupId, member }: RemovalScreenProps) {
 function DispatchesScreen({ groupId }: { readonly groupId: string }) {
   return (
     <GroupGate groupId={groupId}>
-      {({ state, me, pending, reachable, leaving }) => (
+      {({ state, me, pending, reachable, leaving, unconfirmed }) => (
         <Dispatches
           state={state}
           me={me.author}
           pending={pending}
           reachable={reachable}
           leaving={leaving}
+          unconfirmed={unconfirmed}
         />
       )}
     </GroupGate>
@@ -1127,9 +1230,20 @@ function GroupRouteScreen({ route, services }: { route: GroupRoute; services: Ap
     case 'group':
       return <GroupScreen services={services} groupId={groupId} />;
     case 'document':
-      return <DocumentScreen services={services} groupId={groupId} />;
+      return (
+        <DocumentScreen
+          key={route.documentId ?? ''}
+          services={services}
+          groupId={groupId}
+          {...(route.documentId === undefined ? {} : { documentId: route.documentId })}
+        />
+      );
     case 'proposal':
       return <ProposalScreen services={services} groupId={groupId} proposalId={route.proposalId} />;
+    case 'documentLog':
+      return (
+        <ChangeLogScreen key={route.documentId} groupId={groupId} documentId={route.documentId} />
+      );
     case 'rules':
       return <RulesScreen services={services} groupId={groupId} />;
     case 'dispatches':
@@ -1151,9 +1265,9 @@ type FormRoute =
  * The screen for a route inside one group that opens a form of its own: the
  * steward (#102), opt-in (#117), dissolve (#108) and removal (#115)
  * composers, Reconcile with another group (#114), Send a Dispatch (#112), and
- * the composers that propose a change,
- * add or remove a section (#75), ask what to focus on (#107), or propose a
- * lapsed Proposal again (#74).
+ * the composers that propose a change, add or remove a section (#75), propose
+ * a new Document (#92), ask what to focus on (#107), or propose a lapsed
+ * Proposal again (#74).
  */
 function FormRouteScreen({ route, services }: { route: FormRoute; services: AppServices }) {
   const { groupId } = route;

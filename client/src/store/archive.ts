@@ -25,7 +25,7 @@ import { clearMinute, dissolveDue, wipeMinute } from '../engine/dissolve';
 import { parseRecord, signEvent } from '../engine/event';
 import { type GroupState, proposalTally } from '../engine/fold';
 import { removedClearMinute, removedFrom } from '../engine/removal';
-import type { ClearedArchive, Group, Store } from './db';
+import { type ClearedArchive, type Group, isArchive, type Store, takesNew } from './db';
 import { foldGroup } from './expiry';
 
 /** One minute in device milliseconds: the device clock counts the archive's days in relay minutes. */
@@ -45,8 +45,9 @@ function dissolveQueued(group: Group): boolean {
  * Settles a dissolve for one group after a pass (#108): archives it once a
  * `dissolve` has folded, or else, when a dissolve Proposal's pass is final,
  * queues this member's `dissolve`, unless one is queued already, the group is
- * leaving, or the fold wouldn't take one from this member (not yet in, or
- * suspended). `clock` is the device clock in ms, for the event's `ts`.
+ * leaving or a restored copy that sends nothing yet (#231), or the fold
+ * wouldn't take one from this member (not yet in, or suspended). `clock` is
+ * the device clock in ms, for the event's `ts`.
  */
 export async function settleDissolve(
   store: Store,
@@ -61,7 +62,7 @@ export async function settleDissolve(
     return;
   }
   const due = dissolveDue(state);
-  if (due === null || group.leaving !== undefined || dissolveQueued(group)) return;
+  if (due === null || !takesNew(group) || dissolveQueued(group)) return;
   const me = group.me.author;
   if (!can(state, me, 'read') || isSuspended(state, me)) return;
   const dissolve = signEvent(group.signingKey, {
@@ -104,12 +105,13 @@ function clearMinuteOf(state: GroupState, me: string): number | null {
  * vote chose to wipe, and otherwise clears its ballots and notes once it
  * reaches `ballotExpiryDays` after it. A removed member's copy (#115) clears
  * the same way, `ballotExpiryDays` after the `remove`: it no longer syncs, so
- * #111's expiry, which runs in relay time, never reaches it. `clock` is the
- * device clock in ms.
+ * #111's expiry, which runs in relay time, never reaches it. A restored copy
+ * that hasn't heard from its group (#231) is left alone: it still syncs, so
+ * #111's expiry clears it. `clock` is the device clock in ms.
  */
 export async function sweepArchives(store: Store, clock: () => number = Date.now): Promise<void> {
   for (const group of await store.listGroups()) {
-    if (group.archived === undefined || group.archived.cleared !== undefined) continue;
+    if (!isArchive(group.archived) || group.archived.cleared !== undefined) continue;
     const state = foldGroup(group);
     const now = clock();
     const minute = Math.floor(now / MINUTE_MS);

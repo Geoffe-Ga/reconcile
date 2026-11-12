@@ -1,0 +1,2811 @@
+{
+  "kind": "fold",
+  "vectors": [
+    {
+      "name": "classes-entrenched-edit: 10 members are eligible and a passed class Proposal has made section S entrenched; an edit of S gets 8 scorers with a sum of 22, an average of 2.75, and no zeros, so it fails, where the ordinary bar would have passed it; with no window chosen its deadline is received + 14 days",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29354840,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1761290400000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["A\n", "B\n", "C\n", "D\n"]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29354841,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761290460000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29354842,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1761290520000,
+            "body": {
+              "name": "Cal"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29354843,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1761290580000,
+            "body": {
+              "name": "Dee"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29354844,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%eve",
+            "ts": 1761290640000,
+            "body": {
+              "name": "Eve"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29354845,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%fay",
+            "ts": 1761290700000,
+            "body": {
+              "name": "Fay"
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29354846,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%gus",
+            "ts": 1761290760000,
+            "body": {
+              "name": "Gus"
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29354847,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%hal",
+            "ts": 1761290820000,
+            "body": {
+              "name": "Hal"
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29354848,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1761290880000,
+            "body": {
+              "name": "Kim",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 10,
+          "received": 29354849,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%zed",
+            "ts": 1761290940000,
+            "body": {
+              "name": "Zed"
+            }
+          }
+        },
+        {
+          "seq": 11,
+          "received": 29354850,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761291000000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 12,
+          "received": 29354851,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761291060000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 13,
+          "received": 29354852,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761291120000,
+            "body": {
+              "member": "%eve"
+            }
+          }
+        },
+        {
+          "seq": 14,
+          "received": 29354853,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761291180000,
+            "body": {
+              "member": "%eve"
+            }
+          }
+        },
+        {
+          "seq": 15,
+          "received": 29354854,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761291240000,
+            "body": {
+              "member": "%fay"
+            }
+          }
+        },
+        {
+          "seq": 16,
+          "received": 29354855,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761291300000,
+            "body": {
+              "member": "%fay"
+            }
+          }
+        },
+        {
+          "seq": 17,
+          "received": 29354856,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761291360000,
+            "body": {
+              "member": "%gus"
+            }
+          }
+        },
+        {
+          "seq": 18,
+          "received": 29354857,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761291420000,
+            "body": {
+              "member": "%gus"
+            }
+          }
+        },
+        {
+          "seq": 19,
+          "received": 29354858,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761291480000,
+            "body": {
+              "member": "%hal"
+            }
+          }
+        },
+        {
+          "seq": 20,
+          "received": 29354859,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761291540000,
+            "body": {
+              "member": "%hal"
+            }
+          }
+        },
+        {
+          "seq": 21,
+          "received": 29354860,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761291600000,
+            "body": {
+              "member": "%kim"
+            }
+          }
+        },
+        {
+          "seq": 22,
+          "received": 29354861,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761291660000,
+            "body": {
+              "member": "%kim"
+            }
+          }
+        },
+        {
+          "seq": 23,
+          "received": 29354862,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761291720000,
+            "body": {
+              "member": "%zed"
+            }
+          }
+        },
+        {
+          "seq": 24,
+          "received": 29354863,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761291780000,
+            "body": {
+              "member": "%zed"
+            }
+          }
+        },
+        {
+          "seq": 25,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "class",
+                "atom": "@1.0",
+                "to": "entrenched"
+              },
+              "title": "Entrench A",
+              "why": "It holds us together."
+            }
+          }
+        },
+        {
+          "seq": 26,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500660000,
+            "body": {
+              "proposal": "@25",
+              "scores": {
+                "@25": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 27,
+          "received": 29375012,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500720000,
+            "body": {
+              "proposal": "@25",
+              "scores": {
+                "@25": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 28,
+          "received": 29375013,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500780000,
+            "body": {
+              "proposal": "@25",
+              "scores": {
+                "@25": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 29,
+          "received": 29375014,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762500840000,
+            "body": {
+              "proposal": "@25",
+              "scores": {
+                "@25": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 30,
+          "received": 29375015,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%eve",
+            "ts": 1762500900000,
+            "body": {
+              "proposal": "@25",
+              "scores": {
+                "@25": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 31,
+          "received": 29375016,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%fay",
+            "ts": 1762500960000,
+            "body": {
+              "proposal": "@25",
+              "scores": {
+                "@25": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 32,
+          "received": 29375017,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%gus",
+            "ts": 1762501020000,
+            "body": {
+              "proposal": "@25",
+              "scores": {
+                "@25": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 33,
+          "received": 29375018,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%hal",
+            "ts": 1762501080000,
+            "body": {
+              "proposal": "@25",
+              "scores": {
+                "@25": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 34,
+          "received": 29375019,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762501140000,
+            "body": {
+              "proposal": "@25",
+              "scores": {
+                "@25": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 35,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%zed",
+            "ts": 1762501200000,
+            "body": {
+              "proposal": "@25",
+              "scores": {
+                "@25": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 36,
+          "received": 29375030,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501800000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Reword A",
+              "why": "It reads better.",
+              "text": "A, reworded.\n"
+            }
+          }
+        },
+        {
+          "seq": 37,
+          "received": 29375040,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762502400000,
+            "body": {
+              "proposal": "@36",
+              "scores": {
+                "@36": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 38,
+          "received": 29375041,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762502460000,
+            "body": {
+              "proposal": "@36",
+              "scores": {
+                "@36": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 39,
+          "received": 29375042,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762502520000,
+            "body": {
+              "proposal": "@36",
+              "scores": {
+                "@36": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 40,
+          "received": 29375043,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762502580000,
+            "body": {
+              "proposal": "@36",
+              "scores": {
+                "@36": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 41,
+          "received": 29375044,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%eve",
+            "ts": 1762502640000,
+            "body": {
+              "proposal": "@36",
+              "scores": {
+                "@36": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 42,
+          "received": 29375045,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%fay",
+            "ts": 1762502700000,
+            "body": {
+              "proposal": "@36",
+              "scores": {
+                "@36": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 43,
+          "received": 29375046,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%gus",
+            "ts": 1762502760000,
+            "body": {
+              "proposal": "@36",
+              "scores": {
+                "@36": 2
+              }
+            }
+          }
+        },
+        {
+          "seq": 44,
+          "received": 29375047,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%hal",
+            "ts": 1762502820000,
+            "body": {
+              "proposal": "@36",
+              "scores": {
+                "@36": 2
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29395190,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@25",
+            "number": 1,
+            "atom": "@1.0",
+            "target": {
+              "kind": "class",
+              "atom": "@1.0",
+              "to": "entrenched"
+            },
+            "text": "",
+            "class": "entrenched",
+            "window": 14,
+            "deadline": 29395170,
+            "versions": [
+              {
+                "id": "@25",
+                "author": "%ana",
+                "text": ""
+              }
+            ],
+            "closedAt": 29375020,
+            "final": true,
+            "outcome": {
+              "kind": "pass",
+              "version": "@25",
+              "bar": {
+                "avgAtLeast": 3,
+                "zerosUnderPercent": 5
+              }
+            }
+          },
+          {
+            "id": "@36",
+            "number": 2,
+            "atom": "@1.0",
+            "target": {
+              "kind": "edit"
+            },
+            "class": "entrenched",
+            "window": 14,
+            "deadline": 29395190,
+            "eligible": [
+              "%ana",
+              "%ben",
+              "%cal",
+              "%dee",
+              "%eve",
+              "%fay",
+              "%gus",
+              "%hal",
+              "%kim",
+              "%zed"
+            ],
+            "closedAt": null,
+            "final": true,
+            "outcome": {
+              "kind": "fail",
+              "bar": {
+                "avgAtLeast": 3,
+                "zerosUnderPercent": 5
+              }
+            }
+          }
+        ],
+        "atoms": [
+          {
+            "id": "@1.0",
+            "documentId": "@1",
+            "text": "A\n",
+            "class": "entrenched"
+          },
+          {
+            "id": "@1.1",
+            "documentId": "@1",
+            "text": "B\n",
+            "class": "ordinary"
+          },
+          {
+            "id": "@1.2",
+            "documentId": "@1",
+            "text": "C\n",
+            "class": "ordinary"
+          },
+          {
+            "id": "@1.3",
+            "documentId": "@1",
+            "text": "D\n",
+            "class": "ordinary"
+          }
+        ],
+        "ignored": []
+      }
+    },
+    {
+      "name": "classes-entrenched-edit-control: the same edit of S with the same 8 ballots, an average of 2.75, passes while S is ordinary: the class is what fails it",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29354840,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1761290400000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["A\n", "B\n", "C\n", "D\n"]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29354841,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761290460000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29354842,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1761290520000,
+            "body": {
+              "name": "Cal"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29354843,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1761290580000,
+            "body": {
+              "name": "Dee"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29354844,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%eve",
+            "ts": 1761290640000,
+            "body": {
+              "name": "Eve"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29354845,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%fay",
+            "ts": 1761290700000,
+            "body": {
+              "name": "Fay"
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29354846,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%gus",
+            "ts": 1761290760000,
+            "body": {
+              "name": "Gus"
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29354847,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%hal",
+            "ts": 1761290820000,
+            "body": {
+              "name": "Hal"
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29354848,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1761290880000,
+            "body": {
+              "name": "Kim",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 10,
+          "received": 29354849,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%zed",
+            "ts": 1761290940000,
+            "body": {
+              "name": "Zed"
+            }
+          }
+        },
+        {
+          "seq": 11,
+          "received": 29354850,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761291000000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 12,
+          "received": 29354851,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761291060000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 13,
+          "received": 29354852,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761291120000,
+            "body": {
+              "member": "%eve"
+            }
+          }
+        },
+        {
+          "seq": 14,
+          "received": 29354853,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761291180000,
+            "body": {
+              "member": "%eve"
+            }
+          }
+        },
+        {
+          "seq": 15,
+          "received": 29354854,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761291240000,
+            "body": {
+              "member": "%fay"
+            }
+          }
+        },
+        {
+          "seq": 16,
+          "received": 29354855,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761291300000,
+            "body": {
+              "member": "%fay"
+            }
+          }
+        },
+        {
+          "seq": 17,
+          "received": 29354856,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761291360000,
+            "body": {
+              "member": "%gus"
+            }
+          }
+        },
+        {
+          "seq": 18,
+          "received": 29354857,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761291420000,
+            "body": {
+              "member": "%gus"
+            }
+          }
+        },
+        {
+          "seq": 19,
+          "received": 29354858,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761291480000,
+            "body": {
+              "member": "%hal"
+            }
+          }
+        },
+        {
+          "seq": 20,
+          "received": 29354859,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761291540000,
+            "body": {
+              "member": "%hal"
+            }
+          }
+        },
+        {
+          "seq": 21,
+          "received": 29354860,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761291600000,
+            "body": {
+              "member": "%kim"
+            }
+          }
+        },
+        {
+          "seq": 22,
+          "received": 29354861,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761291660000,
+            "body": {
+              "member": "%kim"
+            }
+          }
+        },
+        {
+          "seq": 23,
+          "received": 29354862,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761291720000,
+            "body": {
+              "member": "%zed"
+            }
+          }
+        },
+        {
+          "seq": 24,
+          "received": 29354863,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761291780000,
+            "body": {
+              "member": "%zed"
+            }
+          }
+        },
+        {
+          "seq": 25,
+          "received": 29375030,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501800000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Reword A",
+              "why": "It reads better.",
+              "text": "A, reworded.\n"
+            }
+          }
+        },
+        {
+          "seq": 26,
+          "received": 29375040,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762502400000,
+            "body": {
+              "proposal": "@25",
+              "scores": {
+                "@25": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 27,
+          "received": 29375041,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762502460000,
+            "body": {
+              "proposal": "@25",
+              "scores": {
+                "@25": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 28,
+          "received": 29375042,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762502520000,
+            "body": {
+              "proposal": "@25",
+              "scores": {
+                "@25": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 29,
+          "received": 29375043,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762502580000,
+            "body": {
+              "proposal": "@25",
+              "scores": {
+                "@25": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 30,
+          "received": 29375044,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%eve",
+            "ts": 1762502640000,
+            "body": {
+              "proposal": "@25",
+              "scores": {
+                "@25": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 31,
+          "received": 29375045,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%fay",
+            "ts": 1762502700000,
+            "body": {
+              "proposal": "@25",
+              "scores": {
+                "@25": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 32,
+          "received": 29375046,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%gus",
+            "ts": 1762502760000,
+            "body": {
+              "proposal": "@25",
+              "scores": {
+                "@25": 2
+              }
+            }
+          }
+        },
+        {
+          "seq": 33,
+          "received": 29375047,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%hal",
+            "ts": 1762502820000,
+            "body": {
+              "proposal": "@25",
+              "scores": {
+                "@25": 2
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29385110,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@25",
+            "class": "ordinary",
+            "window": 7,
+            "deadline": 29385110,
+            "final": true,
+            "outcome": {
+              "kind": "pass",
+              "version": "@25",
+              "bar": {
+                "avgAtLeast": 2,
+                "zerosUnderPercent": 10
+              }
+            }
+          }
+        ],
+        "atoms": [
+          {
+            "id": "@1.0",
+            "documentId": "@1",
+            "text": "A, reworded.\n",
+            "class": "ordinary"
+          },
+          {
+            "id": "@1.1",
+            "documentId": "@1",
+            "text": "B\n",
+            "class": "ordinary"
+          },
+          {
+            "id": "@1.2",
+            "documentId": "@1",
+            "text": "C\n",
+            "class": "ordinary"
+          },
+          {
+            "id": "@1.3",
+            "documentId": "@1",
+            "text": "D\n",
+            "class": "ordinary"
+          }
+        ]
+      }
+    },
+    {
+      "name": "classes-entrenched-edit-passes: the same edit of S at an average of exactly 3.0, 8 scorers and no zeros, passes at its deadline; S takes the new text and stays entrenched",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29354840,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1761290400000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["A\n", "B\n", "C\n", "D\n"]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29354841,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761290460000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29354842,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1761290520000,
+            "body": {
+              "name": "Cal"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29354843,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1761290580000,
+            "body": {
+              "name": "Dee"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29354844,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%eve",
+            "ts": 1761290640000,
+            "body": {
+              "name": "Eve"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29354845,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%fay",
+            "ts": 1761290700000,
+            "body": {
+              "name": "Fay"
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29354846,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%gus",
+            "ts": 1761290760000,
+            "body": {
+              "name": "Gus"
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29354847,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%hal",
+            "ts": 1761290820000,
+            "body": {
+              "name": "Hal"
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29354848,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1761290880000,
+            "body": {
+              "name": "Kim",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 10,
+          "received": 29354849,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%zed",
+            "ts": 1761290940000,
+            "body": {
+              "name": "Zed"
+            }
+          }
+        },
+        {
+          "seq": 11,
+          "received": 29354850,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761291000000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 12,
+          "received": 29354851,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761291060000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 13,
+          "received": 29354852,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761291120000,
+            "body": {
+              "member": "%eve"
+            }
+          }
+        },
+        {
+          "seq": 14,
+          "received": 29354853,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761291180000,
+            "body": {
+              "member": "%eve"
+            }
+          }
+        },
+        {
+          "seq": 15,
+          "received": 29354854,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761291240000,
+            "body": {
+              "member": "%fay"
+            }
+          }
+        },
+        {
+          "seq": 16,
+          "received": 29354855,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761291300000,
+            "body": {
+              "member": "%fay"
+            }
+          }
+        },
+        {
+          "seq": 17,
+          "received": 29354856,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761291360000,
+            "body": {
+              "member": "%gus"
+            }
+          }
+        },
+        {
+          "seq": 18,
+          "received": 29354857,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761291420000,
+            "body": {
+              "member": "%gus"
+            }
+          }
+        },
+        {
+          "seq": 19,
+          "received": 29354858,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761291480000,
+            "body": {
+              "member": "%hal"
+            }
+          }
+        },
+        {
+          "seq": 20,
+          "received": 29354859,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761291540000,
+            "body": {
+              "member": "%hal"
+            }
+          }
+        },
+        {
+          "seq": 21,
+          "received": 29354860,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761291600000,
+            "body": {
+              "member": "%kim"
+            }
+          }
+        },
+        {
+          "seq": 22,
+          "received": 29354861,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761291660000,
+            "body": {
+              "member": "%kim"
+            }
+          }
+        },
+        {
+          "seq": 23,
+          "received": 29354862,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761291720000,
+            "body": {
+              "member": "%zed"
+            }
+          }
+        },
+        {
+          "seq": 24,
+          "received": 29354863,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761291780000,
+            "body": {
+              "member": "%zed"
+            }
+          }
+        },
+        {
+          "seq": 25,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "class",
+                "atom": "@1.0",
+                "to": "entrenched"
+              },
+              "title": "Entrench A",
+              "why": "It holds us together."
+            }
+          }
+        },
+        {
+          "seq": 26,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500660000,
+            "body": {
+              "proposal": "@25",
+              "scores": {
+                "@25": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 27,
+          "received": 29375012,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500720000,
+            "body": {
+              "proposal": "@25",
+              "scores": {
+                "@25": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 28,
+          "received": 29375013,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500780000,
+            "body": {
+              "proposal": "@25",
+              "scores": {
+                "@25": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 29,
+          "received": 29375014,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762500840000,
+            "body": {
+              "proposal": "@25",
+              "scores": {
+                "@25": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 30,
+          "received": 29375015,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%eve",
+            "ts": 1762500900000,
+            "body": {
+              "proposal": "@25",
+              "scores": {
+                "@25": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 31,
+          "received": 29375016,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%fay",
+            "ts": 1762500960000,
+            "body": {
+              "proposal": "@25",
+              "scores": {
+                "@25": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 32,
+          "received": 29375017,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%gus",
+            "ts": 1762501020000,
+            "body": {
+              "proposal": "@25",
+              "scores": {
+                "@25": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 33,
+          "received": 29375018,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%hal",
+            "ts": 1762501080000,
+            "body": {
+              "proposal": "@25",
+              "scores": {
+                "@25": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 34,
+          "received": 29375019,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762501140000,
+            "body": {
+              "proposal": "@25",
+              "scores": {
+                "@25": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 35,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%zed",
+            "ts": 1762501200000,
+            "body": {
+              "proposal": "@25",
+              "scores": {
+                "@25": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 36,
+          "received": 29375030,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501800000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Reword A",
+              "why": "It reads better.",
+              "text": "A, reworded.\n"
+            }
+          }
+        },
+        {
+          "seq": 37,
+          "received": 29375040,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762502400000,
+            "body": {
+              "proposal": "@36",
+              "scores": {
+                "@36": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 38,
+          "received": 29375041,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762502460000,
+            "body": {
+              "proposal": "@36",
+              "scores": {
+                "@36": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 39,
+          "received": 29375042,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762502520000,
+            "body": {
+              "proposal": "@36",
+              "scores": {
+                "@36": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 40,
+          "received": 29375043,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762502580000,
+            "body": {
+              "proposal": "@36",
+              "scores": {
+                "@36": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 41,
+          "received": 29375044,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%eve",
+            "ts": 1762502640000,
+            "body": {
+              "proposal": "@36",
+              "scores": {
+                "@36": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 42,
+          "received": 29375045,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%fay",
+            "ts": 1762502700000,
+            "body": {
+              "proposal": "@36",
+              "scores": {
+                "@36": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 43,
+          "received": 29375046,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%gus",
+            "ts": 1762502760000,
+            "body": {
+              "proposal": "@36",
+              "scores": {
+                "@36": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 44,
+          "received": 29375047,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%hal",
+            "ts": 1762502820000,
+            "body": {
+              "proposal": "@36",
+              "scores": {
+                "@36": 3
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29395190,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@25"
+          },
+          {
+            "id": "@36",
+            "class": "entrenched",
+            "deadline": 29395190,
+            "closedAt": null,
+            "final": true,
+            "outcome": {
+              "kind": "pass",
+              "version": "@36",
+              "bar": {
+                "avgAtLeast": 3,
+                "zerosUnderPercent": 5
+              }
+            }
+          }
+        ],
+        "atoms": [
+          {
+            "id": "@1.0",
+            "documentId": "@1",
+            "text": "A, reworded.\n",
+            "class": "entrenched"
+          },
+          {
+            "id": "@1.1",
+            "documentId": "@1",
+            "text": "B\n",
+            "class": "ordinary"
+          },
+          {
+            "id": "@1.2",
+            "documentId": "@1",
+            "text": "C\n",
+            "class": "ordinary"
+          },
+          {
+            "id": "@1.3",
+            "documentId": "@1",
+            "text": "D\n",
+            "class": "ordinary"
+          }
+        ]
+      }
+    },
+    {
+      "name": "classes-entrenched-edit-open: the edit of S is still open a minute before its 14-day deadline, so S keeps its text",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29354840,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1761290400000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["A\n", "B\n", "C\n", "D\n"]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29354841,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761290460000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29354842,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1761290520000,
+            "body": {
+              "name": "Cal"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29354843,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1761290580000,
+            "body": {
+              "name": "Dee"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29354844,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%eve",
+            "ts": 1761290640000,
+            "body": {
+              "name": "Eve"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29354845,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%fay",
+            "ts": 1761290700000,
+            "body": {
+              "name": "Fay"
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29354846,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%gus",
+            "ts": 1761290760000,
+            "body": {
+              "name": "Gus"
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29354847,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%hal",
+            "ts": 1761290820000,
+            "body": {
+              "name": "Hal"
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29354848,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1761290880000,
+            "body": {
+              "name": "Kim",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 10,
+          "received": 29354849,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%zed",
+            "ts": 1761290940000,
+            "body": {
+              "name": "Zed"
+            }
+          }
+        },
+        {
+          "seq": 11,
+          "received": 29354850,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761291000000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 12,
+          "received": 29354851,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761291060000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 13,
+          "received": 29354852,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761291120000,
+            "body": {
+              "member": "%eve"
+            }
+          }
+        },
+        {
+          "seq": 14,
+          "received": 29354853,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761291180000,
+            "body": {
+              "member": "%eve"
+            }
+          }
+        },
+        {
+          "seq": 15,
+          "received": 29354854,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761291240000,
+            "body": {
+              "member": "%fay"
+            }
+          }
+        },
+        {
+          "seq": 16,
+          "received": 29354855,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761291300000,
+            "body": {
+              "member": "%fay"
+            }
+          }
+        },
+        {
+          "seq": 17,
+          "received": 29354856,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761291360000,
+            "body": {
+              "member": "%gus"
+            }
+          }
+        },
+        {
+          "seq": 18,
+          "received": 29354857,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761291420000,
+            "body": {
+              "member": "%gus"
+            }
+          }
+        },
+        {
+          "seq": 19,
+          "received": 29354858,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761291480000,
+            "body": {
+              "member": "%hal"
+            }
+          }
+        },
+        {
+          "seq": 20,
+          "received": 29354859,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761291540000,
+            "body": {
+              "member": "%hal"
+            }
+          }
+        },
+        {
+          "seq": 21,
+          "received": 29354860,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761291600000,
+            "body": {
+              "member": "%kim"
+            }
+          }
+        },
+        {
+          "seq": 22,
+          "received": 29354861,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761291660000,
+            "body": {
+              "member": "%kim"
+            }
+          }
+        },
+        {
+          "seq": 23,
+          "received": 29354862,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761291720000,
+            "body": {
+              "member": "%zed"
+            }
+          }
+        },
+        {
+          "seq": 24,
+          "received": 29354863,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761291780000,
+            "body": {
+              "member": "%zed"
+            }
+          }
+        },
+        {
+          "seq": 25,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "class",
+                "atom": "@1.0",
+                "to": "entrenched"
+              },
+              "title": "Entrench A",
+              "why": "It holds us together."
+            }
+          }
+        },
+        {
+          "seq": 26,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500660000,
+            "body": {
+              "proposal": "@25",
+              "scores": {
+                "@25": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 27,
+          "received": 29375012,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500720000,
+            "body": {
+              "proposal": "@25",
+              "scores": {
+                "@25": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 28,
+          "received": 29375013,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500780000,
+            "body": {
+              "proposal": "@25",
+              "scores": {
+                "@25": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 29,
+          "received": 29375014,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762500840000,
+            "body": {
+              "proposal": "@25",
+              "scores": {
+                "@25": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 30,
+          "received": 29375015,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%eve",
+            "ts": 1762500900000,
+            "body": {
+              "proposal": "@25",
+              "scores": {
+                "@25": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 31,
+          "received": 29375016,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%fay",
+            "ts": 1762500960000,
+            "body": {
+              "proposal": "@25",
+              "scores": {
+                "@25": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 32,
+          "received": 29375017,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%gus",
+            "ts": 1762501020000,
+            "body": {
+              "proposal": "@25",
+              "scores": {
+                "@25": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 33,
+          "received": 29375018,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%hal",
+            "ts": 1762501080000,
+            "body": {
+              "proposal": "@25",
+              "scores": {
+                "@25": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 34,
+          "received": 29375019,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762501140000,
+            "body": {
+              "proposal": "@25",
+              "scores": {
+                "@25": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 35,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%zed",
+            "ts": 1762501200000,
+            "body": {
+              "proposal": "@25",
+              "scores": {
+                "@25": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 36,
+          "received": 29375030,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501800000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Change a section",
+              "why": "It reads better.",
+              "text": "A, reworded.\n"
+            }
+          }
+        },
+        {
+          "seq": 37,
+          "received": 29375040,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762502400000,
+            "body": {
+              "proposal": "@36",
+              "scores": {
+                "@36": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 38,
+          "received": 29375041,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762502460000,
+            "body": {
+              "proposal": "@36",
+              "scores": {
+                "@36": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 39,
+          "received": 29375042,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762502520000,
+            "body": {
+              "proposal": "@36",
+              "scores": {
+                "@36": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 40,
+          "received": 29375043,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762502580000,
+            "body": {
+              "proposal": "@36",
+              "scores": {
+                "@36": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 41,
+          "received": 29375044,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%eve",
+            "ts": 1762502640000,
+            "body": {
+              "proposal": "@36",
+              "scores": {
+                "@36": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 42,
+          "received": 29375045,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%fay",
+            "ts": 1762502700000,
+            "body": {
+              "proposal": "@36",
+              "scores": {
+                "@36": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 43,
+          "received": 29375046,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%gus",
+            "ts": 1762502760000,
+            "body": {
+              "proposal": "@36",
+              "scores": {
+                "@36": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 44,
+          "received": 29375047,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%hal",
+            "ts": 1762502820000,
+            "body": {
+              "proposal": "@36",
+              "scores": {
+                "@36": 3
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29395189,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@25"
+          },
+          {
+            "id": "@36",
+            "final": false
+          }
+        ],
+        "atoms": [
+          {
+            "id": "@1.0",
+            "documentId": "@1",
+            "text": "A\n",
+            "class": "entrenched"
+          },
+          {
+            "id": "@1.1",
+            "documentId": "@1",
+            "text": "B\n",
+            "class": "ordinary"
+          },
+          {
+            "id": "@1.2",
+            "documentId": "@1",
+            "text": "C\n",
+            "class": "ordinary"
+          },
+          {
+            "id": "@1.3",
+            "documentId": "@1",
+            "text": "D\n",
+            "class": "ordinary"
+          }
+        ]
+      }
+    }
+  ]
+}

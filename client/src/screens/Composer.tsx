@@ -8,7 +8,13 @@ import {
   textCheck,
   useSend,
   whyNoForm,
+  whySectionWaits,
 } from '../app/compose';
+import { AtomBadge } from '../app/AtomBadge';
+import { DocumentLine } from '../app/DocumentLine';
+import { type Back, documentBack, groupBack } from '../app/backLinks';
+import { documentLead, sectionPlace } from '../app/documentLines';
+import { formatAverageLine, formatZeroLine } from '../app/format';
 import { latestLink } from '../app/latestLink';
 import { holdPresses } from '../app/holdPresses';
 import { isHttpLink } from '../app/links';
@@ -23,13 +29,14 @@ import {
 import { AtomText } from '../app/text/AtomText';
 import { MarkdownField } from '../app/text/MarkdownField';
 import type { CoalitionStanding } from '../app/coalitionHome';
-import type { Route } from '../app/router';
 import { BackLink, Field, PageHeader } from '../app/ui';
+import { sectionsPreview } from '../app/sectionsPreview';
 import { useDraft } from '../app/useDraft';
 import { versionDoes } from '../app/versionViews';
 import { WindowField } from '../app/WindowField';
-import { normalizeAtomText } from '../engine/atomText';
+import { type HeadingLevel, normalizeAtomText } from '../engine/atomText';
 import { composeOption, openProposalOn } from '../engine/composeOption';
+import { DOCUMENT_TITLE_MAX, documentTitle } from '../engine/documents';
 import { type Atom, type GroupState, type Proposal, TITLE_MAX, WHY_MAX } from '../engine/fold';
 import { type ProposalClass, targetClass } from '../engine/rules';
 import { nfcLength } from '../engine/text';
@@ -78,6 +85,12 @@ const checkWhy = required(
   WHY_MAX,
   messages.composer.whyTooLong(WHY_MAX),
 );
+/** A new Document's title (#92): not blank, and as long as the fold takes. */
+const checkDocumentTitle = required(
+  messages.composer.documentTitleMissing,
+  DOCUMENT_TITLE_MAX,
+  messages.composer.documentTitleTooLong(DOCUMENT_TITLE_MAX),
+);
 
 /** As {@link textCheck}, and refuses text that normalizes to a version already on the ballot. */
 function versionCheck(current: string, proposal: Proposal, missing: string) {
@@ -99,6 +112,27 @@ function preview(value: string): ReactNode {
   return text === '' ? null : <AtomText text={text} />;
 }
 
+/** True when a Proposal proposes a new Document (#92), whose title its draft holds. */
+function proposesDocument(place: ProposalPlace): boolean {
+  return 'target' in place && place.target.kind === 'new-document';
+}
+
+/**
+ * Where the Proposal goes: a new Document's title taken from the draft,
+ * trimmed (#92), a move's place from the draft too (#103), and a class
+ * Proposal's class (#116).
+ */
+function placeFor(place: ProposalPlace, draft: Draft): ProposalPlace {
+  if ('target' in place && place.target.kind === 'move') {
+    return { target: { ...place.target, after: draft.moveAfter ?? null } };
+  }
+  if ('target' in place && place.target.kind === 'class') {
+    return { target: { ...place.target, to: draft.classTo ?? '' } };
+  }
+  if (!proposesDocument(place)) return place;
+  return { target: { kind: 'new-document', title: (draft.documentTitle ?? '').trim() } };
+}
+
 /**
  * The entries as the Proposal takes them: title, why and link trimmed, a
  * blank link none, and any Dispatch's title and text trimmed (#112).
@@ -107,7 +141,7 @@ function toValues(draft: Draft, place: ProposalPlace, window: number): ProposalV
   const link = draft.link.trim();
   const { dispatch } = draft;
   return {
-    ...place,
+    ...placeFor(place, draft),
     title: draft.title.trim(),
     why: draft.why.trim(),
     text: draft.text,
@@ -120,8 +154,45 @@ function toValues(draft: Draft, place: ProposalPlace, window: number): ProposalV
 }
 
 /** `draft` with no Dispatch (#112): "Send a Dispatch if this passes" unchecked. */
-function withoutDispatch({ title, why, text, link, window }: Draft): Draft {
-  return { title, why, text, link, ...(window === undefined ? {} : { window }) };
+function withoutDispatch(draft: Draft): Draft {
+  const rest = { ...draft };
+  delete rest.dispatch;
+  return rest;
+}
+
+/**
+ * The Document a Proposal changes (#92): its section's for a change, a
+ * removal, a move (#103) or a class Proposal (#116), the one an add names, or
+ * none yet for a new Document.
+ */
+function changedDocument(state: GroupState, place: ProposalPlace): string | undefined {
+  if (!('target' in place)) return sectionPlace(state, place.atom)?.document.id;
+  const { target } = place;
+  if (target.kind === 'move' || target.kind === 'class') {
+    return sectionPlace(state, target.atom)?.document.id;
+  }
+  return target.kind === 'add' ? target.document : undefined;
+}
+
+/**
+ * Where a composer's Back goes (#92): the Document its section or new section
+ * is in, or Group home for a new Document, which no Document holds yet.
+ */
+function backFor(state: GroupState, place: ProposalPlace): Back {
+  return proposesDocument(place)
+    ? groupBack(state)
+    : documentBack(state, changedDocument(state, place));
+}
+
+/**
+ * Where a carried Dispatch's title starts (#112): "Updated: <title>" of the
+ * Document the Proposal changes, or "New Document: <title>" for a new one (#92).
+ */
+function dispatchStart(state: GroupState, values: Draft, place: ProposalPlace): string {
+  const { composer } = messages;
+  if (proposesDocument(place))
+    return composer.dispatchNewTitle((values.documentTitle ?? '').trim());
+  return composer.dispatchTitle(documentTitle(state, changedDocument(state, place) ?? null) ?? '');
 }
 
 /** The class `targetClass` gives this Proposal as it stands, which bounds its voting time. */
@@ -139,14 +210,20 @@ function startOf(state: GroupState, atom: Atom): Draft {
   return { title: '', why: '', text: atom.text, link: latestLink(state) ?? '' };
 }
 
-/** The entries as the Proposal takes them, and, proposing again, the other versions' texts too. */
+/**
+ * The entries as the Proposal takes them, a header's level with them (#103),
+ * and, proposing again, the other versions' texts too.
+ */
 function valuesOf(
   draft: Draft,
-  place: ProposalPlace,
-  again: Proposal | undefined,
+  form: Pick<ProposalFormProps, 'place' | 'again' | 'heading'>,
   window: number,
 ): ProposalValues {
-  const values = toValues(draft, place, window);
+  const { again, heading } = form;
+  const values = {
+    ...toValues(draft, form.place, window),
+    ...(heading === undefined ? {} : { heading }),
+  };
   if (again === undefined) return values;
   return { ...values, again: again.id, versions: again.versions.slice(1).map((v) => v.text) };
 }
@@ -160,19 +237,8 @@ interface UnavailableProps {
   readonly state: GroupState;
   readonly title: string;
   readonly text: string;
-  /** Where Back goes: the group's Document unless given, as a coalition's is (#120). */
-  readonly back?: BackTo;
-}
-
-/** Where a form's Back link goes, and what it says. */
-export interface BackTo {
-  readonly to: Route;
-  readonly label: string;
-}
-
-/** Back to the group's Document. */
-function documentBack(state: GroupState): BackTo {
-  return { to: { name: 'document', groupId: state.group ?? '' }, label: state.title };
+  /** Where Back goes: the group's first Document unless given, as a coalition's is (#92, #120). */
+  readonly back?: Back;
 }
 
 /** Shown in place of the form when there's nothing here to propose on. */
@@ -186,7 +252,7 @@ export function Unavailable({ state, title, text, back = documentBack(state) }: 
   );
 }
 
-/** The section as it reads now, beside which the new text is written. */
+/** The section as it reads now, with its badge when it's protected (#116), beside which the new text is written. */
 export function CurrentText({ atom, section }: { readonly atom: Atom; readonly section: number }) {
   const heading = useId();
   return (
@@ -194,16 +260,30 @@ export function CurrentText({ atom, section }: { readonly atom: Atom; readonly s
       <h2 id={heading} className="eyebrow">
         {messages.composer.current(section)}
       </h2>
+      <AtomBadge cls={atom.class} />
       <AtomText text={atom.text} className="atom-card atom-card-current" />
     </section>
   );
 }
 
-/** The text field of a Proposal's form: its label, its hint and its check. */
+/**
+ * Over a change, removal or move of an entrenched section (#116): that it
+ * needs the group's higher bar and a longer vote. Nothing for any other.
+ */
+export function EntrenchedNote({ state, atom }: { readonly state: GroupState; atom: Atom }) {
+  if (atom.class !== 'entrenched') return null;
+  const bar = state.rules.bars.entrenched;
+  const note = messages.composer.entrenchedNote(formatAverageLine(bar), formatZeroLine(bar));
+  return <p className="caption">{note}</p>;
+}
+
+/** The text field of a Proposal's form: its label, its hint, its check and how Preview shows it. */
 export interface TextEntry {
   readonly label: string;
   readonly hint: string;
   readonly validate: (value: string) => string | null;
+  /** Preview's view of the text, the new text as it will read when absent. */
+  readonly preview?: (value: string) => ReactNode;
 }
 
 interface DispatchFieldsProps {
@@ -242,8 +322,9 @@ function DispatchFields({ dispatch, onChange }: DispatchFieldsProps) {
 }
 
 interface DispatchChoiceProps {
-  readonly state: GroupState;
   readonly values: Draft;
+  /** Where the Dispatch's title starts once it's checked. */
+  readonly start: string;
   readonly onChange: (values: Draft) => void;
   /** Who gets the Dispatch, under the checkbox. */
   readonly hint: string;
@@ -252,13 +333,14 @@ interface DispatchChoiceProps {
 /**
  * "Send a Dispatch if this passes" (#112), a React Aria checkbox, unchecked
  * to start. Checked, it opens the Dispatch's title, which starts as
- * 'Updated: {Document title}', and its text, both kept in the draft.
+ * 'Updated: {Document title}' ('New Document: {title}' for a new one, #92),
+ * and its text, both kept in the draft.
  */
-function DispatchChoice({ state, values, onChange, hint }: DispatchChoiceProps) {
+function DispatchChoice({ values, start, onChange, hint }: DispatchChoiceProps) {
   const { composer } = messages;
   const { dispatch } = values;
   const toggle = (on: boolean) => {
-    const opened = { title: composer.dispatchTitle(state.title), text: '' };
+    const opened = { title: start, text: '' };
     onChange(on ? { ...values, dispatch: opened } : withoutDispatch(values));
   };
   return (
@@ -289,11 +371,19 @@ function DispatchChoice({ state, values, onChange, hint }: DispatchChoiceProps) 
   );
 }
 
+/**
+ * A field of a form's own in place of the text field (#103): a header's one
+ * Heading line, or where a move puts its section. It reads and changes the draft.
+ */
+export type OwnField = (values: Draft, onChange: (values: Draft) => void) => ReactNode;
+
 interface FieldsProps {
   readonly state: GroupState;
   readonly values: Draft;
   /** The text field, or null for a removal, whose text is `""` (#75). */
   readonly text: TextEntry | null;
+  /** A field of the form's own in place of the text field, if any (#103). */
+  readonly field: OwnField | undefined;
   /** Where the Proposal goes, whose class bounds its voting time (#106). */
   readonly place: ProposalPlace;
   readonly now: number;
@@ -303,12 +393,68 @@ interface FieldsProps {
   readonly dispatch: boolean;
 }
 
+/** A new Document's title (#92), between the why and its first sections, kept in the draft. */
+function DocumentTitleField({ values, onChange }: Pick<FieldsProps, 'values' | 'onChange'>) {
+  const { composer } = messages;
+  return (
+    <Field
+      name="documentTitle"
+      label={composer.documentTitleLabel}
+      hint={composer.documentTitleHint}
+      autoComplete="off"
+      isRequired
+      validate={checkDocumentTitle}
+      value={values.documentTitle ?? ''}
+      onChange={(documentTitle) => {
+        onChange({ ...values, documentTitle });
+      }}
+    />
+  );
+}
+
+/** The text field, a form's own field in its place (#103), or nothing for a removal (#75). */
+function TextOrOwn({
+  values,
+  text,
+  field,
+  onChange,
+}: Omit<FieldsProps, 'state' | 'place' | 'now' | 'words' | 'dispatch'>) {
+  if (field !== undefined) return <>{field(values, onChange)}</>;
+  if (text === null) return null;
+  return (
+    <MarkdownField
+      name="text"
+      label={text.label}
+      hint={text.hint}
+      value={values.text}
+      onChange={(value) => {
+        onChange({ ...values, text: value });
+      }}
+      validate={text.validate}
+      isRequired
+      preview={text.preview ?? preview}
+    />
+  );
+}
+
 /**
- * The four entries, or three for a removal (#75), the voting time and any
- * Dispatch it carries (#112), each kept in the draft as it changes.
+ * The four entries, or three for a removal (#75) and five for a new Document,
+ * whose title comes after the why (#92), the voting time and any Dispatch it
+ * carries (#112), each kept in the draft as it changes. A header or a move
+ * has a field of its own where the text goes (#103).
  */
-function Fields({ state, values, text, place, now, onChange, words, dispatch }: FieldsProps) {
-  const set = (key: 'title' | 'why' | 'text' | 'link') => (value: string) => {
+function Fields({
+  state,
+  values,
+  text,
+  place,
+  now,
+  onChange,
+  words,
+  dispatch,
+  field,
+}: FieldsProps) {
+  const set = (key: 'title' | 'why' | 'link') => (value: string) => {
     onChange({ ...values, [key]: value });
   };
   return (
@@ -333,18 +479,8 @@ function Fields({ state, values, text, place, now, onChange, words, dispatch }: 
         value={values.why}
         onChange={set('why')}
       />
-      {text === null ? null : (
-        <MarkdownField
-          name="text"
-          label={text.label}
-          hint={text.hint}
-          value={values.text}
-          onChange={set('text')}
-          validate={text.validate}
-          isRequired
-          preview={preview}
-        />
-      )}
+      {proposesDocument(place) ? <DocumentTitleField values={values} onChange={onChange} /> : null}
+      <TextOrOwn values={values} text={text} field={field} onChange={onChange} />
       <Field
         name="link"
         label={messages.composer.linkLabel}
@@ -366,8 +502,8 @@ function Fields({ state, values, text, place, now, onChange, words, dispatch }: 
       />
       {dispatch ? (
         <DispatchChoice
-          state={state}
           values={values}
+          start={dispatchStart(state, values, place)}
           onChange={onChange}
           hint={words.dispatchHint ?? messages.composer.dispatchHint}
         />
@@ -453,9 +589,13 @@ export interface ProposalFormProps {
   /** The lapsed Proposal this proposes again (#74), whose other versions it carries, or undefined. */
   readonly again: Proposal | undefined;
   /** Where Back goes: the group's Document unless given, as a coalition's is (#120). */
-  readonly back?: BackTo;
+  readonly back?: Back;
   /** Whether it offers "Send a Dispatch if this passes" (#112): yes unless false. */
   readonly dispatch?: boolean;
+  /** A field of its own in place of the text field (#103): a header's Heading, or a move's place. */
+  readonly field?: OwnField;
+  /** For an add written as a header (#103), its level, whose draft it is kept in. */
+  readonly heading?: HeadingLevel;
 }
 
 /**
@@ -476,7 +616,7 @@ export function ProposalForm(props: ProposalFormProps) {
   if (values === null) return null;
   const submit = (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
-    void run(valuesOf(values, place, props.again, windowOf(state, values, place)));
+    void run(valuesOf(values, props, windowOf(state, values, place)));
   };
   const change = (next: Draft) => {
     setSaid('');
@@ -487,7 +627,7 @@ export function ProposalForm(props: ProposalFormProps) {
     setSaid(messages.composer.discarded);
     form.current?.querySelector<HTMLInputElement>('input[name="title"]')?.focus();
   };
-  const back = props.back ?? documentBack(state);
+  const back = props.back ?? backFor(state, place);
   return (
     <main className="shell">
       <BackLink to={back.to} label={back.label} />
@@ -504,6 +644,7 @@ export function ProposalForm(props: ProposalFormProps) {
           onChange={change}
           words={words}
           dispatch={props.dispatch ?? true}
+          field={props.field}
         />
         <OtherVersions again={props.again} />
         <p className="caption">{words.visibility ?? messages.composer.visibility}</p>
@@ -545,38 +686,56 @@ interface VersionFormProps {
   readonly onAddVersion: ComposerProps['onAddVersion'];
 }
 
-/** What sits above a version's text: the section as it reads now, or where an add's section goes. */
+/**
+ * What sits above a version's text: the section as it reads now, where an
+ * add's section goes, or the new Document a new Document's version would
+ * start (#92).
+ */
 function VersionIntro({
   state,
   section,
   proposal,
 }: Omit<VersionFormProps, 'drafts' | 'onAddVersion'>) {
+  const { composer } = messages;
   if (section !== null) {
     return (
       <>
-        <p className="lede">{messages.composer.versionLede}</p>
+        <p className="lede">{composer.versionLede}</p>
         <CurrentText atom={section.atom} section={section.number} />
+      </>
+    );
+  }
+  if (proposal.target.kind === 'new-document') {
+    return (
+      <>
+        <p className="lede">{composer.newDocumentVersionLede}</p>
+        <DocumentLine lead={documentLead(state, proposal)} groupId={state.group ?? ''} />
       </>
     );
   }
   return (
     <>
-      <p className="lede">{messages.composer.addVersionLede}</p>
+      <p className="lede">{composer.addVersionLede}</p>
       <p className="version-does">{versionDoes(state, proposal.target, proposal.text)}</p>
     </>
   );
 }
 
 /**
- * What a version rewords and starts from, and its field's hint and blank
- * refusal: the section as it reads now, or for an add, nothing to reword and
- * the Proposal's own text to start from.
+ * What a version rewords and starts from, and its field's hint, blank refusal
+ * and preview: the section as it reads now, or for an add or a new Document
+ * (#92), nothing to reword and the Proposal's own text to start from, a new
+ * Document's previewed as its numbered sections.
  */
 function versionWords(section: Section | null, proposal: Proposal) {
   const { composer } = messages;
+  if (proposal.target.kind === 'new-document') {
+    const words = { hint: composer.newDocumentVersionHint, missing: composer.sectionsMissing };
+    return { current: '', start: proposal.text, ...words, preview: sectionsPreview };
+  }
   if (section === null) {
     const add = { hint: composer.addVersionHint, missing: composer.addTextMissing };
-    return { current: '', start: proposal.text, ...add };
+    return { current: '', start: proposal.text, ...add, preview };
   }
   const { text } = section.atom;
   return {
@@ -584,6 +743,7 @@ function versionWords(section: Section | null, proposal: Proposal) {
     start: text,
     hint: composer.versionHint,
     missing: composer.versionMissing,
+    preview,
   };
 }
 
@@ -594,7 +754,8 @@ function versionWords(section: Section | null, proposal: Proposal) {
  * from any Proposal drafted for the section.
  */
 function VersionForm({ state, section, proposal, drafts, onAddVersion }: VersionFormProps) {
-  const { current, start, hint, missing } = versionWords(section, proposal);
+  const words = versionWords(section, proposal);
+  const { current, start, hint, missing } = words;
   const draft = useDraft(drafts, proposal.id, versionStartOf(start));
   const { run, running, failed, refused } = useSend(onAddVersion, draft);
   const form = useRef<HTMLFormElement>(null);
@@ -636,7 +797,7 @@ function VersionForm({ state, section, proposal, drafts, onAddVersion }: Version
           }}
           validate={versionCheck(current, proposal, missing)}
           isRequired
-          preview={preview}
+          preview={words.preview}
         />
         <p className="caption">{messages.composer.versionVisibility}</p>
         {failed ? (
@@ -662,11 +823,10 @@ function VersionForm({ state, section, proposal, drafts, onAddVersion }: Version
   );
 }
 
-/** The section `atomId` names, with its number, or null when it isn't in the Document. */
+/** The section `atomId` names, with its number in its own Document (#92), or null when it isn't in one. */
 function sectionOf(state: GroupState, atomId: string): Section | null {
-  const index = state.atoms.findIndex((candidate) => candidate.id === atomId);
-  const atom = state.atoms[index];
-  return atom === undefined ? null : { atom, number: index + 1 };
+  const place = sectionPlace(state, atomId);
+  return place === null ? null : { atom: place.atom, number: place.number };
 }
 
 /** What the composer writes for `atomId`: a version of its open Proposal, a change, or nothing. */
@@ -719,6 +879,7 @@ function ChangeForm({ state, section, drafts, now, onPropose, again }: ChangeFor
       intro={
         <>
           <AgainLede again={again} />
+          <EntrenchedNote state={state} atom={atom} />
           <CurrentText atom={atom} section={number} />
         </>
       }
@@ -755,6 +916,11 @@ export function Composer(props: ComposerProps) {
   }
   const refused = whyNoForm(props);
   if (refused !== null) return <Unavailable state={state} {...refused} />;
+  const waits = whySectionWaits(state, atomId);
+  if (waits !== null) {
+    const back = documentBack(state, what.section?.atom.documentId);
+    return <Unavailable state={state} {...waits} back={back} />;
+  }
   if (what.kind === 'change') {
     const again = lapsed(props.again);
     return (
@@ -828,13 +994,10 @@ export function CoalitionComposer(props: CoalitionComposerProps) {
   const { composer, coalitions } = messages;
   const coalitionId = state.group ?? '';
   const section = sectionOf(state, atomId);
+  const documentId = section?.atom.documentId ?? coalitionId;
   const back = {
-    to: {
-      name: 'coalitionDocument',
-      coalitionId,
-      documentId: section?.atom.documentId ?? coalitionId,
-    },
-    label: state.title,
+    to: { name: 'coalitionDocument', coalitionId, documentId },
+    label: documentTitle(state, documentId) ?? '',
   } as const;
   if (section === null) {
     return (

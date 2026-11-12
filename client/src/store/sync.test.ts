@@ -28,8 +28,8 @@ import { freshIndexedDBPerTest } from '../test/idb';
 import { authorOf, signedAs, testKeys, testKx } from '../test/keys';
 import { manualTimers } from '../test/timers';
 import type { ChatBot } from './chatBot';
-import { openStore } from './db';
-import type { Group, Pull, Store } from './db';
+import { openStore, sameBytes } from './db';
+import { type BackedUpGroup, type Group, HISTORY_GAP_MS, type Pull, type Store } from './db';
 import { eventIdOf } from './eventId';
 import { keyChangeOf } from './epochs';
 import type { PushUpkeep } from './push';
@@ -91,8 +91,7 @@ function genesis(): SignedEvent {
     body: {
       name: 'Riverside Tenants',
       founder: 'Ana',
-      title: 'House rules',
-      atoms: ['Quiet after 10pm.', 'Bins out on Sunday.'],
+      documents: [{ title: 'House rules', atoms: ['Quiet after 10pm.', 'Bins out on Sunday.'] }],
       kx: testKx(ANA).kx,
     },
   });
@@ -329,7 +328,7 @@ describe('a sync pass', () => {
     expect(ok).toBe(false);
     expect((await after.store.listGroups()).map((group) => group.groupId)).toEqual([GROUP]);
     const document = await after.state();
-    expect(document.title).toBe('House rules');
+    expect(document.documents[0]?.title).toBe('House rules');
     expect(document.atoms.map((atom) => atom.text)).toEqual([
       'Quiet after 10pm.',
       'Bins out on Sunday.',
@@ -361,6 +360,79 @@ describe('a sync pass', () => {
     expect((await ana.group()).outbox).toEqual([]);
   });
 
+  it('holds what it posts in the outbox or the log before every request, never in neither (#349)', async () => {
+    const fake = createFakeRelay();
+    const keys = newKeys();
+    const founding = genesis();
+    let store: Store | null = null;
+    /** How many copies of the genesis the group holds now: queued, or in its log. */
+    const copies = async (): Promise<number> => {
+      const group = await store?.getGroup(GROUP);
+      const held = [...(group?.outbox ?? []), ...(group?.log ?? []).map(({ bytes }) => bytes)];
+      return held.filter((bytes) => sameBytes(bytes, founding.record)).length;
+    };
+    // Before each request goes out, the group is read as the store holds it then.
+    const seen: { method: string; url: string; copies: number }[] = [];
+    const watched: Fetch = async (input, init) => {
+      const listed = store === null ? null : await copies();
+      const response = await fake.fetch(input, init);
+      const request = fake.requests.at(-1);
+      if (listed !== null && request !== undefined) {
+        seen.push({ method: request.method, url: request.url, copies: listed });
+      }
+      return response;
+    };
+    const ana = await device('ana', createRelay({ fetch: watched }), keys);
+    store = ana.store;
+    await ana.store.enqueue(GROUP, founding.record);
+
+    expect(await ana.sync.syncOnce()).toBe(true);
+
+    // The relay took it, and the pull that reads it back went out after: the gap a screen once showed.
+    const put = seen.findIndex((r) => r.method === 'PUT' && r.url.includes(keys.mailbox));
+    expect(put).toBeGreaterThanOrEqual(0);
+    const after = seen.slice(put + 1);
+    expect(after.some((r) => r.method === 'GET' && r.url.includes(keys.mailbox))).toBe(true);
+    expect([...seen.map((r) => r.copies), await copies()]).toEqual([...seen.map(() => 1), 1]);
+    const group = await ana.group();
+    expect(group.outbox).toEqual([]);
+    expect(labels(group.log)).toEqual(['genesis:Riverside Tenants']);
+  });
+
+  it('keeps an event the relay took queued while the pull that reads it back fails, then holds it once (#349)', async () => {
+    const fake = createFakeRelay();
+    const keys = newKeys();
+    // The relay takes the event, then the next request fails, once, as when the network drops.
+    let armed = true;
+    let dropNext = false;
+    const flaky: Fetch = async (input, init) => {
+      if (dropNext) {
+        dropNext = false;
+        throw new TypeError('Failed to fetch');
+      }
+      const response = await fake.fetch(input, init);
+      dropNext = armed && fake.requests.at(-1)?.method === 'PUT';
+      armed = !dropNext && armed;
+      return response;
+    };
+    const ana = await device('ana', createRelay({ fetch: flaky }), keys);
+    const founding = genesis();
+    await ana.store.enqueue(GROUP, founding.record);
+
+    expect(await ana.sync.syncOnce()).toBe(false);
+    expect(fake.blobs(keys.mailbox)).toHaveLength(1);
+    // Still pending, from the outbox, though the relay has it: no screen sees it vanish.
+    expect((await ana.group()).outbox.map(local)).toEqual([founding.record]);
+
+    expect(await ana.sync.syncOnce()).toBe(true);
+    // Posted again, as after a reply that never came: the log keeps one, by its event id.
+    expect(fake.blobs(keys.mailbox)).toHaveLength(2);
+    const group = await ana.group();
+    expect(group.outbox).toEqual([]);
+    expect(group.log.map(({ bytes }) => local(bytes))).toEqual([founding.record]);
+    expect((await ana.state()).ignored).toEqual([]);
+  });
+
   it('skips a blob that will not open, and reads past it', async () => {
     const fake = createFakeRelay();
     const relay = createRelay({ fetch: fake.fetch });
@@ -374,7 +446,7 @@ describe('a sync pass', () => {
     const group = await ana.group();
     expect(group.log.map((record) => record.seq)).toEqual([2]);
     expect(group.cursors?.[keys.mailbox]).toBe(2);
-    expect((await ana.state()).title).toBe('House rules');
+    expect((await ana.state()).documents[0]?.title).toBe('House rules');
   });
 
   it('skips blobs that fail to open between good ones: the next good one folds, and the cursor moves past', async () => {
@@ -472,7 +544,7 @@ describe('a sync pass', () => {
     const ok = await ana.sync.syncOnce();
 
     expect(ok).toBe(false);
-    expect((await ana.state()).title).toBe('House rules');
+    expect((await ana.state()).documents[0]?.title).toBe('House rules');
   });
 
   it('fails without throwing when the store itself fails', async () => {
@@ -952,8 +1024,7 @@ describe('a new group key when someone leaves (#98)', () => {
       body: {
         name: 'Riverside Tenants',
         founder: 'Ana',
-        title: 'House rules',
-        atoms: ['Quiet after 10pm.', 'Bins out on Sunday.'],
+        documents: [{ title: 'House rules', atoms: ['Quiet after 10pm.', 'Bins out on Sunday.'] }],
         kx: testKx(ANA).kx,
       },
     });
@@ -1539,8 +1610,7 @@ describe('weekly mailboxes (#110)', () => {
     const body = {
       name: 'Allotment',
       founder: 'Ana',
-      title: 'Plot rules',
-      atoms: ['Share tools.'],
+      documents: [{ title: 'Plot rules', atoms: ['Share tools.'] }],
       kx: testKx(ANA).kx,
     };
     const theirs = signedAs(ANA, { type: 'genesis', group: '', ts: TS, body });
@@ -1943,6 +2013,87 @@ describe('the result duty (#111)', () => {
       expect(outboxes).toEqual([[], ['result']]);
     },
   );
+
+  /**
+   * A backup's copy of the group on `holder`'s device: synced later than the
+   * device's own, but last hearing from the group a minute more than #73's 28
+   * days of relay time before it, so a restore takes it back read-only for
+   * now, and a pass that reads nothing new leaves it so (#231).
+   */
+  async function olderCopy(holder: Device): Promise<BackedUpGroup> {
+    const held = await holder.group();
+    const { groupId, secret, signingKey, me, log, cursor, instance } = held;
+    return {
+      groupId,
+      secret,
+      signingKey,
+      ...(held.kxKey === undefined ? {} : { kxKey: held.kxKey }),
+      me,
+      log,
+      cursor,
+      relayNow: (held.relayNow ?? 0) - HISTORY_GAP_MS / 60_000 - 1,
+      instance,
+      lastSyncAt: (held.lastSyncAt ?? 0) + 1,
+      missingHistory: false,
+    };
+  }
+
+  /** The group comes back on `holder`'s device read-only for now, from a backup's older copy (#231). */
+  const readOnlyForNow: Goes = async (holder) => {
+    await holder.store.restoreGroups([await olderCopy(holder)]);
+    expect((await holder.group()).archived?.reason).toBe('unconfirmed');
+  };
+
+  it('owes no result while a copy back from a backup reads only for now, so none comes due at once when the group goes on (#231)', async () => {
+    const held = await closedEarly();
+    const { fake, ana } = held;
+    fake.minute += 1;
+    await ana.sync.syncOnce();
+    expect((await ana.group()).outbox).toEqual([]);
+
+    const { whileGone, outboxes } = await goesAndComesBack(held, ana, readOnlyForNow, ANA);
+
+    expect(whileGone).not.toContain('result');
+    expect(outboxes).toEqual([[], ['result']]);
+  });
+
+  it('settles a copy back read-only for now again once the group goes on, in that same minute (#231)', async () => {
+    const held = await closedEarly();
+    const { fake, keys } = held;
+    const kim = await device('kim', createRelay({ fetch: fake.fetch }), keys);
+    fake.minute += 1;
+    await kim.sync.syncOnce();
+
+    const { whileGone, outboxes } = await goesAndComesBack(held, kim, readOnlyForNow, 'kim');
+
+    expect(whileGone).not.toContain('result');
+    expect(outboxes).toEqual([[], ['result']]);
+  });
+
+  it('settles a copy back read-only for now once a relay minute, as a live group, keeping its notes between passes (#231)', async () => {
+    const { fake, keys, founding } = await closedEarly();
+    // Kim's key isn't a member, so his device owes nothing and settles once a minute.
+    const kim = await device('kim', createRelay({ fetch: fake.fetch }), keys);
+    const reads = vi.spyOn(kim.store, 'getGroup');
+    /** How many more times the first pass in a new relay minute reads the group than the next pass does. */
+    async function settleReads(): Promise<number> {
+      fake.minute += 1;
+      reads.mockClear();
+      await kim.sync.syncOnce();
+      const first = reads.mock.calls.length;
+      reads.mockClear();
+      await kim.sync.syncOnce();
+      return first - reads.mock.calls.length;
+    }
+    const live = await settleReads();
+
+    await readOnlyForNow(kim, founding, 'kim');
+    const readOnly = await settleReads();
+
+    expect((await kim.group()).archived?.reason).toBe('unconfirmed');
+    // A refold on every pass would read it as often on the second pass as on the first.
+    expect(readOnly).toBe(live);
+  });
 });
 
 /** Each signed record's event type, in order. */

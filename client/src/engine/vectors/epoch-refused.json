@@ -1,0 +1,1365 @@
+{
+  "kind": "fold",
+  "about": "#224: a key-rotate is refused when a later unwrap-failed naming it, read from the old epoch's mailbox, comes from one of its recipients, and no key-taken naming it was read from its own epoch's mailbox. A refused key change never moves the group: its epoch number is spent, its author may write no other, and the key change stays due. Wraps are placeholders; devices check them (crypto/epoch.ts).",
+  "vectors": [
+    {
+      "name": "an unwrap-failed from a recipient refuses the key change it names: its epoch is spent, and the key change stays due",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ],
+              "kx": "&ana"
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator",
+              "kx": "&ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375003,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%zed",
+            "ts": 1762500180000,
+            "body": {
+              "name": "Zed",
+              "level": "co-creator",
+              "kx": "&zed"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375004,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500240000,
+            "body": {
+              "name": "Cal",
+              "level": "co-creator",
+              "kx": "&cal"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375005,
+          "event": {
+            "v": 1,
+            "type": "leave",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500300000,
+            "body": {}
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375006,
+          "event": {
+            "v": 1,
+            "type": "key-rotate",
+            "group": "@1",
+            "author": "%zed",
+            "ts": 1762500360000,
+            "body": {
+              "epoch": 1,
+              "commit": "poisoned-commit-of-this-vectorAAAAAAAAAAAAA",
+              "wraps": {
+                "%ana": "AA",
+                "%ben": "AA",
+                "%zed": "AA"
+              }
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375007,
+          "event": {
+            "v": 1,
+            "type": "unwrap-failed",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500420000,
+            "body": {
+              "rotation": "@6"
+            }
+          }
+        }
+      ],
+      "relayNow": 29375007,
+      "expect": {
+        "epoch": 0,
+        "nextEpoch": 2,
+        "rotationDue": true,
+        "rotations": [],
+        "refused": [
+          {
+            "id": "@6",
+            "seq": 6,
+            "received": 29375006,
+            "by": "%zed",
+            "epoch": 1,
+            "commit": "poisoned-commit-of-this-vectorAAAAAAAAAAAAA",
+            "wraps": {
+              "%ana": "AA",
+              "%ben": "AA",
+              "%zed": "AA"
+            },
+            "keys": {
+              "%ana": "&ana",
+              "%ben": "&ben",
+              "%zed": "&zed"
+            }
+          }
+        ],
+        "ignored": []
+      }
+    },
+    {
+      "name": "a key change is refused from its own place, so a record between it and the unwrap-failed in the old mailbox still folds",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ],
+              "kx": "&ana"
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator",
+              "kx": "&ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375003,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%zed",
+            "ts": 1762500180000,
+            "body": {
+              "name": "Zed",
+              "level": "co-creator",
+              "kx": "&zed"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375004,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500240000,
+            "body": {
+              "name": "Cal",
+              "level": "co-creator",
+              "kx": "&cal"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375005,
+          "event": {
+            "v": 1,
+            "type": "leave",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500300000,
+            "body": {}
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375006,
+          "event": {
+            "v": 1,
+            "type": "key-rotate",
+            "group": "@1",
+            "author": "%zed",
+            "ts": 1762500360000,
+            "body": {
+              "epoch": 1,
+              "commit": "poisoned-commit-of-this-vectorAAAAAAAAAAAAA",
+              "wraps": {
+                "%ana": "AA",
+                "%ben": "AA",
+                "%zed": "AA"
+              }
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375007,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500420000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Later quiet hours",
+              "why": "Shift work.",
+              "text": "Quiet after midnight.\n"
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375008,
+          "event": {
+            "v": 1,
+            "type": "unwrap-failed",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500480000,
+            "body": {
+              "rotation": "@6"
+            }
+          }
+        }
+      ],
+      "relayNow": 29375008,
+      "expect": {
+        "epoch": 0,
+        "rotations": [],
+        "refused": [
+          {
+            "id": "@6"
+          }
+        ],
+        "proposals": [
+          {
+            "id": "@7"
+          }
+        ],
+        "ignored": []
+      }
+    },
+    {
+      "name": "two recipients who say so refuse it once, and both count",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ],
+              "kx": "&ana"
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator",
+              "kx": "&ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375003,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%zed",
+            "ts": 1762500180000,
+            "body": {
+              "name": "Zed",
+              "level": "co-creator",
+              "kx": "&zed"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375004,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500240000,
+            "body": {
+              "name": "Cal",
+              "level": "co-creator",
+              "kx": "&cal"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375005,
+          "event": {
+            "v": 1,
+            "type": "leave",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500300000,
+            "body": {}
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375006,
+          "event": {
+            "v": 1,
+            "type": "key-rotate",
+            "group": "@1",
+            "author": "%zed",
+            "ts": 1762500360000,
+            "body": {
+              "epoch": 1,
+              "commit": "poisoned-commit-of-this-vectorAAAAAAAAAAAAA",
+              "wraps": {
+                "%ana": "AA",
+                "%ben": "AA",
+                "%zed": "AA"
+              }
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375007,
+          "event": {
+            "v": 1,
+            "type": "unwrap-failed",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500420000,
+            "body": {
+              "rotation": "@6"
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375008,
+          "event": {
+            "v": 1,
+            "type": "unwrap-failed",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500480000,
+            "body": {
+              "rotation": "@6"
+            }
+          }
+        }
+      ],
+      "relayNow": 29375008,
+      "expect": {
+        "epoch": 0,
+        "nextEpoch": 2,
+        "refused": [
+          {
+            "id": "@6"
+          }
+        ],
+        "ignored": []
+      },
+      "unchangedWithout": [8]
+    },
+    {
+      "name": "an unwrap-failed from the member who left, who has no wrap in it, refuses nothing",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ],
+              "kx": "&ana"
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator",
+              "kx": "&ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375003,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%zed",
+            "ts": 1762500180000,
+            "body": {
+              "name": "Zed",
+              "level": "co-creator",
+              "kx": "&zed"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375004,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500240000,
+            "body": {
+              "name": "Cal",
+              "level": "co-creator",
+              "kx": "&cal"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375005,
+          "event": {
+            "v": 1,
+            "type": "leave",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500300000,
+            "body": {}
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375006,
+          "event": {
+            "v": 1,
+            "type": "key-rotate",
+            "group": "@1",
+            "author": "%zed",
+            "ts": 1762500360000,
+            "body": {
+              "epoch": 1,
+              "commit": "poisoned-commit-of-this-vectorAAAAAAAAAAAAA",
+              "wraps": {
+                "%ana": "AA",
+                "%ben": "AA",
+                "%zed": "AA"
+              }
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375007,
+          "event": {
+            "v": 1,
+            "type": "unwrap-failed",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500420000,
+            "body": {
+              "rotation": "@6"
+            }
+          }
+        }
+      ],
+      "relayNow": 29375007,
+      "expect": {
+        "epoch": 1,
+        "nextEpoch": 2,
+        "rotations": [
+          {
+            "id": "@6"
+          }
+        ],
+        "refused": [],
+        "ignored": [
+          {
+            "seq": 7,
+            "id": "@7"
+          }
+        ]
+      },
+      "unchangedWithout": [7]
+    },
+    {
+      "name": "an unwrap-failed from a member with no encryption key, who has no wrap in it, refuses nothing",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ],
+              "kx": "&ana"
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator",
+              "kx": "&ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375003,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%zed",
+            "ts": 1762500180000,
+            "body": {
+              "name": "Zed",
+              "level": "co-creator",
+              "kx": "&zed"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375004,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762500240000,
+            "body": {
+              "name": "Dee",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375005,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500300000,
+            "body": {
+              "name": "Cal",
+              "level": "co-creator",
+              "kx": "&cal"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375006,
+          "event": {
+            "v": 1,
+            "type": "leave",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500360000,
+            "body": {}
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375007,
+          "event": {
+            "v": 1,
+            "type": "key-rotate",
+            "group": "@1",
+            "author": "%zed",
+            "ts": 1762500420000,
+            "body": {
+              "epoch": 1,
+              "commit": "poisoned-commit-of-this-vectorAAAAAAAAAAAAA",
+              "wraps": {
+                "%ana": "AA",
+                "%ben": "AA",
+                "%zed": "AA"
+              }
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375008,
+          "event": {
+            "v": 1,
+            "type": "unwrap-failed",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762500480000,
+            "body": {
+              "rotation": "@7"
+            }
+          }
+        }
+      ],
+      "relayNow": 29375008,
+      "expect": {
+        "epoch": 1,
+        "rotations": [
+          {
+            "id": "@7"
+          }
+        ],
+        "refused": [],
+        "ignored": [
+          {
+            "seq": 8,
+            "id": "@8"
+          }
+        ]
+      },
+      "unchangedWithout": [8]
+    },
+    {
+      "name": "an unwrap-failed read from the new epoch's mailbox refuses nothing",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ],
+              "kx": "&ana"
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator",
+              "kx": "&ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375003,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%zed",
+            "ts": 1762500180000,
+            "body": {
+              "name": "Zed",
+              "level": "co-creator",
+              "kx": "&zed"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375004,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500240000,
+            "body": {
+              "name": "Cal",
+              "level": "co-creator",
+              "kx": "&cal"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375005,
+          "event": {
+            "v": 1,
+            "type": "leave",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500300000,
+            "body": {}
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375006,
+          "event": {
+            "v": 1,
+            "type": "key-rotate",
+            "group": "@1",
+            "author": "%zed",
+            "ts": 1762500360000,
+            "body": {
+              "epoch": 1,
+              "commit": "poisoned-commit-of-this-vectorAAAAAAAAAAAAA",
+              "wraps": {
+                "%ana": "AA",
+                "%ben": "AA",
+                "%zed": "AA"
+              }
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375007,
+          "event": {
+            "v": 1,
+            "type": "unwrap-failed",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500420000,
+            "body": {
+              "rotation": "@6"
+            }
+          },
+          "epoch": 1
+        }
+      ],
+      "relayNow": 29375007,
+      "expect": {
+        "epoch": 1,
+        "rotations": [
+          {
+            "id": "@6"
+          }
+        ],
+        "refused": [],
+        "ignored": [
+          {
+            "seq": 7,
+            "id": "@7"
+          }
+        ]
+      },
+      "unchangedWithout": [7]
+    },
+    {
+      "name": "an unwrap-failed for another group, or naming something that isn't a key change, refuses nothing",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ],
+              "kx": "&ana"
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator",
+              "kx": "&ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375003,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%zed",
+            "ts": 1762500180000,
+            "body": {
+              "name": "Zed",
+              "level": "co-creator",
+              "kx": "&zed"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375004,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500240000,
+            "body": {
+              "name": "Cal",
+              "level": "co-creator",
+              "kx": "&cal"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375005,
+          "event": {
+            "v": 1,
+            "type": "leave",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500300000,
+            "body": {}
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375006,
+          "event": {
+            "v": 1,
+            "type": "key-rotate",
+            "group": "@1",
+            "author": "%zed",
+            "ts": 1762500360000,
+            "body": {
+              "epoch": 1,
+              "commit": "poisoned-commit-of-this-vectorAAAAAAAAAAAAA",
+              "wraps": {
+                "%ana": "AA",
+                "%ben": "AA",
+                "%zed": "AA"
+              }
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375007,
+          "event": {
+            "v": 1,
+            "type": "unwrap-failed",
+            "group": "another-group",
+            "author": "%ana",
+            "ts": 1762500420000,
+            "body": {
+              "rotation": "@6"
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375008,
+          "event": {
+            "v": 1,
+            "type": "unwrap-failed",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500480000,
+            "body": {
+              "rotation": "@5"
+            }
+          }
+        }
+      ],
+      "relayNow": 29375008,
+      "expect": {
+        "epoch": 1,
+        "rotations": [
+          {
+            "id": "@6"
+          }
+        ],
+        "refused": [],
+        "ignored": [
+          {
+            "seq": 7,
+            "id": "@7"
+          },
+          {
+            "seq": 8,
+            "id": "@8"
+          }
+        ]
+      },
+      "unchangedWithout": [7, 8]
+    },
+    {
+      "name": "an unwrap-failed from a suspended recipient counts: a suspension takes no one's key",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29354840,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ],
+              "kx": "&ana"
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29354841,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator",
+              "kx": "&ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29354842,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%zed",
+            "ts": 1762500180000,
+            "body": {
+              "name": "Zed",
+              "level": "co-creator",
+              "kx": "&zed"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29354843,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762500240000,
+            "body": {
+              "name": "Kim",
+              "level": "co-creator",
+              "kx": "&kim"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29354844,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500300000,
+            "body": {
+              "name": "Cal",
+              "level": "co-creator",
+              "kx": "&cal"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "suspend",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500360000,
+            "body": {
+              "member": "%kim",
+              "reason": "Posting threats in the chat."
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "leave",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500420000,
+            "body": {}
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375012,
+          "event": {
+            "v": 1,
+            "type": "key-rotate",
+            "group": "@1",
+            "author": "%zed",
+            "ts": 1762500480000,
+            "body": {
+              "epoch": 1,
+              "commit": "poisoned-commit-of-this-vectorAAAAAAAAAAAAA",
+              "wraps": {
+                "%ana": "AA",
+                "%ben": "AA",
+                "%zed": "AA",
+                "%kim": "AA"
+              }
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29375013,
+          "event": {
+            "v": 1,
+            "type": "unwrap-failed",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762500540000,
+            "body": {
+              "rotation": "@8"
+            }
+          }
+        }
+      ],
+      "relayNow": 29375013,
+      "expect": {
+        "suspensions": [
+          {
+            "member": "%kim"
+          }
+        ],
+        "epoch": 0,
+        "nextEpoch": 2,
+        "rotationDue": true,
+        "refused": [
+          {
+            "id": "@8",
+            "by": "%zed"
+          }
+        ],
+        "ignored": []
+      }
+    },
+    {
+      "name": "where it sits, an unwrap-failed from someone with no wrap is ignored, though it names a refused key change in the old mailbox",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ],
+              "kx": "&ana"
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator",
+              "kx": "&ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375003,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%zed",
+            "ts": 1762500180000,
+            "body": {
+              "name": "Zed",
+              "level": "co-creator",
+              "kx": "&zed"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375004,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500240000,
+            "body": {
+              "name": "Cal",
+              "level": "co-creator",
+              "kx": "&cal"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375005,
+          "event": {
+            "v": 1,
+            "type": "leave",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500300000,
+            "body": {}
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375006,
+          "event": {
+            "v": 1,
+            "type": "key-rotate",
+            "group": "@1",
+            "author": "%zed",
+            "ts": 1762500360000,
+            "body": {
+              "epoch": 1,
+              "commit": "poisoned-commit-of-this-vectorAAAAAAAAAAAAA",
+              "wraps": {
+                "%ana": "AA",
+                "%ben": "AA",
+                "%zed": "AA"
+              }
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375007,
+          "event": {
+            "v": 1,
+            "type": "unwrap-failed",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500420000,
+            "body": {
+              "rotation": "@6"
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375008,
+          "event": {
+            "v": 1,
+            "type": "unwrap-failed",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500480000,
+            "body": {
+              "rotation": "@6"
+            }
+          }
+        }
+      ],
+      "relayNow": 29375008,
+      "expect": {
+        "epoch": 0,
+        "refused": [
+          {
+            "id": "@6"
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 8,
+            "id": "@8"
+          }
+        ]
+      },
+      "unchangedWithout": [8]
+    }
+  ]
+}

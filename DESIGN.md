@@ -158,8 +158,13 @@ Keep running text to 60–70 characters per line. Use `text-wrap: balance` on he
 Build on **React Aria Components** (unstyled, accessible). Style everything from these tokens.
 
 - **Atom block:** Newsreader text with a left gutter for its badge.
-  - Badges: *Entrenched* has a `clay` outline and a lock glyph. *Eternal* has a double `ink` rule and the eyebrow "ETERNAL". #116 builds them.
-  - History opens in a side sheet. #104 builds it.
+  - Badges (#116) open the block, as an eyebrow, so the word says the class and color is never the only signal. *Entrenched* has a `clay` outline, a lock glyph and the eyebrow "ENTRENCHED", in `clay`. *Eternal* has a double `ink` rule above and below and the eyebrow "ETERNAL", in `ink`. An ordinary section has none.
+  - An eternal section offers no change, removal, move or protection. In their place, one caption line says it can't be changed; its History stays, as on every section.
+  - **History** (#104): each section's quiet History opens its history in a side sheet: a React Aria Modal on `surface` over the `scrim`, standing at the inline end with `lg` corners on its open edge and the one soft shadow, and the whole screen below 40rem. Its heading and Close stay at the top as it scrolls.
+    - Each pass, newest first: its Proposal's title (heading-3), the text it left in Newsreader (or "This removed the section." in body; a move or a class change sets its line, such as "Moved to the top" or "Made eternal", in body over the text), "Proposed by <name> · Decided <date>" (caption, `muted`), its why (body), one totals line (caption), then "See the full result →". A coalition motion lists each group with "Passed" or "Didn't pass" in place of totals, never a count from inside a group.
+    - It ends with the founding text, "Written by <name> · Founded <date>", or the Proposal that created the section. "Proposals that didn't pass (N)" is a disclosure under them: each title with its outcome and day.
+  - **Change log** (#104): a Document's passed changes, newest first, as `surface` cards under the eyebrow "Change log" and the Document's title: the Proposal's title (heading-3), what it did in body ("Changed ‘Quiet hours start…’", "Added a section", "Removed ‘…’", "Moved after ‘…’", "Made eternal"), and its day (ui, `muted`). Each change opens its section's history; the Document's beginning, its founding text or the Proposal that started it, is a plain card at the end. The Document view links to it under its title, as a forward link.
+- **Protection choice** (#116): a radio group of cards, as the Level picker's, each class's name over its one line. While Eternal is chosen, the line "This is permanent…" follows in `body`, set off by a `clay` rule at its start, never an alert color.
 - **Proposal card:** title (heading-3), justification (body), a countdown (ui, `muted`), and a "Join discussion" link to the group's linked chat.
 - **Ballot:**
   - Competing versions sit side by side on wide screens and stack on phones.
@@ -171,7 +176,7 @@ Build on **React Aria Components** (unstyled, accessible). Style everything from
   - Each card shows the level's name (ui, semibold) over its one line (caption, `body`). A tap anywhere on the card picks it.
   - The chosen card takes a `primary` border on `primary-soft`, and its ring fills with a dot, so the choice never rests on color alone.
   - On People, Save your choice (secondary) appears only once the choice differs from the person's level.
-- **Consent meter:** two plain bars:
+- **Consent meter:** two plain bars, at the Proposal's own bar (3.0 and 5% for an entrenched one):
   - the average against the 2.0 line
   - the share of zeros against the 10% line
   - Each bar is labeled in words ("Passes", "Short by 0.3"). No gauge dials.

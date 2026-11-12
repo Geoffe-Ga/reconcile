@@ -6,6 +6,9 @@ import { navigate, parseRoute, replaceRoute, routeHref, type Route, useRoute } f
 const GROUP = 'g'.repeat(43);
 const ATOM = `${GROUP}.0`;
 const PROPOSAL = 'p'.repeat(43);
+/** The group's second founding Document (#92), and one of its sections. */
+const SECOND = `${GROUP}:1`;
+const SECOND_ATOM = `${SECOND}.0`;
 /** A personal Document's id (#93): 16 bytes in unpadded base64url. */
 const PERSONAL = 'Q2FuYXJ5IHN0YXRlbWVudA';
 /** A share link's payload (#105): its seed and public key, 43 base64url characters each. */
@@ -45,6 +48,43 @@ describe('parseRoute', () => {
     ['#door/abc/def', { name: 'door', payload: 'abc/def' }],
     [`#/g/${GROUP}`, { name: 'group', groupId: GROUP }],
     [`#/g/${GROUP}/doc`, { name: 'document', groupId: GROUP }],
+    [`#/g/${GROUP}/doc/${GROUP}`, { name: 'document', groupId: GROUP, documentId: GROUP }],
+    [`#/g/${GROUP}/doc/${SECOND}`, { name: 'document', groupId: GROUP, documentId: SECOND }],
+    [`#/g/${GROUP}/doc/${PROPOSAL}`, { name: 'document', groupId: GROUP, documentId: PROPOSAL }],
+    [`#/g/${GROUP}/doc/new`, { name: 'newDocument', groupId: GROUP }],
+    // A Document's change log (#104).
+    [`#/g/${GROUP}/doc/${GROUP}/log`, { name: 'documentLog', groupId: GROUP, documentId: GROUP }],
+    [`#/g/${GROUP}/doc/${SECOND}/log`, { name: 'documentLog', groupId: GROUP, documentId: SECOND }],
+    [
+      `#/g/${GROUP}/add-first/${SECOND}`,
+      { name: 'add', groupId: GROUP, after: null, document: SECOND },
+    ],
+    [`#/g/${GROUP}/add/${SECOND_ATOM}`, { name: 'add', groupId: GROUP, after: SECOND_ATOM }],
+    [`#/g/${GROUP}/add-header/${ATOM}`, { name: 'add', groupId: GROUP, after: ATOM, heading: 1 }],
+    [
+      `#/g/${GROUP}/add-subheader/${SECOND_ATOM}`,
+      { name: 'add', groupId: GROUP, after: SECOND_ATOM, heading: 2 },
+    ],
+    [
+      `#/g/${GROUP}/add-first-header/${SECOND}`,
+      { name: 'add', groupId: GROUP, after: null, document: SECOND, heading: 1 },
+    ],
+    [
+      `#/g/${GROUP}/add-first-subheader/${GROUP}`,
+      { name: 'add', groupId: GROUP, after: null, document: GROUP, heading: 2 },
+    ],
+    [`#/g/${GROUP}/move/${ATOM}`, { name: 'move', groupId: GROUP, atomId: ATOM }],
+    [`#/g/${GROUP}/move/${SECOND_ATOM}`, { name: 'move', groupId: GROUP, atomId: SECOND_ATOM }],
+    [`#/g/${GROUP}/protect/${ATOM}`, { name: 'protect', groupId: GROUP, atomId: ATOM }],
+    [
+      `#/g/${GROUP}/protect/${SECOND_ATOM}`,
+      { name: 'protect', groupId: GROUP, atomId: SECOND_ATOM },
+    ],
+    [
+      `#/g/${GROUP}/propose/${SECOND_ATOM}`,
+      { name: 'propose', groupId: GROUP, atomId: SECOND_ATOM },
+    ],
+    [`#/g/${GROUP}/remove/${SECOND_ATOM}`, { name: 'remove', groupId: GROUP, atomId: SECOND_ATOM }],
     [`#/g/${GROUP}/priority`, { name: 'priority', groupId: GROUP }],
     [`#/g/${GROUP}/propose/${ATOM}`, { name: 'propose', groupId: GROUP, atomId: ATOM }],
     [`#/g/${GROUP}/p/${PROPOSAL}`, { name: 'proposal', groupId: GROUP, proposalId: PROPOSAL }],
@@ -99,7 +139,7 @@ describe('parseRoute', () => {
     '#/g/',
     '#/g/has space',
     '#/g/%2e%2e',
-    `#/g/${GROUP}/doc/extra`,
+    `#/g/${GROUP}/doc/has space`,
     `#/g/${GROUP}/settings`,
     `#/g/${GROUP}/propose`,
     `#/g/${GROUP}/propose/`,
@@ -112,6 +152,36 @@ describe('parseRoute', () => {
     `#/g/${GROUP}/again/${ATOM}`,
     `#/g/${GROUP}/again/${PROPOSAL}/extra`,
     `#/g/${GROUP}/doc/${ATOM}`,
+    `#/g/${GROUP}/doc/${SECOND_ATOM}`,
+    `#/g/${GROUP}/doc/${GROUP}:x`,
+    `#/g/${GROUP}/doc/${SECOND}:2`,
+    `#/g/${GROUP}/doc/new/extra`,
+    `#/g/${GROUP}/doc/${SECOND}/extra`,
+    `#/g/${GROUP}/doc/${SECOND}/log/extra`,
+    `#/g/${GROUP}/doc/${SECOND}/logs`,
+    `#/g/${GROUP}/doc/${ATOM}/log`,
+    `#/g/${GROUP}/p/${PROPOSAL}/log`,
+    `#/g/${GROUP}/add-first/${SECOND}/log`,
+    `#/g/${GROUP}/add-first`,
+    `#/g/${GROUP}/add-first/`,
+    `#/g/${GROUP}/add-first/${SECOND_ATOM}`,
+    `#/g/${GROUP}/add-first/${SECOND}/extra`,
+    `#/g/${GROUP}/add-header`,
+    `#/g/${GROUP}/add-header/has space`,
+    `#/g/${GROUP}/add-subheader/${ATOM}/extra`,
+    `#/g/${GROUP}/add-first-header`,
+    `#/g/${GROUP}/add-first-header/${SECOND_ATOM}`,
+    `#/g/${GROUP}/add-first-subheader/`,
+    `#/g/${GROUP}/move`,
+    `#/g/${GROUP}/move/`,
+    `#/g/${GROUP}/move/has space`,
+    `#/g/${GROUP}/move/${ATOM}/extra`,
+    `#/g/${GROUP}/protect`,
+    `#/g/${GROUP}/protect/`,
+    `#/g/${GROUP}/protect/has space`,
+    `#/g/${GROUP}/protect/${ATOM}/extra`,
+    `#/g/${GROUP}/propose/${SECOND}:2.0`,
+    `#/g/${GROUP}/propose/${GROUP}:.0`,
     `#/g/${GROUP}/priority/${PROPOSAL}`,
     `#/g/${GROUP}/add/`,
     `#/g/${GROUP}/add/has space`,
@@ -232,6 +302,21 @@ describe('coalitions (#120)', () => {
     });
   });
 
+  it('reads Reconcile with another coalition (#122)', () => {
+    expect(parseRoute(`#/c/${COALITION}/reconcile`)).toEqual({
+      name: 'coalitionReconcile',
+      coalitionId: COALITION,
+    });
+  });
+
+  it('reads a coalition Document’s change log (#104)', () => {
+    expect(parseRoute(`#/c/${COALITION}/doc/${COALITION}/log`)).toEqual({
+      name: 'coalitionLog',
+      coalitionId: COALITION,
+      documentId: COALITION,
+    });
+  });
+
   it('reads a coalition’s room (#125)', () => {
     expect(parseRoute(`#/c/${COALITION}/room`)).toEqual({
       name: 'coalitionRoom',
@@ -253,9 +338,13 @@ describe('coalitions (#120)', () => {
     `#/c/${COALITION}/doc`,
     `#/c/${COALITION}/doc/a+b`,
     `#/c/${COALITION}/doc/${COALITION}/more`,
+    `#/c/${COALITION}/doc/${COALITION}/log/more`,
+    `#/c/${COALITION}/doc/a+b/log`,
+    `#/c/${COALITION}/propose/${COALITION}.0/log`,
     `#/c/${COALITION}/propose`,
     `#/c/${COALITION}/propose/a.b`,
     `#/c/${COALITION}/p/${COALITION}`,
+    `#/c/${COALITION}/reconcile/more`,
     `#/c/${COALITION}/room/${COALITION}`,
     `#/c/${COALITION}/rooms`,
     '#/c/a+b',
@@ -282,11 +371,33 @@ describe('routeHref', () => {
     [{ name: 'door', payload: 'abc' }, '#door/abc'],
     [{ name: 'group', groupId: GROUP }, `#/g/${GROUP}`],
     [{ name: 'document', groupId: GROUP }, `#/g/${GROUP}/doc`],
+    [{ name: 'document', groupId: GROUP, documentId: SECOND }, `#/g/${GROUP}/doc/${SECOND}`],
+    [{ name: 'newDocument', groupId: GROUP }, `#/g/${GROUP}/doc/new`],
+    [{ name: 'documentLog', groupId: GROUP, documentId: SECOND }, `#/g/${GROUP}/doc/${SECOND}/log`],
+    [
+      { name: 'add', groupId: GROUP, after: null, document: SECOND },
+      `#/g/${GROUP}/add-first/${SECOND}`,
+    ],
     [{ name: 'priority', groupId: GROUP }, `#/g/${GROUP}/priority`],
     [{ name: 'propose', groupId: GROUP, atomId: ATOM }, `#/g/${GROUP}/propose/${ATOM}`],
     [{ name: 'proposal', groupId: GROUP, proposalId: PROPOSAL }, `#/g/${GROUP}/p/${PROPOSAL}`],
     [{ name: 'add', groupId: GROUP, after: null }, `#/g/${GROUP}/add`],
     [{ name: 'add', groupId: GROUP, after: ATOM }, `#/g/${GROUP}/add/${ATOM}`],
+    [{ name: 'add', groupId: GROUP, after: ATOM, heading: 1 }, `#/g/${GROUP}/add-header/${ATOM}`],
+    [
+      { name: 'add', groupId: GROUP, after: ATOM, heading: 2 },
+      `#/g/${GROUP}/add-subheader/${ATOM}`,
+    ],
+    [
+      { name: 'add', groupId: GROUP, after: null, document: SECOND, heading: 1 },
+      `#/g/${GROUP}/add-first-header/${SECOND}`,
+    ],
+    [
+      { name: 'add', groupId: GROUP, after: null, document: GROUP, heading: 2 },
+      `#/g/${GROUP}/add-first-subheader/${GROUP}`,
+    ],
+    [{ name: 'move', groupId: GROUP, atomId: ATOM }, `#/g/${GROUP}/move/${ATOM}`],
+    [{ name: 'protect', groupId: GROUP, atomId: ATOM }, `#/g/${GROUP}/protect/${ATOM}`],
     [{ name: 'remove', groupId: GROUP, atomId: ATOM }, `#/g/${GROUP}/remove/${ATOM}`],
     [{ name: 'again', groupId: GROUP, proposalId: PROPOSAL }, `#/g/${GROUP}/again/${PROPOSAL}`],
     [{ name: 'steward', groupId: GROUP, seat: 2, recall: false }, `#/g/${GROUP}/steward/2`],
@@ -320,6 +431,11 @@ describe('routeHref', () => {
     [
       { name: 'coalitionPropose', coalitionId: GROUP, atomId: ATOM },
       `#/c/${GROUP}/propose/${ATOM}`,
+    ],
+    [{ name: 'coalitionReconcile', coalitionId: GROUP }, `#/c/${GROUP}/reconcile`],
+    [
+      { name: 'coalitionLog', coalitionId: GROUP, documentId: GROUP },
+      `#/c/${GROUP}/doc/${GROUP}/log`,
     ],
     [{ name: 'coalitionRoom', coalitionId: GROUP }, `#/c/${GROUP}/room`],
   ])('writes %j as %s, which parses back', (route, href) => {

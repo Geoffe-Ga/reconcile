@@ -118,7 +118,7 @@ test('a Proposal’s first notice opens its Discord thread, Join discussion open
   await test.step('Ana proposes a change, and its opening notice opens Proposal 2’s thread', async () => {
     const { page } = ana;
     await page.getByRole('link', { name: GROUP }).click();
-    await page.getByRole('link', { name: 'House rules' }).click();
+    await page.getByRole('link', { name: 'House rules', exact: true }).click();
     await page.getByRole('button', { name: 'Propose a change to section 1' }).click();
     await page.getByRole('textbox', { name: 'Title' }).fill(PROPOSAL);
     await page.getByRole('textbox', { name: 'Why' }).fill('Weekends run later for most of us.');

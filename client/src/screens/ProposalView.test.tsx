@@ -667,6 +667,274 @@ describe('ProposalView, with several versions', () => {
   });
 });
 
+describe('ProposalView, moving sections and adding headers (#103)', () => {
+  it('shows an open move as one card under “Moving section N”: where it goes, over the section’s text', async () => {
+    const log = groupLog({ members: ['Ben'] });
+    const move = log.move('ana', `${log.group}.0`, `${log.group}.1`, { title: 'Bins first' });
+    const { user, onVote } = setup({ state: log.state(), proposalId: move, me: authorOf('ben') });
+    expect(screen.getByRole('link', { name: 'House rules' })).toBeVisible();
+    const block = screen.getByRole('region', { name: 'Moving section 1' });
+    const card = within(block).getByRole('region', {
+      name: 'Moves this section after ‘Bins go out on Tuesday.’',
+    });
+    expect(card.querySelector('.atom-card')).toHaveTextContent('Quiet hours start at ten.');
+    expect(within(card).queryByText(/^Version 1/)).toBeNull();
+    expect(block.querySelector('.word-diff')).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Add your version' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/three versions/)).not.toBeInTheDocument();
+    expect(await axeViolations()).toEqual([]);
+    const pills = within(block).getByRole('radiogroup', { name: 'Your score' });
+    await user.click(within(pills).getByRole('radio', { name: '4 · Strongly supportive' }));
+    await user.click(screen.getByRole('button', { name: 'Send your vote' }));
+    expect(onVote).toHaveBeenCalledWith({ [move]: 4 }, '');
+  });
+
+  it('says a move to the start goes there', () => {
+    const log = groupLog();
+    const move = log.move('ana', `${log.group}.1`, null);
+    setup({ state: log.state(), proposalId: move });
+    expect(screen.getByRole('region', { name: 'Moving section 2' })).toBeVisible();
+    expect(screen.getByText('Moves this section to the start')).toBeVisible();
+  });
+
+  it('says a passed move moved its section, shows the section, and thanks its proposer', async () => {
+    const log = groupLog({ members: ['Ben'] });
+    const move = log.move('ana', `${log.group}.0`, `${log.group}.1`);
+    log.vote('ana', move, 4);
+    log.vote('ben', move, 4);
+    setup({ state: log.state(), proposalId: move });
+    const result = screen.getByRole('region', { name: 'Result' });
+    expect(within(result).getByText('This passed. The section has moved.')).toBeVisible();
+    expect(result.querySelector('.result-text')).toHaveTextContent('Quiet hours start at ten.');
+    expect(result.querySelector('.result-thanks')).toHaveTextContent('Thank you, Ana.');
+    expect(result.querySelector('.result-totals .result-version')).toHaveTextContent(
+      'Moves this section after ‘Bins go out on Tuesday.’',
+    );
+    const onBallot = screen.getByRole('region', { name: 'On the ballot' });
+    expect(
+      within(onBallot).getByText('Moves this section after ‘Bins go out on Tuesday.’'),
+    ).toBeVisible();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('offers Propose again on a lapsed move, waiting while the section is busy again', async () => {
+    const log = groupLog({ members: ['Ben'] });
+    const move = log.move('ana', `${log.group}.0`, null);
+    const deadline = deadlineOf(START_MINUTE);
+    const { user, onProposeAgain, rerender } = setup({
+      state: log.state(deadline),
+      proposalId: move,
+      now: deadline,
+    });
+    await user.click(screen.getByRole('button', { name: 'Propose again' }));
+    expect(onProposeAgain).toHaveBeenCalledOnce();
+    log.minute = deadline;
+    log.propose('ben', { atom: 0 });
+    rerender({ state: log.state(deadline) });
+    expect(screen.getByRole('button', { name: 'Propose again' })).toBeDisabled();
+  });
+
+  it('shows a move waiting in the outbox as its one card, led by its Document', () => {
+    const log = groupLog();
+    const state = log.state();
+    const body = {
+      target: { kind: 'move', atom: `${log.group}.1`, after: null } as const,
+      title: 'Bins first',
+      why: 'They come first.',
+    };
+    const event = pendingEvent({
+      type: 'proposal',
+      group: log.group,
+      author: authorOf('ana'),
+      ts: 1,
+      body,
+    });
+    setup({ state, proposalId: event.id, pending: [event] });
+    expect(screen.getByRole('link', { name: 'House rules' })).toBeVisible();
+    const block = screen.getByRole('region', { name: 'Moving section 2' });
+    expect(within(block).getByText('Moves this section to the start')).toBeVisible();
+    expect(block.querySelector('.atom-card')).toHaveTextContent('Bins go out on Tuesday.');
+  });
+
+  it('says a header add adds a section header, by its heading', () => {
+    const log = groupLog();
+    const add = log.addSection('ana', `${log.group}.0`, { text: '# Values\n' });
+    setup({ state: log.state(), proposalId: add });
+    expect(
+      screen.getByText('Adds a section header ‘Values’ after ‘Quiet hours start at ten.’'),
+    ).toBeVisible();
+  });
+});
+
+/** Ana and Ben, with Ana's class Proposal giving the first section the class `to` (#116). */
+function classVote(to: 'entrenched' | 'eternal') {
+  const log = groupLog({ members: ['Ben'] });
+  const proposal = log.protect('ana', `${log.group}.0`, to, { title: 'Protect quiet hours' });
+  return { log, proposal };
+}
+
+/** Ana and Ben, with the first section entrenched by a passed class Proposal (#116). */
+function entrenchedGroup() {
+  const { log, proposal } = classVote('entrenched');
+  log.vote('ana', proposal, 4);
+  log.vote('ben', proposal, 4);
+  return log;
+}
+
+const PROTECTION_BAR =
+  'A section’s protection changes only at your group’s higher bar: an average of 3.0 or more, with zeros under 5%.';
+const ENTRENCHED_BAR =
+  'This section is entrenched, so this needs your group’s higher bar: an average of 3.0 or more, with zeros under 5%.';
+
+describe('ProposalView, entrenched and eternal sections (#116)', () => {
+  it('shows an open class Proposal as one card under “Protection for section N”, leading with what it does, over the section’s text, at the higher bar', async () => {
+    const { log, proposal } = classVote('entrenched');
+    const { user, onVote } = setup({
+      state: log.state(),
+      proposalId: proposal,
+      me: authorOf('ben'),
+    });
+    expect(screen.getByRole('link', { name: 'House rules' })).toBeVisible();
+    const block = screen.getByRole('region', { name: 'Protection for section 1' });
+    expect(within(block).getByText(PROTECTION_BAR)).toBeVisible();
+    const card = within(block).getByRole('region', { name: 'Marks this section entrenched' });
+    expect(card.querySelector('.atom-card')).toHaveTextContent('Quiet hours start at ten.');
+    expect(within(card).queryByText(/^Version 1/)).toBeNull();
+    expect(block.querySelector('.word-diff')).toBeNull();
+    expect(within(card).getByRole('meter', { name: 'Average · needs 3.0' })).toBeVisible();
+    expect(within(card).getByRole('meter', { name: 'Zeros · under 5%' })).toBeVisible();
+    expect(screen.queryByRole('link', { name: 'Add your version' })).not.toBeInTheDocument();
+    expect(await axeViolations()).toEqual([]);
+    const pills = within(block).getByRole('radiogroup', { name: 'Your score' });
+    await user.click(within(pills).getByRole('radio', { name: '4 · Strongly supportive' }));
+    await user.click(screen.getByRole('button', { name: 'Send your vote' }));
+    expect(onVote).toHaveBeenCalledWith({ [proposal]: 4 }, '');
+  });
+
+  it('says a class Proposal to eternal can’t be undone', async () => {
+    const { log, proposal } = classVote('eternal');
+    setup({ state: log.state(), proposalId: proposal, me: authorOf('ben') });
+    const block = screen.getByRole('region', { name: 'Protection for section 1' });
+    expect(
+      within(block).getByRole('region', {
+        name: 'Marks this section eternal. This can’t be undone.',
+      }),
+    ).toBeVisible();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('says a class Proposal back to ordinary removes the section’s protection', () => {
+    const log = entrenchedGroup();
+    const unprotect = log.protect('ana', `${log.group}.0`, 'ordinary');
+    setup({ state: log.state(), proposalId: unprotect, me: authorOf('ben') });
+    expect(screen.getByRole('region', { name: 'Removes this section’s protection' })).toBeVisible();
+    expect(screen.getByText(PROTECTION_BAR)).toBeVisible();
+  });
+
+  it('shows the higher bar on a change of an entrenched section, and its meter’s entrenched lines', async () => {
+    const log = entrenchedGroup();
+    const edit = log.propose('ana', { title: 'Later quiet hours', text: 'Quiet after 11pm.' });
+    setup({ state: log.state(), proposalId: edit, me: authorOf('ben') });
+    expect(screen.getByText(ENTRENCHED_BAR)).toBeVisible();
+    expect(screen.getByRole('meter', { name: 'Average · needs 3.0' })).toBeVisible();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('shows the higher bar on a move or a removal of an entrenched section too', () => {
+    const log = entrenchedGroup();
+    const move = log.move('ana', `${log.group}.0`, `${log.group}.1`);
+    setup({ state: log.state(), proposalId: move });
+    expect(screen.getByText(ENTRENCHED_BAR)).toBeVisible();
+  });
+
+  it('shows no higher bar on a change of an ordinary section', () => {
+    const { log, proposalId } = openVote();
+    setup({ state: log.state(), proposalId });
+    expect(screen.queryByText(ENTRENCHED_BAR)).not.toBeInTheDocument();
+    expect(screen.queryByText(PROTECTION_BAR)).not.toBeInTheDocument();
+    expect(screen.getByRole('meter', { name: 'Average · needs 2.0' })).toBeVisible();
+  });
+
+  it.each([
+    ['entrenched', 'This passed. The section is now entrenched.', 'Marks this section entrenched'],
+    [
+      'eternal',
+      'This passed. The section is now eternal.',
+      'Marks this section eternal. This can’t be undone.',
+    ],
+  ] as const)(
+    'says a passed class Proposal to %s made the section so, shows it, and thanks its proposer',
+    async (to, sentence, line) => {
+      const { log, proposal } = classVote(to);
+      log.vote('ana', proposal, 4);
+      log.vote('ben', proposal, 4);
+      setup({ state: log.state(), proposalId: proposal });
+      const result = screen.getByRole('region', { name: 'Result' });
+      expect(within(result).getByText(sentence)).toBeVisible();
+      expect(result.querySelector('.result-text')).toHaveTextContent('Quiet hours start at ten.');
+      expect(result.querySelector('.result-outcome .atom-badge')).toHaveClass(`atom-badge-${to}`);
+      expect(result.querySelector('.result-thanks')).toHaveTextContent('Thank you, Ana.');
+      expect(result.querySelector('.result-totals .result-version')).toHaveTextContent(line);
+      expect(
+        within(screen.getByRole('region', { name: 'On the ballot' })).getByText(line),
+      ).toBeVisible();
+      expect(await axeViolations()).toEqual([]);
+    },
+  );
+
+  it('says a passed class Proposal back to ordinary left the section unprotected', () => {
+    const log = entrenchedGroup();
+    const unprotect = log.protect('ana', `${log.group}.0`, 'ordinary');
+    log.vote('ana', unprotect, 4);
+    log.vote('ben', unprotect, 4);
+    setup({ state: log.state(), proposalId: unprotect });
+    const result = screen.getByRole('region', { name: 'Result' });
+    expect(
+      within(result).getByText('This passed. The section is no longer protected.'),
+    ).toBeVisible();
+    expect(result.querySelector('.atom-badge')).toBeNull();
+  });
+
+  it('offers Propose again on a lapsed class Proposal, waiting while the section is busy again', async () => {
+    const { log, proposal } = classVote('eternal');
+    const deadline = START_MINUTE + 14 * DAY_MINUTES;
+    const { user, onProposeAgain, rerender } = setup({
+      state: log.state(deadline),
+      proposalId: proposal,
+      now: deadline,
+    });
+    await user.click(screen.getByRole('button', { name: 'Propose again' }));
+    expect(onProposeAgain).toHaveBeenCalledOnce();
+    log.minute = deadline;
+    log.propose('ben', { atom: 0 });
+    rerender({ state: log.state(deadline) });
+    expect(screen.getByRole('button', { name: 'Propose again' })).toBeDisabled();
+  });
+
+  it('shows a class Proposal waiting in the outbox as its one card, led by its Document', () => {
+    const log = groupLog();
+    const body = {
+      target: { kind: 'class', atom: `${log.group}.1`, to: 'eternal' } as const,
+      title: 'Bins forever',
+      why: 'They matter.',
+    };
+    const event = pendingEvent({
+      type: 'proposal',
+      group: log.group,
+      author: authorOf('ana'),
+      ts: 1,
+      body,
+    });
+    setup({ state: log.state(), proposalId: event.id, pending: [event] });
+    expect(screen.getByRole('link', { name: 'House rules' })).toBeVisible();
+    const block = screen.getByRole('region', { name: 'Protection for section 2' });
+    expect(
+      within(block).getByText('Marks this section eternal. This can’t be undone.'),
+    ).toBeVisible();
+    expect(block.querySelector('.atom-card')).toHaveTextContent('Bins go out on Tuesday.');
+  });
+});
+
 describe('ProposalView, adding and removing sections', () => {
   it('shows an add as a new section: each version says where it goes, all its text added', async () => {
     const log = groupLog({ members: ['Ben'] });
@@ -768,11 +1036,100 @@ describe('ProposalView, adding and removing sections', () => {
       group: log.group,
       author: authorOf('ana'),
       ts: 0,
-      body: { target: { kind: 'add', after: null }, ...PROPOSAL },
+      body: { target: { kind: 'add', document: log.group, after: null }, ...PROPOSAL },
     });
     setup({ state: log.state(), proposalId: waiting.id, pending: [waiting] });
     const block = screen.getByRole('region', { name: 'New section' });
     expect(within(block).getByText('Adds a section at the start')).toBeVisible();
+    expect(side(block, 'ins')).toBe('Quiet after 11pm.');
+  });
+});
+
+describe('ProposalView, several Documents (#92)', () => {
+  const DOCUMENTS = [
+    { title: 'Mission statement', atoms: ['We share.\n'] },
+    { title: 'House rules', atoms: ['Quiet after 11pm.\n', 'Bins go out on Tuesday.\n'] },
+  ];
+
+  it('leads with the Document a change is in, as a link to it', async () => {
+    const log = groupLog({ documents: DOCUMENTS });
+    const proposalId = log.propose('ana', { atom: 0, title: 'We share more' });
+    setup({ state: log.state(), proposalId });
+    const lead = screen.getByRole('link', { name: 'Mission statement' });
+    expect(lead).toHaveAttribute('href', `#/g/${log.group}/doc/${log.group}`);
+    expect(lead.closest('.document-of')).not.toBeNull();
+    // It sits with the title, right under the h1, in the page's header.
+    const header = lead.closest('header');
+    expect(header?.querySelector('h1 + .document-of')).toBe(lead.closest('.document-of'));
+    expect(screen.getByRole('region', { name: 'Changes to section 1' })).toBeVisible();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('leads an add in the second Document with that Document, and numbers sections within each', () => {
+    const log = groupLog({ documents: DOCUMENTS });
+    const second = `${log.group}:1`;
+    const added = log.addSection('ana', `${second}.1`, { document: second });
+    const reworded = log.propose('ben', { atomId: `${second}.1` });
+    const { rerender } = setup({ state: log.state(), proposalId: added });
+    expect(screen.getByRole('link', { name: 'House rules' })).toHaveAttribute(
+      'href',
+      `#/g/${log.group}/doc/${second}`,
+    );
+    expect(screen.getByText('Adds a section after ‘Bins go out on Tuesday.’')).toBeVisible();
+    // Section numbers count within each Document: the second Document's second section is 2.
+    rerender({ proposalId: reworded });
+    expect(screen.getByRole('region', { name: 'Changes to section 2' })).toBeVisible();
+  });
+
+  it('reads a new Document’s Proposal as New Document: <title>, its whole text added, with Add your version', async () => {
+    const log = groupLog({ documents: DOCUMENTS });
+    const proposalId = log.newDocument('ana', 'Budget', {
+      title: 'Start a budget',
+      text: '# Budget\n\nWe share costs.\n',
+    });
+    setup({ state: log.state(), proposalId });
+    const lead = document.querySelector('.document-of');
+    expect(lead).toHaveTextContent('New Document: Budget');
+    expect(within(lead as HTMLElement).queryByRole('link')).toBeNull();
+    const block = screen.getByRole('region', { name: 'First sections' });
+    const version = within(block).getByRole('region', { name: 'Version 1 · Ana' });
+    expect(side(version, 'ins')).toBe('# Budget\n\nWe share costs.\n');
+    expect(side(version, 'del')).toBe('');
+    expect(screen.getByRole('link', { name: 'Add your version' })).toHaveAttribute(
+      'href',
+      `#/g/${log.group}/propose/${proposalId}`,
+    );
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('links a passed new Document from its result, still reading New Document: <title>', async () => {
+    const log = groupLog({ documents: DOCUMENTS });
+    const proposalId = log.newDocument('ana', 'Budget');
+    log.vote('ana', proposalId, 4);
+    log.vote('ben', proposalId, 4);
+    setup({ state: log.state(), proposalId });
+    const lead = document.querySelector('.document-of');
+    expect(lead).toHaveTextContent('New Document: Budget');
+    expect(within(lead as HTMLElement).getByRole('link', { name: 'Budget' })).toHaveAttribute(
+      'href',
+      `#/g/${log.group}/doc/${proposalId}`,
+    );
+    expect(screen.getByRole('region', { name: 'Result' })).toHaveTextContent('This passed.');
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('shows a new Document’s Proposal while it waits to send, its whole text added', () => {
+    const log = groupLog({ documents: DOCUMENTS });
+    const waiting = pendingEvent({
+      type: 'proposal',
+      group: log.group,
+      author: authorOf('ana'),
+      ts: 0,
+      body: { target: { kind: 'new-document', title: 'Budget' }, ...PROPOSAL },
+    });
+    setup({ state: log.state(), proposalId: waiting.id, pending: [waiting] });
+    expect(document.querySelector('.document-of')).toHaveTextContent('New Document: Budget');
+    const block = screen.getByRole('region', { name: 'First sections' });
     expect(side(block, 'ins')).toBe('Quiet after 11pm.');
   });
 });
@@ -1018,6 +1375,15 @@ describe('ProposalView: a priority vote (#107)', () => {
     const proposalId = log.ask('ana', SEVEN);
     return { log, proposalId };
   }
+
+  it('names no Document over a priority vote’s ballot or result, which changes none (#92)', () => {
+    const { log, proposalId } = sevenOptions();
+    const { rerender } = setup({ state: log.state(), proposalId });
+    expect(document.querySelector('.document-of')).toBeNull();
+    rerender({ state: log.state(deadlineOf(START_MINUTE)) });
+    expect(screen.getByRole('region', { name: 'Result' })).toBeVisible();
+    expect(document.querySelector('.document-of')).toBeNull();
+  });
 
   it('shows each option as plain text with its own pills and meter, and no Add your version', async () => {
     const { log, proposalId } = sevenOptions();

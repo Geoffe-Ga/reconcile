@@ -5,7 +5,14 @@
  * lower case, so `authorOf('ana')` names Ana.
  */
 import { type Capability, type Level, LEVEL_CAPABILITIES, LEVELS } from '../engine/capabilities';
-import type { CarriedDispatch, DispatchBody, EventDraft, ResultBody, Score } from '../engine/event';
+import type {
+  CarriedDispatch,
+  DispatchBody,
+  EventDraft,
+  FoundingDocument,
+  ResultBody,
+  Score,
+} from '../engine/event';
 import { fold, type GroupState, type LogRecord } from '../engine/fold';
 import { DAY_MINUTES, DEFAULT_RULES, defaultWindowMinutes } from '../engine/rules';
 import { authorOf, signedAs } from './keys';
@@ -30,6 +37,10 @@ export interface ProposalEntry {
   readonly text?: string;
   readonly link?: string;
   readonly atom?: number;
+  /** The Atom a change names by its id (#92), in place of the first Document's `atom`. */
+  readonly atomId?: string;
+  /** An add's Document (#92): the group's first, its genesis id, when left out. */
+  readonly document?: string;
   /** The voting window in days; the class default when left out. */
   readonly window?: number;
   /** The Dispatch it sends if it passes (#112); none when left out. */
@@ -48,10 +59,25 @@ export interface LogBuilder {
   level(name: string, level: string): void;
   /** Adds `name`'s leave. */
   leave(name: string): void;
+  /**
+   * Adds `name`'s key change into the next epoch (#98), wrapped to nobody, as
+   * no test member holds an encryption key; later records are read from that
+   * epoch's mailboxes.
+   */
+  rotate(name: string): void;
   /** Adds a Proposal by `name`, returning its id. Text `""` proposes removing the Atom. */
   propose(name: string, entry?: ProposalEntry): string;
-  /** Adds `name`'s Proposal of a new section after Atom `after`, or first for null (#75). */
+  /**
+   * Adds `name`'s Proposal of a new section after Atom `after`, or first for
+   * null (#75), in the entry's `document`, or else the group's first (#92).
+   */
   addSection(name: string, after: string | null, entry?: ProposalEntry): string;
+  /** Adds `name`'s Proposal of a new Document titled `title` (#92), its entry's text its first sections. */
+  newDocument(name: string, title: string, entry?: ProposalEntry): string;
+  /** Adds `name`'s Proposal moving the Atom `atom` right after `after`, or first for null (#103). */
+  move(name: string, atom: string, after: string | null, entry?: ProposalEntry): string;
+  /** Adds `name`'s Proposal giving the Atom `atom` the class `to` (#116), returning its id. */
+  protect(name: string, atom: string, to: string, entry?: ProposalEntry): string;
   /** Adds a priority vote by `name` over `options` (#107), returning its id; option i's id is `${id}.${i}`. */
   ask(
     name: string,
@@ -123,6 +149,8 @@ export interface GroupStart {
   /** Each member's level at join, by name; a member not named joins as a Co-Creator. */
   readonly levels?: Readonly<Record<string, Level>>;
   readonly atoms?: readonly string[];
+  /** The Documents genesis founds (#92); one, House rules with `atoms`, when left out. */
+  readonly documents?: readonly FoundingDocument[];
   readonly chat?: string;
 }
 
@@ -135,17 +163,18 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
     group: '',
     minute: START_MINUTE - SETTLED_MINUTES,
     records,
+    epoch: 0,
   };
   const add = (name: string, draft: EventDraft): string => {
     const { record, id } = signedAs(name.toLowerCase(), draft);
-    records.push({ seq: records.length + 1, received: builder.minute, bytes: record });
+    const epoch = builder.epoch === 0 ? {} : { epoch: builder.epoch };
+    records.push({ seq: records.length + 1, received: builder.minute, bytes: record, ...epoch });
     return id;
   };
   const body = {
     name: 'Riverside Tenants',
     founder,
-    title: 'House rules',
-    atoms,
+    documents: start.documents ?? [{ title: 'House rules', atoms }],
     ...(chat === undefined ? {} : { chat }),
   };
   builder.group = add(founder, { type: 'genesis', group: '', ts: 0, body });
@@ -160,6 +189,12 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
     leave(name: string) {
       add(name, { type: 'leave', group, ts: 0, body: {} });
     },
+    rotate(name: string) {
+      const epoch = builder.epoch + 1;
+      const commit = 'rotation-commit-of-this-test-logAAAAAAAAAAA';
+      add(name, { type: 'key-rotate', group, ts: 0, body: { epoch, commit, wraps: {} } });
+      builder.epoch = epoch;
+    },
     propose(name: string, entry: ProposalEntry = {}) {
       const {
         title = 'Later quiet hours',
@@ -167,7 +202,7 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
         text = 'Quiet after 11pm.',
       } = entry;
       const proposal = {
-        atom: `${group}.${String(entry.atom ?? 0)}`,
+        atom: entry.atomId ?? `${group}.${String(entry.atom ?? 0)}`,
         title,
         why,
         text,
@@ -184,11 +219,52 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
         text = 'Guests leave by 11pm.\n',
       } = entry;
       const proposal = {
-        target: { kind: 'add', after } as const,
+        target: { kind: 'add', document: entry.document ?? group, after } as const,
         title,
         why,
         text,
         ...(entry.link === undefined ? {} : { link: entry.link }),
+        ...(entry.dispatch === undefined ? {} : { dispatch: entry.dispatch }),
+      };
+      return add(name, { type: 'proposal', group, ts: 0, body: proposal });
+    },
+    newDocument(name: string, documentTitle: string, entry: ProposalEntry = {}) {
+      const {
+        title = 'Start a budget',
+        why = 'We spend together.',
+        text = '# Budget\n\nWe share costs.\n',
+      } = entry;
+      const proposal = {
+        target: { kind: 'new-document', title: documentTitle } as const,
+        title,
+        why,
+        text,
+        ...(entry.link === undefined ? {} : { link: entry.link }),
+        ...(entry.window === undefined ? {} : { window: entry.window }),
+        ...(entry.dispatch === undefined ? {} : { dispatch: entry.dispatch }),
+      };
+      return add(name, { type: 'proposal', group, ts: 0, body: proposal });
+    },
+    move(name: string, atom: string, after: string | null, entry: ProposalEntry = {}) {
+      const { title = 'Move a section', why = 'It reads better there.' } = entry;
+      const proposal = {
+        target: { kind: 'move', atom, after } as const,
+        title,
+        why,
+        ...(entry.link === undefined ? {} : { link: entry.link }),
+        ...(entry.window === undefined ? {} : { window: entry.window }),
+        ...(entry.dispatch === undefined ? {} : { dispatch: entry.dispatch }),
+      };
+      return add(name, { type: 'proposal', group, ts: 0, body: proposal });
+    },
+    protect(name: string, atom: string, to: string, entry: ProposalEntry = {}) {
+      const { title = 'Protect a section', why = 'It holds us together.' } = entry;
+      const proposal = {
+        target: { kind: 'class', atom, to } as const,
+        title,
+        why,
+        ...(entry.link === undefined ? {} : { link: entry.link }),
+        ...(entry.window === undefined ? {} : { window: entry.window }),
         ...(entry.dispatch === undefined ? {} : { dispatch: entry.dispatch }),
       };
       return add(name, { type: 'proposal', group, ts: 0, body: proposal });

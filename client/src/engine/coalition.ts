@@ -40,6 +40,23 @@ export function settlesAt(motion: { readonly deadline: number }): number {
 export const UNANIMOUS_UP_TO = 4;
 
 /**
+ * How deep coalitions nest (ADR-0074; #122): a group is level 0, and a
+ * coalition one above its highest seat, so at most a coalition of
+ * coalitions of coalitions.
+ */
+export const MAX_LEVEL = 3;
+
+/** A seat's level as its genesis or admit motion states it: 0, a group's, when it states none (#122). */
+export function seatLevel(seat: Pick<SeatEntry, 'level'>): number {
+  return seat.level ?? 0;
+}
+
+/** The level of a coalition of `seats`: one above the highest level among them (#122). */
+export function levelOf(seats: readonly Pick<SeatEntry, 'level'>[]): number {
+  return 1 + Math.max(0, ...seats.map(seatLevel));
+}
+
+/**
  * What a coalition's seats have reported on one motion: how many seats its
  * snapshot holds, how many passed and how many failed (a contested seat
  * counts as a fail), and whether it has expired, at deadline + 10,080
@@ -115,7 +132,8 @@ export interface AdmitSeat extends SeatEntry {
 /**
  * A motion's deadline, and the seats in its snapshot at receipt: who decides
  * it. `admit` is the seat an admit motion would add (#114), or null for an
- * edit.
+ * edit, a reconcile motion (#122), or a motion from a coalition above that
+ * this coalition decides for its seat there (#122).
  */
 export interface MotionSeats {
   readonly id: string;
@@ -159,21 +177,25 @@ export interface RoomWrap {
  * `status` is as of the state's `at`. `declinedAt` is the relay minute it was
  * declined, at which relay time stops, or null. `seats` are the genesis's,
  * then each admitted group's, in the order they were admitted (#114), and
- * `founding` its name, title and Atoms as written, which each founding
- * group checks against the target it passed. `formsBy` is the relay minute
- * from which results on the genesis no longer count: the latest a founding
- * group's reconcile vote can close, `windows.ordinary.max` days after the
- * genesis, plus {@link RESULT_GRACE_MINUTES}. `bindings` holds every
+ * `founding` its name and its one Document's title and Atoms as written
+ * (#92), which each founding group checks against the target it passed.
+ * `formsBy` is the relay minute from which results on the genesis no longer
+ * count: the latest a founding group's reconcile vote can close,
+ * `windows.ordinary.max` days after the genesis, plus
+ * {@link RESULT_GRACE_MINUTES}. `bindings` holds every
  * participant's seat in join order, and `results` every valid result in relay
  * order. `motions` holds each motion's snapshot of seats, and `admitted`
  * each group admitted after the genesis, in order (#114). `wraps` holds each
  * wrap of the room's `inner` for an admitted seat, in relay order (#313).
+ * `level` is one above its highest seat's stated level (#122), so 1 for a
+ * coalition of groups, rising when a higher-level seat is admitted.
  */
 export interface Coalition {
   readonly status: CoalitionStatus;
+  readonly level: number;
   readonly declinedAt: number | null;
   readonly seats: readonly SeatEntry[];
-  readonly founding: Pick<CoalitionGenesisBody, 'name' | 'title' | 'atoms'>;
+  readonly founding: CoalitionStatement;
   readonly formsBy: number;
   readonly bindings: readonly SeatBinding[];
   readonly results: readonly GroupResult[];
@@ -182,12 +204,32 @@ export interface Coalition {
   readonly wraps: readonly RoomWrap[];
 }
 
+/**
+ * What a coalition is founded on, as its genesis wrote it: its name, and its
+ * one Document's title and Atoms (#92), the statement each founding group's
+ * reconcile Proposal passed.
+ */
+export interface CoalitionStatement {
+  readonly name: string;
+  readonly title: string;
+  readonly atoms: readonly string[];
+}
+
 /** A {@link Coalition} while the fold runs. */
 export interface CoalitionDraft extends Omit<
   Coalition,
-  'status' | 'declinedAt' | 'seats' | 'bindings' | 'results' | 'motions' | 'admitted' | 'wraps'
+  | 'status'
+  | 'level'
+  | 'declinedAt'
+  | 'seats'
+  | 'bindings'
+  | 'results'
+  | 'motions'
+  | 'admitted'
+  | 'wraps'
 > {
   status: CoalitionStatus;
+  level: number;
   declinedAt: number | null;
   readonly seats: SeatEntry[];
   readonly bindings: SeatBinding[];
@@ -207,34 +249,43 @@ export interface ReconcileChange extends ReconcileTarget {
 }
 
 /**
- * A coalition motion that would admit a group (#114): the seat it would add.
- * Its author, who holds that seat's secret, is the Proposal's `author`.
+ * A coalition motion that would admit a group (#114): the seat it would add,
+ * with the level it states, and for a coalition asking in, its member groups'
+ * names as stated, for the ballot (#122). Its author, who holds that seat's
+ * secret, is the Proposal's `author`.
  */
 export interface AdmitChange {
   readonly kind: 'admit';
   readonly seat: SeatEntry;
+  readonly groups: readonly string[];
 }
 
 /**
- * A group Proposal that is a coalition motion (#100): the coalition it came
- * from, and the bar the coalition set for it, which the group's ballots are
- * tallied at.
+ * A Proposal that is a coalition's motion, opened in one of its member groups
+ * or member coalitions (#100, #122): `coalition` is the coalition directly
+ * above, which this log's result goes to, and the bar it carries, which a
+ * group's ballots are tallied at. `chain` names the coalitions further up it
+ * came through, nearest first, ending at the one whose motion it is; empty
+ * for the coalition's own.
  */
 export interface MotionTarget {
   readonly kind: 'motion';
   readonly coalition: string;
+  readonly chain: readonly string[];
   readonly bar: Bar;
 }
 
 /**
- * A coalition motion as each member group's fold takes it (#100): its id, the
- * coalition's id, where the relay put it, and the class, window, deadline and
- * bar the coalition gave it. `crossing.ts`'s `motionsFor` makes these, and
- * `fold`'s `outside` opens each as a group Proposal.
+ * A coalition motion as each member's fold takes it (#100): its id, the
+ * coalition directly above's id, the coalitions further up it came through
+ * (`chain`, #122), where the relay put it, and the class, window, deadline
+ * and bar the coalition whose motion it is gave it. `crossing.ts`'s
+ * `motionsFor` makes these, and `fold`'s `outside` opens each as a Proposal.
  */
 export interface Motion {
   readonly id: string;
   readonly coalition: string;
+  readonly chain: readonly string[];
   readonly seq: number;
   readonly received: number;
   readonly class: ProposalClass;
@@ -256,19 +307,27 @@ export function seatsAreValid(seats: readonly SeatEntry[]): boolean {
   return seats.length >= 2 && keys.size === seats.length;
 }
 
-/** A coalition as its genesis founds it, forming, or null when its seats can't found one. */
+/**
+ * A coalition as its genesis founds it, forming, or null when its seats can't
+ * found one: fewer than two distinct keys, seats whose stated levels would
+ * put it above {@link MAX_LEVEL} (#122), or no Document. Its statement is its
+ * first Document; the fold founds a coalition only on exactly one (#92).
+ */
 export function newCoalition(
   body: CoalitionGenesisBody,
   rules: Rules,
   received: number,
 ): CoalitionDraft | null {
-  if (!seatsAreValid(body.seats)) return null;
-  const { name, title, atoms, seats } = body;
+  const [statement] = body.documents;
+  if (!seatsAreValid(body.seats) || statement === undefined) return null;
+  if (levelOf(body.seats) > MAX_LEVEL) return null;
+  const { name, seats } = body;
   return {
     status: 'forming',
+    level: levelOf(seats),
     declinedAt: null,
     seats: [...seats],
-    founding: { name, title, atoms },
+    founding: { name, title: statement.title, atoms: statement.atoms },
     formsBy: received + rules.windows.ordinary.max * DAY_MINUTES + RESULT_GRACE_MINUTES,
     bindings: [],
     results: [],
@@ -289,15 +348,19 @@ export function foundingSeats(coalition: Pick<Coalition, 'seats' | 'admitted'>):
  * coalition `coalitionId` (#114): they aren't a participant, the seat isn't
  * one of the coalition's and no earlier admit motion names it, and the
  * seat's proof for their key verifies. So one admit motion per group, from
- * someone who holds its seat secret.
+ * someone who holds its seat secret. Nor may it name a seat whose stated
+ * level would put this coalition above {@link MAX_LEVEL}, or one of
+ * `above`, this coalition's own seat keys in coalitions above it (#122).
  */
 export function mayAdmit(
   coalition: Pick<Coalition, 'seats' | 'motions'>,
   coalitionId: string,
   author: string,
   target: AdmitTarget,
+  above: readonly string[] = [],
 ): boolean {
   const { key } = target.seat;
+  if (levelOf([target.seat]) > MAX_LEVEL || above.includes(key)) return false;
   if (coalition.seats.some((seat) => seat.key === key)) return false;
   if (coalition.motions.some((m) => m.admit?.key === key)) return false;
   return verifySeatProof(
@@ -311,13 +374,25 @@ export function mayAdmit(
 /**
  * Seats the group an admit motion names once its pass is final (#114): its
  * seat joins the coalition's, after those already there, at relay minute
- * `at`. Its people then join under it as anyone joins.
+ * `at`, with the level the motion stated, which may raise the coalition's
+ * (#122). Its people then join under it as anyone joins.
  */
 export function admitSeat(coalition: CoalitionDraft, motion: MotionSeats, at: number): void {
   if (motion.admit === null || coalition.admitted.some((a) => a.motion === motion.id)) return;
-  const { name, key, kx } = motion.admit;
-  coalition.seats.push({ name, key });
-  coalition.admitted.push({ motion: motion.id, key, kx, at });
+  const { kx, ...seat } = motion.admit;
+  coalition.seats.push(seat);
+  coalition.admitted.push({ motion: motion.id, key: seat.key, kx, at });
+  coalition.level = levelOf(coalition.seats);
+}
+
+/**
+ * Whether a formed coalition may take a seat above it (#122): one more level
+ * would stay within {@link MAX_LEVEL}, and the seat key isn't one of its own
+ * seats here, whose secret a member group holds.
+ */
+export function mayReconcile(coalition: Pick<Coalition, 'level' | 'seats'>, key: string): boolean {
+  if (coalition.level + 1 > MAX_LEVEL) return false;
+  return !coalition.seats.some((seat) => seat.key === key);
 }
 
 /**

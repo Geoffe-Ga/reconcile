@@ -188,7 +188,7 @@ async function expectSameGroup(person: Person): Promise<void> {
   // Each row in order; Ana, the steward, also sees Suspend on the others' rows (#102).
   await expect(people).toHaveCount(PEOPLE.length);
   await expect(people).toContainText(PEOPLE);
-  await page.getByRole('link', { name: TITLE }).click();
+  await page.getByRole('link', { name: TITLE, exact: true }).click();
   await expect(page.getByRole('article').getByRole('paragraph')).toHaveText([
     NEW_TEXT,
     SECOND_ATOM,
@@ -228,7 +228,7 @@ test('a newcomer gets the whole history from the invite, even what the relay pur
 
   await test.step('A proposes a change to the first section, and both vote it through', async () => {
     const { page } = ana;
-    await page.getByRole('link', { name: TITLE }).click();
+    await page.getByRole('link', { name: TITLE, exact: true }).click();
     await page.getByRole('button', { name: 'Propose a change to section 1' }).click();
     await page.getByRole('textbox', { name: 'Title' }).fill(PROPOSAL);
     await page.getByRole('textbox', { name: 'Why' }).fill('Weekend evenings run later.');
