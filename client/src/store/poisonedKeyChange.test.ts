@@ -17,6 +17,7 @@ import { deriveSealKey, deriveWeekMailboxId, newGroupSecret, weekOf } from '../c
 import { open, xchachaSeal } from '../crypto/seal';
 import { parseRecord, type SignedEvent } from '../engine/event';
 import { fold, type GroupState, keyHolders } from '../engine/fold';
+import { DAY_MINUTES } from '../engine/rules';
 import { createRelay, type Relay } from '../net/relay';
 import { local } from '../test/bytes';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
@@ -24,6 +25,7 @@ import { freshIndexedDBPerTest } from '../test/idb';
 import { authorOf, signedAs, testKeys, testKx } from '../test/keys';
 import { type Group, openStore, type Store } from './db';
 import { keyChangeOf } from './epochs';
+import { importSnapshot, takeSnapshot } from './snapshot';
 import { createSync, type Sync } from './sync';
 
 freshIndexedDBPerTest();
@@ -469,5 +471,45 @@ describe('a key change whose wraps don’t open (#224)', () => {
     expect(authorsUnder(scene, secret, 'key-taken')).toEqual([]);
     // No second key change was written, and Ana, who wrote the first, may still write the next.
     expect(typesUnder(scene, secret).filter((type) => type === 'key-rotate')).toHaveLength(1);
+  });
+});
+
+describe('a restored copy that hasn’t heard from its group (#231)', () => {
+  it('says nothing of a key change that doesn’t open, and its passes go on, until it hears from the group', async () => {
+    const { scene, secret, honest } = await group();
+    const [ana, ben] = trio(honest);
+    const before = await afterLeave(ana, scene);
+    await calLeaves(scene, secret);
+    const poison = zedRotate(before, 1, EVERYONE);
+    await scene.post(secret, poison.record);
+    await ana.sync.syncOnce();
+    await expectSaidOnce(ana, poison);
+
+    // A backup of Ana's device from then, which leaves out her queued word, comes back on a
+    // phone a minute past 28 days later, with nothing new at the relay since: it reads only, for now.
+    const { plaintext } = await takeSnapshot(ana.store);
+    const phoneStore = await openStore('ana-phone');
+    await importSnapshot(phoneStore, plaintext);
+    scene.fake.minute += 28 * DAY_MINUTES + 1;
+    const phone = createSync({
+      store: phoneStore,
+      relay: scene.relay,
+      seal: xchachaSeal,
+      clock: () => TS,
+    });
+    opened.push(phone);
+
+    expect(await phone.syncOnce()).toBe(true);
+    const held = await phoneStore.getGroup(scene.founding.id);
+    expect([held?.archived?.reason, held?.outbox]).toEqual(['unconfirmed', []]);
+
+    // Ben says his wrap doesn't open either: the phone hears from the group, and the key change
+    // is refused there as everywhere.
+    await passes([ben], 2);
+    expect(await phone.syncOnce()).toBe(true);
+    const heard = await phoneStore.getGroup(scene.founding.id);
+    expect(heard?.archived).toBeUndefined();
+    const state = fold(heard?.log ?? [], heard?.relayNow ?? null);
+    expect(state.refused.map((r) => r.id)).toEqual([poison.id]);
   });
 });

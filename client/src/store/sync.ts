@@ -538,9 +538,22 @@ export function createSync(options: SyncOptions): Sync {
     step: KeyStep | null,
   ): Promise<'moved' | 'stayed'> {
     await store.applyPull(group.groupId, pull, idOf);
-    if (step?.kind === 'refuse') await store.enqueue(group.groupId, step.record);
+    if (step?.kind === 'refuse') await queueRefusal(group.groupId, step.record);
     await settleAfter(group, pull);
     return step?.kind === 'move' ? 'moved' : 'stayed';
+  }
+
+  /**
+   * Queues this member's `unwrap-failed` (#224), unless the group, as the
+   * pull left it, still reads only: a restored copy that hasn't heard from
+   * its group (#231) sends nothing until it has, and says so then if the key
+   * change still stands. A leaving device never gets here: it lets the group
+   * go instead (#225).
+   */
+  async function queueRefusal(groupId: string, record: Uint8Array): Promise<void> {
+    const current = await store.getGroup(groupId);
+    if (current === undefined || current.archived !== undefined) return;
+    await store.enqueue(groupId, record);
   }
 
   /**
