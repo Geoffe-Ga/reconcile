@@ -11,6 +11,7 @@ import { Button, Form } from 'react-aria-components';
 import { documentBack, groupBack } from '../app/backLinks';
 import { againStartOf, lapsed, textCheck, useSend, whyNoForm } from '../app/compose';
 import { documentNamed, sectionPlace } from '../app/documentLines';
+import { holdPresses } from '../app/holdPresses';
 import { latestLink } from '../app/latestLink';
 import { messages } from '../app/messages';
 import { addDraft, againDraft, removalDraft, type VersionValues } from '../app/proposals';
@@ -221,7 +222,7 @@ function RemovalVersion({ state, atom, section, proposal, onAddVersion }: Remova
             {composer.versionFailed}
           </p>
         ) : null}
-        <div className="row form-actions">
+        <div className="row form-actions" onPointerDownCapture={holdPresses(running)}>
           <Button type="submit" className="button button-primary" isDisabled={running}>
             {composer.removeVersionSubmit}
           </Button>
