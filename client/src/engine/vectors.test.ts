@@ -41,6 +41,7 @@ describe('vector files', () => {
       'atom-text.json',
       'bars-entrenched-edges.json',
       'bars-ordinary-pairs.json',
+      'bars-removal-edges.json',
       'bootstrap-joins.json',
       'bootstrap-member-churn.json',
       'chat-posted-first.json',
@@ -92,6 +93,14 @@ describe('vector files', () => {
       'priority-rank.json',
       'priority-suspend.json',
       'proposal-number.json',
+      'removal-bar.json',
+      'removal-priority.json',
+      'removal-proposal.json',
+      'removal-remove.json',
+      'removal-response.json',
+      'removal-rotate.json',
+      'removal-suspension.json',
+      'removal-target-ineligible.json',
       'result-checks.json',
       'result-cleared.json',
       'result-mismatch.json',
@@ -145,6 +154,7 @@ describe('vector files', () => {
       'atom-text',
       'tally',
       'tally',
+      'tally',
       'fold',
       'fold',
       'fold',
@@ -194,6 +204,14 @@ describe('vector files', () => {
       'fold',
       'fold',
       'tally',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
       'fold',
       'fold',
       'fold',
@@ -541,6 +559,37 @@ describe('vector files', () => {
   });
 
   it.each([
+    'removal-target-ineligible',
+    'removal-average-2.5',
+    'removal-one-zero',
+    'removal-lapse',
+    'removal-proposal',
+    'removal-proposal-who',
+    'removal-proposal-shape',
+    'removal-dissolved',
+    'removal-response-length',
+    'removal-response-who',
+    'removal-response-after-close',
+    'removal-response-deadline',
+    'removal-response-last-minute',
+    'removal-response-suspended',
+    'removal-remove-first',
+    'removal-remove-suspended',
+    'removal-ballot-before',
+    'removal-steward-seat',
+    'removal-pending-only-leave',
+    'removal-rotate',
+    'removal-suspension-day-6',
+    'removal-suspension-failed',
+    'removal-suspension-none',
+    'removal-suspension-early-fail',
+    'removal-suspension-opened-before',
+    'removal-suspension-opened-before-closes-early',
+  ])('include the removal vector "%s" (#115)', (name) => {
+    expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
+  });
+
+  it.each([
     'proposal-number',
     'chat-thread-first',
     'chat-thread-ignored',
@@ -548,6 +597,19 @@ describe('vector files', () => {
     'chat-thread-off',
   ])('include the Discord thread vector "%s" (#123)', (name) => {
     expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
+  });
+
+  it.each([
+    'removal pass with 20 scorers and one 0',
+    'removal fail with two 0s among 10 scorers',
+    'removal pass with 41 scorers and two 0s',
+    'removal fail with two 0s among 40 scorers, exactly 5%',
+    'removal fail at an average of 2.99',
+    'removal pass at an average of exactly 3.0 among 100 scorers',
+    'a dissolve’s entrenched bar still fails 20 scorers with one 0',
+    'an average of exactly 2.5 with no zeros fails the removal bar',
+  ])('include the removal bar vector "%s" (#115)', (name) => {
+    expect(TALLY_VECTORS.map((vector) => vector.name)).toContain(name);
   });
 
   it.each([

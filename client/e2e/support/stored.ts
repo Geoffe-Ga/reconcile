@@ -16,6 +16,8 @@ export interface StoredGroup {
   readonly kxKey: number[] | null;
   /** The epoch of `secret` (#98): 0 until the group's key first changes. */
   readonly epoch: number;
+  /** Why the group only reads on this device (#108, #115), or null while it goes on. */
+  readonly archived: string | null;
   /** `coalition` for a coalition's entry (#114), null for a group. */
   readonly kind: string | null;
   /** The relay minute its last sync read (#110), or null before any. */
@@ -78,6 +80,7 @@ export function storedGroups(page: Page): Promise<StoredGroup[]> {
         kxKey?: Uint8Array;
         epoch?: number;
         me: { author: string };
+        archived?: { reason: string };
         kind?: string;
         relayNow: number | null;
       }[];
@@ -90,6 +93,7 @@ export function storedGroups(page: Page): Promise<StoredGroup[]> {
         author: group.me.author,
         kxKey: group.kxKey === undefined ? null : Array.from(group.kxKey),
         epoch: group.epoch ?? 0,
+        archived: group.archived?.reason ?? null,
       }));
     } finally {
       db.close();

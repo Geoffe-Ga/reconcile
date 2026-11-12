@@ -8,7 +8,7 @@
  */
 import { fromBase64url } from '../crypto/base64url';
 import { deriveCoalitionEntryId } from '../crypto/card';
-import { can } from '../engine/capabilities';
+import { can, isOusted } from '../engine/capabilities';
 import { seatResult } from '../engine/coalition';
 import { coalitionProgress, type CoalitionProgress } from '../engine/coalitionProgress';
 import { resultMismatches, seatIn } from '../engine/crossing';
@@ -165,7 +165,7 @@ function rowOf(
     coalitionId: coalition.group,
     name: coalition.group === null ? held.name : coalition.name,
     ...standing,
-    ...membership(state, coalition, standing.status === 'formed', me),
+    ...membership(coalition, standing.status === 'formed', me, actsForGroup(state, author)),
     me,
     mismatches: seat === undefined ? 0 : resultMismatches(state, coalition, held.key).length,
   };
@@ -173,14 +173,23 @@ function rowOf(
 
 /** A formed coalition's member groups, and whether this person, taking part, may make cards. */
 function membership(
-  state: GroupState,
   coalition: GroupState,
   formed: boolean,
   me: CoalitionMe,
+  live: boolean,
 ): Pick<CoalitionRow, 'members' | 'makesCards'> {
   if (!formed) return { members: [], makesCards: false };
   const members = (coalition.coalition?.seats ?? []).map((s) => s.name);
-  return { members, makesCards: me.kind === 'in' && state.dissolved === null };
+  return { members, makesCards: me.kind === 'in' && live };
+}
+
+/**
+ * Whether `author` still acts for the group here: it hasn't dissolved (#108),
+ * they're in it, and no removal of them has passed (#115). Only then does
+ * their device make cards for its coalitions.
+ */
+function actsForGroup(state: GroupState, author: string): boolean {
+  return state.dissolved === null && can(state, author, 'read') && !isOusted(state, author);
 }
 
 /**

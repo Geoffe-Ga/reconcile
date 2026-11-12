@@ -1,0 +1,1385 @@
+{
+  "kind": "fold",
+  "vectors": [
+    {
+      "name": "removal-response-length: Kim’s response of 1,001 code points is ignored, her next of exactly 1,000 (1,001 UTF-16 units) is kept, and a third is ignored: she posts one",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29990000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29990001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29990002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500180000,
+            "body": {
+              "name": "Cal"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29990003,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762500240000,
+            "body": {
+              "name": "Dee"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29990004,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762500300000,
+            "body": {
+              "name": "Kim"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29990020,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500360000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29990021,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500420000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29990022,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500480000,
+            "body": {
+              "member": "%kim"
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29990023,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500540000,
+            "body": {
+              "member": "%kim"
+            }
+          }
+        },
+        {
+          "seq": 10,
+          "received": 30010260,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "remove",
+                "member": "%kim"
+              },
+              "title": "Remove Kim",
+              "why": "They keep breaking the house rules, and talking hasn’t helped."
+            }
+          }
+        },
+        {
+          "seq": 11,
+          "received": 30010261,
+          "event": {
+            "v": 1,
+            "type": "removal-response",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762500660000,
+            "body": {
+              "proposal": "@10",
+              "text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa🌿"
+            }
+          }
+        },
+        {
+          "seq": 12,
+          "received": 30010262,
+          "event": {
+            "v": 1,
+            "type": "removal-response",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762500720000,
+            "body": {
+              "proposal": "@10",
+              "text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa🌿"
+            }
+          }
+        },
+        {
+          "seq": 13,
+          "received": 30010263,
+          "event": {
+            "v": 1,
+            "type": "removal-response",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762500780000,
+            "body": {
+              "proposal": "@10",
+              "text": "One more thing."
+            }
+          }
+        }
+      ],
+      "relayNow": 30010360,
+      "expect": {
+        "responses": [
+          {
+            "id": "@12",
+            "seq": 12,
+            "received": 30010262,
+            "by": "%kim",
+            "proposal": "@10",
+            "text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa🌿"
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 11,
+            "id": "@11"
+          },
+          {
+            "seq": 13,
+            "id": "@13"
+          }
+        ]
+      },
+      "unchangedWithout": [11, 13]
+    },
+    {
+      "name": "removal-response-who: a response from Ben, a blank one from Kim, and one from Kim naming an edit are ignored, and Kim’s own on her removal is kept",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29990000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29990001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29990002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500180000,
+            "body": {
+              "name": "Cal"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29990003,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762500240000,
+            "body": {
+              "name": "Dee"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29990004,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762500300000,
+            "body": {
+              "name": "Kim"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29990020,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500360000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29990021,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500420000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29990022,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500480000,
+            "body": {
+              "member": "%kim"
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29990023,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500540000,
+            "body": {
+              "member": "%kim"
+            }
+          }
+        },
+        {
+          "seq": 10,
+          "received": 30010260,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Later quiet hours",
+              "why": "Weekends run late.",
+              "text": "Quiet after midnight.\n"
+            }
+          }
+        },
+        {
+          "seq": 11,
+          "received": 30010261,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500660000,
+            "body": {
+              "target": {
+                "kind": "remove",
+                "member": "%kim"
+              },
+              "title": "Remove Kim",
+              "why": "They keep breaking the house rules, and talking hasn’t helped."
+            }
+          }
+        },
+        {
+          "seq": 12,
+          "received": 30010262,
+          "event": {
+            "v": 1,
+            "type": "removal-response",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762500720000,
+            "body": {
+              "proposal": "@10",
+              "text": "This isn’t a removal."
+            }
+          }
+        },
+        {
+          "seq": 13,
+          "received": 30010263,
+          "event": {
+            "v": 1,
+            "type": "removal-response",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500780000,
+            "body": {
+              "proposal": "@11",
+              "text": "Kim is right."
+            }
+          }
+        },
+        {
+          "seq": 14,
+          "received": 30010264,
+          "event": {
+            "v": 1,
+            "type": "removal-response",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762500840000,
+            "body": {
+              "proposal": "@11",
+              "text": " \n\t "
+            }
+          }
+        },
+        {
+          "seq": 15,
+          "received": 30010265,
+          "event": {
+            "v": 1,
+            "type": "removal-response",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762500900000,
+            "body": {
+              "proposal": "@11",
+              "text": "I wasn’t there."
+            }
+          }
+        }
+      ],
+      "relayNow": 30010360,
+      "expect": {
+        "responses": [
+          {
+            "id": "@15",
+            "by": "%kim",
+            "proposal": "@11",
+            "text": "I wasn’t there."
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 12,
+            "id": "@12"
+          },
+          {
+            "seq": 13,
+            "id": "@13"
+          },
+          {
+            "seq": 14,
+            "id": "@14"
+          }
+        ]
+      },
+      "unchangedWithout": [12, 13, 14]
+    },
+    {
+      "name": "removal-response-after-close: once Kim’s removal closes early, failing, her response is ignored, even in the minute it closed",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29990000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29990001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29990002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500180000,
+            "body": {
+              "name": "Cal"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29990003,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762500240000,
+            "body": {
+              "name": "Dee"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29990004,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762500300000,
+            "body": {
+              "name": "Kim"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29990020,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500360000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29990021,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500420000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29990022,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500480000,
+            "body": {
+              "member": "%kim"
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29990023,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500540000,
+            "body": {
+              "member": "%kim"
+            }
+          }
+        },
+        {
+          "seq": 10,
+          "received": 30010260,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "remove",
+                "member": "%kim"
+              },
+              "title": "Remove Kim",
+              "why": "They keep breaking the house rules, and talking hasn’t helped."
+            }
+          }
+        },
+        {
+          "seq": 11,
+          "received": 30010270,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500660000,
+            "body": {
+              "proposal": "@10",
+              "scores": {
+                "@10": 0
+              },
+              "note": "This is the wrong way to handle it."
+            }
+          }
+        },
+        {
+          "seq": 12,
+          "received": 30010271,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500720000,
+            "body": {
+              "proposal": "@10",
+              "scores": {
+                "@10": 0
+              },
+              "note": "This is the wrong way to handle it."
+            }
+          }
+        },
+        {
+          "seq": 13,
+          "received": 30010272,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500780000,
+            "body": {
+              "proposal": "@10",
+              "scores": {
+                "@10": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 14,
+          "received": 30010273,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762500840000,
+            "body": {
+              "proposal": "@10",
+              "scores": {
+                "@10": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 15,
+          "received": 30010273,
+          "event": {
+            "v": 1,
+            "type": "removal-response",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762500900000,
+            "body": {
+              "proposal": "@10",
+              "text": "Too late."
+            }
+          }
+        },
+        {
+          "seq": 16,
+          "received": 30010274,
+          "event": {
+            "v": 1,
+            "type": "removal-response",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762500960000,
+            "body": {
+              "proposal": "@10",
+              "text": "Still too late."
+            }
+          }
+        }
+      ],
+      "relayNow": 30010360,
+      "expect": {
+        "members": [
+          {
+            "author": "%ana"
+          },
+          {
+            "author": "%ben"
+          },
+          {
+            "author": "%cal"
+          },
+          {
+            "author": "%dee"
+          },
+          {
+            "author": "%kim"
+          }
+        ],
+        "proposals": [
+          {
+            "id": "@10",
+            "class": "removal",
+            "window": 14,
+            "deadline": 30030420,
+            "closedAt": 30010273,
+            "final": true,
+            "outcome": {
+              "kind": "fail",
+              "bar": {
+                "avgAtLeast": 3,
+                "zerosUnderPercent": 5,
+                "zerosAllowed": 1
+              }
+            }
+          }
+        ],
+        "responses": [],
+        "removals": [],
+        "ignored": [
+          {
+            "seq": 15,
+            "id": "@15"
+          },
+          {
+            "seq": 16,
+            "id": "@16"
+          }
+        ]
+      }
+    },
+    {
+      "name": "removal-response-deadline: Kim’s response at her removal’s deadline, received + 20,160, is ignored",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29990000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29990001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29990002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500180000,
+            "body": {
+              "name": "Cal"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29990003,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762500240000,
+            "body": {
+              "name": "Dee"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29990004,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762500300000,
+            "body": {
+              "name": "Kim"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29990020,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500360000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29990021,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500420000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29990022,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500480000,
+            "body": {
+              "member": "%kim"
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29990023,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500540000,
+            "body": {
+              "member": "%kim"
+            }
+          }
+        },
+        {
+          "seq": 10,
+          "received": 30010260,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "remove",
+                "member": "%kim"
+              },
+              "title": "Remove Kim",
+              "why": "They keep breaking the house rules, and talking hasn’t helped."
+            }
+          }
+        },
+        {
+          "seq": 11,
+          "received": 30030420,
+          "event": {
+            "v": 1,
+            "type": "removal-response",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762500660000,
+            "body": {
+              "proposal": "@10",
+              "text": "Too late."
+            }
+          }
+        }
+      ],
+      "relayNow": 30030421,
+      "expect": {
+        "responses": [],
+        "ignored": [
+          {
+            "seq": 11,
+            "id": "@11"
+          }
+        ]
+      }
+    },
+    {
+      "name": "removal-response-last-minute: Kim’s response a minute before her removal’s deadline is kept",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29990000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29990001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29990002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500180000,
+            "body": {
+              "name": "Cal"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29990003,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762500240000,
+            "body": {
+              "name": "Dee"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29990004,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762500300000,
+            "body": {
+              "name": "Kim"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29990020,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500360000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29990021,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500420000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29990022,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500480000,
+            "body": {
+              "member": "%kim"
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29990023,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500540000,
+            "body": {
+              "member": "%kim"
+            }
+          }
+        },
+        {
+          "seq": 10,
+          "received": 30010260,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "remove",
+                "member": "%kim"
+              },
+              "title": "Remove Kim",
+              "why": "They keep breaking the house rules, and talking hasn’t helped."
+            }
+          }
+        },
+        {
+          "seq": 11,
+          "received": 30030419,
+          "event": {
+            "v": 1,
+            "type": "removal-response",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762500660000,
+            "body": {
+              "proposal": "@10",
+              "text": "Just in time."
+            }
+          }
+        }
+      ],
+      "relayNow": 30030421,
+      "expect": {
+        "responses": [
+          {
+            "id": "@11",
+            "received": 30030419
+          }
+        ],
+        "ignored": []
+      }
+    },
+    {
+      "name": "removal-response-suspended: Ana, a steward, suspends Kim, and Ben proposes removing her; Kim’s response is kept while she is suspended, though her ballot on an edit is ignored",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29990000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "title": "House rules",
+              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29990001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Ben"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29990002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500180000,
+            "body": {
+              "name": "Cal"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29990003,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762500240000,
+            "body": {
+              "name": "Dee"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29990004,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762500300000,
+            "body": {
+              "name": "Kim"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29990020,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500360000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29990021,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500420000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29990022,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500480000,
+            "body": {
+              "member": "%kim"
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29990023,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500540000,
+            "body": {
+              "member": "%kim"
+            }
+          }
+        },
+        {
+          "seq": 10,
+          "received": 30010260,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Later quiet hours",
+              "why": "Weekends run late.",
+              "text": "Quiet after midnight.\n"
+            }
+          }
+        },
+        {
+          "seq": 11,
+          "received": 30010270,
+          "event": {
+            "v": 1,
+            "type": "suspend",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500660000,
+            "body": {
+              "member": "%kim",
+              "reason": "Posting threats in the chat."
+            }
+          }
+        },
+        {
+          "seq": 12,
+          "received": 30010280,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500720000,
+            "body": {
+              "target": {
+                "kind": "remove",
+                "member": "%kim"
+              },
+              "title": "Remove Kim",
+              "why": "They keep breaking the house rules, and talking hasn’t helped."
+            }
+          }
+        },
+        {
+          "seq": 13,
+          "received": 30010290,
+          "event": {
+            "v": 1,
+            "type": "removal-response",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762500780000,
+            "body": {
+              "proposal": "@12",
+              "text": "The steward misread what happened."
+            }
+          }
+        },
+        {
+          "seq": 14,
+          "received": 30010291,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%kim",
+            "ts": 1762500840000,
+            "body": {
+              "proposal": "@10",
+              "scores": {
+                "@10": 4
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 30010360,
+      "expect": {
+        "responses": [
+          {
+            "id": "@13",
+            "by": "%kim",
+            "text": "The steward misread what happened."
+          }
+        ],
+        "proposals": [
+          {
+            "id": "@10",
+            "ballots": []
+          },
+          {
+            "id": "@12"
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 14,
+            "id": "@14"
+          }
+        ]
+      },
+      "unchangedWithout": [14]
+    }
+  ]
+}
