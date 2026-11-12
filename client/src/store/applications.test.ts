@@ -199,7 +199,7 @@ describe('the front door under a passkey vault (#95, #121)', () => {
     locked.close();
   });
 
-  it('keeps the applications this device sent readable while the keys are locked, outside the vault', async () => {
+  it('seals the applications this device sent with the other keys, so a locked launch reads none until unlocked (#265)', async () => {
     const store = await openStore();
     await store.addGroup(GROUP);
     await store.addSent(sent('a', 1));
@@ -207,8 +207,10 @@ describe('the front door under a passkey vault (#95, #121)', () => {
     store.close();
 
     const locked = await openStore();
-    expect((await locked.listSent()).map((application) => application.id)).toEqual(['a']);
+    await expect(locked.listSent()).rejects.toThrow(VaultLocked);
     await expect(locked.listGroups()).rejects.toThrow(VaultLocked);
+    expect(await locked.unlock(KEY)).toBe(true);
+    expect((await locked.listSent()).map((application) => application.id)).toEqual(['a']);
     locked.close();
   });
 });

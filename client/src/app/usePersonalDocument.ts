@@ -14,14 +14,23 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { isPersonalTitle, type PersonalDocument, type PersonalStore } from '../store/personal';
+import {
+  isPersonalTitle,
+  type PersonalEntry,
+  type PersonalStore,
+  type PersonalText,
+} from '../store/personal';
 import { messages } from './messages';
 import { DRAFT_SAVE_DELAY_MS } from './useDraft';
 
-/** Where the editor's Documents are kept: the device's store, or anything that keeps them like it. */
+/**
+ * Where the editor's Documents are kept: the device's store, or anything that
+ * keeps them like it. It reads them with no key, so a device whose keys are
+ * locked opens them too (#255).
+ */
 export type PersonalDocuments = Pick<
   PersonalStore,
-  'listPersonal' | 'savePersonal' | 'deletePersonal'
+  'listPersonalEntries' | 'savePersonal' | 'deletePersonal'
 >;
 
 /** What the editor's two fields hold, as typed. */
@@ -42,7 +51,7 @@ export interface PersonalEditor {
   /** Whether it was offered as the device's first Document, My mission statement. */
   readonly offered: boolean;
   /** The Document as this device last saved it, or null while it has never been saved. */
-  readonly saved: PersonalDocument | null;
+  readonly saved: PersonalText | null;
   /** How the last save went. */
   readonly saving: PersonalSaving;
   /** Shows new values, and saves them once typing has paused. */
@@ -61,11 +70,11 @@ export interface PersonalEditor {
 interface Shown {
   readonly values: PersonalValues;
   readonly offered: boolean;
-  readonly saved: PersonalDocument | null;
+  readonly saved: PersonalText | null;
 }
 
 /** Where the editor starts: the stored Document, or else a new one, offered as the first. */
-function shownFrom(documents: readonly PersonalDocument[], id: string): Shown {
+function shownFrom(documents: readonly PersonalEntry[], id: string): Shown {
   const stored = documents.find((document) => document.id === id);
   if (stored !== undefined) {
     return { values: { title: stored.title, text: stored.text }, offered: false, saved: stored };
@@ -83,9 +92,9 @@ function shownFrom(documents: readonly PersonalDocument[], id: string): Shown {
 function documentOf(
   id: string,
   values: PersonalValues,
-  before: PersonalDocument | null,
+  before: PersonalText | null,
   at: number,
-): PersonalDocument {
+): PersonalText {
   const createdAt = before?.createdAt ?? at;
   const updatedAt = Math.max(at, before?.updatedAt ?? at);
   return { id, title: values.title.trim(), text: values.text, createdAt, updatedAt };
@@ -108,7 +117,7 @@ export function usePersonalDocument(
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const waiting = useRef<PersonalValues | null>(null);
   const latest = useRef<PersonalValues | null>(null);
-  const before = useRef<PersonalDocument | null>(null);
+  const before = useRef<PersonalText | null>(null);
   const closed = useRef(onClose);
   useEffect(() => {
     closed.current = onClose;
@@ -147,7 +156,7 @@ export function usePersonalDocument(
 
   useEffect(() => {
     let live = true;
-    documents.listPersonal().then(
+    documents.listPersonalEntries().then(
       (list) => {
         if (!live) return;
         const start = shownFrom(list, id);
