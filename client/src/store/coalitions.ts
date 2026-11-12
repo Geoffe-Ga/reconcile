@@ -282,11 +282,12 @@ export function coalitionKeys(
 
 /**
  * A new entry for the coalition whose secret is `secret` (#114): a fresh
- * signing key for this coalition alone, no name yet, and `plan`.
+ * signing key for this coalition alone, no name yet, and `plan`, or, for a
+ * coalition only followed (#124), `following`, whose key signs nothing.
  */
 export function newEntry(
   secret: Uint8Array,
-  plan: Pick<NewGroup, 'joinAs' | 'admitting'> & { readonly name?: string } = {},
+  plan: Pick<NewGroup, 'joinAs' | 'admitting' | 'following'> & { readonly name?: string } = {},
 ): NewGroup {
   const { secretKey, publicKey } = newSigningKeys();
   const { name = '', ...rest } = plan;

@@ -204,6 +204,15 @@ describe('reconcile cards (#114)', () => {
   );
 });
 
+describe('follow links (#124)', () => {
+  it.each([`#follow/abc/def`, `#follow/`, `#follow/a+b`, `#/follow/abc`])(
+    'sends %j to Start',
+    (hash) => {
+      expect(parseRoute(hash)).toEqual({ name: 'start' });
+    },
+  );
+});
+
 describe('coalitions (#120)', () => {
   const COALITION = 'c'.repeat(43);
 
@@ -305,6 +314,8 @@ describe('routeHref', () => {
     [{ name: 'reconcile', groupId: GROUP }, `#/g/${GROUP}/reconcile`],
     [{ name: 'card', payload: null }, '#/card'],
     [{ name: 'card', payload: 'abc-def' }, '#reconcile/abc-def'],
+    [{ name: 'follow', payload: null }, '#/follow'],
+    [{ name: 'follow', payload: 'abc-def' }, '#follow/abc-def'],
     [{ name: 'coalition', coalitionId: GROUP }, `#/c/${GROUP}`],
     [
       { name: 'coalitionDocument', coalitionId: GROUP, documentId: GROUP },

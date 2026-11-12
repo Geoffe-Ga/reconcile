@@ -19,6 +19,7 @@ import {
   anaMakesCard,
   closeAll,
   coalitionOn,
+  formedCoalition,
   found,
   open,
   SLOW,
@@ -41,17 +42,7 @@ afterEach(() => {
 });
 
 /** Riverside and Oak St, reconciled into Eastside Housing: both groups passed. */
-async function formed(fake: FakeRelay) {
-  const groups = await twoGroups(fake);
-  const { ana, ben, cy, riverside, oak } = groups;
-  const { proposal, found: card } = await anaMakesCard(ana, cy, riverside);
-  const brought = await bringCard(cy.services, card, oak, 'Cy');
-  await syncAll(1);
-  await vote(riverside, proposal, [ana, cy]);
-  await vote(oak, brought, [ben, cy]);
-  await syncAll();
-  return groups;
-}
+const formed = formedCoalition;
 
 /**
  * How long a wait gives a freshly rendered app to read the store and fold the

@@ -1,7 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { coalitionOutcome, RESULT_GRACE_MINUTES } from './coalition';
+import { coalitionOutcome, RESULT_GRACE_MINUTES, settlesAt } from './coalition';
 
 describe('coalitionOutcome', () => {
   it('reads the issue’s examples', () => {
@@ -105,5 +105,9 @@ describe('coalitionOutcome', () => {
 
   it('gives results a week past the deadline', () => {
     expect(RESULT_GRACE_MINUTES).toBe(10_080);
+  });
+
+  it('settles a motion, and any Dispatch it carries, a week past its deadline (#124)', () => {
+    expect(settlesAt({ deadline: 29_385_100 })).toBe(29_395_180);
   });
 });

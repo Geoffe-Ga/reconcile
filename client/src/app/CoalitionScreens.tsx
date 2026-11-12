@@ -6,8 +6,10 @@
  * Each reads the coalition entries and groups on this device, folded, and
  * turns what the screens report into actions on the store: taking part
  * (#114), proposing a motion, which goes to the coalition's outbox under
- * this device's key there (ADR-0009) and to the relay at once, and writing
- * in the room, which goes to the room's outbox under that same key.
+ * this device's key there (ADR-0009) and to the relay at once, writing in
+ * the room, which goes to the room's outbox under that same key (#125), and
+ * sharing a follow link, and unfollowing a coalition this device only
+ * follows (#124), which posts nothing.
  */
 import {
   type ReactNode,
@@ -21,6 +23,7 @@ import {
 import { MAX_LEVEL } from '../engine/coalition';
 import { seatIn } from '../engine/crossing';
 import { CoalitionHome } from '../screens/CoalitionHome';
+import { Follow } from '../screens/Follow';
 import { CoalitionRoom } from '../screens/CoalitionRoom';
 import { CoalitionComposer, type ComposeOutcome } from '../screens/Composer';
 import { CoalitionDocumentView } from '../screens/DocumentView';
@@ -40,6 +43,13 @@ import {
   sectionIsOpen,
   standingIn,
 } from './coalitionHome';
+import {
+  followCoalition,
+  type FoundFollow,
+  lookupFollow,
+  shareFollowLink,
+  unfollow,
+} from './follow';
 import { messages } from './messages';
 import { propose, type ProposalValues } from './proposals';
 import { type CardValues, holdsCoalitionKey, makeCard, postCard, takePart } from './reconcile';
@@ -127,6 +137,15 @@ function takePartGroup(ready: Ready): string {
   return standing.kind === 'take-part' ? standing.groupId : '';
 }
 
+/**
+ * Unfollows the coalition whose entry is `entryId` (#124), then goes to
+ * Start, since the coalition is no longer on this device.
+ */
+async function unfollowAndLeave(services: AppServices, entryId: string): Promise<void> {
+  await unfollow(services, entryId);
+  replaceRoute({ name: 'start' });
+}
+
 /** The coalition's home (#120). */
 function HomeScreen({ services, coalitionId }: Omit<GateProps, 'children'>) {
   const deviceNow = useNow(services.now);
@@ -135,12 +154,17 @@ function HomeScreen({ services, coalitionId }: Omit<GateProps, 'children'>) {
       {(ready) => {
         const view = coalitionHome(ready.held, ready.groups);
         if (view === null) return <CoalitionMissing />;
+        const { entryId } = view;
         return (
           <CoalitionHome
             view={view}
+            state={ready.held.state}
             now={relayMinuteNow(ready.held.entry, deviceNow)}
             back={backFor(ready.held, ready.groups)}
             onTakePart={(name) => ready.onTakePart(takePartGroup(ready), name)}
+            makeFollowLink={() => shareFollowLink(services, entryId, services.origin)}
+            copyText={services.copyText}
+            onUnfollow={() => unfollowAndLeave(services, entryId)}
           />
         );
       }}
@@ -419,4 +443,45 @@ export function CoalitionRouteScreen({
     case 'coalitionRoom':
       return <RoomScreen services={services} coalitionId={coalitionId} />;
   }
+}
+
+/** Props for {@link FollowScreen}. */
+export interface FollowScreenProps {
+  readonly services: AppServices;
+  /** The seed as written after `#follow/`, or null once it has left the address bar. */
+  readonly payload: string | null;
+  /** The seed of a follow link pasted on Start, held in memory. */
+  readonly heldSeed: Uint8Array | null;
+  /** Lets go of the seed held in memory, once Follow or Not now is done with it. */
+  readonly releaseSeed: () => void;
+}
+
+/**
+ * Follow a coalition (#124): the link's preview, then Follow, which keeps
+ * the coalition on this device and opens its home in place of this screen.
+ */
+export function FollowScreen({ services, payload, heldSeed, releaseSeed }: FollowScreenProps) {
+  const lookup = useCallback((seed: Uint8Array) => lookupFollow(services, seed), [services]);
+  const onFollow = useCallback(
+    async (found: FoundFollow) => {
+      const coalitionId = await followCoalition(services, found);
+      releaseSeed();
+      replaceRoute({ name: 'coalition', coalitionId });
+      return true;
+    },
+    [services, releaseSeed],
+  );
+  const onNotNow = useCallback(() => {
+    releaseSeed();
+    replaceRoute({ name: 'start' });
+  }, [releaseSeed]);
+  return (
+    <Follow
+      payload={payload}
+      heldSeed={heldSeed}
+      lookup={lookup}
+      onFollow={onFollow}
+      onNotNow={onNotNow}
+    />
+  );
 }

@@ -1,0 +1,1563 @@
+{
+  "kind": "coalition",
+  "vectors": [
+    {
+      "name": "follow-motion-dispatch: a coalition motion may carry a Dispatch (#124), and once every seat's pass is final, at deadline + 10,080, it goes out from the motion, pointing to the coalition's Document, received in that minute",
+      "logs": {
+        "coalition": [
+          {
+            "seq": 1,
+            "received": 29375010,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%kim",
+              "ts": 1762500060000,
+              "body": {
+                "kind": "coalition",
+                "name": "Rivers United",
+                "title": "Shared ground",
+                "atoms": ["We keep the river clean.", "We meet on the first Sunday."],
+                "seats": [
+                  { "name": "Riverside", "key": "^A" },
+                  { "name": "Hillside", "key": "^B" }
+                ]
+              }
+            }
+          },
+          {
+            "seq": 2,
+            "received": 29375011,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500120000,
+              "body": {
+                "name": "Kim",
+                "seat": "^A",
+                "proof": { "$seatProof": ["A", "@1", "%kim"] }
+              }
+            }
+          },
+          {
+            "seq": 3,
+            "received": 29375012,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%zed",
+              "ts": 1762500180000,
+              "body": {
+                "name": "Zed",
+                "seat": "^B",
+                "proof": { "$seatProof": ["B", "@1", "%zed"] }
+              }
+            }
+          },
+          {
+            "seq": 4,
+            "received": 29375013,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500240000,
+              "body": { "motion": "@1", "seat": "^A", "result": "pass" }
+            }
+          },
+          {
+            "seq": 5,
+            "received": 29375014,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%zed",
+              "ts": 1762500300000,
+              "body": { "motion": "@1", "seat": "^B", "result": "pass" }
+            }
+          },
+          {
+            "seq": 6,
+            "received": 29375016,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500360000,
+              "body": {
+                "atom": "@1.0",
+                "title": "Banks too",
+                "why": "The banks matter.",
+                "text": "We keep the river and its banks clean.",
+                "dispatch": {
+                  "title": "Banks too",
+                  "text": "The coalition now keeps the banks clean as well."
+                }
+              }
+            }
+          },
+          {
+            "seq": 7,
+            "received": 29375025,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500420000,
+              "body": { "motion": "@6", "seat": "^A", "result": "pass" }
+            }
+          },
+          {
+            "seq": 8,
+            "received": 29375026,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%zed",
+              "ts": 1762500480000,
+              "body": { "motion": "@6", "seat": "^B", "result": "pass" }
+            }
+          }
+        ]
+      },
+      "relayNow": 29395176,
+      "expect": {
+        "coalition": {
+          "proposals": [
+            {
+              "id": "@6",
+              "number": 1,
+              "dispatch": {
+                "title": "Banks too",
+                "text": "The coalition now keeps the banks clean as well."
+              },
+              "final": true,
+              "outcome": {
+                "kind": "pass",
+                "version": "@6",
+                "bar": { "avgAtLeast": 2, "zerosUnderPercent": 10 }
+              }
+            }
+          ],
+          "atoms": [
+            { "text": "We keep the river and its banks clean." },
+            { "text": "We meet on the first Sunday." }
+          ],
+          "dispatches": [
+            {
+              "id": "@6",
+              "by": { "proposal": "@6" },
+              "title": "Banks too",
+              "text": "The coalition now keeps the banks clean as well.",
+              "doc": "@1",
+              "received": 29395176
+            }
+          ],
+          "ignored": []
+        }
+      }
+    },
+    {
+      "name": "follow-motion-dispatch-not-yet: a minute before the pass is final, a contest could still fail it, so its Dispatch hasn't gone out and the Atom hasn't changed",
+      "logs": {
+        "coalition": [
+          {
+            "seq": 1,
+            "received": 29375010,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%kim",
+              "ts": 1762500060000,
+              "body": {
+                "kind": "coalition",
+                "name": "Rivers United",
+                "title": "Shared ground",
+                "atoms": ["We keep the river clean.", "We meet on the first Sunday."],
+                "seats": [
+                  { "name": "Riverside", "key": "^A" },
+                  { "name": "Hillside", "key": "^B" }
+                ]
+              }
+            }
+          },
+          {
+            "seq": 2,
+            "received": 29375011,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500120000,
+              "body": {
+                "name": "Kim",
+                "seat": "^A",
+                "proof": { "$seatProof": ["A", "@1", "%kim"] }
+              }
+            }
+          },
+          {
+            "seq": 3,
+            "received": 29375012,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%zed",
+              "ts": 1762500180000,
+              "body": {
+                "name": "Zed",
+                "seat": "^B",
+                "proof": { "$seatProof": ["B", "@1", "%zed"] }
+              }
+            }
+          },
+          {
+            "seq": 4,
+            "received": 29375013,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500240000,
+              "body": { "motion": "@1", "seat": "^A", "result": "pass" }
+            }
+          },
+          {
+            "seq": 5,
+            "received": 29375014,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%zed",
+              "ts": 1762500300000,
+              "body": { "motion": "@1", "seat": "^B", "result": "pass" }
+            }
+          },
+          {
+            "seq": 6,
+            "received": 29375016,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500360000,
+              "body": {
+                "atom": "@1.0",
+                "title": "Banks too",
+                "why": "The banks matter.",
+                "text": "We keep the river and its banks clean.",
+                "dispatch": {
+                  "title": "Banks too",
+                  "text": "The coalition now keeps the banks clean as well."
+                }
+              }
+            }
+          },
+          {
+            "seq": 7,
+            "received": 29375025,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500420000,
+              "body": { "motion": "@6", "seat": "^A", "result": "pass" }
+            }
+          },
+          {
+            "seq": 8,
+            "received": 29375026,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%zed",
+              "ts": 1762500480000,
+              "body": { "motion": "@6", "seat": "^B", "result": "pass" }
+            }
+          }
+        ]
+      },
+      "relayNow": 29395175,
+      "expect": {
+        "coalition": {
+          "proposals": [
+            {
+              "id": "@6",
+              "dispatch": {
+                "title": "Banks too",
+                "text": "The coalition now keeps the banks clean as well."
+              },
+              "final": false
+            }
+          ],
+          "atoms": [
+            { "text": "We keep the river clean." },
+            { "text": "We meet on the first Sunday." }
+          ],
+          "dispatches": []
+        }
+      }
+    },
+    {
+      "name": "follow-motion-dispatch-fail: a motion one seat fails sends no Dispatch, then or ever",
+      "logs": {
+        "coalition": [
+          {
+            "seq": 1,
+            "received": 29375010,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%kim",
+              "ts": 1762500060000,
+              "body": {
+                "kind": "coalition",
+                "name": "Rivers United",
+                "title": "Shared ground",
+                "atoms": ["We keep the river clean.", "We meet on the first Sunday."],
+                "seats": [
+                  { "name": "Riverside", "key": "^A" },
+                  { "name": "Hillside", "key": "^B" }
+                ]
+              }
+            }
+          },
+          {
+            "seq": 2,
+            "received": 29375011,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500120000,
+              "body": {
+                "name": "Kim",
+                "seat": "^A",
+                "proof": { "$seatProof": ["A", "@1", "%kim"] }
+              }
+            }
+          },
+          {
+            "seq": 3,
+            "received": 29375012,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%zed",
+              "ts": 1762500180000,
+              "body": {
+                "name": "Zed",
+                "seat": "^B",
+                "proof": { "$seatProof": ["B", "@1", "%zed"] }
+              }
+            }
+          },
+          {
+            "seq": 4,
+            "received": 29375013,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500240000,
+              "body": { "motion": "@1", "seat": "^A", "result": "pass" }
+            }
+          },
+          {
+            "seq": 5,
+            "received": 29375014,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%zed",
+              "ts": 1762500300000,
+              "body": { "motion": "@1", "seat": "^B", "result": "pass" }
+            }
+          },
+          {
+            "seq": 6,
+            "received": 29375016,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500360000,
+              "body": {
+                "atom": "@1.0",
+                "title": "Banks too",
+                "why": "The banks matter.",
+                "text": "We keep the river and its banks clean.",
+                "dispatch": {
+                  "title": "Banks too",
+                  "text": "The coalition now keeps the banks clean as well."
+                }
+              }
+            }
+          },
+          {
+            "seq": 7,
+            "received": 29375025,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500420000,
+              "body": { "motion": "@6", "seat": "^A", "result": "pass" }
+            }
+          },
+          {
+            "seq": 8,
+            "received": 29375026,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%zed",
+              "ts": 1762500480000,
+              "body": { "motion": "@6", "seat": "^B", "result": "fail" }
+            }
+          }
+        ]
+      },
+      "relayNow": 29396616,
+      "expect": {
+        "coalition": {
+          "proposals": [
+            {
+              "id": "@6",
+              "final": true,
+              "closedAt": 29375026,
+              "outcome": { "kind": "fail", "bar": { "avgAtLeast": 2, "zerosUnderPercent": 10 } }
+            }
+          ],
+          "dispatches": []
+        }
+      }
+    },
+    {
+      "name": "follow-motion-dispatch-contested: a seat that passed and then reports fail while results still count fails the motion, so its Dispatch never goes out",
+      "logs": {
+        "coalition": [
+          {
+            "seq": 1,
+            "received": 29375010,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%kim",
+              "ts": 1762500060000,
+              "body": {
+                "kind": "coalition",
+                "name": "Rivers United",
+                "title": "Shared ground",
+                "atoms": ["We keep the river clean.", "We meet on the first Sunday."],
+                "seats": [
+                  { "name": "Riverside", "key": "^A" },
+                  { "name": "Hillside", "key": "^B" }
+                ]
+              }
+            }
+          },
+          {
+            "seq": 2,
+            "received": 29375011,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500120000,
+              "body": {
+                "name": "Kim",
+                "seat": "^A",
+                "proof": { "$seatProof": ["A", "@1", "%kim"] }
+              }
+            }
+          },
+          {
+            "seq": 3,
+            "received": 29375012,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%zed",
+              "ts": 1762500180000,
+              "body": {
+                "name": "Zed",
+                "seat": "^B",
+                "proof": { "$seatProof": ["B", "@1", "%zed"] }
+              }
+            }
+          },
+          {
+            "seq": 4,
+            "received": 29375013,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500240000,
+              "body": { "motion": "@1", "seat": "^A", "result": "pass" }
+            }
+          },
+          {
+            "seq": 5,
+            "received": 29375014,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%zed",
+              "ts": 1762500300000,
+              "body": { "motion": "@1", "seat": "^B", "result": "pass" }
+            }
+          },
+          {
+            "seq": 6,
+            "received": 29375016,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500360000,
+              "body": {
+                "atom": "@1.0",
+                "title": "Banks too",
+                "why": "The banks matter.",
+                "text": "We keep the river and its banks clean.",
+                "dispatch": {
+                  "title": "Banks too",
+                  "text": "The coalition now keeps the banks clean as well."
+                }
+              }
+            }
+          },
+          {
+            "seq": 7,
+            "received": 29375025,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500420000,
+              "body": { "motion": "@6", "seat": "^A", "result": "pass" }
+            }
+          },
+          {
+            "seq": 8,
+            "received": 29375026,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%zed",
+              "ts": 1762500480000,
+              "body": { "motion": "@6", "seat": "^B", "result": "pass" }
+            }
+          },
+          {
+            "seq": 9,
+            "received": 29395175,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%zed",
+              "ts": 1762500540000,
+              "body": { "motion": "@6", "seat": "^B", "result": "fail" }
+            }
+          }
+        ]
+      },
+      "relayNow": 29396616,
+      "expect": {
+        "coalition": {
+          "proposals": [
+            {
+              "id": "@6",
+              "final": true,
+              "outcome": { "kind": "fail", "bar": { "avgAtLeast": 2, "zerosUnderPercent": 10 } }
+            }
+          ],
+          "dispatches": []
+        }
+      }
+    },
+    {
+      "name": "follow-motion-dispatch-lapse: a motion one seat never reports on fails once results stop counting, and sends nothing",
+      "logs": {
+        "coalition": [
+          {
+            "seq": 1,
+            "received": 29375010,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%kim",
+              "ts": 1762500060000,
+              "body": {
+                "kind": "coalition",
+                "name": "Rivers United",
+                "title": "Shared ground",
+                "atoms": ["We keep the river clean.", "We meet on the first Sunday."],
+                "seats": [
+                  { "name": "Riverside", "key": "^A" },
+                  { "name": "Hillside", "key": "^B" }
+                ]
+              }
+            }
+          },
+          {
+            "seq": 2,
+            "received": 29375011,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500120000,
+              "body": {
+                "name": "Kim",
+                "seat": "^A",
+                "proof": { "$seatProof": ["A", "@1", "%kim"] }
+              }
+            }
+          },
+          {
+            "seq": 3,
+            "received": 29375012,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%zed",
+              "ts": 1762500180000,
+              "body": {
+                "name": "Zed",
+                "seat": "^B",
+                "proof": { "$seatProof": ["B", "@1", "%zed"] }
+              }
+            }
+          },
+          {
+            "seq": 4,
+            "received": 29375013,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500240000,
+              "body": { "motion": "@1", "seat": "^A", "result": "pass" }
+            }
+          },
+          {
+            "seq": 5,
+            "received": 29375014,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%zed",
+              "ts": 1762500300000,
+              "body": { "motion": "@1", "seat": "^B", "result": "pass" }
+            }
+          },
+          {
+            "seq": 6,
+            "received": 29375016,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500360000,
+              "body": {
+                "atom": "@1.0",
+                "title": "Banks too",
+                "why": "The banks matter.",
+                "text": "We keep the river and its banks clean.",
+                "dispatch": {
+                  "title": "Banks too",
+                  "text": "The coalition now keeps the banks clean as well."
+                }
+              }
+            }
+          },
+          {
+            "seq": 7,
+            "received": 29375025,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500420000,
+              "body": { "motion": "@6", "seat": "^A", "result": "pass" }
+            }
+          }
+        ]
+      },
+      "relayNow": 29395176,
+      "expect": {
+        "coalition": {
+          "proposals": [
+            {
+              "id": "@6",
+              "final": true,
+              "outcome": { "kind": "fail", "bar": { "avgAtLeast": 2, "zerosUnderPercent": 10 } }
+            }
+          ],
+          "dispatches": []
+        }
+      }
+    },
+    {
+      "name": "follow-motion-dispatch-order: Dispatches go out in the order their passes turn final, each received in its own minute, and a participant leaving in that minute changes neither",
+      "logs": {
+        "coalition": [
+          {
+            "seq": 1,
+            "received": 29375010,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%kim",
+              "ts": 1762500060000,
+              "body": {
+                "kind": "coalition",
+                "name": "Rivers United",
+                "title": "Shared ground",
+                "atoms": ["We keep the river clean.", "We meet on the first Sunday."],
+                "seats": [
+                  { "name": "Riverside", "key": "^A" },
+                  { "name": "Hillside", "key": "^B" }
+                ]
+              }
+            }
+          },
+          {
+            "seq": 2,
+            "received": 29375011,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500120000,
+              "body": {
+                "name": "Kim",
+                "seat": "^A",
+                "proof": { "$seatProof": ["A", "@1", "%kim"] }
+              }
+            }
+          },
+          {
+            "seq": 3,
+            "received": 29375012,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%zed",
+              "ts": 1762500180000,
+              "body": {
+                "name": "Zed",
+                "seat": "^B",
+                "proof": { "$seatProof": ["B", "@1", "%zed"] }
+              }
+            }
+          },
+          {
+            "seq": 4,
+            "received": 29375013,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500240000,
+              "body": { "motion": "@1", "seat": "^A", "result": "pass" }
+            }
+          },
+          {
+            "seq": 5,
+            "received": 29375014,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%zed",
+              "ts": 1762500300000,
+              "body": { "motion": "@1", "seat": "^B", "result": "pass" }
+            }
+          },
+          {
+            "seq": 6,
+            "received": 29375016,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500360000,
+              "body": {
+                "atom": "@1.0",
+                "title": "Banks too",
+                "why": "The banks matter.",
+                "text": "We keep the river and its banks clean.",
+                "dispatch": {
+                  "title": "Banks too",
+                  "text": "The coalition now keeps the banks clean as well."
+                }
+              }
+            }
+          },
+          {
+            "seq": 7,
+            "received": 29375025,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500420000,
+              "body": { "motion": "@6", "seat": "^A", "result": "pass" }
+            }
+          },
+          {
+            "seq": 8,
+            "received": 29375026,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%zed",
+              "ts": 1762500480000,
+              "body": { "motion": "@6", "seat": "^B", "result": "pass" }
+            }
+          },
+          {
+            "seq": 9,
+            "received": 29375100,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@1",
+              "author": "%zed",
+              "ts": 1762500540000,
+              "body": {
+                "atom": "@1.1",
+                "title": "Banks too",
+                "why": "The banks matter.",
+                "text": "We keep the river and its banks clean.",
+                "dispatch": {
+                  "title": "Meetings move",
+                  "text": "We now meet on the second Sunday."
+                }
+              }
+            }
+          },
+          {
+            "seq": 10,
+            "received": 29375110,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500600000,
+              "body": { "motion": "@9", "seat": "^A", "result": "pass" }
+            }
+          },
+          {
+            "seq": 11,
+            "received": 29375111,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%zed",
+              "ts": 1762500660000,
+              "body": { "motion": "@9", "seat": "^B", "result": "pass" }
+            }
+          },
+          {
+            "seq": 12,
+            "received": 29395176,
+            "event": {
+              "v": 1,
+              "type": "leave",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500720000,
+              "body": {}
+            }
+          }
+        ]
+      },
+      "relayNow": 29395260,
+      "expect": {
+        "coalition": {
+          "dispatches": [
+            {
+              "id": "@6",
+              "by": { "proposal": "@6" },
+              "title": "Banks too",
+              "text": "The coalition now keeps the banks clean as well.",
+              "doc": "@1",
+              "received": 29395176
+            },
+            {
+              "id": "@9",
+              "by": { "proposal": "@9" },
+              "title": "Meetings move",
+              "text": "We now meet on the second Sunday.",
+              "doc": "@1",
+              "received": 29395260
+            }
+          ],
+          "ignored": []
+        }
+      }
+    },
+    {
+      "name": "follow-motion-dispatch-limits: a motion whose Dispatch title runs past 80 code points is ignored whole, as a group's Proposal is, and one that fits keeps only its title and text",
+      "logs": {
+        "coalition": [
+          {
+            "seq": 1,
+            "received": 29375010,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%kim",
+              "ts": 1762500060000,
+              "body": {
+                "kind": "coalition",
+                "name": "Rivers United",
+                "title": "Shared ground",
+                "atoms": ["We keep the river clean.", "We meet on the first Sunday."],
+                "seats": [
+                  { "name": "Riverside", "key": "^A" },
+                  { "name": "Hillside", "key": "^B" }
+                ]
+              }
+            }
+          },
+          {
+            "seq": 2,
+            "received": 29375011,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500120000,
+              "body": {
+                "name": "Kim",
+                "seat": "^A",
+                "proof": { "$seatProof": ["A", "@1", "%kim"] }
+              }
+            }
+          },
+          {
+            "seq": 3,
+            "received": 29375012,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%zed",
+              "ts": 1762500180000,
+              "body": {
+                "name": "Zed",
+                "seat": "^B",
+                "proof": { "$seatProof": ["B", "@1", "%zed"] }
+              }
+            }
+          },
+          {
+            "seq": 4,
+            "received": 29375013,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500240000,
+              "body": { "motion": "@1", "seat": "^A", "result": "pass" }
+            }
+          },
+          {
+            "seq": 5,
+            "received": 29375014,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%zed",
+              "ts": 1762500300000,
+              "body": { "motion": "@1", "seat": "^B", "result": "pass" }
+            }
+          },
+          {
+            "seq": 6,
+            "received": 29375016,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500360000,
+              "body": {
+                "atom": "@1.0",
+                "title": "Banks too",
+                "why": "The banks matter.",
+                "text": "We keep the river and its banks clean.",
+                "dispatch": {
+                  "title": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+                  "text": "Too long a title."
+                }
+              }
+            }
+          },
+          {
+            "seq": 7,
+            "received": 29375017,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500420000,
+              "body": {
+                "atom": "@1.0",
+                "title": "Banks too",
+                "why": "The banks matter.",
+                "text": "We keep the river and its banks clean.",
+                "dispatch": {
+                  "title": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+                  "text": "Just fits.",
+                  "doc": "@1"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "relayNow": 29375026,
+      "expect": {
+        "coalition": {
+          "proposals": [
+            {
+              "id": "@7",
+              "number": 1,
+              "dispatch": {
+                "title": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+                "text": "Just fits."
+              }
+            }
+          ],
+          "ignored": [{ "seq": 6, "id": "@6" }]
+        }
+      },
+      "unchangedWithout": { "coalition": [6] }
+    },
+    {
+      "name": "follow-motion-dispatch-admit: an admit motion still carries no Dispatch, so one that does is ignored",
+      "logs": {
+        "coalition": [
+          {
+            "seq": 1,
+            "received": 29375010,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%kim",
+              "ts": 1762500060000,
+              "body": {
+                "kind": "coalition",
+                "name": "Rivers United",
+                "title": "Shared ground",
+                "atoms": ["We keep the river clean.", "We meet on the first Sunday."],
+                "seats": [
+                  { "name": "Riverside", "key": "^A" },
+                  { "name": "Hillside", "key": "^B" }
+                ]
+              }
+            }
+          },
+          {
+            "seq": 2,
+            "received": 29375011,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500120000,
+              "body": {
+                "name": "Kim",
+                "seat": "^A",
+                "proof": { "$seatProof": ["A", "@1", "%kim"] }
+              }
+            }
+          },
+          {
+            "seq": 3,
+            "received": 29375012,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%zed",
+              "ts": 1762500180000,
+              "body": {
+                "name": "Zed",
+                "seat": "^B",
+                "proof": { "$seatProof": ["B", "@1", "%zed"] }
+              }
+            }
+          },
+          {
+            "seq": 4,
+            "received": 29375013,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500240000,
+              "body": { "motion": "@1", "seat": "^A", "result": "pass" }
+            }
+          },
+          {
+            "seq": 5,
+            "received": 29375014,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%zed",
+              "ts": 1762500300000,
+              "body": { "motion": "@1", "seat": "^B", "result": "pass" }
+            }
+          },
+          {
+            "seq": 6,
+            "received": 29375016,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@1",
+              "author": "%eve",
+              "ts": 1762500360000,
+              "body": {
+                "target": {
+                  "kind": "admit",
+                  "seat": { "name": "Lakeside", "key": "^C" },
+                  "proof": { "$seatProof": ["C", "@1", "%eve"] },
+                  "kx": "&^C"
+                },
+                "title": "Admit Lakeside",
+                "why": "They share the river.",
+                "dispatch": { "title": "Lakeside joins", "text": "Welcome." }
+              }
+            }
+          }
+        ]
+      },
+      "relayNow": 29375026,
+      "expect": { "coalition": { "proposals": [], "ignored": [{ "seq": 6, "id": "@6" }] } }
+    },
+    {
+      "name": "follow-dispatch-participant: a dispatch event from a participant bound to a seat is ignored, so a coalition's Dispatches come only from passed motions (ADR-0075 §1)",
+      "logs": {
+        "coalition": [
+          {
+            "seq": 1,
+            "received": 29375010,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%kim",
+              "ts": 1762500060000,
+              "body": {
+                "kind": "coalition",
+                "name": "Rivers United",
+                "title": "Shared ground",
+                "atoms": ["We keep the river clean.", "We meet on the first Sunday."],
+                "seats": [
+                  { "name": "Riverside", "key": "^A" },
+                  { "name": "Hillside", "key": "^B" }
+                ]
+              }
+            }
+          },
+          {
+            "seq": 2,
+            "received": 29375011,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500120000,
+              "body": {
+                "name": "Kim",
+                "seat": "^A",
+                "proof": { "$seatProof": ["A", "@1", "%kim"] }
+              }
+            }
+          },
+          {
+            "seq": 3,
+            "received": 29375012,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%zed",
+              "ts": 1762500180000,
+              "body": {
+                "name": "Zed",
+                "seat": "^B",
+                "proof": { "$seatProof": ["B", "@1", "%zed"] }
+              }
+            }
+          },
+          {
+            "seq": 4,
+            "received": 29375013,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500240000,
+              "body": { "motion": "@1", "seat": "^A", "result": "pass" }
+            }
+          },
+          {
+            "seq": 5,
+            "received": 29375014,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%zed",
+              "ts": 1762500300000,
+              "body": { "motion": "@1", "seat": "^B", "result": "pass" }
+            }
+          },
+          {
+            "seq": 6,
+            "received": 29375016,
+            "event": {
+              "v": 1,
+              "type": "dispatch",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500360000,
+              "body": { "title": "Banks too", "text": "Straight from Kim.", "doc": "@1" }
+            }
+          }
+        ]
+      },
+      "relayNow": 29375026,
+      "expect": { "coalition": { "dispatches": [], "ignored": [{ "seq": 6, "id": "@6" }] } },
+      "unchangedWithout": { "coalition": [6] }
+    },
+    {
+      "name": "follow-motion-dispatch-group: a motion carrying a Dispatch opens in member group A with none, so A's pass sends A nothing, while the coalition sends it once the pass is final",
+      "logs": {
+        "A": [
+          {
+            "seq": 1,
+            "received": 29375000,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%ana",
+              "ts": 1762500060000,
+              "body": {
+                "name": "Riverside Tenants",
+                "founder": "Ana",
+                "title": "House rules",
+                "atoms": ["Quiet after 11pm."]
+              }
+            }
+          },
+          {
+            "seq": 2,
+            "received": 29375001,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%ben",
+              "ts": 1762500120000,
+              "body": { "name": "Ben" }
+            }
+          },
+          {
+            "seq": 3,
+            "received": 29375002,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@1",
+              "author": "%ana",
+              "ts": 1762500180000,
+              "body": {
+                "target": {
+                  "kind": "reconcile",
+                  "secret": "~coalition",
+                  "inner": "~inner",
+                  "seat": "!A",
+                  "name": "Rivers United",
+                  "title": "Shared ground",
+                  "atoms": ["We keep the river clean.", "We meet on the first Sunday."]
+                },
+                "title": "Reconcile with Hillside",
+                "why": "We share a river."
+              }
+            }
+          },
+          {
+            "seq": 4,
+            "received": 29375003,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@1",
+              "author": "%ana",
+              "ts": 1762500240000,
+              "body": { "proposal": "@3", "scores": { "@3": 4 } }
+            }
+          },
+          {
+            "seq": 5,
+            "received": 29375004,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@1",
+              "author": "%ben",
+              "ts": 1762500300000,
+              "body": { "proposal": "@3", "scores": { "@3": 4 } }
+            }
+          },
+          {
+            "seq": 12,
+            "received": 29375021,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@1",
+              "author": "%ana",
+              "ts": 1762500720000,
+              "body": { "proposal": "@11", "scores": { "@11": 4 } }
+            }
+          },
+          {
+            "seq": 13,
+            "received": 29375022,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@1",
+              "author": "%ben",
+              "ts": 1762500780000,
+              "body": { "proposal": "@11", "scores": { "@11": 4 } }
+            }
+          }
+        ],
+        "coalition": [
+          {
+            "seq": 6,
+            "received": 29375010,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%kim",
+              "ts": 1762500060000,
+              "body": {
+                "kind": "coalition",
+                "name": "Rivers United",
+                "title": "Shared ground",
+                "atoms": ["We keep the river clean.", "We meet on the first Sunday."],
+                "seats": [
+                  { "name": "Riverside", "key": "^A" },
+                  { "name": "Hillside", "key": "^B" }
+                ]
+              }
+            }
+          },
+          {
+            "seq": 7,
+            "received": 29375011,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@6",
+              "author": "%kim",
+              "ts": 1762500420000,
+              "body": {
+                "name": "Kim",
+                "seat": "^A",
+                "proof": { "$seatProof": ["A", "@6", "%kim"] }
+              }
+            }
+          },
+          {
+            "seq": 8,
+            "received": 29375012,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@6",
+              "author": "%zed",
+              "ts": 1762500480000,
+              "body": {
+                "name": "Zed",
+                "seat": "^B",
+                "proof": { "$seatProof": ["B", "@6", "%zed"] }
+              }
+            }
+          },
+          {
+            "seq": 9,
+            "received": 29375013,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@6",
+              "author": "%kim",
+              "ts": 1762500540000,
+              "body": { "motion": "@6", "seat": "^A", "result": "pass" }
+            }
+          },
+          {
+            "seq": 10,
+            "received": 29375014,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@6",
+              "author": "%zed",
+              "ts": 1762500600000,
+              "body": { "motion": "@6", "seat": "^B", "result": "pass" }
+            }
+          },
+          {
+            "seq": 11,
+            "received": 29375020,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@6",
+              "author": "%zed",
+              "ts": 1762500660000,
+              "body": {
+                "atom": "@6.0",
+                "title": "Banks too",
+                "why": "The banks matter.",
+                "text": "We keep the river and its banks clean.",
+                "dispatch": {
+                  "title": "Banks too",
+                  "text": "The coalition now keeps the banks clean as well."
+                }
+              }
+            }
+          },
+          {
+            "seq": 14,
+            "received": 29375030,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@6",
+              "author": "%kim",
+              "ts": 1762500840000,
+              "body": { "motion": "@11", "seat": "^A", "result": "pass" }
+            }
+          },
+          {
+            "seq": 15,
+            "received": 29375031,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@6",
+              "author": "%zed",
+              "ts": 1762500900000,
+              "body": { "motion": "@11", "seat": "^B", "result": "pass" }
+            }
+          }
+        ]
+      },
+      "relayNow": 29395180,
+      "expect": {
+        "A": {
+          "proposals": [
+            { "id": "@3", "number": 1, "dispatch": null },
+            { "id": "@11", "number": 0, "dispatch": null, "final": true }
+          ],
+          "dispatches": [],
+          "ignored": []
+        },
+        "coalition": {
+          "dispatches": [
+            {
+              "id": "@11",
+              "by": { "proposal": "@11" },
+              "title": "Banks too",
+              "text": "The coalition now keeps the banks clean as well.",
+              "doc": "@6",
+              "received": 29395180
+            }
+          ]
+        }
+      },
+      "report": { "A": [] }
+    }
+  ]
+}

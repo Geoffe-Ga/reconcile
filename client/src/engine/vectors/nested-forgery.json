@@ -1048,7 +1048,7 @@
       }
     },
     {
-      "name": "forgery-reconcile-dispatch: a coalition’s reconcile motion carrying a Dispatch is ignored, as any motion’s is",
+      "name": "forgery-reconcile-dispatch: a coalition’s reconcile motion carrying a Dispatch is ignored, as an admit carrying one is (#124)",
       "logs": {
         "A": [
           {
