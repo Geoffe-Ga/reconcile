@@ -25,6 +25,7 @@ import {
   NumberField,
 } from 'react-aria-components';
 
+import { holdPresses } from '../app/holdPresses';
 import { messages } from '../app/messages';
 import { BackLink, PageHeader } from '../app/ui';
 import {
@@ -112,7 +113,11 @@ interface GroupPicksProps {
   readonly onChange: (groupId: string, members: readonly string[]) => void;
 }
 
-/** One group's people as checkboxes, labelled "People in <group>", each name in `<bdi>`. */
+/**
+ * One group's people as checkboxes, labelled "People in <group>", each name in
+ * `<bdi>`. While they're disabled for a save, a tap on one starts no press, so
+ * none changes once the save fails and they're enabled again (#193).
+ */
 function GroupPicks({ group, picked, isDisabled, onChange }: GroupPicksProps) {
   const { groupId, name, members } = group;
   const value = members
@@ -130,7 +135,7 @@ function GroupPicks({ group, picked, isDisabled, onChange }: GroupPicksProps) {
       <Label className="recovery-group-label">
         {messages.recovery.inGroupBefore} <bdi>{name}</bdi>
       </Label>
-      <ul className="recovery-people">
+      <ul className="recovery-people" onPointerDownCapture={holdPresses(isDisabled)}>
         {members.map(({ member, name: person }) => (
           <li key={member}>
             <CheckboxField value={member}>
@@ -222,7 +227,7 @@ function PickForm(props: RecoveryContactsProps) {
           {recovery.failed}
         </p>
       ) : null}
-      <div className="row form-actions">
+      <div className="row form-actions" onPointerDownCapture={holdPresses(saving)}>
         <Button type="submit" className="button button-primary" isDisabled={!ready || saving}>
           {recovery.save}
         </Button>

@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import { axeViolations } from '../test/axe';
+import { held, pastPressFallback } from '../test/press';
 import { RecoveryContacts, type RecoveryContactsProps } from './RecoveryContacts';
 
 const RIVERSIDE = {
@@ -251,6 +252,50 @@ describe('RecoveryContacts', () => {
     });
     expect(screen.getByRole('button', { name: 'Save recovery contacts' })).toBeEnabled();
     expect(screen.getByRole('checkbox', { name: 'Cal' })).toBeChecked();
+  });
+
+  /** Picks all three people in Riverside at 3 of 3, with saving held until the test settles it. */
+  async function heldSave() {
+    const saving = held<undefined>();
+    const onSave = vi.fn(() => saving.promise);
+    const { user } = setup({ groups: [RIVERSIDE], onSave });
+    await user.clear(numberField('People to pick'));
+    await user.type(numberField('People to pick'), '3');
+    await user.tab();
+    for (const name of ['Ben', 'Cal', 'Dee']) {
+      await user.click(screen.getByRole('checkbox', { name }));
+    }
+    await user.click(screen.getByRole('button', { name: 'Save recovery contacts' }));
+    expect(screen.getByRole('button', { name: 'Save recovery contacts' })).toBeDisabled();
+    return { user, onSave, saving };
+  }
+
+  it('saves once when Save is tapped again while it saves and the save fails (#193)', async () => {
+    const { user, onSave, saving } = await heldSave();
+
+    await user.click(screen.getByRole('button', { name: 'Save recovery contacts' }));
+    saving.reject();
+    expect(await screen.findByRole('alert')).toBeVisible();
+    await pastPressFallback();
+
+    expect(screen.getByRole('button', { name: 'Save recovery contacts' })).toBeEnabled();
+    expect(onSave).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a pick that is tapped while it saves and the save fails (#193)', async () => {
+    const { user, saving } = await heldSave();
+
+    expect(screen.getByRole('checkbox', { name: 'Cal' })).toBeDisabled();
+    await user.click(screen.getByRole('checkbox', { name: 'Cal' }));
+    saving.reject();
+    expect(await screen.findByRole('alert')).toBeVisible();
+    await pastPressFallback();
+
+    expect(screen.getByRole('checkbox', { name: 'Cal' })).toBeEnabled();
+    for (const name of ['Ben', 'Cal', 'Dee']) {
+      expect(screen.getByRole('checkbox', { name })).toBeChecked();
+    }
+    expect(screen.getByRole('status')).toHaveTextContent('3 of 3 picked.');
   });
 
   it('says plainly when no one can hold a share yet, with nothing to save', async () => {
