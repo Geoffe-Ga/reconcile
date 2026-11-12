@@ -4,6 +4,11 @@ name: CI
 # locally, with the same pinned tools (requirements-dev.txt, client lockfile,
 # client/.nvmrc). Rules live in pyproject.toml, client config, and scripts/,
 # never in this file, so CI and a laptop can't disagree.
+#
+# Every job sets timeout-minutes: about twice its slowest successful run
+# (measured over November 2026's runs), rounded up to 5 minutes, so a hung job
+# costs that, not GitHub's six-hour default. tests/test_workflows.py holds every
+# workflow to it. Playwright's and Vitest's own timeouts are unchanged.
 
 on:
   push:
@@ -20,6 +25,7 @@ jobs:
   changes:
     name: Detect changed areas
     runs-on: ubuntu-latest
+    timeout-minutes: 5  # slowest successful run: 0.4 min
     outputs:
       python: ${{ steps.areas.outputs.python }}
       client: ${{ steps.areas.outputs.client }}
@@ -46,6 +52,7 @@ jobs:
   python:
     name: Python gate (${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    timeout-minutes: 5  # slowest successful run: 1.8 min
     needs: changes
     if: needs.changes.outputs.python == 'true'
     strategy:
@@ -73,6 +80,7 @@ jobs:
   client:
     name: Client gate
     runs-on: ubuntu-latest
+    timeout-minutes: 50  # slowest successful run: 23.1 min
     needs: changes
     if: needs.changes.outputs.client == 'true'
     steps:
@@ -94,6 +102,7 @@ jobs:
   deploy:
     name: Deploy config gate
     runs-on: ubuntu-latest
+    timeout-minutes: 10  # slowest successful run: 3.4 min
     needs: changes
     if: needs.changes.outputs.deploy == 'true'
     steps:
@@ -113,6 +122,7 @@ jobs:
   e2e:
     name: End-to-end loop (Playwright)
     runs-on: ubuntu-latest
+    timeout-minutes: 55  # slowest successful run: 26.6 min, apart from apt stalls (below)
     needs: changes
     if: needs.changes.outputs.e2e == 'true'
     steps:
@@ -136,8 +146,11 @@ jobs:
           cache: npm
           cache-dependency-path: client/package-lock.json
 
+      # Usually 1-2 min. Ubuntu's mirror has stalled --with-deps for 26, 46 and
+      # 96 minutes; a stall now fails here, and a re-run gets a fresh runner.
       - name: Install locked dependencies and both browsers
         working-directory: client
+        timeout-minutes: 10
         run: |
           npm ci
           npx playwright install --with-deps chromium webkit
@@ -157,6 +170,7 @@ jobs:
   pre-commit:
     name: Pre-commit hooks (changed files)
     runs-on: ubuntu-latest
+    timeout-minutes: 5  # slowest successful run: 1.5 min
     steps:
       - uses: actions/checkout@v4
         with:
@@ -199,6 +213,7 @@ jobs:
     # The one check branch protection requires. Area jobs skip when their area
     # didn't change; this fails only if a job that ran failed or was cancelled.
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     needs: [changes, python, client, deploy, e2e, pre-commit]
     if: always()
     steps:
@@ -216,6 +231,7 @@ jobs:
     # Recommended before a release, not a merge gate (ADR-0061).
     # Run from the Actions tab: "Run workflow" on main.
     runs-on: ubuntu-latest
+    timeout-minutes: 360  # no run measured yet: the hosted-runner maximum, set on purpose
     if: github.event_name == 'workflow_dispatch'
     steps:
       - uses: actions/checkout@v4

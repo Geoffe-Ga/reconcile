@@ -41,7 +41,7 @@ jobs:
   build:
     name: Build and publish code graph
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5  # slowest successful run: 1.0 min
     env:
       GRAPH_TAG: knowledge-graph
       OUT_DIR: graphify-out
