@@ -116,7 +116,6 @@ export type StartOutcome =
 export type PostOutcome = 'posted' | 'too-large' | 'failed' | 'stopped' | 'unshared' | 'paused';
 
 /**
-/**
  * Why nothing goes to a share's link until the person chooses: a restore
  * brought it back (#328), or this device hasn't posted to it for
  * {@link SHARE_TTL_DAYS} days (#339).
