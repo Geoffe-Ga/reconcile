@@ -7,7 +7,7 @@ import { followChannelOf, newFollowSeed } from '../crypto/follow';
 import { newGroupSecret } from '../crypto/groupKeys';
 import { BLOB_SIZES, MAX_PLAINTEXT_BYTES, xchachaSeal } from '../crypto/seal';
 import type { LogRecord } from '../engine/fold';
-import { EXCERPT_MAX, NAME_MAX } from '../invite/envelope';
+import { EXCERPT_MAX, NAME_MAX, packEntries } from '../invite/envelope';
 import { stubSeal } from '../test/stubSeal';
 import {
   type Follow,
@@ -222,6 +222,16 @@ describe('a follow link’s envelope (#124)', () => {
   ])('reads as damaged with %s', (_label, change) => {
     const seed = newFollowSeed();
     expect(openFollow(stubSeal, followChannelOf(seed), changed(seed, change))).toBeNull();
+  });
+
+  it('reads as damaged when an entry is marked kept, since a coalition’s log keeps no result (#269)', () => {
+    const seed = newFollowSeed();
+    const channel = followChannelOf(seed);
+    const [header] = sealFollow(stubSeal, channel, follow({ entries: [entry(1, 30)] }));
+    const [chunk = new Uint8Array()] = packEntries([{ ...entry(1, 30), kept: true }]);
+    const marked = stubSeal.seal(channel.mailbox, channel.key, chunk);
+
+    expect(openFollow(stubSeal, channel, [header ?? new Uint8Array(), marked])).toBeNull();
   });
 
   it('opens a header changed in nothing', () => {

@@ -22,7 +22,9 @@
  *   keeps one.
  * - The chunks pack the coalition's relay-accepted log as an invite packs a
  *   group's (`invite/envelope.ts`), at least its genesis, so a follower reads
- *   the coalition whatever the relay has dropped since.
+ *   the coalition whatever the relay has dropped since. No entry is marked
+ *   kept (#269): a coalition's own log takes no result, so it keeps none,
+ *   and a link with a marked entry reads as damaged, as a card's does.
  *
  * Opening is all or nothing, as an invite's is: anything wrong reads as one
  * expired or damaged link. Everything here is pure: the caller does the
@@ -45,6 +47,7 @@ import {
   parseSecret,
   sealChunked,
   textUpTo,
+  unmarked,
 } from '../invite/envelope';
 
 /** What a follow link's opener sees before following: plain text, never Markdown or HTML. */
@@ -174,7 +177,7 @@ export function sealFollow(
  * What the link in `blobs`, its mailbox's records in relay order, carries,
  * or null unless every blob opens, the first is a header of exactly its
  * three fields, and exactly its chunk count of chunks follow, each holding
- * whole entries.
+ * whole entries, none marked kept (#269).
  */
 export function openFollow(
   seal: Seal,
@@ -183,8 +186,10 @@ export function openFollow(
 ): Follow | null {
   const opened = openChunked(seal, channel, blobs, decodeHeader);
   if (opened === null) return null;
+  const entries = unmarked(opened.entries);
+  if (entries === null) return null;
   const { secret, preview } = opened.header;
-  return { secret, preview, entries: opened.entries };
+  return { secret, preview, entries };
 }
 
 /** The link to send: the app's origin, then the seed after `#follow/`. */
