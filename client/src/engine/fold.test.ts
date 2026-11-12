@@ -115,7 +115,7 @@ describe('fold', () => {
       rotations: [],
       refused: [],
       rotationDue: false,
-      strandedLeaves: [],
+      stranded: [],
       dissolved: null,
       recoveryShares: [],
       recoveryAlerts: [],
