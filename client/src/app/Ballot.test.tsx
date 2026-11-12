@@ -8,6 +8,7 @@ import { axeViolations } from '../test/axe';
 import { createFakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { go, members, type MountedApp, mountApp, proposeFrom } from '../test/members';
+import { pastPressFallback } from '../test/press';
 import { Ballot, type BallotProps } from './Ballot';
 import { castBallot } from './proposals';
 import type { VersionView } from './versionViews';
@@ -23,9 +24,6 @@ const PILLS = [
 ];
 
 type OnVote = (scores: Readonly<Record<string, Score>>, note: string) => Promise<void>;
-
-/** How long React Aria's usePress waits for a click after a pointerup before clicking itself. */
-const PRESS_FALLBACK_MS = 80;
 
 const CURRENT = 'Quiet hours start at ten.\n';
 const V1: VersionView = { id: 'v1', number: 1, author: 'Ana', text: 'Quiet from eleven.\n' };
@@ -329,7 +327,7 @@ describe('Ballot', () => {
     // A press on a disabled React Aria button still gets pointerdown and pointerup
     // (Chromium sends both), and usePress clicks the button itself when no click
     // follows within 80 ms. Wait past that so a late click can't hide (#190).
-    await act(() => new Promise((resolve) => setTimeout(resolve, PRESS_FALLBACK_MS + 20)));
+    await pastPressFallback();
     expect(send()).toBeEnabled();
     expect(screen.getByText('Sent')).toBeVisible();
     expect(onVote).toHaveBeenCalledTimes(1);

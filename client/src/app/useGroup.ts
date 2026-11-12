@@ -28,6 +28,7 @@ import { foldWithCoalitions, type HeldCoalition } from '../store/coalitions';
 import { foldGroup } from '../store/expiry';
 import type { ClearedArchive, Group, Me, Store } from '../store/db';
 import { type KeyChange, keyChangeOf } from '../store/epochs';
+import { type HeldShare, heldSharesIn } from '../store/recovery';
 
 /** What `useGroup` reads: the device's store and the sync loop's reachability. */
 export interface GroupServices {
@@ -97,6 +98,26 @@ export interface GroupView {
   applications: readonly ReceivedApplication[];
   /** Every coalition on this device, each with its log folded (#114). */
   coalitions: readonly HeldCoalition[];
+  /**
+   * The recovery shares this device holds in the group that its home hasn't
+   * shown yet (#109): its quiet card shows each once, until the person puts it away.
+   */
+  newShares: readonly HeldShare[];
+}
+
+/** No shares: one shared empty list, so it never looks changed. */
+const NO_SHARES: readonly HeldShare[] = [];
+
+/**
+ * The shares this device holds in `group` that its home hasn't shown yet
+ * (#109), from `state`, the fold `useGroup` already made, so no group screen
+ * folds its log twice.
+ */
+function newSharesIn(group: Group | undefined, state: GroupState | null): readonly HeldShare[] {
+  if (group === undefined || state === null) return NO_SHARES;
+  const seen = new Set(group.recoverySeen ?? []);
+  const fresh = heldSharesIn(group, state).filter(({ id }) => !seen.has(id));
+  return fresh.length === 0 ? NO_SHARES : fresh;
 }
 
 /** No applications: one shared empty list, so it never looks changed. */
@@ -116,6 +137,7 @@ export function useGroup(groupId: string): GroupView {
     return group.archived?.cleared?.state ?? foldWithCoalitions(group, coalitions);
   }, [group, coalitions]);
   const pending = useMemo(() => (group === undefined ? [] : parsePending(group.outbox)), [group]);
+  const newShares = useMemo(() => newSharesIn(group, state), [group, state]);
   return {
     state,
     log: group?.log ?? NO_RECORDS,
@@ -126,6 +148,7 @@ export function useGroup(groupId: string): GroupView {
     me: group?.me ?? null,
     loaded,
     cleared: clearedOf(group),
+    newShares,
     applications: group?.door?.applications ?? NO_APPLICATIONS,
     coalitions,
   };
@@ -223,8 +246,11 @@ interface Loaded {
   readonly group: Group | undefined;
 }
 
-/** The stored group, read again whenever the store says it changed, and whether it has been read. */
-function useStoredGroup(
+/**
+ * The stored group, or any entry (a coalition's room, #125), read again
+ * whenever the store says it changed, and whether it has been read.
+ */
+export function useStoredGroup(
   store: GroupServices['store'],
   groupId: string,
 ): { group: Group | undefined; loaded: boolean } {

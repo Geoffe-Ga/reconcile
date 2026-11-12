@@ -60,10 +60,11 @@
  * `importSnapshot` from one.
  */
 import { BACKUP_LOG2_N, BackupUnreadable, openBackup, sealBackup } from '../crypto/backup';
-import { base64url, fromBase64url } from '../crypto/base64url';
+import { base64url, canonicalBytes } from '../crypto/base64url';
 import { MAX_RECORD_BYTES } from '../crypto/record';
 import { publicKeyOf } from '../crypto/sign';
 import type { LogRecord } from '../engine/fold';
+import { removedFrom } from '../engine/removal';
 import type { Archive, BackedUpGroup, Group, RestoredFrom, Store } from './db';
 import { deriveCoalitionEntryId } from '../crypto/card';
 import { epochOf, secretFits } from './epochs';
@@ -458,20 +459,9 @@ function isCountOrNull(value: unknown): value is number | null {
   return value === null || isCount(value);
 }
 
-/** The bytes `value` spells in canonical unpadded base64url, or null. */
-function bytesIn(value: unknown): Uint8Array<ArrayBuffer> | null {
-  if (typeof value !== 'string') return null;
-  try {
-    const bytes = fromBase64url(value);
-    return base64url(bytes) === value ? bytes : null;
-  } catch {
-    return null;
-  }
-}
-
 /** A 32-byte key in `value`, or null. */
 function keyIn(value: unknown): Uint8Array<ArrayBuffer> | null {
-  const bytes = bytesIn(value);
+  const bytes = canonicalBytes(value);
   return bytes?.length === KEY_BYTES ? bytes : null;
 }
 
@@ -486,7 +476,7 @@ function isLaterEpoch(value: unknown): value is number {
  */
 function recordIn(value: unknown): LogRecord | null {
   if (!isObject(value) || !isCount(value.seq) || !isCount(value.received)) return null;
-  const bytes = bytesIn(value.bytes);
+  const bytes = canonicalBytes(value.bytes);
   if (bytes === null || bytes.length > MAX_RECORD_BYTES || eventIdOf(bytes) === null) return null;
   const { epoch } = value;
   if (epoch !== undefined && !isLaterEpoch(epoch)) return null;
@@ -587,14 +577,21 @@ function clearedIn(value: unknown): Pick<BackedUpGroup, 'cleared'> | null {
 /** A dissolved group's read-only mark (#108). */
 const DISSOLVED: Archive = { reason: 'dissolved' };
 
+/** The read-only mark of a group a vote removed this member from (#115). */
+const REMOVED: Archive = { reason: 'removed' };
+
 /**
  * `group` as a restore keeps it, or null when its log doesn't fold to the
- * group itself. A log holding a `dissolve` comes back read-only (#108).
+ * group itself. A log holding a `dissolve` comes back read-only (#108), and
+ * so does one holding a `remove` of this member (#115).
  */
 function restoredAs(group: BackedUpGroup): BackedUpGroup | null {
   const state = foldGroup(group);
   if (!isFounded(group)) return null;
-  return state.dissolved === null ? group : { ...group, archived: DISSOLVED };
+  if (state.dissolved !== null) return { ...group, archived: DISSOLVED };
+  return removedFrom(state, group.me.author) === undefined
+    ? group
+    : { ...group, archived: REMOVED };
 }
 
 /**

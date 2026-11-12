@@ -12,6 +12,7 @@ import { type SyntheticEvent, useState } from 'react';
 import { Button, FileTrigger, Form } from 'react-aria-components';
 
 import { MAX_BACKUP_BYTES } from '../store/snapshot';
+import { holdPresses } from './holdPresses';
 import { messages } from './messages';
 import { Field } from './ui';
 
@@ -85,7 +86,7 @@ export function RestoreBackup({ onRestore }: RestoreBackupProps) {
             isRequired
             validate={(value) => (value === '' ? messages.restore.passphraseMissing : null)}
           />
-          <div>
+          <div onPointerDownCapture={holdPresses(restoring)}>
             <Button type="submit" className="button button-secondary" isDisabled={restoring}>
               {messages.restore.submit}
             </Button>
