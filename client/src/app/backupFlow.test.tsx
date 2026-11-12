@@ -278,8 +278,7 @@ describe('a backup file with a group entry that doesn’t check out (#336)', () 
     const second = await createGroup(ana.services, {
       groupName: 'Allotment Society',
       yourName: 'Ana',
-      title: 'Plot rules',
-      text: 'Water before nine.',
+      documents: [{ title: 'Plot rules', text: 'Water before nine.' }],
       chat: null,
     });
     if (second.outcome !== 'created') throw new Error('Expected Ana’s second group.');
