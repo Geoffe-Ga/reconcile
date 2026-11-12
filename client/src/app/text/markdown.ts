@@ -110,12 +110,48 @@ const bare: Build = (_token, key, children) => createElement(Fragment, { key }, 
 /** The deepest heading HTML has. */
 const DEEPEST_HEADING = 6;
 
+/** A heading token's tag, as markdown-it writes it. */
+const HEADING_TAG = /^h[1-6]$/;
+
+/** The attribute {@link outline} marks a heading with when it sets it above its own level. */
+const RAISED = 'data-raised';
+
 /** An Atom's `#` is an `h2`: the screen's own `h1` sits above every Atom. Clamped at `h6`. */
+function ownLevel(token: Token): number {
+  return Math.min(Number(token.tag.slice(1)) + 1, DEEPEST_HEADING);
+}
+
+/**
+ * A heading, at its level. One {@link outline} raised keeps its own look as a
+ * subsection header, though it sits a level higher in the page's outline.
+ */
 const heading: Build = (token, key, children) => {
-  if (!/^h[1-6]$/.test(token.tag)) throw refuse(token);
-  const level = Math.min(Number(token.tag.slice(1)) + 1, DEEPEST_HEADING);
-  return createElement(`h${String(level)}`, { key, dir: 'auto' }, ...children);
+  if (!HEADING_TAG.test(token.tag)) throw refuse(token);
+  const raised = token.attrGet(RAISED) === null ? {} : { className: 'atom-subheading' };
+  return createElement(`h${String(ownLevel(token))}`, { key, dir: 'auto', ...raised }, ...children);
 };
+
+/**
+ * Sets each heading in `tokens` in a Document's outline (#103): at its own
+ * level, but never more than one below the heading before it on the page,
+ * `after` (the screen's `h1` is 1), so a Document whose first header is a
+ * subsection header still reads h2 (WCAG 1.3.1; axe's heading-order). It
+ * returns the last heading's level, or `after` when there is none.
+ */
+function outline(tokens: readonly Token[], after: number): number {
+  let last = after;
+  for (const token of tokens) {
+    if (token.type !== 'heading_open' || !HEADING_TAG.test(token.tag)) continue;
+    const own = ownLevel(token);
+    const level = Math.min(own, last + 1);
+    if (level < own) {
+      token.tag = `h${String(level - 1)}`;
+      token.attrSet(RAISED, '');
+    }
+    last = level;
+  }
+  return last;
+}
 
 /** A tight list's paragraphs are hidden: their text sits directly in the list item. */
 const paragraph: Build = (token, key, children) =>
@@ -234,15 +270,41 @@ export function renderTokens(tokens: readonly Token[]): ReactNode[] {
 /**
  * One Atom's text as React elements: formatted when every token is on the
  * allowlist, else its source as plain text. `parse` is markdown-it's parser
- * unless a test passes another.
+ * unless a test passes another. In a Document, `after` is the level of the
+ * heading before the Atom on the page, and its headings follow on from it
+ * ({@link outline}, #103); without it, each heading keeps its own level.
  */
 export function renderAtom(
   text: string,
   parse: (text: string) => readonly Token[] = parseAtom,
+  after?: number,
 ): ReactNode[] {
   try {
-    return renderTokens(parse(text));
+    const tokens = parse(text);
+    if (after !== undefined) outline(tokens, after);
+    return renderTokens(tokens);
   } catch {
     return [createElement('p', { key: 'plain', className: 'atom-plain', dir: 'auto' }, text)];
+  }
+}
+
+/**
+ * The level of the last heading `renderAtom(text, parse, after)` sets, or
+ * `after` when it sets none, as for an Atom set as plain text (#103). A
+ * Document hands it on from one Atom to the next.
+ */
+export function lastHeadingLevel(
+  text: string,
+  after: number,
+  parse: (text: string) => readonly Token[] = parseAtom,
+): number {
+  try {
+    const tokens = parse(text);
+    const last = outline(tokens, after);
+    // Only for its check: it throws on any token outside the allowlist, as renderAtom falls back then.
+    void renderTokens(tokens);
+    return last;
+  } catch {
+    return after;
   }
 }

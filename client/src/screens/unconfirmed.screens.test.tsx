@@ -151,6 +151,7 @@ describe('a copy back from a backup elsewhere (#231)', () => {
         onPropose={() => undefined}
         onAdd={() => undefined}
         onRemove={() => undefined}
+        onMove={() => undefined}
         copyText={() => Promise.resolve()}
         unconfirmed
       />,
@@ -159,6 +160,7 @@ describe('a copy back from a backup elsewhere (#231)', () => {
     expect(screen.getByText('Quiet hours start at ten.')).toBeVisible();
     expect(screen.queryByRole('button', { name: /Propose a change/ })).toBeNull();
     expect(screen.queryByRole('button', { name: /^Add a section here/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Move this section/ })).toBeNull();
     expect(screen.queryByText(/^You can vote on Proposals that open after/)).toBeNull();
     expect(screen.getByRole('button', { name: 'Copy as Markdown' })).toBeVisible();
   });

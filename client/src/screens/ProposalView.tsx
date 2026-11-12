@@ -25,6 +25,7 @@ import { RemovalResponse } from '../app/RemovalResponse';
 import { Named, SuspendedNote } from '../app/stewards';
 import {
   dissolveView,
+  moveView,
   removalView,
   stewardView,
   versionDoes,
@@ -39,6 +40,7 @@ import { closedByDissolve } from '../engine/dissolve';
 import {
   isAddProposal,
   isDissolveProposal,
+  isMoveProposal,
   isNewDocumentProposal,
   isPriorityProposal,
   isReconcileProposal,
@@ -190,6 +192,17 @@ function comparisonFor(
 const STEWARD_BALLOT: Comparison = { title: messages.proposal.onBallot, current: null };
 
 /**
+ * A move's one card is shown under "Moving section N" while its section is
+ * in place and it hasn't passed, else under "On the ballot" (#103). It shows
+ * no diff: a move changes no words.
+ */
+function moveComparison(state: GroupState, atom: string, passed: boolean): Comparison {
+  const place = passed ? null : sectionPlace(state, atom);
+  if (place === null) return STEWARD_BALLOT;
+  return { title: messages.proposal.moving(place.number), current: null };
+}
+
+/**
  * True for a Proposal with text: an edit, an add (#75) or a new Document
  * (#92), not a steward or rules one (#102, #117).
  */
@@ -213,11 +226,12 @@ function addingTitle(proposal: Pick<Proposal, 'target'>): string {
 /**
  * What a folded Proposal's versions are shown against: a section, nothing for
  * an add or a new Document, whose whole text shows as added (#75, #92),
- * nothing for a steward one, or for a priority vote, its options as they are
- * (#107).
+ * nothing for a steward one or a move (#103), or for a priority vote, its
+ * options as they are (#107).
  */
 function comparisonOf(state: GroupState, proposal: Proposal, passed: boolean): Comparison {
   if (isPriority(proposal)) return OPTIONS;
+  if (proposal.target.kind === 'move') return moveComparison(state, proposal.atom, passed);
   return writesText(proposal)
     ? comparisonFor(state, changedAtom(proposal), passed, addingTitle(proposal))
     : STEWARD_BALLOT;
@@ -882,8 +896,9 @@ function waitingRules(state: GroupState, author: string, body: RulesProposalBody
 
 /**
  * What a waiting ballot decides other than a section's text: a steward,
- * rules, dissolve, member removal or coalition card (#102, #117, #108, #115,
- * #114), or a priority vote's options (#107); null for one that changes text.
+ * rules, dissolve, member removal, move or coalition card (#102, #117, #108,
+ * #115, #103, #114), or a priority vote's options (#107); null for one that
+ * changes text.
  */
 function waitingDecision(state: GroupState, author: string, body: ProposalEventBody) {
   if (isStewardProposal(body)) {
@@ -908,6 +923,10 @@ function waitingDecision(state: GroupState, author: string, body: ProposalEventB
     const dissolve = dissolveView(body.target.wipe);
     const versions = [{ id: '', number: 1, author, text: '', dissolve }];
     return { comparison: STEWARD_BALLOT, versions, optIn: null };
+  }
+  if (isMoveProposal(body)) {
+    const versions = [{ id: '', number: 1, author, text: '', move: moveView(state, body.target) }];
+    return { comparison: moveComparison(state, body.target.atom, false), versions, optIn: null };
   }
   if (isRemovalProposal(body)) {
     const removal = removalView(state, body.target.member);
@@ -956,6 +975,8 @@ function waitingLead(state: GroupState, id: string, body: ProposalEventBody) {
   if (isAddProposal(body) || isNewDocumentProposal(body)) {
     return documentLead(state, { id, atom: id, target: body.target });
   }
+  if (isMoveProposal(body))
+    return documentLead(state, { id, atom: body.target.atom, target: body.target });
   return 'atom' in body
     ? documentLead(state, { id, atom: body.atom, target: { kind: 'edit' } })
     : null;

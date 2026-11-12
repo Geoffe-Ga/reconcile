@@ -2,11 +2,14 @@
  * A Proposal's versions as the screens show them (spec §8; ADR-0004):
  * numbered in ballot order, which is relay order, each with its author's name,
  * and, for an add or a section's removal (#75), a line that says first what
- * it does. A steward or rules Proposal's one version has no text: it carries
- * what the ballot decides instead (#102, #117), and so does a dissolve
- * Proposal's (#108) and a member removal's (#115).
+ * it does, naming a header add's heading (#103). A steward or rules
+ * Proposal's one version has no text: it carries what the ballot decides
+ * instead (#102, #117), and so does a dissolve Proposal's (#108), a member
+ * removal's (#115) and a move's (#103).
  */
+import { isHeadingOnly } from '../engine/atomText';
 import { WIPE_DAYS } from '../engine/dissolve';
+import type { MoveTarget } from '../engine/event';
 import type { GroupState, Proposal } from '../engine/fold';
 import { displayName } from '../engine/names';
 import { rulesChangeOf } from '../engine/optIns';
@@ -40,6 +43,8 @@ export interface VersionView {
   readonly rules?: RulesView;
   /** For a dissolve Proposal, what its ballot decides, in place of any text (#108). */
   readonly dissolve?: DissolveView;
+  /** For a move, where it moves the section, and the section as it reads, in place of any text (#103). */
+  readonly move?: MoveView;
   /** For a removal, whom its ballot would remove, in place of any text (#115). */
   readonly removal?: RemovalView;
   /**
@@ -48,6 +53,15 @@ export interface VersionView {
    * chose, and what passing does.
    */
   readonly decision?: DissolveView;
+}
+
+/**
+ * What a move's ballot decides (#103): the line that says where the section
+ * goes, and the section's text as it reads now, or null once it has gone.
+ */
+export interface MoveView {
+  readonly line: string;
+  readonly text: string | null;
 }
 
 /** What a removal's ballot decides: the name of the person it would remove, and what passing does (#115). */
@@ -79,27 +93,68 @@ export function dissolveView(wipe: boolean): DissolveView {
   };
 }
 
-/** Where an add's section goes: after its anchor's first words, at the start, or at the end once the anchor is gone. */
-function addsWhere(state: GroupState, after: string | null): string {
-  if (after === null) return messages.proposal.addsAtStart;
+/**
+ * Where a section goes after `after`: its anchor's first words, `first` for
+ * null, or `last` once the anchor is gone, as an add or a move puts it (#75,
+ * #103).
+ */
+function placeAfter<T>(
+  state: GroupState,
+  after: string | null,
+  words: { first: T; last: T; after: (anchor: string) => T },
+): T {
+  if (after === null) return words.first;
   const anchor = state.atoms.find((atom) => atom.id === after);
-  return anchor === undefined
-    ? messages.proposal.addsAtEnd
-    : messages.proposal.addsAfter(firstWords(anchor.text));
+  return anchor === undefined ? words.last : words.after(firstWords(anchor.text));
+}
+
+/**
+ * Where an add's section goes: after its anchor's first words, at the start,
+ * or at the end once the anchor is gone. A header add names its heading, as a
+ * section header for `#` or a subsection header for deeper (#103).
+ */
+function addsWhere(state: GroupState, after: string | null, text: string): string {
+  const { proposal } = messages;
+  if (!isHeadingOnly(text)) {
+    const words = { first: proposal.addsAtStart, last: proposal.addsAtEnd };
+    return placeAfter(state, after, { ...words, after: proposal.addsAfter });
+  }
+  const sub = !text.startsWith('# ');
+  const heading = firstWords(text);
+  return placeAfter(state, after, {
+    first: proposal.addsHeaderAtStart(sub, heading),
+    last: proposal.addsHeaderAtEnd(sub, heading),
+    after: (words) => proposal.addsHeaderAfter(sub, heading, words),
+  });
+}
+
+/**
+ * What a move's ballot decides (#103): where it puts its section, after its
+ * anchor's first words, at the start, or at the end once the anchor is gone,
+ * over the section as it reads now.
+ */
+export function moveView(state: GroupState, target: MoveTarget): MoveView {
+  const { proposal } = messages;
+  const line = placeAfter(state, target.after, {
+    first: proposal.movesToStart,
+    last: proposal.movesToEnd,
+    after: proposal.movesAfter,
+  });
+  return { line, text: state.atoms.find((atom) => atom.id === target.atom)?.text ?? null };
 }
 
 /**
  * What a version with `text` does to the Document (#75): where an add's
  * section goes, or that an edit's `""` removes the section. Null for a change
- * of wording, and for a steward, rules or dissolve Proposal, whose ballot
- * says what it decides.
+ * of wording, and for a steward, rules, dissolve or move Proposal, whose
+ * ballot says what it decides.
  */
 export function versionDoes(
   state: GroupState,
   target: ProposalTarget,
   text: string,
 ): string | null {
-  if (target.kind === 'add') return addsWhere(state, target.after);
+  if (target.kind === 'add') return addsWhere(state, target.after, text);
   return target.kind === 'edit' && text === '' ? messages.proposal.removes : null;
 }
 
@@ -148,6 +203,7 @@ export function versionViews(
         ? {}
         : { rules: rulesView(rules, state.exposedDoors.includes(proposal.id)) }),
       ...(target.kind === 'dissolve' ? { dissolve: dissolveView(target.wipe) } : {}),
+      ...(target.kind === 'move' ? { move: moveView(state, target) } : {}),
       ...(target.kind === 'remove' ? { removal: removalView(state, target.member) } : {}),
       ...decisionOf(proposal),
     };

@@ -98,6 +98,15 @@ describe('vector files', () => {
       'levels-eligible-count.json',
       'levels-step-down.json',
       'levels-step-up-after-open.json',
+      'move-anchor-removed.json',
+      'move-chat-thread.json',
+      'move-cleared.json',
+      'move-close-order.json',
+      'move-coalition.json',
+      'move-dispatch.json',
+      'move-ignored.json',
+      'move-place.json',
+      'move-unchanged.json',
       'nested-forgery.json',
       'nested-levels.json',
       'nested-three-levels.json',
@@ -235,6 +244,15 @@ describe('vector files', () => {
       'fold',
       'fold',
       'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'coalition',
       'fold',
       'fold',
       'fold',
@@ -749,6 +767,47 @@ describe('vector files', () => {
     'documents-cleared-add',
   ])('include the Documents vector "%s" (#92)', (name) => {
     expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
+  });
+
+  it.each([
+    'move-after',
+    'move-first',
+    'move-to-end',
+    'move-in-place',
+    'move-open',
+    'move-second-document',
+    'move-heading',
+    'move-anchor-removed',
+    'move-section-removed',
+    'move-section-removed-at-deadline',
+    'move-fail',
+    'move-lapse',
+    'move-dissolve',
+    'move-close-order',
+    'move-same-minute',
+    'move-and-add',
+    'move-after-added',
+    'move-self-anchor',
+    'move-other-document',
+    'move-unknown',
+    'move-version',
+    'move-busy',
+    'move-racing-edit',
+    'move-collaborator',
+    'move-window',
+    'move-dispatch',
+    'move-dispatch-fail',
+    'move-chat-thread',
+    'move-cleared',
+    'move-cleared-fail',
+  ])('include the move vector "%s" (#103)', (name) => {
+    expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
+  });
+
+  it('include the move vector "move-coalition" (#103, #100)', () => {
+    expect(COALITION_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(
+      'move-coalition',
+    );
   });
 
   it.each(['documents-coalition-genesis', 'documents-coalition-motion'])(

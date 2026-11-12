@@ -85,6 +85,7 @@ function renderDocument(state: GroupState, me: string, copyText = () => Promise.
       onPropose={() => undefined}
       onAdd={() => undefined}
       onRemove={() => undefined}
+      onMove={() => undefined}
       copyText={copyText}
     />,
   );

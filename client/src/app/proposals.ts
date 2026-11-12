@@ -14,12 +14,13 @@
  */
 import { MAX_RECORD_BYTES } from '../crypto/record';
 import { newBallotSalt } from '../crypto/salt';
-import { normalizeAtomText } from '../engine/atomText';
+import { type HeadingLevel, normalizeAtomText } from '../engine/atomText';
 import type { Level } from '../engine/capabilities';
 import {
   type AddTarget,
   base64url,
   type EventDraft,
+  type MoveTarget,
   type NewDocumentTarget,
   type ProposalBody,
   type ProposalEventBody,
@@ -35,13 +36,14 @@ export type ProposalServices = Pick<Services, 'store' | 'sync' | 'now'>;
 
 /**
  * Where a Proposal goes (#75): the Atom whose text it would replace, where
- * blank text proposes removing the Atom, where a new section goes, or a new
- * Document (#92).
+ * blank text proposes removing the Atom, where a new section goes, a new
+ * Document (#92), or a section's new place (#103).
  */
 export type ProposalPlace =
   | { readonly atom: string }
   | { readonly target: AddTarget }
-  | { readonly target: NewDocumentTarget };
+  | { readonly target: NewDocumentTarget }
+  | { readonly target: MoveTarget };
 
 /** A Proposal's entries: title and why trimmed, the link null when blank. */
 export type ProposalValues = ProposalPlace & {
@@ -62,6 +64,8 @@ export type ProposalValues = ProposalPlace & {
   readonly versions?: readonly string[];
   /** The Dispatch to send if it passes (#112), its title and text trimmed; none when absent. */
   readonly dispatch?: DispatchWords;
+  /** For an add written as a header (#103), its level, whose draft it was written in. */
+  readonly heading?: HeadingLevel;
 };
 
 /** A Dispatch's words (#112): its title and text, trimmed and already within their limits. */
@@ -83,10 +87,21 @@ export function removalDraft(atom: string): string {
 /**
  * The draft key of a new section (#75): after Atom `after`, or, for null,
  * first in the Document `document` (#92), so each Document's start keeps its
- * own draft.
+ * own draft. A header's (#103) is kept apart from a section's at the same
+ * spot, by its level.
  */
-export function addDraft({ document, after }: Pick<AddTarget, 'document' | 'after'>): string {
-  return after === null ? `add-first:${document}` : `add:${after}`;
+export function addDraft(
+  { document, after }: Pick<AddTarget, 'document' | 'after'>,
+  heading?: HeadingLevel,
+): string {
+  const spot = after === null ? `add-first:${document}` : `add:${after}`;
+  if (heading === undefined) return spot;
+  return `${heading === 1 ? 'header' : 'subheader'}:${spot}`;
+}
+
+/** The draft key of a move of Atom `atom` (#103), apart from any change drafted for it. */
+export function moveDraft(atom: string): string {
+  return `move:${atom}`;
 }
 
 /** The draft key of a new Document's Proposal (#92): one per group, as the issue names it. */
@@ -95,23 +110,36 @@ export const NEW_DOCUMENT_DRAFT = 'new-document';
 /**
  * The private draft a Proposal is written in (spec §8): the lapsed
  * Proposal's when proposing again, else its Atom's for a change, the
- * removal's when its text is blank, the add's for its spot, or the new
- * Document's (#92).
+ * removal's when its text is blank, the add's for its spot, a header's by
+ * its level (#103), the move's (#103), or the new Document's (#92).
  */
 function draftOf(values: ProposalValues, text: string): string {
   if (values.again !== undefined) return againDraft(values.again);
   if (!('target' in values)) return text === '' ? removalDraft(values.atom) : values.atom;
   const { target } = values;
-  return target.kind === 'add' ? addDraft(target) : NEW_DOCUMENT_DRAFT;
+  if (target.kind === 'move') return moveDraft(target.atom);
+  return target.kind === 'add' ? addDraft(target, values.heading) : NEW_DOCUMENT_DRAFT;
 }
 
 /**
  * A Proposal's body: where it goes first, its Atom or its target (#75, #92),
- * then its words, in the order every device has signed them.
+ * then its words, in the order every device has signed them. A move carries
+ * no text (#103).
  */
 function bodyAt(place: ProposalPlace, fields: Omit<ProposalBody, 'atom'>): ProposalEventBody {
   if (!('target' in place)) return { atom: place.atom, ...fields };
   const { target } = place;
+  if (target.kind === 'move') {
+    const { title, why, link, window, dispatch } = fields;
+    return {
+      target,
+      title,
+      why,
+      ...(link === undefined ? {} : { link }),
+      ...(window === undefined ? {} : { window }),
+      ...(dispatch === undefined ? {} : { dispatch }),
+    };
+  }
   // The branches match on purpose: the check narrows `target`, so each body types as one member of the union.
   return target.kind === 'add' ? { target, ...fields } : { target, ...fields };
 }

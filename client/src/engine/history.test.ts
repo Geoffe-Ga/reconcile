@@ -409,11 +409,21 @@ describe('describeChange', () => {
   const removeBen = log.proposeRemoval('Ana', 'Ben');
   const state = log.state();
 
-  /** What `describeChange` says of the Proposal `id`, as though `version` won. */
-  function described(id: string, version = id, before: string | null = 'Before.\n') {
-    const proposal = proposalIn(state, id);
+  /**
+   * What `describeChange` says of the Proposal `id` in `from`, as though `version` won, when its
+   * section read `before` (null for none) and every other section as `held` gives.
+   */
+  function described(
+    id: string,
+    version = id,
+    before: string | null = 'Before.\n',
+    { from = state, held = {} }: { from?: GroupState; held?: Record<string, string> } = {},
+  ) {
+    const proposal = proposalIn(from, id);
     const outcome = { kind: 'pass', version, bar: proposal.outcome.bar } as const;
-    return describeChange({ ...proposal, outcome }, before);
+    const texts = new Map(Object.entries(held));
+    if (before !== null) texts.set(proposal.atom, before);
+    return describeChange({ ...proposal, outcome }, texts);
   }
 
   it('says what a pass did to its section, quoting the section as it read before', () => {
@@ -432,6 +442,123 @@ describe('describeChange', () => {
     for (const id of [focus, steward, rules, dissolve, removeBen]) {
       expect(described(id, proposalIn(state, id).versions[0]?.id)).toBeNull();
     }
+  });
+
+  it('says where a move put its section: after the section it follows, quoted as it read, or to the top (#103)', () => {
+    const three = threeOfUs({ atoms: ['One.', 'Two.', 'Three.'] });
+    const after = three.move('Ana', `${three.group}.2`, `${three.group}.0`);
+    const top = three.move('Ben', `${three.group}.1`, null);
+    const from = three.state();
+    const held = { [`${three.group}.0`]: 'One, as it read.' };
+    expect(described(after, after, 'Three.', { from, held })).toEqual({
+      kind: 'moved',
+      to: { kind: 'after', quote: 'One, as it read.' },
+    });
+    expect(described(top, top, 'Two.', { from, held })).toEqual({
+      kind: 'moved',
+      to: { kind: 'top' },
+    });
+    // The section it follows had gone by its pass, so the fold put it last (#103).
+    expect(described(after, after, 'Three.', { from })).toEqual({
+      kind: 'moved',
+      to: { kind: 'end' },
+    });
+    // A move of a section that had gone by its pass moves nothing, as the fold leaves it.
+    expect(described(top, top, null, { from, held })).toBeNull();
+  });
+});
+
+describe('a passed move in history and the change log (#103)', () => {
+  /** Three sections: Guests moves after Quiet hours, then Bins moves to the top. */
+  function moves() {
+    const log = threeOfUs({
+      atoms: ['Quiet hours start at ten.', 'Bins go out on Tuesday.', 'Guests leave by 11pm.'],
+    });
+    const { group } = log;
+    const guests = log.move('Ana', `${group}.2`, `${group}.0`, { title: 'Guests after quiet' });
+    everyone(log, guests, 4);
+    log.minute += 5;
+    const bins = log.move('Ben', `${group}.1`, null, { title: 'Bins first' });
+    everyone(log, bins, 4);
+    return { log, group, guests, bins, state: log.state(log.minute + 1) };
+  }
+
+  it('lists a move in its section’s history, with the text it still reads, and in no other section’s', () => {
+    const { group, guests, state } = moves();
+    expect(state.atoms.map((atom) => atom.id)).toEqual([`${group}.1`, `${group}.0`, `${group}.2`]);
+    const [moved, founded, ...rest] = sectionHistory(state, `${group}.2`).passed;
+    expect(moved).toMatchObject({
+      proposalId: guests,
+      title: 'Guests after quiet',
+      decidedAt: proposalIn(state, guests).closedAt,
+      text: 'Guests leave by 11pm.',
+      author: authorOf('ana'),
+      change: { kind: 'moved', to: { kind: 'after', quote: 'Quiet hours start at ten.' } },
+    });
+    expect(moved?.totals).toEqual({ scorers: 3, sum: 12, zeros: 0, quorum: 3 });
+    expect(founded?.change).toEqual({ kind: 'founded' });
+    expect(rest).toEqual([]);
+    // The section it follows is only its anchor: its own history holds its founding alone.
+    expect(sectionHistory(state, `${group}.0`).passed.map((entry) => entry.proposalId)).toEqual([
+      null,
+    ]);
+  });
+
+  it('logs each move in its Document, newest first, naming the section it opens', () => {
+    const { group, guests, bins, state } = moves();
+    expect(changeLog(state, group).map((row) => [row.proposalId, row.change, row.section])).toEqual(
+      [
+        [bins, { kind: 'moved', to: { kind: 'top' } }, `${group}.1`],
+        [
+          guests,
+          { kind: 'moved', to: { kind: 'after', quote: 'Quiet hours start at ten.' } },
+          `${group}.2`,
+        ],
+        [null, { kind: 'founded' }, null],
+      ],
+    );
+  });
+
+  it('quotes the section a move follows as it read when the move passed, as a change quotes its own', () => {
+    const { log, group, guests } = moves();
+    log.minute += 5;
+    const quiet = log.propose('Cal', {
+      atom: 0,
+      title: 'Quiet later',
+      text: 'Quiet after 11pm.\n',
+    });
+    everyone(log, quiet, 4);
+    const rows = changeLog(log.state(log.minute + 1), group);
+    expect(rows.find((row) => row.proposalId === guests)?.change).toEqual({
+      kind: 'moved',
+      to: { kind: 'after', quote: 'Quiet hours start at ten.' },
+    });
+  });
+
+  it('says a move whose anchor was removed before it passed put its section at the end, as the fold did', () => {
+    const log = threeOfUs({ atoms: ['One.', 'Two.', 'Three.'] });
+    const { group } = log;
+    const move = log.move('Ana', `${group}.0`, `${group}.1`, { title: 'One after two' });
+    const removal = log.propose('Ben', { atom: 1, title: 'No two', text: '' });
+    everyone(log, removal, 4);
+    log.minute += 5;
+    everyone(log, move, 4);
+    const state = log.state(log.minute + 1);
+    expect(state.atoms.map((atom) => atom.id)).toEqual([`${group}.2`, `${group}.0`]);
+    expect(sectionHistory(state, `${group}.0`).passed[0]?.change).toEqual({
+      kind: 'moved',
+      to: { kind: 'end' },
+    });
+  });
+
+  it('carries no voter’s name or note, only the author of the move', () => {
+    const { group, state } = moves();
+    // Bins first: Ben's move, which Ana, Ben and Cal scored.
+    const [binsFirst] = sectionHistory(state, `${group}.1`).passed;
+    const shown = JSON.stringify([binsFirst, changeLog(state, group)]);
+    expect(shown).toContain(authorOf('ben'));
+    expect(shown).not.toContain(authorOf('ana'));
+    expect(shown).not.toContain(authorOf('cal'));
   });
 });
 

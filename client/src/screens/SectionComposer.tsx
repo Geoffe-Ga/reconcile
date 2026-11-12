@@ -1,9 +1,11 @@
 /**
  * Composers that grow and prune the Document (#75; spec §8): Add a section,
- * which proposes a new section after one Atom or at the start, and Propose
- * removing this section, which proposes `""` for an Atom. A removal on a
- * section whose Proposal is open goes on that ballot as a version instead
- * (ADR-0004), so a removal and rewordings of one section compete side by side.
+ * which proposes a new section after one Atom or at the start, or a section
+ * header or subsection header there, written as one Heading line (#103), and
+ * Propose removing this section, which proposes `""` for an Atom. A removal
+ * on a section whose Proposal is open goes on that ballot as a version
+ * instead (ADR-0004), so a removal and rewordings of one section compete side
+ * by side.
  */
 import { type SyntheticEvent, useId } from 'react';
 import { Button, Form } from 'react-aria-components';
@@ -16,12 +18,13 @@ import { latestLink } from '../app/latestLink';
 import { messages } from '../app/messages';
 import { addDraft, againDraft, removalDraft, type VersionValues } from '../app/proposals';
 import { WordDiff } from '../app/text/WordDiff';
-import { BackLink, PageHeader } from '../app/ui';
+import { BackLink, Field, PageHeader } from '../app/ui';
 import { holdsRemoval } from '../app/versionViews';
+import type { HeadingLevel } from '../engine/atomText';
 import { composeOption, openProposalOn } from '../engine/composeOption';
 import type { GroupDocument } from '../engine/documents';
 import type { Atom, GroupState, Proposal } from '../engine/fold';
-import type { GroupDrafts } from '../store/drafts';
+import type { Draft, GroupDrafts } from '../store/drafts';
 import { AgainLede, type ComposerProps, CurrentText, ProposalForm, Unavailable } from './Composer';
 
 /** Props for {@link AddSection}. */
@@ -43,6 +46,8 @@ export interface AddSectionProps {
   readonly again?: Proposal;
   /** Whether this device's leave waits for the relay (#77): then it shows no form. */
   readonly leaving?: boolean;
+  /** A section header (1) or a subsection header (2), from the route (#103); a section when absent. */
+  readonly heading?: HeadingLevel;
 }
 
 /** A blank title, why and text, and the group's latest link: where a new add or removal starts. */
@@ -94,6 +99,74 @@ function addSpot(state: GroupState, after: string | null, document?: string): Ad
   return named === undefined ? null : { document: named, anchor: null };
 }
 
+/** What a header's one line starts with (#103): `# ` for a section header, `## ` for a subsection header. */
+function headingPrefix(level: HeadingLevel): string {
+  return level === 1 ? '# ' : '## ';
+}
+
+/** The Proposal title a heading prefills (#103), or none for a blank one. */
+function headingTitle(level: HeadingLevel, heading: string): string {
+  const { composer } = messages;
+  const words = heading.trim();
+  if (words === '') return '';
+  return level === 1 ? composer.headerProposalTitle(words) : composer.subheaderProposalTitle(words);
+}
+
+/** A blank heading is refused (#103). */
+function checkHeading(value: string): string | null {
+  return value.trim() === '' ? messages.composer.headingMissing : null;
+}
+
+interface HeadingFieldProps {
+  readonly level: HeadingLevel;
+  readonly values: Draft;
+  readonly onChange: (values: Draft) => void;
+}
+
+/**
+ * A header's one Heading line, in place of the textarea (#103). The draft's
+ * text holds it as written, after its `#` or `##`, so `propose` signs
+ * `# <heading>\n`. While the title is blank or still the one the heading
+ * last prefilled, it follows the heading; once changed by hand, it stays.
+ */
+function HeadingField({ level, values, onChange }: HeadingFieldProps) {
+  const { composer } = messages;
+  const prefix = headingPrefix(level);
+  const heading = values.text.startsWith(prefix) ? values.text.slice(prefix.length) : '';
+  const change = (next: string) => {
+    const follows = values.title === '' || values.title === headingTitle(level, heading);
+    const text = next === '' ? '' : `${prefix}${next}`;
+    onChange({ ...values, text, title: follows ? headingTitle(level, next) : values.title });
+  };
+  return (
+    <Field
+      name="heading"
+      label={composer.headingLabel}
+      hint={level === 1 ? composer.headerHint : composer.subheaderHint}
+      autoComplete="off"
+      isRequired
+      validate={checkHeading}
+      value={heading}
+      onChange={change}
+    />
+  );
+}
+
+/** The words of Add a section's form: a section's, or a header's of `heading`'s level (#103). */
+function addWords(heading: HeadingLevel | undefined, again: Proposal | undefined) {
+  const { composer } = messages;
+  if (heading === undefined) {
+    return formWords(composer.addTitle, composer.addPageTitle, composer.addSubmit, again);
+  }
+  const header = heading === 1;
+  return formWords(
+    header ? composer.headerTitle : composer.subheaderTitle,
+    header ? composer.headerPageTitle : composer.subheaderPageTitle,
+    composer.headerSubmit,
+    again,
+  );
+}
+
 /**
  * Add a section (`#/g/{groupId}/add` for the start of the first Document,
  * `…/add-first/{documentId}` for the start of another (#92), `…/add/{atomId}`
@@ -102,6 +175,8 @@ function addSpot(state: GroupState, after: string | null, document?: string): Ad
  * naming its Document, which the fold places after its anchor once it
  * passes, or at the end of that Document if the anchor is gone by then.
  * Proposing a lapsed add again (#74) starts from it and carries its versions.
+ * A header (`…/add-header/…`, `…/add-subheader/…` and their `add-first-`
+ * forms, #103) has one Heading line in place of the text, and its own draft.
  */
 export function AddSection({
   state,
@@ -110,6 +185,7 @@ export function AddSection({
   drafts,
   now,
   onPropose,
+  heading,
   ...props
 }: AddSectionProps) {
   const { composer, documents } = messages;
@@ -128,7 +204,7 @@ export function AddSection({
   }
   const target = { kind: 'add', document: spot.document.id, after } as const;
   const again = lapsed(props.again);
-  const { draftKey, start } = formStart(state, addDraft(target), again);
+  const { draftKey, start } = formStart(state, addDraft(target, heading), again);
   return (
     <ProposalForm
       key={draftKey}
@@ -139,7 +215,7 @@ export function AddSection({
       drafts={drafts}
       now={now}
       onPropose={onPropose}
-      words={formWords(composer.addTitle, composer.addPageTitle, composer.addSubmit, again)}
+      words={addWords(heading, again)}
       intro={
         <>
           <AgainLede again={again} />
@@ -152,6 +228,14 @@ export function AddSection({
         hint: composer.addTextHint,
         validate: textCheck('', composer.addTextMissing),
       }}
+      {...(heading === undefined
+        ? {}
+        : {
+            heading,
+            field: (values: Draft, onChange: (next: Draft) => void) => (
+              <HeadingField level={heading} values={values} onChange={onChange} />
+            ),
+          })}
     />
   );
 }
@@ -239,9 +323,9 @@ function unavailable(props: RemoveSectionProps) {
   const open = openProposalOn(state, atomId);
   const refused = whyNoForm(props);
   if (refused !== null) return refused;
-  if (composeOption(state, atomId) === 'ballot-full') {
-    return { title: composer.fullTitle, text: composer.full };
-  }
+  const option = composeOption(state, atomId);
+  if (option === 'moving') return { title: composer.movingTitle, text: composer.moving };
+  if (option === 'ballot-full') return { title: composer.fullTitle, text: composer.full };
   return open !== undefined && holdsRemoval(open)
     ? { title: composer.removalOnBallotTitle, text: composer.removalOnBallot }
     : null;

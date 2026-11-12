@@ -9,7 +9,8 @@
  * Proposal's class, set when it opens, picks its bar and bounds the window its
  * proposer chose. A Document changes only when a Proposal's pass is final: an
  * edit sets an Atom's text or, with `""`, removes it, an add puts a new Atom
- * after its anchor in the Document it names (#75), and a new Document joins
+ * after its anchor in the Document it names (#75), a move takes an Atom out
+ * and puts it after another in its Document (#103), and a new Document joins
  * after every other (#92). Final passes apply in order of close time, then
  * the Proposals' relay order. Steward seats
  * change when a steward Proposal's pass is final, and a suspension narrows
@@ -112,6 +113,7 @@ import {
   type AddProposalBody,
   isAddProposal,
   isCoalitionGenesis,
+  isMoveProposal,
   isDissolveProposal,
   isAdmitProposal,
   isSealedReconcileProposal,
@@ -125,6 +127,7 @@ import {
   type KxBody,
   isStewardProposal,
   type LevelBody,
+  type MoveProposalBody,
   type NarrowBody,
   type NewDocumentProposalBody,
   type ParsedEvent,
@@ -364,6 +367,8 @@ export interface DecisionRecord {
  * Atom; an add (#75), whose `atom` is its own id, the Atom it would create
  * after its anchor; a new Document (#92), whose `atom` is its own id too, the
  * Document it would create, so its versions gather under it as an add's do;
+ * a move of `atom` (#103), whose `text` is `""` and whose one version, under
+ * its own id, has no text, so it holds its section's slot as an edit does;
  * a steward change (#102); a rules change to an opt-in (#117); or dissolving
  * the group (#108). A steward, rules or dissolve
  * Proposal's `atom` and `text` are `""`, and its one version, under its own
@@ -1002,6 +1007,32 @@ function addIsValid(draft: Draft, body: AddProposalBody, author: string, at: Rec
 }
 
 /**
+ * Whether a move's spot is in a Document the move finds (#103): its Atom is
+ * in one, and its anchor, unless null for the start, is another Atom of that
+ * same Document, never the Atom itself.
+ */
+function moveSpotIsValid(draft: Draft, body: MoveProposalBody, received: number): boolean {
+  const { atom, after } = body.target;
+  const document = documentsAt(draft, received).find((d) => d.atoms.some((a) => a.id === atom));
+  if (document === undefined) return false;
+  return after === null || (after !== atom && document.atoms.some((a) => a.id === after));
+}
+
+/**
+ * A move (#103) needs an author who may propose, a section with no open
+ * Proposal, since a move holds its section's slot as an edit does (ADR-0073),
+ * and a spot in that section's Document.
+ */
+function moveIsValid(draft: Draft, body: MoveProposalBody, author: string, at: Receipt): boolean {
+  return (
+    can(draft, author, 'propose') &&
+    moveSpotIsValid(draft, body, at.received) &&
+    optionFor(openOn(draft, body.target.atom, at.received)) === 'propose' &&
+    fieldsAreValid(body)
+  );
+}
+
+/**
  * A new Document (#92) needs an author who may propose, a title that fits,
  * and text that splits into at least one section. It names no Atom, so no
  * other Proposal can be open on it.
@@ -1214,6 +1245,28 @@ function openWithText(
 /** Opens an add (#75) whose spot is in the Document it names (#92). */
 function applyAdd(draft: Draft, body: AddProposalBody, author: string, at: Receipt): boolean {
   return addIsValid(draft, body, author, at) && openWithText(draft, body, author, at);
+}
+
+/**
+ * Opens a move (#103) on its section, so no other Proposal opens there while
+ * it runs. It has no text: its one version, under its own id, is the move
+ * itself, and it takes no others. Like an edit, it runs the window its
+ * proposer chose within its class's bounds, or the class default (#106).
+ */
+function applyMove(draft: Draft, body: MoveProposalBody, author: string, at: Receipt): boolean {
+  if (!moveIsValid(draft, body, author, at)) return false;
+  const cls = targetClass(draft, body);
+  const window = chosenWindow(draft.rules, cls, body.window);
+  if (window === null) return false;
+  openProposal(draft, {
+    ...opening(draft, body, author, at, { cls, window }),
+    atom: body.target.atom,
+    target: body.target,
+    text: '',
+    eligible: eligibleNow(draft, null),
+    versions: [{ id: at.id, author, text: '' }],
+  });
+  return true;
 }
 
 /** Opens a new Document (#92), whose id, on a pass, is the Proposal's own. */
@@ -1646,14 +1699,18 @@ function applyProposal(
   return applyDocumentChange(draft, body, author, at);
 }
 
-/** Opens a group's Proposal that changes its Documents: a new Document (#92), an add (#75) or an edit. */
+/**
+ * Opens a group's Proposal that changes its Documents: a new Document (#92),
+ * a move (#103), an add (#75) or an edit of one Atom, its removal included.
+ */
 function applyDocumentChange(
   draft: Draft,
-  body: ProposalBody | AddProposalBody | NewDocumentProposalBody,
+  body: ProposalBody | AddProposalBody | NewDocumentProposalBody | MoveProposalBody,
   author: string,
   at: Receipt,
 ): boolean {
   if (isNewDocumentProposal(body)) return applyNewDocument(draft, body, author, at);
+  if (isMoveProposal(body)) return applyMove(draft, body, author, at);
   return isAddProposal(body)
     ? applyAdd(draft, body, author, at)
     : openEdit(draft, body, author, at) !== null;
@@ -2593,6 +2650,21 @@ function insertAfter(atoms: readonly Atom[], after: string | null, atom: Atom): 
 }
 
 /**
+ * A move's Atoms after its pass (#103): the Atom `atom` taken out of its place
+ * and put right after `after`, first for null, or last once `after` is gone.
+ * A Document that doesn't hold the Atom stays as it was.
+ */
+function moved(atoms: readonly Atom[], atom: string, after: string | null): readonly Atom[] {
+  const section = atoms.find((a) => a.id === atom);
+  if (section === undefined) return atoms;
+  return insertAfter(
+    atoms.filter((a) => a.id !== atom),
+    after,
+    section,
+  );
+}
+
+/**
  * Brings the removals up to `draft.at` (#115): each removal that has passed
  * and closed by then, once, in order of close time and then relay order.
  * From then on its member only reads (`can()`), until a `remove` takes them
@@ -2627,8 +2699,10 @@ function newDocument(id: string, title: string, text: string): DocumentDraft {
  * #117, #107): an
  * edit sets its Atom's text or, with `""`, removes it; an add puts its Atom
  * after its anchor in the Document it names, or last there once the anchor
- * is gone (#75); and a new Document joins after every other (#92). Atom ids
- * are unique across Documents, so an edit touches only its own Atom's.
+ * is gone (#75); a move puts its Atom after its anchor the same way, in its
+ * own Document (#103); and a new Document joins after every other (#92).
+ * Atom ids are unique across Documents, so an edit or a move touches only its
+ * own Atom's Document.
  */
 function applyPass(
   documents: readonly DocumentDraft[],
@@ -2649,6 +2723,9 @@ function applyPass(
           }
         : d,
     );
+  }
+  if (target.kind === 'move') {
+    return documents.map((d) => ({ ...d, atoms: moved(d.atoms, target.atom, target.after) }));
   }
   if (target.kind !== 'edit') return documents;
   return documents.map((d) => ({ ...d, atoms: edited(d.atoms, proposal.atom, text) }));

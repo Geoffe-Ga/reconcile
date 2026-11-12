@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { RECORD_HEADER_BYTES } from '../crypto/record';
 import { publicKeyOf } from '../crypto/sign';
 import { LEVELS } from '../engine/capabilities';
 import { base64url, fromBase64url, parseRecord } from '../engine/event';
@@ -16,6 +17,7 @@ import {
   askPriority,
   castBallot,
   chooseLevel,
+  moveDraft,
   NEW_DOCUMENT_DRAFT,
   optionText,
   propose,
@@ -370,6 +372,92 @@ describe('propose', () => {
     });
     expect(await device.services.store.readDraft(groupId, NEW_DOCUMENT_DRAFT)).toBeUndefined();
     expect(await device.services.store.readDraft(groupId, atom)).toEqual(other);
+  });
+
+  it('keeps a header’s draft apart from a section’s at the same spot, and a move’s apart from its section’s (#103)', () => {
+    const start = { document: 'a', after: null };
+    const after = { document: 'a', after: 'a.0' };
+    const keys = [
+      addDraft(start),
+      addDraft(start, 1),
+      addDraft(start, 2),
+      addDraft(after),
+      addDraft(after, 1),
+      addDraft(after, 2),
+      moveDraft('a.0'),
+      removalDraft('a.0'),
+      'a.0',
+    ];
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(addDraft(after, 1)).toBe('header:add:a.0');
+    expect(addDraft(start, 2)).toBe('subheader:add-first:a');
+    expect(moveDraft('a.0')).toBe('move:a.0');
+  });
+
+  it('queues a header add with its built text, clearing only the header’s draft (#103)', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, atom } = await founded(fake);
+    const header = {
+      title: 'Add section header: Values',
+      why: 'An outline.',
+      text: '# Values',
+      link: '',
+    };
+    const section = { title: 'Guests', why: 'They visit.', text: 'Guests leave by 11.', link: '' };
+    const place = { document: groupId, after: atom };
+    await device.services.store.writeDraft(groupId, addDraft(place, 1), header);
+    await device.services.store.writeDraft(groupId, addDraft(place), section);
+    const target = { kind: 'add', ...place } as const;
+    await propose(device.services, groupId, { ...header, target, heading: 1, link: null });
+    expect(await queuedProposal(device, groupId)).toEqual({
+      target,
+      title: 'Add section header: Values',
+      why: 'An outline.',
+      text: '# Values\n',
+    });
+    expect(await device.services.store.readDraft(groupId, addDraft(place, 1))).toBeUndefined();
+    expect(await device.services.store.readDraft(groupId, addDraft(place))).toEqual(section);
+  });
+
+  it('queues a move with its target and no text, and clears only the move’s draft (#103)', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, atom } = await founded(fake);
+    const moving = {
+      title: 'Quiet first',
+      why: 'It matters most.',
+      text: '',
+      link: '',
+      moveAfter: null,
+    };
+    const rewording = { title: 'Later', why: 'Why not.', text: 'Quiet after 11.', link: '' };
+    await device.services.store.writeDraft(groupId, moveDraft(atom), moving);
+    await device.services.store.writeDraft(groupId, atom, rewording);
+    const target = { kind: 'move', atom, after: null } as const;
+    const dispatch = { title: 'Updated: House rules', text: 'Quiet comes first.' };
+    const values = { ...moving, target, link: 'https://chat.example/t', window: 5, dispatch };
+    const result = await propose(device.services, groupId, values);
+    expect(result.outcome).toBe('proposed');
+    expect(await queuedProposal(device, groupId)).toEqual({
+      target: { kind: 'move', atom, after: null },
+      title: 'Quiet first',
+      why: 'It matters most.',
+      link: 'https://chat.example/t',
+      window: 5,
+      dispatch,
+    });
+    // The signed bytes themselves carry no text, not even an empty one the parser would drop.
+    const [record] = (await device.services.store.getGroup(groupId))?.outbox ?? [];
+    const signed = new TextDecoder().decode(record?.slice(RECORD_HEADER_BYTES));
+    expect(Object.keys((JSON.parse(signed) as { body: object }).body)).toEqual([
+      'target',
+      'title',
+      'why',
+      'link',
+      'window',
+      'dispatch',
+    ]);
+    expect(await device.services.store.readDraft(groupId, moveDraft(atom))).toBeUndefined();
+    expect(await device.services.store.readDraft(groupId, atom)).toEqual(rewording);
   });
 
   it('queues a removal as an edit whose text is empty, clearing the removal’s draft, not the Atom’s', async () => {

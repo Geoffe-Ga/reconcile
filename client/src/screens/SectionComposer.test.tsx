@@ -53,6 +53,8 @@ interface AddOptions {
   readonly onPropose?: OnPropose;
   readonly drafts?: Readonly<Record<string, Draft>>;
   readonly again?: Proposal;
+  /** A header's level (#103), or none for a section. */
+  readonly heading?: 1 | 2;
 }
 
 /** Renders Add a section after Atom `after` (default: at the start) and waits for its heading. */
@@ -71,6 +73,7 @@ async function addSection(options: AddOptions = {}) {
       now={NOW}
       onPropose={onPropose}
       {...(options.again === undefined ? {} : { again: options.again })}
+      {...(options.heading === undefined ? {} : { heading: options.heading })}
     />,
   );
   await screen.findByRole('heading', { level: 1 });
@@ -250,6 +253,113 @@ describe('AddSection', () => {
   });
 });
 
+describe('AddSection: headers (#103)', () => {
+  it('asks for one Heading line in place of the section text, and nothing else new', async () => {
+    await addSection({ after: 0, heading: 1 });
+    expect(screen.getByRole('heading', { level: 1, name: 'Add a section header' })).toBeVisible();
+    expect(document.title).toBe('Add a section header · Reconcile');
+    expect(
+      screen.getByText('If your group passes it, your section goes right after section 1.'),
+    ).toBeVisible();
+    expect(screen.queryByRole('textbox', { name: 'Section text' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument();
+    const heading = box('Heading');
+    expect(heading.tagName).toBe('INPUT');
+    expect(heading).toBeRequired();
+    expect(heading).toHaveAccessibleDescription(
+      'One line. If your group passes it, it shows as a section header.',
+    );
+    const order = Array.from(document.querySelectorAll('form .field label')).map(
+      (label) => label.textContent,
+    );
+    expect(order.slice(0, 4)).toEqual(['Title', 'Why', 'Heading', 'Discussion link (optional)']);
+    expect(screen.getByRole('button', { name: 'Propose this header' })).toBeEnabled();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('prefills the title from the heading, which stays editable, and hands over “# <heading>”', async () => {
+    const { user, state, afterId, onPropose } = await addSection({ after: 0, heading: 1 });
+    await user.click(box('Heading'));
+    await user.paste('Values');
+    expect(box('Title')).toHaveValue('Add section header: Values');
+    await fill(user, { Why: 'An outline first.' });
+    await user.click(screen.getByRole('button', { name: 'Propose this header' }));
+    expect(onPropose).toHaveBeenCalledWith({
+      target: { kind: 'add', document: state.group, after: afterId },
+      heading: 1,
+      title: 'Add section header: Values',
+      why: 'An outline first.',
+      text: '# Values',
+      link: CHAT,
+      window: 7,
+    });
+  });
+
+  it('stops following the heading once the title is changed by hand', async () => {
+    const { user, onPropose } = await addSection({ heading: 1 });
+    await user.click(box('Heading'));
+    await user.paste('Values');
+    await fill(user, { Title: 'Our values first', Why: 'An outline.' });
+    await user.click(box('Heading'));
+    await user.paste(' we share');
+    expect(box('Title')).toHaveValue('Our values first');
+    await user.click(screen.getByRole('button', { name: 'Propose this header' }));
+    expect(onPropose.mock.calls[0]?.[0]).toMatchObject({
+      title: 'Our values first',
+      text: '# Values we share',
+    });
+  });
+
+  it('builds a subsection header as “## <heading>”, titled as one', async () => {
+    const { user, onPropose } = await addSection({ after: 1, heading: 2 });
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'Add a subsection header' }),
+    ).toBeVisible();
+    expect(box('Heading')).toHaveAccessibleDescription(
+      'One line. If your group passes it, it shows as a subsection header.',
+    );
+    await user.click(box('Heading'));
+    await user.paste('Organization');
+    expect(box('Title')).toHaveValue('Add subsection header: Organization');
+    await fill(user, { Why: 'How we work.' });
+    await user.click(screen.getByRole('button', { name: 'Propose this header' }));
+    expect(onPropose.mock.calls[0]?.[0]).toMatchObject({ heading: 2, text: '## Organization' });
+  });
+
+  it('refuses a blank heading, with the reason tied to the field', async () => {
+    const { user, onPropose } = await addSection({ heading: 1 });
+    await fill(user, { Title: 'A header', Why: 'An outline.' });
+    await user.click(box('Heading'));
+    await user.paste('   ');
+    await user.click(screen.getByRole('button', { name: 'Propose this header' }));
+    expect(onPropose).not.toHaveBeenCalled();
+    expect(box('Heading')).toHaveAccessibleDescription(
+      'One line. If your group passes it, it shows as a section header. Write the heading.',
+    );
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('keeps its draft apart from a section’s at the same spot, and brings it back', async () => {
+    const state = groupLog({ chat: CHAT }).state();
+    const place = { document: state.group ?? '', after: null };
+    const section = { title: 'Guests', why: 'They visit.', text: 'Guests by 11.', link: '' };
+    const header = {
+      title: 'Add section header: Values',
+      why: 'An outline.',
+      text: '# Values',
+      link: '',
+    };
+    await addSection({
+      state,
+      heading: 1,
+      drafts: { [addDraft(place)]: section, [addDraft(place, 1)]: header },
+    });
+    expect(await screen.findByText(/Your draft is back/)).toBeVisible();
+    expect(box('Heading')).toHaveValue('Values');
+    expect(box('Title')).toHaveValue('Add section header: Values');
+  });
+});
+
 describe('RemoveSection', () => {
   it('asks for a title and why beside the section struck through, with no text to write', async () => {
     const { state } = await removeSection();
@@ -389,6 +499,16 @@ describe('RemoveSection', () => {
       }),
     ).toBeVisible();
     expect(screen.getByText('Score it on the section’s open Proposal.')).toBeVisible();
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  it('says the section is being moved, with no form, while a move of it is open (#103)', async () => {
+    const log = groupLog();
+    log.move('ben', `${log.group}.1`, null);
+    await removeSection({ state: log.state() });
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'This section is being moved' }),
+    ).toBeVisible();
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
 

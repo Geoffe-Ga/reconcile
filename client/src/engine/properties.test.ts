@@ -21,7 +21,10 @@
  * oldest first, ends at its current text or its removal, and a Document's change log holds each
  * final pass once. And of the front door (#288): no door ever stands whose secrets a record
  * sealed under a key someone who has left held carried, whatever order Proposals, ballots, leaves
- * and key changes come in.
+ * and key changes come in. And of moves (#103): passed moves only ever reorder a Document,
+ * keeping its Atom ids and their bytes, and every device that folds the same records builds the
+ * same order, which follows close time, then the moves' relay order, whatever order their ballots
+ * arrive in.
  */
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
@@ -119,6 +122,12 @@ class Log {
   /** An add of a new section after `after`, or first for null (#75), in `document`, the first by default (#92). */
   addSection(received: number, after: string | null, text: string, document = this.group): string {
     const body = { target: { kind: 'add', document, after } as const, title: 'T', why: 'W', text };
+    return this.add(received, member(0), { type: 'proposal', body });
+  }
+
+  /** A move of `atom` right after `after`, or first for null (#103), by member 0. */
+  move(received: number, atom: string, after: string | null): string {
+    const body = { target: { kind: 'move', atom, after } as const, title: 'T', why: 'W' };
     return this.add(received, member(0), { type: 'proposal', body });
   }
 
@@ -429,7 +438,7 @@ describe('properties of the fold', { timeout: 60_000 }, () => {
     );
   });
 
-  it('only adds or takes out whole Atoms: each id at most once, founded, a passed add’s or a passed new Document’s, in founded order and Document by Document', () => {
+  it('only adds, takes out or moves whole Atoms: each id at most once, founded, a passed add’s or a passed new Document’s, in founded order unless a move passed on it, and Document by Document', () => {
     fc.assert(
       fc.property(arbitraryLog, ({ records, relayNow }) => {
         const state = fold(records, relayNow);
@@ -445,7 +454,9 @@ describe('properties of the fold', { timeout: 60_000 }, () => {
           const fromNew = created.some((document) => id.startsWith(`${document}.`));
           expect(fromNew || [...founded, ...added].includes(id), id).toBe(true);
         }
-        const kept = ids.filter((id) => founded.includes(id));
+        // A passed move reorders its own section alone (#103): every other keeps its founded order.
+        const moved = passed.filter((p) => p.target.kind === 'move').map((p) => p.atom);
+        const kept = ids.filter((id) => founded.includes(id) && !moved.includes(id));
         expect(kept).toEqual(founded.filter((id) => kept.includes(id)));
         const order = state.documents.map((document) => document.id);
         const places = state.atoms.map((atom) => order.indexOf(atom.documentId));
@@ -955,6 +966,101 @@ describe('properties of the fold', { timeout: 60_000 }, () => {
   });
 });
 
+/** `ids` with `id` taken out and put right after `after`, first for null, as a passed move does. */
+function movedIds(ids: readonly string[], id: string, after: string | null): string[] {
+  const rest = ids.filter((other) => other !== id);
+  const index = after === null ? -1 : rest.indexOf(after);
+  return [...rest.slice(0, index + 1), id, ...rest.slice(index + 1)];
+}
+
+/** Each section's id and bytes, sorted by id: a Document's contents, whatever their order. */
+function contents(atoms: readonly { readonly id: string; readonly text: string }[]) {
+  return [...atoms]
+    .sort((a, b) => (a.id < b.id ? -1 : 1))
+    .map((atom) => [atom.id, Array.from(encoder.encode(atom.text))]);
+}
+
+/** A Document of 2–6 sections, and moves: each picks a section and an anchor among them, or none. */
+const moves = fc.record({
+  sections: fc.array(fc.string({ unit: 'grapheme', minLength: 1, maxLength: 8 }), {
+    minLength: 2,
+    maxLength: 6,
+  }),
+  picks: fc.array(fc.record({ section: fc.nat(), anchor: fc.option(fc.nat(), { nil: null }) }), {
+    minLength: 1,
+    maxLength: 6,
+  }),
+});
+
+describe('properties of moves (#103)', { timeout: 60_000 }, () => {
+  it('keeps every Atom id and its bytes through any sequence of passed moves: only the order changes, as each move says', () => {
+    fc.assert(
+      fc.property(moves, ({ sections, picks }) => {
+        const log = Log.founded(2, sections);
+        const before = fold(log.records, R).atoms;
+        let order = before.map((atom) => atom.id);
+        picks.forEach(({ section, anchor }, i) => {
+          const at = R + 20 + 10 * i;
+          const id = order[section % order.length] ?? '';
+          const after = anchor === null ? null : (order[anchor % order.length] ?? null);
+          const move = log.move(at, id, after);
+          log.vote(at + 1, 0, move, 4);
+          log.vote(at + 2, 1, move, 4);
+          // A move anchored on its own section is ignored, so it moves nothing (#103).
+          if (after !== id) order = movedIds(order, id, after);
+        });
+        const after = fold(log.records, R + 20 + 10 * picks.length).atoms;
+        expect(after.map((atom) => atom.id)).toEqual(order);
+        expect(contents(after)).toEqual(contents(before));
+      }),
+    );
+  });
+
+  it('builds the same order whatever order the moves’ ballots arrive in: close time, then the moves’ relay order', () => {
+    const scenario = moves.chain(({ sections, picks }) => {
+      const count = Math.min(picks.length, sections.length);
+      const ballots = Array.from({ length: 2 * count }, (_, i) => i);
+      return fc.record({
+        sections: fc.constant(sections),
+        picks: fc.constant(picks.slice(0, count)),
+        arrival: fc.shuffledSubarray(ballots, { minLength: ballots.length }),
+        sameMinute: fc.boolean(),
+      });
+    });
+    fc.assert(
+      fc.property(scenario, ({ sections, picks, arrival, sameMinute }) => {
+        const log = Log.founded(2, sections);
+        const founded = fold(log.records, R).atoms.map((atom) => atom.id);
+        // Each move takes a section of its own, so all of them are open at once.
+        const free = [...founded];
+        const planned = picks.map(({ section, anchor }, i) => {
+          const [id = ''] = free.splice(section % free.length, 1);
+          const others = founded.filter((other) => other !== id);
+          const after = anchor === null ? null : (others[anchor % others.length] ?? null);
+          return { id, after, proposal: log.move(R + 20 + i, id, after) };
+        });
+        const closes = new Map<number, number>();
+        arrival.forEach((ballot, place) => {
+          const index = Math.floor(ballot / 2);
+          const at = sameMinute ? R + 100 : R + 100 + place;
+          log.vote(at, ballot % 2, planned[index]?.proposal ?? '', 4);
+          closes.set(index, at);
+        });
+        const inPassOrder = planned
+          .map((move, index) => ({ ...move, close: closes.get(index) ?? 0, index }))
+          .sort((a, b) => a.close - b.close || a.index - b.index);
+        const order = inPassOrder.reduce<string[]>(
+          (ids, move) => movedIds(ids, move.id, move.after),
+          founded,
+        );
+        const state = fold(log.records, R + 100 + arrival.length);
+        expect(state.proposals.every((p) => p.final && p.outcome.kind === 'pass')).toBe(true);
+        expect(state.atoms.map((atom) => atom.id)).toEqual(order);
+      }),
+    );
+  });
+});
+
 /** One Proposal of a section-history scenario (#104): its kind, what it picks, its text, three ballots and a wait. */
 const historyStep = fc.record({
   kind: fc.constantFrom<InDocument['kind']>('edit', 'remove', 'add', 'new-document'),
@@ -1070,6 +1176,7 @@ const step = fc.record({
     'remove',
     'add',
     'new-document',
+    'move',
     'version',
     'vote',
     'repeat',
@@ -1126,6 +1233,15 @@ const STEP_WRITERS: Readonly<Record<Step['kind'], StepWriter>> = {
     const after = anchors[s.who % anchors.length] ?? null;
     const text = s.score === 0 ? '' : `Add ${String(s.score)}`;
     proposals.push(log.addSection(received, after, text, document));
+  },
+  // A founded section or an earlier add's, after a founded section of either Document, an earlier
+  // add's, itself, or the start (#103).
+  move: (log, proposals, s, received) => {
+    const sections = [sectionOf(log, s), ...proposals];
+    const atom = sections[s.score % sections.length] ?? sectionOf(log, s);
+    const anchors = [null, sectionOf(log, s), atom, ...proposals];
+    const after = anchors[s.who % anchors.length] ?? null;
+    proposals.push(log.move(received, atom, after));
   },
   'new-document': (log, proposals, s, received) => {
     const text = s.score === 0 ? ' \n\n' : `N${String(s.score)}\n\nM${String(s.who)}\n`;
