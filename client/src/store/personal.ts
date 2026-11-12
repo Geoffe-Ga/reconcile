@@ -306,9 +306,13 @@ export function byCreation(a: PersonalText, b: PersonalText): number {
   return a.createdAt - b.createdAt || (a.id < b.id ? -1 : 1);
 }
 
-/** A share's mark: everything it says but its keys. */
+/**
+ * A share's mark: everything it says but its keys, its pause included, so a
+ * share a restore brought back stays paused under a vault too (#328).
+ */
 function markOf(share: ShareMark): ShareMark {
-  return { n: share.n, lastPostedAt: share.lastPostedAt, pending: share.pending };
+  const { n, lastPostedAt, pending } = share;
+  return { n, lastPostedAt, pending, ...(share.paused === true && { paused: true }) };
 }
 
 /** `document` as Personal and the editor show it: its words and times, and its share's mark. */
