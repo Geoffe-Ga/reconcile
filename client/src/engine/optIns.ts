@@ -19,7 +19,10 @@
  * channel. It lives only in sealed group events and in folded state on
  * members' devices, so it never reaches the relay readable. So do a front
  * door's two secrets (#121): the proposer's device makes them, and they
- * travel only inside the rules Proposal that opens the door.
+ * travel only inside the rules Proposal that opens the door. They don't
+ * change with the group key, so whoever leaves keeps them: a membership's end
+ * closes the door, and only a door with fresh secrets opens again (#288,
+ * fold.ts's `endMembership`).
  */
 import { base64url, fromBase64url } from '../crypto/base64url';
 import { can, type Roster } from './capabilities';
@@ -231,6 +234,27 @@ export function withChange(optIns: OptIns, change: RulesChange): OptIns {
   return change.optIn === 'chatBot'
     ? { ...optIns, chatBot: change.value }
     : { ...optIns, frontDoor: change.value };
+}
+
+/**
+ * The front door a rules change would open or keep open, carrying its two
+ * secrets, or null for any other change: one to the chat bot, or one that
+ * closes the door.
+ */
+export function doorIn(change: RulesChange | null): FrontDoor | null {
+  return change?.optIn === 'frontDoor' && isFrontDoor(change.value) ? change.value : null;
+}
+
+/**
+ * Where a membership ended and closed the front door (#288): the `leave` or
+ * `remove` whose fold ended it, by event id, relay seq and receipt. Whoever
+ * left keeps the door's secrets, so the door closes on every device, and only
+ * a new opening Proposal, with fresh secrets, opens it again.
+ */
+export interface DoorClosure {
+  readonly id: string;
+  readonly seq: number;
+  readonly received: number;
 }
 
 /**

@@ -199,7 +199,9 @@ export function versionViews(
       text: version.text,
       ...(does === null ? {} : { does }),
       ...(change === null ? {} : { steward: stewardView(state, change) }),
-      ...(rules === null ? {} : { rules: rulesView(rules) }),
+      ...(rules === null
+        ? {}
+        : { rules: rulesView(rules, state.exposedDoors.includes(proposal.id)) }),
       ...(target.kind === 'dissolve' ? { dissolve: dissolveView(target.wipe) } : {}),
       ...(target.kind === 'move' ? { move: moveView(state, target) } : {}),
       ...(target.kind === 'remove' ? { removal: removalView(state, target.member) } : {}),

@@ -100,6 +100,8 @@ export interface ProposalViewProps {
   readonly onTell: (moment: ChatMoment, details: ChatDetails) => Promise<ShareOutcome>;
   /** Whether this device's leave waits for the relay (#77): then it takes no ballot or version. */
   readonly leaving?: boolean;
+  /** Whether this copy came back from a backup and hasn't heard from its group (#231): the same. */
+  readonly unconfirmed?: boolean;
   /**
    * Queues this member's one response on the removal of them (#115); rejects
    * when it couldn't be saved. Without it, no response form shows.
@@ -333,6 +335,7 @@ function whyEligibleCantVote(props: ProposalViewProps, proposal: Proposal): stri
 function whyNoVote(props: ProposalViewProps, proposal: Proposal): string | null {
   const { state, me } = props;
   if (props.leaving === true) return messages.leave.noVoting;
+  if (props.unconfirmed === true) return messages.unconfirmed.noVoting;
   if (proposal.eligible.includes(me)) return whyEligibleCantVote(props, proposal);
   if (removalTarget(proposal) === me) return messages.removal.ownRemoval;
   if (removedFrom(state, me) !== undefined) return messages.removal.readOnly;
@@ -379,6 +382,14 @@ function NoVote({ state, me, reason, leaving }: NoVoteProps) {
   );
 }
 
+/**
+ * True while this device takes nothing new for the group: its leave waits
+ * (#77), or its copy back from a backup hasn't heard from the group (#231).
+ */
+function readsOnly(props: ProposalViewProps): boolean {
+  return props.leaving === true || props.unconfirmed === true;
+}
+
 /** True while the vote takes ballots and versions, as far as this device can tell. */
 function isOpen(props: ProposalViewProps, proposal: Proposal): boolean {
   return !proposal.final && props.now < proposal.deadline;
@@ -386,7 +397,7 @@ function isOpen(props: ProposalViewProps, proposal: Proposal): boolean {
 
 /** Whether this member can still add wording: the vote is open, they may propose, and they're staying. */
 function isOpenToVersions(props: ProposalViewProps, proposal: Proposal): boolean {
-  return isOpen(props, proposal) && props.leaving !== true && can(props.state, props.me, 'propose');
+  return isOpen(props, proposal) && !readsOnly(props) && can(props.state, props.me, 'propose');
 }
 
 /**
@@ -397,7 +408,7 @@ function isOpenToVersions(props: ProposalViewProps, proposal: Proposal): boolean
  * unticked Include the title.
  */
 function Tell({ props, proposal }: { props: ProposalViewProps; proposal: Proposal }) {
-  if (!isOpen(props, proposal) || props.leaving === true) return null;
+  if (!isOpen(props, proposal) || readsOnly(props)) return null;
   const moment = openMoment(proposal, props.me, props.now);
   return <TellYourGroup key={moment} moment={moment} proposal={proposal} onTell={props.onTell} />;
 }
@@ -495,7 +506,7 @@ function Vote({ props, proposal, versions, motion }: VoteProps) {
             {meters}
           </ChoiceList>
           {reason === null ? null : (
-            <NoVote state={state} me={me} reason={reason} leaving={props.leaving === true} />
+            <NoVote state={state} me={me} reason={reason} leaving={readsOnly(props)} />
           )}
         </>
       )}
@@ -778,7 +789,7 @@ function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Propo
   const { state } = props;
   const cutOff = cutOffOf(props, proposal);
   if (cutOff !== null) return <CutOff props={props} proposal={proposal} words={cutOff} />;
-  const readOnly = props.leaving === true || isArchived(state, props.me);
+  const readOnly = readsOnly(props) || isArchived(state, props.me);
   const motion = motionView(proposal, state, props.coalitions ?? []);
   const names = motion?.state ?? state;
   const versions = versionViews(state, proposal, names);

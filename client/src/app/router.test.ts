@@ -52,6 +52,9 @@ describe('parseRoute', () => {
     [`#/g/${GROUP}/doc/${SECOND}`, { name: 'document', groupId: GROUP, documentId: SECOND }],
     [`#/g/${GROUP}/doc/${PROPOSAL}`, { name: 'document', groupId: GROUP, documentId: PROPOSAL }],
     [`#/g/${GROUP}/doc/new`, { name: 'newDocument', groupId: GROUP }],
+    // A Document's change log (#104).
+    [`#/g/${GROUP}/doc/${GROUP}/log`, { name: 'documentLog', groupId: GROUP, documentId: GROUP }],
+    [`#/g/${GROUP}/doc/${SECOND}/log`, { name: 'documentLog', groupId: GROUP, documentId: SECOND }],
     [
       `#/g/${GROUP}/add-first/${SECOND}`,
       { name: 'add', groupId: GROUP, after: null, document: SECOND },
@@ -149,6 +152,11 @@ describe('parseRoute', () => {
     `#/g/${GROUP}/doc/${SECOND}:2`,
     `#/g/${GROUP}/doc/new/extra`,
     `#/g/${GROUP}/doc/${SECOND}/extra`,
+    `#/g/${GROUP}/doc/${SECOND}/log/extra`,
+    `#/g/${GROUP}/doc/${SECOND}/logs`,
+    `#/g/${GROUP}/doc/${ATOM}/log`,
+    `#/g/${GROUP}/p/${PROPOSAL}/log`,
+    `#/g/${GROUP}/add-first/${SECOND}/log`,
     `#/g/${GROUP}/add-first`,
     `#/g/${GROUP}/add-first/`,
     `#/g/${GROUP}/add-first/${SECOND_ATOM}`,
@@ -285,6 +293,14 @@ describe('coalitions (#120)', () => {
     });
   });
 
+  it('reads a coalition Document’s change log (#104)', () => {
+    expect(parseRoute(`#/c/${COALITION}/doc/${COALITION}/log`)).toEqual({
+      name: 'coalitionLog',
+      coalitionId: COALITION,
+      documentId: COALITION,
+    });
+  });
+
   it('reads a coalition’s room (#125)', () => {
     expect(parseRoute(`#/c/${COALITION}/room`)).toEqual({
       name: 'coalitionRoom',
@@ -306,6 +322,9 @@ describe('coalitions (#120)', () => {
     `#/c/${COALITION}/doc`,
     `#/c/${COALITION}/doc/a+b`,
     `#/c/${COALITION}/doc/${COALITION}/more`,
+    `#/c/${COALITION}/doc/${COALITION}/log/more`,
+    `#/c/${COALITION}/doc/a+b/log`,
+    `#/c/${COALITION}/propose/${COALITION}.0/log`,
     `#/c/${COALITION}/propose`,
     `#/c/${COALITION}/propose/a.b`,
     `#/c/${COALITION}/p/${COALITION}`,
@@ -337,6 +356,7 @@ describe('routeHref', () => {
     [{ name: 'document', groupId: GROUP }, `#/g/${GROUP}/doc`],
     [{ name: 'document', groupId: GROUP, documentId: SECOND }, `#/g/${GROUP}/doc/${SECOND}`],
     [{ name: 'newDocument', groupId: GROUP }, `#/g/${GROUP}/doc/new`],
+    [{ name: 'documentLog', groupId: GROUP, documentId: SECOND }, `#/g/${GROUP}/doc/${SECOND}/log`],
     [
       { name: 'add', groupId: GROUP, after: null, document: SECOND },
       `#/g/${GROUP}/add-first/${SECOND}`,
@@ -393,6 +413,10 @@ describe('routeHref', () => {
     [
       { name: 'coalitionPropose', coalitionId: GROUP, atomId: ATOM },
       `#/c/${GROUP}/propose/${ATOM}`,
+    ],
+    [
+      { name: 'coalitionLog', coalitionId: GROUP, documentId: GROUP },
+      `#/c/${GROUP}/doc/${GROUP}/log`,
     ],
     [{ name: 'coalitionRoom', coalitionId: GROUP }, `#/c/${GROUP}/room`],
   ])('writes %j as %s, which parses back', (route, href) => {

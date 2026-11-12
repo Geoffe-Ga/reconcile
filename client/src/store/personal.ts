@@ -46,7 +46,7 @@ export interface ShareState {
   readonly publicKey: Uint8Array;
   /** The `n` of the last copy this device posted, or 0 before the first. */
   readonly n: number;
-  /** When this device last posted a copy, in device milliseconds, or null before the first. */
+  /** When this device last posted a copy or the person kept sharing (#339), in device ms, or null if never. */
   readonly lastPostedAt: number | null;
   /** Whether the link may show less than the Document holds: an edit not posted yet, or a post that failed. */
   readonly pending: boolean;

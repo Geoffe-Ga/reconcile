@@ -41,7 +41,7 @@ Settled decisions about how Reconcile works. Before designing anything, check he
 | [0035](0035-reconcile-group-minimal-eternal-core.md) | Reconcile-the-group starts from a short eternal core, its wording settled before genesis; the rest is ratified by the first groups | Accepted; amended 2026-11-08 |
 | [0036](0036-coalition-each-group-passes.md) | Coalition motions pass group by group; only signed results cross group lines | Accepted |
 | [0037](0037-holonic-promotion.md) | Each level decides; the author sets a ceiling, at most the coalitions (0071); votes travel with the Dispatch on the voter's own device | Accepted; amended by 0065, 0070, 0071 |
-| [0038](0038-optional-discovery.md) | Discovery is optional; groups can open a front door that never lists people | Accepted |
+| [0038](0038-optional-discovery.md) | Discovery is optional; groups can open a front door that never lists people, and that closes when a membership ends (#288) | Accepted; amended 2026-11-12 (#288) |
 | [0039](0039-integrations-per-group-opt-in.md) | Bot reach and sight are a per-group ladder, nudge-only by default | Accepted |
 | [0040](0040-group-opt-ins-are-governed.md) | Every group-level opt-in is decided by Proposal; widening is entrenched, narrowing is easy | Accepted |
 | [0041](0041-digitalocean-relay-hosting.md) | The pilot relay runs on a DigitalOcean VM; we terminate TLS, logs off. The MVP runs it as a systemd service, not a container, until it needs another host | Accepted; amended 2026-11-09 |
@@ -54,7 +54,7 @@ Settled decisions about how Reconcile works. Before designing anything, check he
 | [0048](0048-feed-surfacing.md) | Proposals drawing early enthusiasm rise in the Rising tab; the default Quiet tab puts the least heard first (0064); nothing is hidden | Accepted; amended by 0064 |
 | [0049](0049-stewards-and-removal.md) | Two staggered 6-month stewards; removal by a fixed 14-day vote at average ≥ 3.0 with at most one 0 or under 5% zeros, without the target voting | Accepted; amended by 0066, 0067, 0072, 0075 |
 | [0050](0050-splitting.md) | Parting ways (named "split" here), not "fork": 20% of voters within 14 days of a trigger, signatures sealed | Accepted; amended by 0068 |
-| [0051](0051-dissolution-and-rule-classes.md) | Dissolution at the entrenched bar with read-only archives; which founding rules start entrenched | Accepted; amended by 0072, and 2026-11-09 |
+| [0051](0051-dissolution-and-rule-classes.md) | Dissolution at the entrenched bar with read-only archives; which founding rules start entrenched | Accepted; amended by 0072, 2026-11-09, and 2026-11-11 (#231: restored copies read only until they hear from the group) |
 | [0052](0052-newcomer-onboarding.md) | Preview first; join provisionally with the inviter as first recovery contact; recovery complete before voting | Accepted |
 | [0053](0053-multi-use-invites.md) | Invites are multi-use links (default up to 10) that expire in 48 hours | Accepted |
 | [0054](0054-digest-notifications.md) | One daily digest (including votes closing soon); only recovery attempts notify immediately | Accepted; amended by 0072 |
@@ -78,7 +78,7 @@ Settled decisions about how Reconcile works. Before designing anything, check he
 | [0072](0072-protocol-details-for-decomposition.md) | Protocol details settled during decomposition: causal time, length caps, expiring sensitive text, re-open and readmit binding, `dissolve` target, backup endpoint, generic lock-screen text | Accepted; amended 2026-11-09 |
 | [0073](0073-mvp-scope.md) | MVP scope: build the simple loop first. Defers parts of 42 ADRs until pilot feedback asks, and 0041's container until the relay needs another host | Accepted; amended by 0074, and 2026-11-09 |
 | [0074](0074-mvp-scope-revised.md) | MVP scope revised: each feature at the founder's chosen depth, with Phase 2 coalitions in | Accepted; amended by 0075 |
-| [0075](0075-safeguards-for-the-revised-mvp.md) | Safeguards for the revised MVP: coalition seats, push linkage, steward limits, recovery | Accepted |
+| [0075](0075-safeguards-for-the-revised-mvp.md) | Safeguards for the revised MVP: coalition seats, push linkage, steward limits, recovery; a key change whose wraps don't open is refused, and its author may write no other (2026-11-11) | Accepted; amended 2026-11-11 |
 | [0076](0076-merge-recap-to-discord.md) | Merge recaps send only metadata, PR titles included, to a private Discord channel; the bot token runs merged code | Accepted (tooling) |
 
 **Status column:** "amended by 00NN" means a later ADR changed part of the decision, and the ADR's own file says what changed. A date means the ADR was amended in place, with no ADR of its own. Each one-liner describes the decision as amended.
