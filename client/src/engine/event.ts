@@ -295,7 +295,9 @@ export interface ReconcileTarget {
  * asking into, a coalition above it. The coalition above's secret and
  * `inner`, and C's seat secret there, travel in one `sealed` field, sealed
  * under a key derived from C's `inner` (`crypto/innerSeal.ts`), so C's
- * followers, who read C's log, can't open them. `key` is the public seat key,
+ * followers, who read C's log, can't open them. Asking into a formed
+ * coalition, C seals no `inner`, as a group's target holds none, and receives
+ * it through its seat once admitted (#313). `key` is the public seat key,
  * which the seat secret makes, and the name and statement stay readable.
  */
 export interface SealedReconcileTarget {

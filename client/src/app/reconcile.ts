@@ -119,12 +119,12 @@ interface Lower {
 function targetFor(lower: Lower, card: CardCoalition, inner: Uint8Array | undefined) {
   const made = reconcileTarget(card, inner);
   if (lower.inner === null) return made;
-  if (inner === undefined) throw new Error('This card can’t be brought to a coalition yet.');
-  const sealed = sealSeatSecrets(lower.id, lower.inner, {
-    secret: card.secret,
-    inner,
-    seat: made.seatSecret,
-  });
+  const held = { secret: card.secret, seat: made.seatSecret };
+  const sealed = sealSeatSecrets(
+    lower.id,
+    lower.inner,
+    inner === undefined ? held : { ...held, inner },
+  );
   const { name, title, atoms } = card;
   const target = { kind: 'reconcile', sealed, key: made.seatKey, name, title, atoms } as const;
   return { ...made, target };

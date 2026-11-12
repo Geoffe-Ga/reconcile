@@ -200,7 +200,7 @@ function fromCoalition(entry: Group, state: GroupState, inner: Uint8Array): Foun
   return held.flatMap(({ proposal, target }) => {
     const opened = openSeatSecrets(id, inner, target.sealed);
     if (opened === null || base64url(seatKeyOf(opened.seat)) !== target.key) return [];
-    return [{ ...opened, holder: entry.groupId, proposal }];
+    return [{ ...opened, inner: opened.inner ?? null, holder: entry.groupId, proposal }];
   });
 }
 

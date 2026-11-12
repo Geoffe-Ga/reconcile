@@ -254,6 +254,22 @@ async function secretsAbove(ana: TestDevice) {
   return { keys: above, canaries, eastside: { entryId, secret: own.secret, inner: own.inner } };
 }
 
+/** The `inner` of the coalition entry `entryId` that `device`'s keys hold, or null (#313). */
+async function innerOn(device: TestDevice, entryId: string): Promise<Uint8Array | null> {
+  const { store } = device.services;
+  const keys = coalitionKeys(await store.listGroups(), await store.listCoalitions());
+  return keys.get(entryId)?.inner ?? null;
+}
+
+/** What the sealed reconcile motion `motion` in the coalition entry `entryId` holds, opened on `device`. */
+async function sealedOpened(device: TestDevice, entryId: string, motion: string) {
+  const entry = await device.services.store.getGroup(entryId);
+  const inner = await innerOn(device, entryId);
+  if (entry === undefined || inner === null) throw new Error('Expected the coalition’s inner.');
+  const state = fold(entry.log, entry.relayNow);
+  return openSeatSecrets(state.group ?? '', inner, sealedIn(state, motion));
+}
+
 /** The sealed field of the reconcile motion `id` in `state`, failing when there is none. */
 function sealedIn(state: GroupState, id: string): string {
   const target = state.proposals.find((p) => p.id === id)?.target;
@@ -382,6 +398,16 @@ describe('nested coalitions', SLOW, () => {
     await vote(oak, into, [ben, cy]);
     await syncAll(SETTLE);
 
+    // Until it's seated, Eastside Housing's devices hold Metro Renters' secret and their seat
+    // there, but not its inner: neither the card nor the sealed motion carried it (#313).
+    const metroEntry = await entryNamed(ana, 'Metro Renters');
+    const metroInner = await innerOn(eve, metroEntry);
+    expect(metroInner).not.toBeNull();
+    const sealedHeld = await sealedOpened(ana, eastsideEntry, into);
+    expect(sealedHeld?.secret).toEqual(card.card.secret);
+    expect(sealedHeld?.inner).toBeUndefined();
+    expect(await innerOn(ana, metroEntry)).toBeNull();
+
     // Ana's device proposes the admission, stating Eastside Housing's level and member groups.
     const admit = admitMotion(await coalitionNamed(eve, 'Metro Renters'));
     expect(admit.target).toMatchObject({
@@ -411,6 +437,11 @@ describe('nested coalitions', SLOW, () => {
     expect(after.coalition?.bindings.find((b) => b.author === anaM?.author)?.seat).toBe(
       seatIn(eastside, after),
     );
+    // Once seated, a participant from a seated group wraps inner to its seat, and every
+    // device in Eastside Housing's groups opens it (#313).
+    for (const device of [ana, ben, cy]) {
+      expect(await innerOn(device, metroEntry)).toEqual(metroInner);
+    }
   });
 
   it('opens a motion in Metro Renters in every group beneath it, carries one result up each line, and resolves once final', async () => {
