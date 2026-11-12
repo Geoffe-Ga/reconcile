@@ -10,13 +10,13 @@
  * and followers never get, with C's id as associated data, so a field moved
  * into another coalition's log never opens. The field is base64url of
  * exactly one 1,024-byte blob, the smallest a Seal makes, holding the 96
- * bytes `secret ‖ inner ‖ seat`. `vectors/innerSeal.json` pins the key and
- * one field, computed outside @noble.
+ * bytes `secret ‖ inner ‖ seat`.
  *
  * A coalition asking into a formed D holds no `inner` of D's until it is
  * seated, as a group asking in doesn't (#313): its field holds the 64 bytes
  * `secret ‖ seat`, in the same one blob, and C's devices open D's `inner`
- * from a wrap for C's seat once D admits it.
+ * from a wrap for C's seat once D admits it. `vectors/innerSeal.json` pins
+ * the key and a field of each kind, computed outside @noble.
  */
 import { concatBytes } from '@noble/hashes/utils.js';
 

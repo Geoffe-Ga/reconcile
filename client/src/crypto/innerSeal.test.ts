@@ -15,7 +15,10 @@ import {
 } from './innerSeal';
 import { seal } from './seal';
 
-/** `vectors/innerSeal.json`: fixed inners' keys, and one sealed field, computed outside @noble. */
+/**
+ * `vectors/innerSeal.json`: fixed inners' keys, a sealed field holding the
+ * inner above, and one holding none (#313), all computed outside @noble.
+ */
 interface InnerSealFile {
   readonly kind: 'inner-seal';
   readonly info: string;
@@ -29,6 +32,13 @@ interface InnerSealFile {
     readonly sealed: readonly number[];
     readonly secret: readonly number[];
     readonly innerAbove: readonly number[];
+    readonly seat: readonly number[];
+  };
+  readonly opensWithoutInner: {
+    readonly inner: readonly number[];
+    readonly coalitionId: string;
+    readonly sealed: readonly number[];
+    readonly secret: readonly number[];
     readonly seat: readonly number[];
   };
 }
@@ -66,6 +76,16 @@ describe('innerSeal.json', () => {
     expect([...(opened?.secret ?? [])]).toEqual(secret);
     expect([...(opened?.inner ?? [])]).toEqual(innerAbove);
     expect([...(opened?.seat ?? [])]).toEqual(seat);
+  });
+
+  it('opens the 64-byte field sealed outside @noble to its secret and seat, with no inner (#313)', () => {
+    const { inner, coalitionId, sealed, secret, seat } = file.opensWithoutInner;
+    const field = base64url(Uint8Array.from(sealed));
+    const opened = openSeatSecrets(coalitionId, Uint8Array.from(inner), field);
+    expect(opened).toEqual({ secret: Uint8Array.from(secret), seat: Uint8Array.from(seat) });
+    expect(opened).not.toHaveProperty('inner');
+    expect(field).toHaveLength(SEALED_FIELD_CHARS);
+    expect(openSeatSecrets(coalitionId, Uint8Array.from(file.opens.inner), field)).toBeNull();
   });
 });
 
