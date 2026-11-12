@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { inviteLink } from '../app/invite';
 import { cardLink } from '../coalition/card';
+import { followLink } from '../coalition/follow';
 import { newInviteSeed } from '../crypto/invite';
 import { axeViolations } from '../test/axe';
 import { Start, type StartGroup } from './Start';
@@ -159,6 +160,31 @@ describe('Start', () => {
     expect(Array.from(onOpenCard.mock.calls[0]?.[0] as Uint8Array)).toEqual(Array.from(seed));
   });
 
+  it('opens a pasted follow link (#124), and no invite or card from it', async () => {
+    const user = userEvent.setup();
+    const onOpenInvite = vi.fn();
+    const onOpenCard = vi.fn();
+    const onOpenFollow = vi.fn();
+    const seed = newInviteSeed();
+    render(
+      <Start
+        groups={[]}
+        onOpenInvite={onOpenInvite}
+        onOpenCard={onOpenCard}
+        onOpenFollow={onOpenFollow}
+      />,
+    );
+
+    await user.click(screen.getByRole('textbox', { name: 'Invite link' }));
+    await user.paste(` ${followLink('https://reconcile.example', seed)}\n`);
+    await user.click(screen.getByRole('button', { name: 'Join with an invite link' }));
+
+    expect(onOpenInvite).not.toHaveBeenCalled();
+    expect(onOpenCard).not.toHaveBeenCalled();
+    expect(onOpenFollow).toHaveBeenCalledTimes(1);
+    expect(Array.from(onOpenFollow.mock.calls[0]?.[0] as Uint8Array)).toEqual(Array.from(seed));
+  });
+
   it('takes a pasted card even where nothing opens one', async () => {
     const user = userEvent.setup();
     const onOpenInvite = vi.fn();
@@ -195,7 +221,7 @@ describe('Start', () => {
     expect(onOpenInvite).not.toHaveBeenCalled();
     expect(field).toHaveAttribute('aria-invalid', 'true');
     expect(field).toHaveAccessibleDescription(
-      'Paste the link someone in your group sent you, or a reconcile card from another group. This invite link has expired or is damaged. Ask someone in your group for a new one.',
+      'Paste the link someone in your group sent you, a reconcile card from another group, or a coalition’s follow link. This invite link has expired or is damaged. Ask someone in your group for a new one.',
     );
     expect(document.body).not.toHaveTextContent('not-a-real-payload');
     expect(await axeViolations()).toEqual([]);
@@ -276,5 +302,36 @@ describe('Start: front doors (#121)', () => {
     await user.click(within(section).getByRole('button', { name: 'Open the front door' }));
     expect(onOpenDoor).toHaveBeenCalledWith(ADDRESS);
     expect(await axeViolations()).toEqual([]);
+  });
+});
+
+describe('Start: following (#124)', () => {
+  const FOLLOWING = [
+    {
+      coalitionId: 'coalition-1',
+      name: '<b>Eastside</b> Housing',
+      groups: ['Riverside Tenants', 'Oak St Co-op'],
+    },
+  ];
+
+  it('lists each coalition this device follows, with its member groups, opening its home', async () => {
+    render(<Start groups={GROUPS} following={FOLLOWING} onOpenInvite={vi.fn()} />);
+
+    const section = screen.getByRole('region', { name: 'Following' });
+    const link = within(section).getByRole('link');
+    expect(link).toHaveAttribute('href', '#/c/coalition-1');
+    expect(link).toHaveTextContent('<b>Eastside</b> Housing');
+    expect(link.querySelector('b')).toBeNull();
+    const groups = Array.from(
+      link.querySelectorAll('.following-groups bdi'),
+      (bdi) => bdi.textContent,
+    );
+    expect(groups).toEqual(['Riverside Tenants', 'Oak St Co-op']);
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('shows no Following until this device follows a coalition', () => {
+    render(<Start groups={GROUPS} following={[]} onOpenInvite={vi.fn()} />);
+    expect(screen.queryByRole('region', { name: 'Following' })).not.toBeInTheDocument();
   });
 });

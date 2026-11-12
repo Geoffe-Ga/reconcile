@@ -37,7 +37,7 @@ export const messages = {
     inviteHeading: 'Have an invite link?',
     inviteLabel: 'Invite link',
     inviteHint:
-      'Paste the link someone in your group sent you, or a reconcile card from another group.',
+      'Paste the link someone in your group sent you, a reconcile card from another group, or a coalition’s follow link.',
     openInvite: 'Join with an invite link',
     documentTitle: (title: string) => `Document: ${title}`,
     settingUp: 'Saved on this device. Waiting for the relay.',
@@ -51,6 +51,8 @@ export const messages = {
     personalHint: 'Your mission statement and other Documents of your own, on this device only.',
     recoverHeading: 'Lost every device?',
     recover: 'Recover with my contacts',
+    /** The coalitions this device follows (#124), each with its member groups. */
+    followingHeading: 'Following',
   },
   install: {
     pageTitle: 'Add to Home Screen',
@@ -1552,6 +1554,34 @@ export const messages = {
     offline: 'Can’t reach the relay right now. Check your connection, then try again.',
     retry: 'Try again',
   },
+  /**
+   * Following a coalition from its link (#124; ADR-0053, ADR-0075 §5). Every
+   * word of the preview came from a participant's device, so the screen sets
+   * each name in `<bdi>`, as plain text.
+   */
+  follow: {
+    pageTitle: 'Follow a coalition',
+    loading: 'Opening the link…',
+    eyebrow: 'Follow a coalition',
+    groupsLabel: 'Its member groups',
+    statementLabel: 'From its statement',
+    question: 'Follow this coalition?',
+    /** Where M2-03's name hint sits on Join: what following shows of you, which is nothing. */
+    hint: 'You’ll read its Documents, what it decides and its Dispatches on this device. Following adds nothing to the coalition: no name of yours, and no one sees that you follow. You won’t see inside any member group.',
+    submit: 'Follow',
+    notNow: 'Not now',
+    notNowHint: 'You can open the link again while it lasts.',
+    failed: 'Following didn’t finish. Try again.',
+    badLinkTitle: 'This follow link doesn’t work',
+    badLink:
+      'This follow link has expired or is damaged. Ask someone in the coalition for a new one.',
+    offlineTitle: 'Can’t open the link yet',
+    offline: 'Can’t reach the relay right now. Check your connection, then try again.',
+    retry: 'Try again',
+    heldTitle: 'This coalition is already on this device',
+    held: 'Anything this device was missing from its history is here now.',
+    open: 'Open the coalition',
+  },
   /** Group home's Coalitions, and what a reconcile Proposal says of its coalition (#114). */
   coalitions: {
     heading: 'Coalitions',
@@ -1649,6 +1679,30 @@ export const messages = {
     composerLinkHint: 'Where the groups can talk it over.',
     composerVisibility:
       'Your draft stays on this device until you propose it. Then every group in the coalition sees this Proposal, under the name you take part as.',
+    /** Under "Send a Dispatch if this passes" on a coalition's composer (#124). */
+    composerDispatchHint:
+      'If the coalition passes this, the Dispatch goes out once the pass is final, a week after voting ends. Everyone who reads the coalition gets it: its followers, and people in its groups who open it.',
+    /** The coalition home of someone who only follows it (#124). */
+    followingEyebrow: 'Following',
+    /** Between member groups' names under a followed coalition's name: "Riverside Tenants · Oak St Co-op". */
+    groupsSeparator: '·',
+    /** Share a follow link (#124; ADR-0053). */
+    followers: 'Followers',
+    share: 'Share a follow link',
+    shareWarning:
+      'Anyone who opens this link in the next 2 days can read this coalition from then on, including the names its participants chose and which group each comes from. They won’t see inside any member group.',
+    shareField: 'Follow link',
+    sharing: 'Making your follow link…',
+    shareFailed:
+      'The follow link couldn’t be made, so nothing was copied. Making one needs the relay. Check your connection, then try again.',
+    shareCopied: 'Copied. Send it to the people you want to follow this coalition.',
+    /** Unfollow (#124): it works like Leave, and posts nothing. */
+    unfollow: 'Unfollow',
+    unfollowTitle: 'Unfollow this coalition?',
+    unfollowBody:
+      'Unfollowing removes this coalition and everything this device read of it. Nothing is sent, so no one learns you followed it or stopped. To follow it again, you’ll need a new follow link.',
+    unfollowCancel: 'Cancel',
+    unfollowFailed: 'Unfollowing couldn’t be saved on this device. Try again.',
   },
   /** A coalition's room (#125): one small encrypted room where its member groups' people talk. */
   room: {

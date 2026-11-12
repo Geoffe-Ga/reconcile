@@ -8,8 +8,9 @@
  * which of them hold a seat and whether this person may propose in them.
  * Nothing here reads a person's key in one log to find them in another.
  */
-import { can } from '../engine/capabilities';
+import { can, followerCan } from '../engine/capabilities';
 import { coalitionProgress, type CoalitionProgress } from '../engine/coalitionProgress';
+import { type Dispatch, newestFirst } from '../engine/dispatches';
 import { openProposalOn } from '../engine/composeOption';
 import { seatIn } from '../engine/crossing';
 import { type ParsedEvent, parseRecord } from '../engine/event';
@@ -84,6 +85,17 @@ export interface CoalitionHomeView {
   /** Motions this device proposed that the relay hasn't ordered yet, oldest first. */
   readonly pending: readonly { readonly id: string; readonly title: string }[];
   readonly standing: CoalitionStanding;
+  /** The coalition's Dispatches, newest first (#124), which everyone who opens it reads. */
+  readonly dispatches: readonly Dispatch[];
+  /**
+   * True when this device only follows the coalition (#124): it kept the
+   * entry from a follow link, and no group here holds a seat in it. A
+   * follower reads at the Member level ({@link followerCan}): no proposing
+   * and no Take part.
+   */
+  readonly follower: boolean;
+  /** True when this person may share a follow link (#124): they take part, bound to a seat. */
+  readonly share: boolean;
   /**
    * Whether this device may read the coalition's room (#125): a group it goes
    * on in holds one of its seats and `inner`, which a group admitted later
@@ -188,10 +200,31 @@ function pendingIn(held: HeldCoalition): CoalitionHomeView['pending'] {
 }
 
 /**
+ * Whether this device only follows the coalition (#124): it followed the
+ * entry's link, and no group here holds one of its seats.
+ */
+function onlyFollows(held: HeldCoalition, members: readonly MemberGroup[]): boolean {
+  return held.entry.following === true && !members.some((member) => member.mine);
+}
+
+/**
+ * Whether this person may share a follow link (#124): they take part in the
+ * formed coalition, bound to a seat. A follower holds no binding: they read
+ * at the Member level, which doesn't invite.
+ */
+function maySharePerson(held: HeldCoalition): boolean {
+  const { entry, state } = held;
+  const bound = state.coalition?.bindings.some((b) => b.author === entry.me.author) ?? false;
+  return bound && state.coalition?.status === 'formed';
+}
+
+/**
  * The coalition home for `held` (#120): its name, its member groups,
  * marking those a group on this device holds, its Documents, its open and
- * decided motions, what this device proposed that waits, and where this
- * person stands. Null before its genesis is back.
+ * decided motions, what this device proposed that waits, where this person
+ * stands, its Dispatches (#124), whether this device only follows it, and
+ * whether this person may share a follow link. Null before its genesis is
+ * back.
  */
 export function coalitionHome(
   held: HeldCoalition,
@@ -200,19 +233,25 @@ export function coalitionHome(
   const { state, entry } = held;
   if (state.group === null || state.coalition === null) return null;
   const motions = motionItems(state, groups);
+  const members = state.coalition.seats.map((seat) => ({
+    name: seat.name,
+    mine: groups.some((group) => holds(group, seat.key)),
+  }));
+  const follower = onlyFollows(held, members);
   return {
     coalitionId: state.group,
     entryId: entry.groupId,
     name: state.name,
-    members: state.coalition.seats.map((seat) => ({
-      name: seat.name,
-      mine: groups.some((group) => holds(group, seat.key)),
-    })),
+    members,
     documents: coalitionDocuments(state),
     open: motions.filter((m) => !m.progress.final).sort((a, b) => a.deadline - b.deadline),
     decided: motions.filter((m) => m.progress.final).sort((a, b) => b.decidedAt - a.decidedAt),
     pending: pendingIn(held),
-    standing: standingIn(held, groups),
+    // A follower reads at the Member level, which proposes nothing (ADR-0021).
+    standing: follower && !followerCan('propose') ? { kind: 'reads' } : standingIn(held, groups),
+    dispatches: newestFirst(state),
+    follower,
+    share: maySharePerson(held),
     room: roomEntryFor(state, groups.map(holderOf)) !== null,
   };
 }

@@ -167,11 +167,13 @@ test('a Co-Creator’s Dispatch reaches a Member who follows, and no request car
   await test.step('Kim reads it from the Proposal', async () => {
     const { page } = kim;
     await page.getByRole('link', { name: GROUP }).click();
-    await page
-      .getByRole('region')
-      .first()
-      .getByRole('link', { name: 'See all Dispatches' })
-      .click();
+    // Wait for the sync that brings the pass to show it as the latest Dispatch first: a card
+    // that grows under the pointer can move See all Dispatches between Playwright's aim and its
+    // click, which then lands on the card and leaves Kim on Group home.
+    const first = page.getByRole('region').first();
+    await expect(first.getByRole('article')).toContainText(`Updated: ${TITLE}`);
+    await first.getByRole('link', { name: 'See all Dispatches' }).click();
+    await expect(heading(page, 'Dispatches')).toBeVisible();
     const card = page.getByRole('article').filter({ hasText: `Updated: ${TITLE}` });
     await expect(card).toContainText(`From the Proposal ‘${PROPOSAL}’`);
     await expect(card).toContainText(CANARY.carried);
