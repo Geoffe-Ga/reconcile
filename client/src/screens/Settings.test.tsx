@@ -26,6 +26,7 @@ function setup(props: Partial<SettingsProps> = {}) {
       onProtect: vi.fn(() => Promise.resolve('protected' as const)),
     },
     relayBackup: { kind: 'off' },
+    recovery: { status: null, held: [], canChoose: true },
     ...props,
   };
   render(<Settings {...all} />);
@@ -63,6 +64,7 @@ describe('Settings', () => {
     expect(names).toEqual([
       'Notifications',
       'Back up your groups',
+      'Recovery contacts',
       'Restore a backup',
       'Link a new device',
       'Lock with a passkey',
@@ -119,11 +121,93 @@ describe('Settings', () => {
     expect(headings).toEqual([
       'Notifications',
       'Back up your groups',
+      'Recovery contacts',
       'Restore a backup',
       'Link a new device',
       'Lock with a passkey',
       'Erase this device',
     ]);
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('offers to choose recovery contacts, in trust’s words, before any are chosen (#109)', async () => {
+    setup();
+
+    const section = screen.getByRole('region', { name: 'Recovery contacts' });
+    expect(section).toHaveTextContent(
+      'If you lose every device, people you trust can help you get back into your groups. Each holds a share of a key, and no one share opens anything on its own.',
+    );
+    expect(section).toHaveTextContent('You haven’t chosen anyone yet.');
+    expect(within(section).getByRole('link', { name: 'Choose recovery contacts' })).toHaveAttribute(
+      'href',
+      '#/recovery',
+    );
+    expect(within(section).queryByRole('list')).toBeNull();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('offers no picker while no one in the person’s groups can hold a share (#109)', () => {
+    setup({ recovery: { status: null, held: [], canChoose: false } });
+
+    const section = screen.getByRole('region', { name: 'Recovery contacts' });
+    expect(within(section).queryByRole('link')).toBeNull();
+  });
+
+  const STATUS = {
+    t: 2,
+    n: 3,
+    chooseAgain: false,
+    contacts: [
+      { groupId: 'g1', member: 'ben', name: 'Ben', groupName: 'Riverside Tenants', shared: true },
+      { groupId: 'g1', member: 'cal', name: 'Cal', groupName: 'Riverside Tenants', shared: false },
+      { groupId: 'g2', member: 'fay', name: 'Fay', groupName: 'Allotment', shared: true },
+    ],
+  };
+
+  it('shows "<n> recovery contacts · <t> needed", each contact with their group, and Choose again (#109)', async () => {
+    setup({ recovery: { status: STATUS, held: [], canChoose: true } });
+
+    const section = screen.getByRole('region', { name: 'Recovery contacts' });
+    expect(section).toHaveTextContent('3 recovery contacts · 2 needed');
+    const contacts = within(section)
+      .getAllByRole('listitem')
+      .map((item) => item.textContent);
+    expect(contacts).toEqual([
+      'Ben in Riverside Tenants',
+      'Cal in Riverside Tenants No longer in a shared group',
+      'Fay in Allotment',
+    ]);
+    expect(within(section).getByText('Cal').tagName).toBe('BDI');
+    expect(section).not.toHaveTextContent('Fewer than');
+    expect(within(section).getByRole('link', { name: 'Choose again' })).toHaveAttribute(
+      'href',
+      '#/recovery',
+    );
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('asks the person to choose again once fewer than t contacts share a group (#109)', () => {
+    setup({ recovery: { status: { ...STATUS, chooseAgain: true }, held: [], canChoose: true } });
+
+    const section = screen.getByRole('region', { name: 'Recovery contacts' });
+    expect(section).toHaveTextContent(
+      'Fewer than 2 of your recovery contacts still share a group with you. Choose again so they can help you back in.',
+    );
+  });
+
+  it('lists the shares this device holds for others, and nothing more about them (#109)', async () => {
+    const held = [
+      { id: 's1', groupId: 'g1', groupName: 'Riverside Tenants', author: 'ana', name: 'Ana' },
+    ];
+    setup({ recovery: { status: null, held, canChoose: true } });
+
+    const section = screen.getByRole('region', { name: 'Recovery contacts' });
+    expect(
+      within(section).getByRole('heading', { level: 3, name: 'Shares you hold' }),
+    ).toBeVisible();
+    expect(within(section).getByRole('listitem')).toHaveTextContent(
+      'You’re holding a recovery share for Ana (Riverside Tenants)',
+    );
     expect(await axeViolations()).toEqual([]);
   });
 

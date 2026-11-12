@@ -29,6 +29,8 @@ export type Route =
   | { readonly name: 'linkNew' }
   /** Link to my other device, on the new device (#96). */
   | { readonly name: 'linkThis' }
+  /** Choose recovery contacts, or choose again (#109). */
+  | { readonly name: 'recovery' }
   | { readonly name: 'join'; readonly payload: string | null }
   /** A reconcile card (#114): its seed as written after `#reconcile/`, or null once read. */
   | { readonly name: 'card'; readonly payload: string | null }
@@ -257,14 +259,16 @@ function cardRoute(rest: readonly string[]): Route {
 
 /**
  * The pages that take no argument after `#/`: Create group, Settings (#78),
- * and the two sides of linking a device (#96). A linking code never travels
- * in a route: it's shown, scanned or pasted, and held only in memory.
+ * the two sides of linking a device (#96), and Choose recovery contacts
+ * (#109). A linking code never travels in a route: it's shown, scanned or
+ * pasted, and held only in memory. Nor does a recovery contact.
  */
 const PAGES: ReadonlyMap<string, Route> = new Map<string, Route>([
   ['create', { name: 'create' }],
   ['settings', { name: 'settings' }],
   ['link-new', { name: 'linkNew' }],
   ['link-this', { name: 'linkThis' }],
+  ['recovery', { name: 'recovery' }],
   // A card once its seed has left the address bar (#114).
   ['card', { name: 'card', payload: null }],
 ]);
@@ -389,7 +393,10 @@ function coalitionHref(route: CoalitionRoute): string {
 /** A route outside any group that takes nothing. */
 type FixedTop = Extract<
   Route,
-  { readonly name: 'start' | 'create' | 'settings' | 'personal' | 'linkNew' | 'linkThis' }
+  {
+    readonly name:
+      'start' | 'create' | 'settings' | 'personal' | 'linkNew' | 'linkThis' | 'recovery';
+  }
 >;
 
 /** Each such route's `href`. */
@@ -400,6 +407,7 @@ const TOP_HREFS: Readonly<Record<FixedTop['name'], string>> = {
   personal: '#/me',
   linkNew: '#/link-new',
   linkThis: '#/link-this',
+  recovery: '#/recovery',
 };
 
 /** The `href` of a route outside any group or coalition. */

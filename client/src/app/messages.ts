@@ -1128,6 +1128,7 @@ export const messages = {
     title: 'Settings',
     notifyHeading: 'Notifications',
     backupHeading: 'Back up your groups',
+    recoveryHeading: 'Recovery contacts',
     restoreHeading: 'Restore a backup',
     linkHeading: 'Link a new device',
     passkeyHeading: 'Lock with a passkey',
@@ -1349,6 +1350,48 @@ export const messages = {
     camera: 'Camera',
     noCamera: 'The camera can’t be used here. Paste the code instead.',
     notLinkCode: 'That isn’t a Reconcile linking code.',
+  },
+  /**
+   * Recovery contacts (#109; ADR-0043 §1, ADR-0008, ADR-0075 §4): framed as
+   * trust, never growth. `pick` is the picker's copy, word for word as the
+   * issue gives it. Nothing here counts people or invites anyone.
+   */
+  recovery: {
+    pageTitle: 'Recovery contacts',
+    title: 'Choose recovery contacts',
+    againTitle: 'Choose again',
+    lede: 'If you lose every device, people you trust can help you get back into your groups. Each holds a share of a key, and no one share opens anything on its own.',
+    pick: 'Pick people who know you and would answer a call from you. Pick people you’d trust with all your groups at once. If you pick the same person in two groups, they can tell both names are you.',
+    again:
+      'Choosing again gives everyone you pick a new share. Every share you gave before stops working, even for people you pick again.',
+    howMany: 'People to pick',
+    needed: 'Needed to help you back in',
+    fewer: '−',
+    more: '+',
+    anyOf: (t: number, n: number) =>
+      `Any ${String(t)} of the ${String(n)} people you pick can help you back in together.`,
+    picked: (picked: number, n: number) => `${String(picked)} of ${String(n)} picked.`,
+    tooMany: (picked: number, n: number) =>
+      `${String(picked)} picked. Pick ${String(n)}, or change how many people to pick.`,
+    nobody:
+      'No one in your groups can hold a share yet. Once someone joins a group with you, you can pick them here.',
+    inGroupBefore: 'People in',
+    save: 'Save recovery contacts',
+    saving: 'Backing up your groups and sending each share…',
+    failed: 'Your recovery contacts couldn’t be saved. Try again.',
+    none: 'You haven’t chosen anyone yet.',
+    choose: 'Choose recovery contacts',
+    chooseAgain: 'Choose again',
+    status: (n: number, t: number) => `${String(n)} recovery contacts · ${String(t)} needed`,
+    inGroupOf: 'in',
+    gone: 'No longer in a shared group',
+    belowThreshold: (t: number) =>
+      `Fewer than ${String(t)} of your recovery contacts still share a group with you. Choose again so they can help you back in.`,
+    holdingBefore: 'You’re holding a recovery share for',
+    groupOpen: '(',
+    groupClose: ')',
+    holdingHeading: 'Shares you hold',
+    dismiss: 'OK',
   },
   /** Group home's quiet suggestion, once per group, until a backup holds it (#78). */
   backupCard: {
