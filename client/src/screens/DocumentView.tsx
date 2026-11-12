@@ -41,6 +41,8 @@ export interface DocumentViewProps {
   readonly leaving?: boolean;
   /** Once a dissolved group's ballots are cleared (#108): the tallies its archive kept, which history's totals read. */
   readonly kept?: KeptTallies;
+  /** Whether this copy came back from a backup and hasn't heard from its group (#231): the same. */
+  readonly unconfirmed?: boolean;
 }
 
 /** Where Add a section here puts a new section (#75): in the Document on screen (#92), after `after`. */
@@ -312,6 +314,15 @@ export function MissingDocument({ state }: { readonly state: GroupState }) {
 }
 
 /**
+ * Whether the Document only reads here: this member is leaving (#77), the
+ * group has dissolved (#108), or it's a copy back from a backup that hasn't
+ * heard from the group (#231).
+ */
+function readsOnly({ state, leaving = false, unconfirmed = false }: DocumentViewProps): boolean {
+  return leaving || unconfirmed || state.dissolved !== null;
+}
+
+/**
  * Document view (`#/g/{groupId}/doc/{documentId}`, or `…/doc` for the
  * group's first Document, #92): one canonical Document, each section (Atom)
  * formatted through `<AtomText>` in the document style, with Propose a change
@@ -319,17 +330,18 @@ export function MissingDocument({ state }: { readonly state: GroupState }) {
  * removing this section, and Add a section here in each gap (#75). Nothing
  * here is ever read as HTML. Those show only when `can()` allows proposing;
  * anyone else reads why, and where to change their level (ADR-0021). While
- * this member is leaving, or once the group has dissolved (#108), the
- * Document only reads. Copy as Markdown copies the Document on screen, for
- * everyone who can read it, an archive's readers included, and so are each
- * section's History and the change log under the title (#104).
+ * this member is leaving, once the group has dissolved (#108), or while a
+ * copy back from a backup hasn't heard from the group (#231), the Document
+ * only reads. Copy as Markdown copies the Document on screen, for everyone
+ * who can read it, an archive's readers included, and so are each section's
+ * History and the change log under the title (#104).
  */
 export function DocumentView(props: DocumentViewProps) {
-  const { state, me, copyText, leaving = false } = props;
+  const { state, me, copyText } = props;
   const document = documentNamed(state, props.documentId);
   if (document === undefined) return <MissingDocument state={state} />;
   const atoms = atomsOf(state, document.id);
-  const readOnly = leaving || state.dissolved !== null;
+  const readOnly = readsOnly(props);
   const proposes = !readOnly && can(state, me, 'propose');
   const groupId = state.group ?? '';
   return (

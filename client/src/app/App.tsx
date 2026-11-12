@@ -25,7 +25,12 @@ import { FrontDoor } from '../screens/FrontDoor';
 import { GroupHome } from '../screens/GroupHome';
 import { RecoveryContacts } from '../screens/RecoveryContacts';
 import { GroupRules } from '../screens/GroupRules';
-import { GroupArchived, GroupMissing, GroupSettingUp } from '../screens/GroupStatus';
+import {
+  GroupArchived,
+  GroupMissing,
+  GroupSettingUp,
+  GroupUnconfirmed,
+} from '../screens/GroupStatus';
 import { BringCard } from '../screens/BringCard';
 import { Join } from '../screens/Join';
 import { type CardStep, ReconcileCard } from '../screens/ReconcileCard';
@@ -402,14 +407,18 @@ function HelpRecoverScreen({ services }: { readonly services: AppServices }) {
   );
 }
 
-/** Personal (#93): this device's personal Documents, and the id a new one opens at. */
+/**
+ * Personal (#93): this device's personal Documents, and the id a new one
+ * opens at, at the device time that says which shares wait for the person (#339).
+ */
 function PersonalScreen({ services }: { readonly services: AppServices }) {
   const documents = usePersonalList(services.store);
   const relayBackup = useKeepsRelayBackup(services.store);
+  const now = useNow(services.now);
   // One id per visit: nothing is stored under it until that Document's first save.
   const [newId] = useState(newPersonalId);
   return documents === null ? null : (
-    <Personal documents={documents} newId={newId} relayBackup={relayBackup} />
+    <Personal documents={documents} newId={newId} now={now} relayBackup={relayBackup} />
   );
 }
 
@@ -575,10 +584,30 @@ interface GroupGateProps {
   readonly groupId: string;
   /**
    * True for a screen that writes something new: a dissolved group (#108),
-   * or one a vote removed this member from (#115), shows it only reads.
+   * a group a vote removed this member from (#115), and a copy back from a
+   * backup that hasn't heard from the group (#231), show they only read.
    */
   readonly writes?: boolean;
   readonly children: (group: ReadyGroup) => ReactNode;
+}
+
+/**
+ * What a screen that writes shows in its place for a group that only reads:
+ * a dissolved group's page (#108), a removed member's (#115), or a copy back
+ * from a backup that hasn't heard from the group (#231); null for one that
+ * takes new things. `me` is this member's key.
+ */
+function readOnlyPage(
+  groupId: string,
+  state: GroupState,
+  me: string,
+  unconfirmed: boolean,
+): ReactNode {
+  const removed = removedFrom(state, me) !== undefined;
+  if (state.dissolved !== null || removed) {
+    return <GroupArchived groupId={groupId} name={state.name} removed={removed} />;
+  }
+  return unconfirmed ? <GroupUnconfirmed groupId={groupId} name={state.name} /> : null;
 }
 
 /** Renders `children` once the group is ready, or says why it isn't. */
@@ -588,10 +617,8 @@ function GroupGate({ groupId, writes = false, children }: GroupGateProps) {
   if (!loaded) return null;
   if (state === null || me === null) return <GroupMissing />;
   if (state.group === null) return <GroupSettingUp />;
-  const removed = removedFrom(state, me.author) !== undefined;
-  if (writes && (state.dissolved !== null || removed)) {
-    return <GroupArchived groupId={groupId} name={state.name} removed={removed} />;
-  }
+  const page = writes ? readOnlyPage(groupId, state, me.author, group.unconfirmed) : null;
+  if (page !== null) return page;
   // A coalition motion takes its title and why from its coalition (#114).
   return children({ ...group, state: withMotionWords(state, group.coalitions), me });
 }
@@ -653,6 +680,7 @@ function GroupScreen({ services, groupId }: GroupScreenProps) {
           }}
           pending={group.pending}
           leaving={group.leaving}
+          unconfirmed={group.unconfirmed}
           backupCard={
             group.suggestBackup && !group.leaving ? (
               <BackupCard onNotNow={() => services.store.markBackup([groupId], 'not-now')} />
@@ -698,9 +726,9 @@ function coalitionNames(coalitions: GroupView['coalitions']): Record<string, str
  * the group takes new things and this device reads its current key.
  */
 function Coalitions({ services, group }: { services: AppServices; group: ReadyGroup }) {
-  const { state, me, coalitions, leaving, keyChange } = group;
+  const { state, me, coalitions, leaving, unconfirmed, keyChange } = group;
   const groupId = state.group ?? '';
-  const open = !leaving && state.dissolved === null && keyChange === null;
+  const open = !leaving && !unconfirmed && state.dissolved === null && keyChange === null;
   return (
     <CoalitionSection
       groupId={groupId}
@@ -790,7 +818,7 @@ function DocumentScreen({
   };
   return (
     <GroupGate groupId={groupId}>
-      {({ state, me, leaving, cleared }) => (
+      {({ state, me, leaving, cleared, unconfirmed }) => (
         <DocumentView
           state={state}
           me={me.author}
@@ -800,6 +828,7 @@ function DocumentScreen({
           onRemove={openRemove}
           copyText={services.copyText}
           leaving={leaving}
+          unconfirmed={unconfirmed}
           {...(cleared === null ? {} : { kept: cleared.tallies })}
         />
       )}
@@ -953,6 +982,7 @@ function ProposalScreen({ services, groupId, proposalId }: ProposalScreenProps) 
             now={relayMinuteNow(group, deviceNow)}
             own={ownBallot(group.state, group.log, proposalId, author)}
             leaving={group.leaving}
+            unconfirmed={group.unconfirmed}
             {...(group.cleared === null ? {} : { cleared: group.cleared })}
             coalitions={group.coalitions}
             onVote={onVote}
@@ -1128,13 +1158,14 @@ function RemovalScreen({ services, groupId, member }: RemovalScreenProps) {
 function DispatchesScreen({ groupId }: { readonly groupId: string }) {
   return (
     <GroupGate groupId={groupId}>
-      {({ state, me, pending, reachable, leaving }) => (
+      {({ state, me, pending, reachable, leaving, unconfirmed }) => (
         <Dispatches
           state={state}
           me={me.author}
           pending={pending}
           reachable={reachable}
           leaving={leaving}
+          unconfirmed={unconfirmed}
         />
       )}
     </GroupGate>

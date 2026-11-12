@@ -106,6 +106,8 @@ describe('fold', () => {
       vouches: [],
       chatPosts: [],
       doorInvites: [],
+      doorClosure: null,
+      exposedDoors: [],
       chatThreads: [],
       dispatches: [],
       epoch: 0,

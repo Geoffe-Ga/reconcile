@@ -23,13 +23,15 @@
  * A dissolved group stays as a read-only archive (#108): nothing
  * more is queued, claimed or sent for it, and its ballots and notes can be
  * cleared while its outcomes stay. So does a group a vote removed this
- * member from (#115), which keeps what it already had. The relay backup's key
- * and state (#97) are one record in a store of their own, in no group, so no
- * group's record ever holds the key. Under a vault that record keeps its
- * state, and the vault its key. A front door's applications (#121) stay on the device too: those
- * a member's device read from its group's inbox on the group's record, and
- * those this device sent, with the reply keys only it holds, in a store of
- * their own (`./applications.ts`).
+ * member from (#115), which keeps what it already had. A group a restore
+ * brings back reads only until it hears from the group (#231), since it may
+ * have dissolved since its copy was made. The relay backup's key and state
+ * (#97) are one record in a store of their own, in no group, so no group's
+ * record ever holds the key. Under a vault that record keeps its state, and
+ * the vault its key. A front door's applications (#121) stay on the device
+ * too: those a member's device read from its group's inbox on the group's
+ * record, and those this device sent, with the reply keys only it holds, in
+ * a store of their own (`./applications.ts`).
  *
  * Once the device locks its keys with a passkey (#95), every group secret and
  * the relay backup key leave their records for one sealed vault record
@@ -314,11 +316,14 @@ export interface Group extends CoalitionPlan {
    */
   nudged?: string[];
   /**
-   * Set once the group is read-only on this device: it dissolved (#108), or
-   * a vote removed this member (#115). Absent while it goes on. Nothing is
-   * queued, claimed or synced for it from then on.
+   * Set while the group is read-only on this device: absent while it goes
+   * on. A dissolved group's archive (#108), or the copy of a member a vote
+   * removed (#115), is for good, and nothing is queued, claimed or synced
+   * for it from then on. A copy a restore brought back (#231) reads only
+   * until it hears from the group: the sync loop reads it and sends nothing
+   * for it, and nothing is queued or claimed.
    */
-  archived?: Archive;
+  archived?: Archive | Unconfirmed;
   /**
    * The ids of the `recovery-share` events whose held-share line group home
    * has already shown, and the person put away (#109). Absent until the first.
@@ -370,12 +375,58 @@ export interface ClearedArchive {
 }
 
 /**
- * A group this device keeps read-only: why (#108, #115), and its cleared
- * state once a dissolved archive's ballots are cleared.
+ * A group this device keeps read-only for good: why (#108, #115), and its
+ * cleared state once its ballots are cleared.
  */
 export interface Archive {
   readonly reason: ArchiveReason;
   readonly cleared?: ClearedArchive;
+  readonly since?: never;
+}
+
+/**
+ * A copy of a group that a restore brought back, from a backup file (#78), a
+ * second device's link (#96) or the relay backup (#97), and that hasn't heard
+ * from the group since it was made (#231; ADR-0051's 2026-11-11 amendment).
+ * The group may have dissolved meanwhile, with the relay's copy of the
+ * `dissolve` expired, so it reads only until a pull shows the relay still
+ * held everything since `since` (`applyPull`), brings a record the copy
+ * didn't hold, or an invite's merge brings word from someone in the group
+ * (`mergeLog`). A `dissolve`, or a `remove` naming this member (#115), makes
+ * it an {@link Archive} instead.
+ */
+export interface Unconfirmed {
+  readonly reason: 'unconfirmed';
+  /** The relay minute its copy last synced: the copy's `relayNow`, or 0 for one that had none. */
+  readonly since: number;
+  readonly cleared?: never;
+}
+
+/**
+ * Whether `archived`, a group's read-only mark, keeps it read-only for good:
+ * a dissolved group's archive (#108) or the copy of a member a vote removed
+ * (#115). False for a group that goes on, and for a copy a restore brought
+ * back that reads until it hears from its group (#231): the sync loop still
+ * reads that one, and it opens again. Every kind is named, so a new one
+ * can't compile until it says which it is.
+ */
+export function isArchive(archived: Group['archived']): archived is Archive {
+  switch (archived?.reason) {
+    case 'dissolved':
+    case 'removed':
+      return true;
+    case 'unconfirmed':
+    case undefined:
+      return false;
+  }
+}
+
+/**
+ * Whether the group takes new events on this device: it isn't leaving
+ * (#77), nor read-only, for good (#108, #115) or for now (#231).
+ */
+export function takesNew(group: Pick<Group, 'leaving' | 'archived'>): boolean {
+  return group.leaving === undefined && group.archived === undefined;
 }
 
 /** A group's backup mark (#78): in a backup file, or the backup card answered Not now. */
@@ -414,7 +465,9 @@ export class VaultLocked extends Error {
  * relay-ordered log and sync state, and whether some history may be missing.
  * Never the outbox or drafts, so a restore never sends stale intent. A file
  * never holds `archived`: a restore sets it when the log folds to a
- * `dissolve` (#108), so the group comes back read-only. `cleared` lists the
+ * `dissolve` (#108), or to a `remove` of this member (#115), so the group
+ * comes back read-only for good, and the store marks every other group it
+ * takes read-only until it hears from the group (#231). `cleared` lists the
  * Proposals whose ballots the device had deleted (#111).
  */
 export type BackedUpGroup = Pick<
@@ -442,6 +495,9 @@ export type BackedUpGroup = Pick<
  * for longer may find some already gone.
  */
 export const HISTORY_GAP_MS = 28 * 86_400_000;
+
+/** {@link HISTORY_GAP_MS} in relay minutes: 40,320. */
+const HISTORY_GAP_MINUTES = HISTORY_GAP_MS / 60_000;
 
 /**
  * What a device knows about a group when it creates or joins it: Create group
@@ -525,7 +581,10 @@ export interface RelayBackupState {
   readonly key: Uint8Array;
   /** The SHA-256, in hex, of what the last upload held, or null before one. */
   readonly digest: string | null;
-  /** The relay's UTC day of the last daily check, or null before one. */
+  /**
+   * The relay's UTC day of the last daily check, or null before one, and
+   * again once a group is purged (#327), so the next complete pass checks.
+   */
   readonly checkedDay: number | null;
   /** When the last upload succeeded, in device milliseconds, or null before one. */
   readonly uploadedAt: number | null;
@@ -538,6 +597,16 @@ export interface RelayBackupState {
    * device wrote. Absent on a record from before #247.
    */
   readonly uploaded?: readonly string[];
+  /**
+   * A tag of each group this device held at a successful upload, sorted
+   * (#327): `groupTagFor` of the backup key, the group's id and this
+   * member's author, never the id itself. A later upload leaves out a group
+   * the relay copy holds whose tag is here and that this device no longer
+   * holds, since it left or removed it, or a dissolve wiped it, and keeps
+   * one only a linked device joined. A tag goes once a read finds the copy
+   * without its group. Absent on a record from before #327.
+   */
+  readonly uploadedGroups?: readonly string[];
 }
 
 /** One recovery contact as this device chose them (#109): who, and where, as they were then. */
@@ -741,7 +810,11 @@ export interface Store
    * its log, cursor, outbox, keys, secret, drafts and flags. The sync loop
    * calls it once the relay has returned a seq for the group's leave, a
    * dissolved group's wipe calls it, and so does Remove from this device
-   * (#108). A group that is already gone is left alone.
+   * (#108). A group that is already gone is left alone. In the same
+   * transaction it sets the relay backup's `checkedDay` back to null (#327),
+   * so the next complete pass, the leave's own, reads the relay copy and
+   * takes the group out of it, and Erase or a lost phone later that day
+   * can't leave it there for a linked device to carry.
    */
   purgeGroup(groupId: string): Promise<void>;
   /**
@@ -750,14 +823,16 @@ export interface Store
    * outbox, its drafts, any leave, the chat bot's claims (#119) and what it
    * learned of the webhook (#123), and mark it archived for `reason`. From
    * then on nothing is queued or claimed for it, and the sync loop sends,
-   * reads and posts nothing for it. A group already archived keeps its
-   * archive.
+   * reads and posts nothing for it. A group already archived for good keeps
+   * its archive; a restored copy that hadn't heard from its group (#231)
+   * takes the new one.
    */
   markArchived(groupId: string, reason: ArchiveReason): Promise<void>;
   /**
    * Clear an archived group's ballots and notes, in one change (#108): keep
    * `cleared`, the state to show from now on, and drop the log that held
-   * them. Refuses a group that isn't archived.
+   * them. Refuses a group that isn't archived for good (`isArchive`): a
+   * dissolved group's, or a removed member's copy (#115).
    */
   clearArchive(groupId: string, cleared: ClearedArchive): Promise<void>;
   /**
@@ -773,7 +848,10 @@ export interface Store
    * the new secret and base cursor with no other cursors, and the records to
    * post again ahead of the outbox, each once, after the sent entries left it.
    * A ballot, a result or anything else that expires with ballots, for a
-   * Proposal in `cleared`, is dropped (#111).
+   * Proposal in `cleared`, is dropped (#111). A restored copy that hasn't
+   * heard from its group (#231) goes live in the same change when the
+   * pull's relay minute is at most 28 days after the copy last synced, or
+   * the pull adds a record received at or after then.
    */
   applyPull(groupId: string, pull: Pull, idOf: EventIdOf): Promise<void>;
   /**
@@ -792,9 +870,13 @@ export interface Store
   /**
    * Add each of an invite's `records` whose event id the log lacks, each in
    * seq order among the records already there, and clear `missingHistory`
-   * (#73). The cursor and sync state stay as they are. A read-only archive
-   * takes nothing (#108), so a cleared one never gets its ballots back. Like
-   * `applyPull`, it drops what expired with a Proposal in `cleared` (#111).
+   * (#73). The cursor and sync state stay as they are. A group archived for
+   * good takes nothing, a dissolved one (#108) or a removed member's copy
+   * (#115), so a cleared one never gets its ballots back. A restored copy
+   * that hasn't heard from its group (#231) takes the records and goes live:
+   * someone in the group made the link from a copy that takes new things.
+   * Like `applyPull`, it drops what expired with a Proposal in `cleared`
+   * (#111).
    */
   mergeLog(groupId: string, records: readonly LogRecord[], idOf: EventIdOf): Promise<void>;
   /**
@@ -807,10 +889,13 @@ export interface Store
    * Keep a backup file's groups and personal Documents, or a link bundle's
    * (#96), in one transaction (#78, #93). A group new to the device is kept
    * as the file has it, with an empty outbox, no drafts and no chat claims
-   * (#119). For a group already here, whichever whole copy synced later
-   * stays: the file's replaces the device's only when its last sync is later,
-   * and a group this device is leaving or keeps read-only (#108) stays as it
-   * is. From a backup file, either way the group is marked `saved`, since
+   * (#119), and every group the restore takes reads only until it hears
+   * from the group (#231), unless it comes back archived for good, dissolved
+   * (#108) or removed (#115). For a group
+   * already here, whichever whole copy synced later stays: the file's
+   * replaces the device's only when its last sync is later, and a group this
+   * device is leaving or keeps read-only (#108, #231) stays as it is. From a
+   * backup file, either way the group is marked `saved`, since
    * the file holds it; from a link, no file holds it, so a new group has no
    * mark and one already here keeps its own. A personal Document merges by
    * id the same way: the file's replaces the device's only when it was
@@ -1159,13 +1244,15 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
       const found = await writeKeys(db, async (tx) => {
         if ((await tx.objectStore(GROUPS).getKey(groupId)) === undefined) return false;
         await keepKeys(tx, session, { drop: [groupId] });
+        await checkBackupAgain(tx);
         return true;
       });
       if (found) notify(groupId);
     },
     markArchived: (groupId, reason) =>
       change(groupId, (group) => {
-        if (group.archived !== undefined) return;
+        // A copy that hadn't heard from its group (#231) gives way to a dissolve or a removal.
+        if (isArchive(group.archived)) return;
         group.archived = { reason };
         group.outbox = [];
         delete group.drafts;
@@ -1181,7 +1268,7 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
       }),
     clearArchive: (groupId, cleared) =>
       change(groupId, (group) => {
-        if (group.archived === undefined) throw new Error('This group isn’t archived.');
+        if (!isArchive(group.archived)) throw new Error('This group isn’t archived.');
         group.archived = { ...group.archived, cleared };
         group.log = [];
       }),
@@ -1220,10 +1307,12 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
       }),
     mergeLog: (groupId, records, idOf) =>
       change(groupId, (group) => {
-        if (group.archived !== undefined) return;
+        if (isArchive(group.archived)) return;
         const kept = withoutCleared(group.log, records, group.cleared ?? []);
         group.log = inSeqOrder(group.log, unseen(group.log, kept, idOf));
         group.missingHistory = false;
+        // Someone in the group made the link from a copy that takes new things (#231).
+        delete group.archived;
       }),
     async restoreGroups(groups, personal = [], from = 'backup') {
       // Anything that fails takes the whole restore with it, groups and Documents alike.
@@ -1461,22 +1550,40 @@ function dropSent(group: Pick<Group, 'outbox'>, bytes: Uint8Array): void {
  * relay order, and sync state, dropping from the outbox each entry the pull
  * says the relay took (#343, #349), before any `advance` queues records to
  * post again (`applyPull`), so none is skipped as queued and then dropped. A
- * room (#125) then keeps only the records received at most 30 days of relay
- * time before the pull's `now`, so each sync deletes the rest in the same
- * change.
+ * copy a restore brought back opens in the same change once the pull brings
+ * word from its group (#231, `hearsFrom`). A room (#125) then keeps only the
+ * records received at most 30 days of relay time before the pull's `now`, so
+ * each sync deletes the rest in the same change.
  */
 function pulled(group: StoredGroup, pull: Pull, idOf: EventIdOf): void {
   if (group.lastSyncAt !== null && pull.lastSyncAt - group.lastSyncAt > HISTORY_GAP_MS) {
     group.missingHistory = true;
   }
-  takePull(group, pull, idOf);
+  const added = takePull(group, pull, idOf);
   for (const bytes of pull.sent ?? []) dropSent(group, bytes);
+  if (hearsFrom(group.archived, pull, added)) delete group.archived;
   if (isRoomEntry(group)) {
     group.log = group.log.filter((record) => keptInRoom(record.received, pull.relayNow));
   }
   group.relayNow = pull.relayNow;
   group.instance = pull.instance;
   group.lastSyncAt = pull.lastSyncAt;
+}
+
+/**
+ * Whether a pull brings word from the group to a copy a restore brought back
+ * (#231): its relay minute is at most 28 days after the copy last synced, so
+ * the relay still held everything since and the pass read it, a `dissolve`
+ * included; or it `added` a record the copy didn't hold, received at or
+ * after that, since every record from before was in the copy. Never for
+ * anything else, a dissolved archive included.
+ */
+function hearsFrom(archived: Group['archived'], pull: Pull, added: readonly LogRecord[]): boolean {
+  if (archived?.reason !== 'unconfirmed') return false;
+  const { since } = archived;
+  return (
+    pull.relayNow - since <= HISTORY_GAP_MINUTES || added.some(({ received }) => received >= since)
+  );
 }
 
 /**
@@ -1513,6 +1620,7 @@ function relayBackupStore(
     uploadedAt: null,
     tooLarge: false,
     uploaded: [],
+    uploadedGroups: [],
   });
   return {
     getRelayBackup: () => backupIn(db.transaction([DEVICE, VAULT]), session),
@@ -1609,13 +1717,13 @@ function endedHold(hold: RecoveryHold, alert: string, end: HoldEnd): RecoveryHol
  * database's, whose seqs start again from 1: its records go after the whole
  * log, and every mailbox is read from that relay's start, from its base
  * cursor of 0 (#110). Otherwise each record goes in relay order
- * (`logOrder.ts`).
+ * (`logOrder.ts`). Returns the records it added.
  */
 function takePull(
   group: Pick<Group, 'log' | 'cursor' | 'cursors' | 'instance' | 'cleared'>,
   pull: Pull,
   idOf: EventIdOf,
-): void {
+): LogRecord[] {
   const kept = withoutCleared(group.log, pull.records, group.cleared ?? []);
   const added = unseen(group.log, kept, idOf);
   const fresh = group.instance !== null && pull.instance !== group.instance;
@@ -1626,18 +1734,22 @@ function takePull(
   }
   if (pull.cursor !== undefined) group.cursor = pull.cursor;
   if (pull.cursors !== undefined) group.cursors = { ...pull.cursors };
+  return added;
 }
 
 /**
  * Moves `group` to the epoch `advance` names: its secret and base cursor, with
  * no cursor of the old epoch's mailboxes (#110), and its records to post
- * again ahead of the outbox, skipping any already queued.
+ * again ahead of the outbox, skipping any already queued. A restored copy
+ * that still reads only (#231) moves its keys and queues none: it sends
+ * nothing until it hears from its group.
  */
 function advanceTo(group: Group, { epoch, secret, cursor, repost }: EpochAdvance): void {
   group.epoch = epoch;
   group.secret = secret;
   group.cursor = cursor;
   delete group.cursors;
+  if (group.archived !== undefined) return;
   const fresh = repost.filter((bytes) => !group.outbox.some((queued) => sameBytes(queued, bytes)));
   group.outbox = [...fresh, ...group.outbox];
 }
@@ -1774,7 +1886,8 @@ function markFor(held: Group | undefined, from: RestoredFrom): Pick<Group, 'back
  * `restored` and the device holds `held` (#78, #96): the restored one, with
  * no outbox, drafts or chat claims, unless the device's synced at least as
  * late, is leaving, or is a read-only archive, which a restore never brings
- * back to life (#108). A restored copy also clears what `held` had cleared
+ * back to life (#108). A restored copy reads only until it hears from the
+ * group (#231, `readOnlyFor`), and also clears what `held` had cleared
  * (#111, `heldClearings`). Either is marked as `markFor` says. The device's
  * push registration and posted nudges (#99) stay either way: they belong to
  * this device, and neither a file nor a link bundle holds them, so a linked
@@ -1789,6 +1902,7 @@ function keptCopy(held: Group | undefined, restored: BackedUpGroup, from: Restor
   const { push, nudged } = restored.archived === undefined ? (held ?? {}) : {};
   const copy: Group = {
     ...restored,
+    ...readOnlyFor(restored),
     log: [...restored.log],
     outbox: [],
     ...mark,
@@ -1797,6 +1911,19 @@ function keptCopy(held: Group | undefined, restored: BackedUpGroup, from: Restor
   };
   if (held !== undefined) clearIn(copy, heldClearings(held, copy));
   return copy;
+}
+
+/**
+ * How a restored copy reads until it hears from its group (#231): a copy
+ * whose log holds a `dissolve`, or a `remove` naming this member, stays
+ * archived for good (#108, #115), and any other group's copy reads only,
+ * from the relay minute it last synced, since the group may have dissolved
+ * after it was made. A coalition's entry never dissolves (#114), so it's
+ * kept as it is.
+ */
+function readOnlyFor(restored: BackedUpGroup): Pick<Group, 'archived'> {
+  if (restored.archived !== undefined || isCoalitionEntry(restored)) return {};
+  return { archived: { reason: 'unconfirmed', since: restored.relayNow ?? 0 } };
 }
 
 /**
@@ -2169,6 +2296,18 @@ async function keepGroups(
     });
     await records.put(sealed === null ? group : rest);
   }
+}
+
+/**
+ * Sets the relay backup's `checkedDay` back to null in `tx`, when the device
+ * keeps one, so the next complete pass reads and checks the relay copy
+ * (#327). It touches nothing else of the record, so it needs no key, and no
+ * listener hears of it: Settings shows nothing of the day.
+ */
+async function checkBackupAgain(tx: KeyTransaction): Promise<void> {
+  const records = tx.objectStore(DEVICE);
+  const record = await records.get(RELAY_BACKUP);
+  if (record !== undefined) await records.put({ ...record, checkedDay: null }, RELAY_BACKUP);
 }
 
 /**

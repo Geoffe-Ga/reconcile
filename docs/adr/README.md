@@ -41,7 +41,7 @@ Settled decisions about how Reconcile works. Before designing anything, check he
 | [0035](0035-reconcile-group-minimal-eternal-core.md) | Reconcile-the-group starts from a short eternal core, its wording settled before genesis; the rest is ratified by the first groups | Accepted; amended 2026-11-08 |
 | [0036](0036-coalition-each-group-passes.md) | Coalition motions pass group by group; only signed results cross group lines | Accepted |
 | [0037](0037-holonic-promotion.md) | Each level decides; the author sets a ceiling, at most the coalitions (0071); votes travel with the Dispatch on the voter's own device | Accepted; amended by 0065, 0070, 0071 |
-| [0038](0038-optional-discovery.md) | Discovery is optional; groups can open a front door that never lists people | Accepted |
+| [0038](0038-optional-discovery.md) | Discovery is optional; groups can open a front door that never lists people, and that closes when a membership ends (#288) | Accepted; amended 2026-11-12 (#288) |
 | [0039](0039-integrations-per-group-opt-in.md) | Bot reach and sight are a per-group ladder, nudge-only by default | Accepted |
 | [0040](0040-group-opt-ins-are-governed.md) | Every group-level opt-in is decided by Proposal; widening is entrenched, narrowing is easy | Accepted |
 | [0041](0041-digitalocean-relay-hosting.md) | The pilot relay runs on a DigitalOcean VM; we terminate TLS, logs off. The MVP runs it as a systemd service, not a container, until it needs another host | Accepted; amended 2026-11-09 |
@@ -54,7 +54,7 @@ Settled decisions about how Reconcile works. Before designing anything, check he
 | [0048](0048-feed-surfacing.md) | Proposals drawing early enthusiasm rise in the Rising tab; the default Quiet tab puts the least heard first (0064); nothing is hidden | Accepted; amended by 0064 |
 | [0049](0049-stewards-and-removal.md) | Two staggered 6-month stewards; removal by a fixed 14-day vote at average ≥ 3.0 with at most one 0 or under 5% zeros, without the target voting | Accepted; amended by 0066, 0067, 0072, 0075 |
 | [0050](0050-splitting.md) | Parting ways (named "split" here), not "fork": 20% of voters within 14 days of a trigger, signatures sealed | Accepted; amended by 0068 |
-| [0051](0051-dissolution-and-rule-classes.md) | Dissolution at the entrenched bar with read-only archives; which founding rules start entrenched | Accepted; amended by 0072, and 2026-11-09 |
+| [0051](0051-dissolution-and-rule-classes.md) | Dissolution at the entrenched bar with read-only archives; which founding rules start entrenched | Accepted; amended by 0072, 2026-11-09, and 2026-11-11 (#231: restored copies read only until they hear from the group) |
 | [0052](0052-newcomer-onboarding.md) | Preview first; join provisionally with the inviter as first recovery contact; recovery complete before voting | Accepted |
 | [0053](0053-multi-use-invites.md) | Invites are multi-use links (default up to 10) that expire in 48 hours | Accepted |
 | [0054](0054-digest-notifications.md) | One daily digest (including votes closing soon); only recovery attempts notify immediately | Accepted; amended by 0072 |
