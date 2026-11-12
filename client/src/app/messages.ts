@@ -1549,7 +1549,7 @@ export const messages = {
       1: 'If your group passes it, it goes out to everyone here. Then the coalition your group is in votes on it.',
       2: 'If your group passes it, it goes out to everyone here. Then the coalition your group is in votes on it, and then the coalition above that.',
       coalitions:
-        'If your group passes it, it goes out to everyone here. Then each coalition above votes on it in turn, as far up as they go.',
+        'If your group passes it, it goes out to everyone here. Then the coalition your group is in votes on it, then any coalition above that, in turn.',
     },
     passed:
       'This passed. It went out to everyone in your group, and the coalition your group is in votes on it next.',
@@ -1589,14 +1589,14 @@ export const messages = {
       0: 'This group only',
       1: 'One level up',
       2: 'Two levels up',
-      coalitions: 'As far as the coalitions go',
+      coalitions: 'As high as your group’s coalitions reach',
     },
     ceilingHints: {
       0: 'It goes out now, to everyone in your group.',
       1: 'Your group votes on it first. If it passes, the coalition your group is in votes on it too.',
       2: 'Your group votes first, then the coalition your group is in, then the coalition above that.',
       coalitions:
-        'Your group votes first, then each coalition above it in turn, as far up as they go.',
+        'Your group votes first, then the coalition your group is in, then any coalition above that, in turn.',
     },
     submitVote: 'Put it to a vote',
     visibilityVote:
