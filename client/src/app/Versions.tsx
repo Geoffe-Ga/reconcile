@@ -13,7 +13,7 @@ import { Button, Disclosure, DisclosurePanel, Heading } from 'react-aria-compone
 
 import { messages } from './messages';
 import type { RulesView } from './optInLines';
-import { MotionTitle } from './stewards';
+import { MotionTitle, Named } from './stewards';
 import { AtomText } from './text/AtomText';
 import { WordDiff } from './text/WordDiff';
 import type { VersionView } from './versionViews';
@@ -70,12 +70,17 @@ function RulesLines({ rules }: { readonly rules: RulesView }) {
   );
 }
 
-/** A version's heading: "Version N · <name>", or what a steward, rules or dissolve ballot decides. */
+/**
+ * A version's heading: "Version N · <name>", or what a steward, rules,
+ * dissolve, member removal or coalition ballot decides.
+ */
 function VersionHeading({ version }: { readonly version: VersionView }) {
-  const { steward, rules, dissolve, decision } = version;
+  const { steward, rules, dissolve, removal, decision } = version;
   if (steward !== undefined) return <MotionTitle motion={steward.motion} />;
   if (rules !== undefined) return <>{rules.title}</>;
   if (dissolve !== undefined) return <>{dissolve.title}</>;
+  if (removal !== undefined)
+    return <Named parts={messages.removal.ballotTitle} name={removal.name} />;
   if (decision !== undefined) return <bdi>{decision.title}</bdi>;
   return (
     <>
@@ -85,12 +90,15 @@ function VersionHeading({ version }: { readonly version: VersionView }) {
   );
 }
 
-/** Under the heading: the version's change, or what passing a steward, rules or dissolve ballot does. */
+/**
+ * Under the heading: the version's change, or what passing a steward, rules,
+ * dissolve, member removal or coalition ballot does.
+ */
 function VersionBody({ version, current }: Omit<VersionCardProps, 'children'>) {
-  const { steward, rules, dissolve, decision } = version;
+  const { steward, rules, dissolve, removal, decision } = version;
   if (steward !== undefined) return <p className="caption">{steward.line}</p>;
   if (rules !== undefined) return <RulesLines rules={rules} />;
-  const line = dissolve?.line ?? decision?.line;
+  const line = dissolve?.line ?? removal?.line ?? decision?.line;
   if (line !== undefined) return <p className="caption">{line}</p>;
   return <Change version={version} current={current} />;
 }
@@ -100,8 +108,9 @@ function VersionBody({ version, current }: Omit<VersionCardProps, 'children'>) {
  * (#75), its change, and whatever goes under it. A steward ballot's one
  * version is headed by what it decides, "Make <name> steward (seat N)", with
  * what passing does in place of a change (#102), and so is a rules ballot's,
- * "Turn on the Discord chat bot" (#117), and a dissolve ballot's, "Dissolve
- * the group" (#108).
+ * "Turn on the Discord chat bot" (#117), a dissolve ballot's, "Dissolve the
+ * group" (#108), and a member removal's, "Remove <name> from the group"
+ * (#115).
  */
 function VersionCard({ version, current, children }: VersionCardProps) {
   const heading = useId();

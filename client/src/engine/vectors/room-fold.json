@@ -1,0 +1,1207 @@
+{
+  "kind": "room",
+  "vectors": [
+    {
+      "name": "two-seats: messages from participants bound to two seats show in relay order, each under its coalition name; a follower's, a member's who never took part and the genesis author's are ignored",
+      "logs": {
+        "coalition": [
+          {
+            "seq": 1,
+            "received": 29375000,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%zed",
+              "ts": 1762500000000,
+              "body": {
+                "kind": "coalition",
+                "name": "Eastside Housing",
+                "title": "Mission statement",
+                "atoms": ["Everyone on the east side has a safe home."],
+                "seats": [
+                  {
+                    "name": "Riverside Tenants",
+                    "key": "^A"
+                  },
+                  {
+                    "name": "Oak St Co-op",
+                    "key": "^B"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "seq": 2,
+            "received": 29375001,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500060000,
+              "body": {
+                "name": "Mara",
+                "seat": "^A",
+                "proof": {
+                  "$seatProof": ["A", "@1", "%kim"]
+                }
+              }
+            }
+          },
+          {
+            "seq": 3,
+            "received": 29375002,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%ben",
+              "ts": 1762500120000,
+              "body": {
+                "name": "Jo",
+                "seat": "^B",
+                "proof": {
+                  "$seatProof": ["B", "@1", "%ben"]
+                }
+              }
+            }
+          },
+          {
+            "seq": 4,
+            "received": 29375003,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500180000,
+              "body": {
+                "motion": "@1",
+                "seat": "^A",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 5,
+            "received": 29375004,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%ben",
+              "ts": 1762500240000,
+              "body": {
+                "motion": "@1",
+                "seat": "^B",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 6,
+            "received": 29375005,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%eve",
+              "ts": 1762500180000,
+              "body": {
+                "name": "Eve",
+                "seat": "^C",
+                "proof": {
+                  "$seatProof": ["C", "@1", "%eve"]
+                }
+              }
+            }
+          }
+        ],
+        "room": [
+          {
+            "seq": 10,
+            "received": 29375600,
+            "event": {
+              "v": 1,
+              "type": "message",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500600000,
+              "body": {
+                "text": "Can we meet Thursday?"
+              }
+            }
+          },
+          {
+            "seq": 11,
+            "received": 29375601,
+            "event": {
+              "v": 1,
+              "type": "message",
+              "group": "@1",
+              "author": "%ana",
+              "ts": 1762500660000,
+              "body": {
+                "text": "I never took part."
+              }
+            }
+          },
+          {
+            "seq": 12,
+            "received": 29375602,
+            "event": {
+              "v": 1,
+              "type": "message",
+              "group": "@1",
+              "author": "%eve",
+              "ts": 1762500720000,
+              "body": {
+                "text": "I only follow."
+              }
+            }
+          },
+          {
+            "seq": 13,
+            "received": 29375603,
+            "event": {
+              "v": 1,
+              "type": "message",
+              "group": "@1",
+              "author": "%zed",
+              "ts": 1762500780000,
+              "body": {
+                "text": "I wrote the genesis."
+              }
+            }
+          },
+          {
+            "seq": 14,
+            "received": 29375605,
+            "event": {
+              "v": 1,
+              "type": "message",
+              "group": "@1",
+              "author": "%ben",
+              "ts": 1762500840000,
+              "body": {
+                "text": "Thursday works for Oak St."
+              }
+            }
+          }
+        ]
+      },
+      "relayNow": 29375700,
+      "expect": [
+        {
+          "seq": 10,
+          "received": 29375600,
+          "author": "%kim",
+          "name": "Mara",
+          "text": "Can we meet Thursday?"
+        },
+        {
+          "seq": 14,
+          "received": 29375605,
+          "author": "%ben",
+          "name": "Jo",
+          "text": "Thursday works for Oak St."
+        }
+      ]
+    },
+    {
+      "name": "thirty-days: a message received 43,200 minutes before the relay's now stays, one received 43,201 minutes before is dropped",
+      "logs": {
+        "coalition": [
+          {
+            "seq": 1,
+            "received": 29375000,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%zed",
+              "ts": 1762500000000,
+              "body": {
+                "kind": "coalition",
+                "name": "Eastside Housing",
+                "title": "Mission statement",
+                "atoms": ["Everyone on the east side has a safe home."],
+                "seats": [
+                  {
+                    "name": "Riverside Tenants",
+                    "key": "^A"
+                  },
+                  {
+                    "name": "Oak St Co-op",
+                    "key": "^B"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "seq": 2,
+            "received": 29375001,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500060000,
+              "body": {
+                "name": "Mara",
+                "seat": "^A",
+                "proof": {
+                  "$seatProof": ["A", "@1", "%kim"]
+                }
+              }
+            }
+          },
+          {
+            "seq": 3,
+            "received": 29375002,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%ben",
+              "ts": 1762500120000,
+              "body": {
+                "name": "Jo",
+                "seat": "^B",
+                "proof": {
+                  "$seatProof": ["B", "@1", "%ben"]
+                }
+              }
+            }
+          },
+          {
+            "seq": 4,
+            "received": 29375003,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500180000,
+              "body": {
+                "motion": "@1",
+                "seat": "^A",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 5,
+            "received": 29375004,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%ben",
+              "ts": 1762500240000,
+              "body": {
+                "motion": "@1",
+                "seat": "^B",
+                "result": "pass"
+              }
+            }
+          }
+        ],
+        "room": [
+          {
+            "seq": 10,
+            "received": 29431799,
+            "event": {
+              "v": 1,
+              "type": "message",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500600000,
+              "body": {
+                "text": "Thirty days and a minute ago."
+              }
+            }
+          },
+          {
+            "seq": 11,
+            "received": 29431800,
+            "event": {
+              "v": 1,
+              "type": "message",
+              "group": "@1",
+              "author": "%ben",
+              "ts": 1762500660000,
+              "body": {
+                "text": "Thirty days ago to the minute."
+              }
+            }
+          },
+          {
+            "seq": 12,
+            "received": 29475000,
+            "event": {
+              "v": 1,
+              "type": "message",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500720000,
+              "body": {
+                "text": "Just now."
+              }
+            }
+          }
+        ]
+      },
+      "relayNow": 29475000,
+      "expect": [
+        {
+          "seq": 11,
+          "received": 29431800,
+          "author": "%ben",
+          "name": "Jo",
+          "text": "Thirty days ago to the minute."
+        },
+        {
+          "seq": 12,
+          "received": 29475000,
+          "author": "%kim",
+          "name": "Mara",
+          "text": "Just now."
+        }
+      ]
+    },
+    {
+      "name": "text: text is trimmed and in NFC, then 1 to 2,000 code points; an empty or blank one or one over 2,000 is ignored, and line breaks and markup stay as written",
+      "logs": {
+        "coalition": [
+          {
+            "seq": 1,
+            "received": 29375000,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%zed",
+              "ts": 1762500000000,
+              "body": {
+                "kind": "coalition",
+                "name": "Eastside Housing",
+                "title": "Mission statement",
+                "atoms": ["Everyone on the east side has a safe home."],
+                "seats": [
+                  {
+                    "name": "Riverside Tenants",
+                    "key": "^A"
+                  },
+                  {
+                    "name": "Oak St Co-op",
+                    "key": "^B"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "seq": 2,
+            "received": 29375001,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500060000,
+              "body": {
+                "name": "Mara",
+                "seat": "^A",
+                "proof": {
+                  "$seatProof": ["A", "@1", "%kim"]
+                }
+              }
+            }
+          },
+          {
+            "seq": 3,
+            "received": 29375002,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%ben",
+              "ts": 1762500120000,
+              "body": {
+                "name": "Jo",
+                "seat": "^B",
+                "proof": {
+                  "$seatProof": ["B", "@1", "%ben"]
+                }
+              }
+            }
+          },
+          {
+            "seq": 4,
+            "received": 29375003,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500180000,
+              "body": {
+                "motion": "@1",
+                "seat": "^A",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 5,
+            "received": 29375004,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%ben",
+              "ts": 1762500240000,
+              "body": {
+                "motion": "@1",
+                "seat": "^B",
+                "result": "pass"
+              }
+            }
+          }
+        ],
+        "room": [
+          {
+            "seq": 10,
+            "received": 29375600,
+            "event": {
+              "v": 1,
+              "type": "message",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500600000,
+              "body": {
+                "text": "   \n\t  "
+              }
+            }
+          },
+          {
+            "seq": 11,
+            "received": 29375601,
+            "event": {
+              "v": 1,
+              "type": "message",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500660000,
+              "body": {
+                "text": "ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééx"
+              }
+            }
+          },
+          {
+            "seq": 12,
+            "received": 29375602,
+            "event": {
+              "v": 1,
+              "type": "message",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500720000,
+              "body": {
+                "text": "  éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé\n"
+              }
+            }
+          },
+          {
+            "seq": 13,
+            "received": 29375603,
+            "event": {
+              "v": 1,
+              "type": "message",
+              "group": "@1",
+              "author": "%ben",
+              "ts": 1762500780000,
+              "body": {
+                "text": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+              }
+            }
+          },
+          {
+            "seq": 14,
+            "received": 29375604,
+            "event": {
+              "v": 1,
+              "type": "message",
+              "group": "@1",
+              "author": "%ben",
+              "ts": 1762500840000,
+              "body": {
+                "text": "Line one\nLine two"
+              }
+            }
+          },
+          {
+            "seq": 15,
+            "received": 29375605,
+            "event": {
+              "v": 1,
+              "type": "message",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500900000,
+              "body": {
+                "text": "<script>alert(1)</script>"
+              }
+            }
+          },
+          {
+            "seq": 16,
+            "received": 29375606,
+            "event": {
+              "v": 1,
+              "type": "message",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500960000,
+              "body": {
+                "text": ""
+              }
+            }
+          }
+        ]
+      },
+      "relayNow": 29375700,
+      "expect": [
+        {
+          "seq": 12,
+          "author": "%kim",
+          "text": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+        },
+        {
+          "seq": 13,
+          "author": "%ben",
+          "text": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+        },
+        {
+          "seq": 14,
+          "author": "%ben",
+          "text": "Line one\nLine two"
+        },
+        {
+          "seq": 15,
+          "author": "%kim",
+          "text": "<script>alert(1)</script>"
+        }
+      ]
+    },
+    {
+      "name": "left: a participant who has left the coalition is no longer one, so none of their messages show, before or after the leave",
+      "logs": {
+        "coalition": [
+          {
+            "seq": 1,
+            "received": 29375000,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%zed",
+              "ts": 1762500000000,
+              "body": {
+                "kind": "coalition",
+                "name": "Eastside Housing",
+                "title": "Mission statement",
+                "atoms": ["Everyone on the east side has a safe home."],
+                "seats": [
+                  {
+                    "name": "Riverside Tenants",
+                    "key": "^A"
+                  },
+                  {
+                    "name": "Oak St Co-op",
+                    "key": "^B"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "seq": 2,
+            "received": 29375001,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500060000,
+              "body": {
+                "name": "Mara",
+                "seat": "^A",
+                "proof": {
+                  "$seatProof": ["A", "@1", "%kim"]
+                }
+              }
+            }
+          },
+          {
+            "seq": 3,
+            "received": 29375002,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%ben",
+              "ts": 1762500120000,
+              "body": {
+                "name": "Jo",
+                "seat": "^B",
+                "proof": {
+                  "$seatProof": ["B", "@1", "%ben"]
+                }
+              }
+            }
+          },
+          {
+            "seq": 4,
+            "received": 29375003,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500180000,
+              "body": {
+                "motion": "@1",
+                "seat": "^A",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 5,
+            "received": 29375004,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%ben",
+              "ts": 1762500240000,
+              "body": {
+                "motion": "@1",
+                "seat": "^B",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 6,
+            "received": 29375650,
+            "event": {
+              "v": 1,
+              "type": "leave",
+              "group": "@1",
+              "author": "%ben",
+              "ts": 1762500900000,
+              "body": {}
+            }
+          }
+        ],
+        "room": [
+          {
+            "seq": 10,
+            "received": 29375600,
+            "event": {
+              "v": 1,
+              "type": "message",
+              "group": "@1",
+              "author": "%ben",
+              "ts": 1762500600000,
+              "body": {
+                "text": "Before I go."
+              }
+            }
+          },
+          {
+            "seq": 11,
+            "received": 29375601,
+            "event": {
+              "v": 1,
+              "type": "message",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500660000,
+              "body": {
+                "text": "Still here."
+              }
+            }
+          },
+          {
+            "seq": 12,
+            "received": 29375660,
+            "event": {
+              "v": 1,
+              "type": "message",
+              "group": "@1",
+              "author": "%ben",
+              "ts": 1762500720000,
+              "body": {
+                "text": "After I left."
+              }
+            }
+          }
+        ]
+      },
+      "relayNow": 29375700,
+      "expect": [
+        {
+          "seq": 11,
+          "author": "%kim",
+          "name": "Mara",
+          "text": "Still here."
+        }
+      ]
+    },
+    {
+      "name": "ignored: a message for another coalition or none, another type, a forged or damaged record and another envelope version are ignored, and a record repeated at a later seq shows once",
+      "logs": {
+        "coalition": [
+          {
+            "seq": 1,
+            "received": 29375000,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%zed",
+              "ts": 1762500000000,
+              "body": {
+                "kind": "coalition",
+                "name": "Eastside Housing",
+                "title": "Mission statement",
+                "atoms": ["Everyone on the east side has a safe home."],
+                "seats": [
+                  {
+                    "name": "Riverside Tenants",
+                    "key": "^A"
+                  },
+                  {
+                    "name": "Oak St Co-op",
+                    "key": "^B"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "seq": 2,
+            "received": 29375001,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500060000,
+              "body": {
+                "name": "Mara",
+                "seat": "^A",
+                "proof": {
+                  "$seatProof": ["A", "@1", "%kim"]
+                }
+              }
+            }
+          },
+          {
+            "seq": 3,
+            "received": 29375002,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%ben",
+              "ts": 1762500120000,
+              "body": {
+                "name": "Jo",
+                "seat": "^B",
+                "proof": {
+                  "$seatProof": ["B", "@1", "%ben"]
+                }
+              }
+            }
+          },
+          {
+            "seq": 4,
+            "received": 29375003,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500180000,
+              "body": {
+                "motion": "@1",
+                "seat": "^A",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 5,
+            "received": 29375004,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%ben",
+              "ts": 1762500240000,
+              "body": {
+                "motion": "@1",
+                "seat": "^B",
+                "result": "pass"
+              }
+            }
+          }
+        ],
+        "room": [
+          {
+            "seq": 10,
+            "received": 29375600,
+            "event": {
+              "v": 1,
+              "type": "message",
+              "group": "@2",
+              "author": "%kim",
+              "ts": 1762500600000,
+              "body": {
+                "text": "Another coalition's."
+              }
+            }
+          },
+          {
+            "seq": 11,
+            "received": 29375601,
+            "event": {
+              "v": 1,
+              "type": "message",
+              "group": "",
+              "author": "%kim",
+              "ts": 1762500660000,
+              "body": {
+                "text": "No group."
+              }
+            }
+          },
+          {
+            "seq": 12,
+            "received": 29375602,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500000000,
+              "body": {
+                "proposal": "@1",
+                "scores": {
+                  "@1": 4
+                }
+              }
+            }
+          },
+          {
+            "seq": 13,
+            "received": 29375603,
+            "event": {
+              "v": 1,
+              "type": "message",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500780000,
+              "body": {
+                "text": "Forged by ben, signed by kim."
+              }
+            },
+            "by": "ben"
+          },
+          {
+            "seq": 14,
+            "received": 29375604,
+            "event": {
+              "v": 1,
+              "type": "message",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500840000,
+              "body": {
+                "text": "A flipped bit."
+              }
+            },
+            "flip": {
+              "in": "signature",
+              "at": 3
+            }
+          },
+          {
+            "seq": 15,
+            "received": 29375605,
+            "event": {
+              "v": 2,
+              "type": "message",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500000000,
+              "body": {
+                "text": "Version 2."
+              }
+            }
+          },
+          {
+            "seq": 16,
+            "received": 29375606,
+            "event": {
+              "v": 1,
+              "type": "message",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500000000,
+              "body": {
+                "text": "Kept once."
+              }
+            }
+          },
+          {
+            "seq": 17,
+            "received": 29375607,
+            "event": {
+              "v": 1,
+              "type": "message",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500000000,
+              "body": {
+                "text": "Kept once."
+              }
+            }
+          },
+          {
+            "seq": 18,
+            "received": 29375608,
+            "event": {
+              "v": 1,
+              "type": "message",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500000001,
+              "body": {
+                "text": "Kept again: another time."
+              }
+            }
+          }
+        ]
+      },
+      "relayNow": 29375700,
+      "expect": [
+        {
+          "seq": 16,
+          "author": "%kim",
+          "text": "Kept once."
+        },
+        {
+          "seq": 18,
+          "author": "%kim",
+          "text": "Kept again: another time."
+        }
+      ]
+    },
+    {
+      "name": "names: two participants whose coalition names match each show a key suffix, as in a group",
+      "logs": {
+        "coalition": [
+          {
+            "seq": 1,
+            "received": 29375000,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%zed",
+              "ts": 1762500000000,
+              "body": {
+                "kind": "coalition",
+                "name": "Eastside Housing",
+                "title": "Mission statement",
+                "atoms": ["Everyone on the east side has a safe home."],
+                "seats": [
+                  {
+                    "name": "Riverside Tenants",
+                    "key": "^A"
+                  },
+                  {
+                    "name": "Oak St Co-op",
+                    "key": "^B"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "seq": 2,
+            "received": 29375001,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500060000,
+              "body": {
+                "name": "Mara",
+                "seat": "^A",
+                "proof": {
+                  "$seatProof": ["A", "@1", "%kim"]
+                }
+              }
+            }
+          },
+          {
+            "seq": 3,
+            "received": 29375002,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%ben",
+              "ts": 1762500120000,
+              "body": {
+                "name": "Jo",
+                "seat": "^B",
+                "proof": {
+                  "$seatProof": ["B", "@1", "%ben"]
+                }
+              }
+            }
+          },
+          {
+            "seq": 4,
+            "received": 29375003,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500180000,
+              "body": {
+                "motion": "@1",
+                "seat": "^A",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 5,
+            "received": 29375004,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%ben",
+              "ts": 1762500240000,
+              "body": {
+                "motion": "@1",
+                "seat": "^B",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 6,
+            "received": 29375005,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%cal",
+              "ts": 1762500300000,
+              "body": {
+                "name": "MARA",
+                "seat": "^B",
+                "proof": {
+                  "$seatProof": ["B", "@1", "%cal"]
+                }
+              }
+            }
+          }
+        ],
+        "room": [
+          {
+            "seq": 10,
+            "received": 29375600,
+            "event": {
+              "v": 1,
+              "type": "message",
+              "group": "@1",
+              "author": "%kim",
+              "ts": 1762500600000,
+              "body": {
+                "text": "I'm Mara."
+              }
+            }
+          },
+          {
+            "seq": 11,
+            "received": 29375601,
+            "event": {
+              "v": 1,
+              "type": "message",
+              "group": "@1",
+              "author": "%cal",
+              "ts": 1762500660000,
+              "body": {
+                "text": "So am I."
+              }
+            }
+          }
+        ]
+      },
+      "relayNow": 29375700,
+      "expect": [
+        {
+          "seq": 10,
+          "author": "%kim",
+          "name": "Mara · 7599"
+        },
+        {
+          "seq": 11,
+          "author": "%cal",
+          "name": "MARA · b62e"
+        }
+      ]
+    },
+    {
+      "name": "no-genesis: before the coalition's genesis, or with no relay minute, nothing shows",
+      "logs": {
+        "coalition": [],
+        "room": [
+          {
+            "seq": 10,
+            "received": 29375600,
+            "event": {
+              "v": 1,
+              "type": "message",
+              "group": "",
+              "author": "%kim",
+              "ts": 1762500600000,
+              "body": {
+                "text": "Too early."
+              }
+            }
+          }
+        ]
+      },
+      "relayNow": 29375700,
+      "expect": []
+    }
+  ]
+}

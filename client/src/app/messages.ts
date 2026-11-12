@@ -414,6 +414,9 @@ export const messages = {
     averageLine: (line: string) => `needs ${line}`,
     /** The share of zeros it must stay under, from the bar, such as "under 8%". */
     zeroLine: (line: string) => `under ${line}`,
+    /** Removal's zeros line (ADR-0075 §3): "one at most, or under 5%". */
+    zeroLineOr: (allowed: number, line: string) =>
+      `${allowed === 1 ? 'one' : count(allowed)} at most, or under ${line}`,
     percent: (percent: number) => `${count(percent)}%`,
     /** A bar's value, then how it stands against its line: "1.9 · Short by 0.1". */
     reading: (value: string, standing: string) => `${value} · ${standing}`,
@@ -647,9 +650,14 @@ export const messages = {
     suspend: 'Suspend',
     suspendLabel: (name: string) => `Suspend ${name}`,
     suspendedUntil: (date: string) => `Suspended until ${date}.`,
+    /** A suspension a removal vote extends (ADR-0059): it ends when that vote closes. */
+    suspendedUntilVote: (date: string) =>
+      `Suspended until the vote on removing them closes, by ${date}.`,
     reasonPrefix: 'Reason:',
     youAreSuspended: (date: string) =>
       `A steward suspended you until ${date}. You can read, but not post, propose or vote.`,
+    youAreSuspendedUntilVote: (date: string) =>
+      `A steward suspended you until the vote on removing you closes, by ${date}. You can read and post one response on that vote, but not propose or vote.`,
     dialogTitle: { before: 'Suspend', after: '?' },
     dialogLine: (days: number) =>
       `Everyone in the group will see this. It ends after ${count(days)} days.`,
@@ -720,6 +728,61 @@ export const messages = {
     passed: 'This passed. Your group has dissolved.',
   },
   /** A dissolved group's read-only copy on this device (#108). */
+  removal: {
+    /** On a person's row in the People list, read with their name: "Propose removing Kim". */
+    propose: 'Propose removing',
+    proposeLabel: (name: string) => `Propose removing ${name}`,
+    pageTitle: 'Propose removing someone',
+    eyebrow: 'Removal',
+    title: 'Propose a removal',
+    /** What the title starts as: what the ballot will say. */
+    titleDefault: (name: string) => `Remove ${name}`,
+    /** The bar in words, from the engine: "an average of at least 3.0, and no more than one 0 unless fewer than 5% scored 0". */
+    bar: (average: string, allowed: number, zeros: string) =>
+      `This needs a higher bar: an average of at least ${average}, and no more than ${
+        allowed === 1 ? 'one 0' : `${count(allowed)} 0s`
+      } unless fewer than ${zeros} scored 0.`,
+    /** After the bar, read after their name: "<name> can’t vote on it, but can post one response." */
+    cantVote: 'can’t vote on it, but can post one response.',
+    runs: (days: number) => `Voting runs ${count(days)} days, and nobody can make it shorter.`,
+    titleHint: 'It starts as what the ballot will say. Change it if you like.',
+    whyHint:
+      'Say what happened and what your group has tried. Everyone in the group reads it, including the person you’d remove.',
+    visibility: 'Everyone in your group sees this Proposal and that you made it.',
+    submit: 'Propose this removal',
+    failed: 'Your Proposal couldn’t be saved on this device. Try again.',
+    unavailableTitle: 'You can’t propose this removal now',
+    notAllowed: 'Your place in this group doesn’t include proposing a removal.',
+    notMember: 'They aren’t in this group now. Go back to your group to see who is.',
+    yourself: 'You can’t propose removing yourself. To go, choose Leave this group.',
+    alreadyOpen:
+      'A vote on removing them is already open, or has passed. Go back to your group to see it.',
+    ballotTitle: { before: 'Remove', after: 'from the group' },
+    ballotLine:
+      'If this passes, they leave the group, and the group gets a new key, so they see nothing new. They keep what they already had.',
+    ownRemoval:
+      'This Proposal would remove you, so you don’t vote on it. You can post one response.',
+    /** Read right after their name, over the response: "Kim’s response". */
+    responseOf: '’s response',
+    /** Read after their name while the vote is open and they haven’t: "Kim hasn’t posted a response." */
+    noResponse: 'hasn’t posted a response.',
+    respondLabel: 'Your response',
+    respondHint:
+      'Everyone in the group reads it on the ballot. You can post one, and can’t change it after.',
+    respond: 'Post your response',
+    respondEmpty: 'Write your response first.',
+    respondTooLong: (max: number) => `Keep your response to ${count(max)} characters or fewer.`,
+    respondFailed: 'Your response couldn’t be saved on this device. Try again.',
+    passed: { before: 'This passed.', after: 'is no longer in this group.' },
+    passedYou: 'This passed. You’re no longer in this group.',
+    eyebrowRemoved: 'Removed',
+    removedOn: (date: string) =>
+      `You were removed from this group by a vote on ${date}. You keep what’s already on this device, but you won’t see anything new.`,
+    stillOpen: 'Open when you were removed',
+    stillOpenLine: 'You won’t see how this ends',
+    readOnlyTitle: 'You were removed from this group',
+    readOnly: 'This is a read-only copy. Nothing new can be proposed or voted on.',
+  },
   archive: {
     eyebrow: 'Dissolved',
     dissolvedOn: (date: string) => `This group dissolved on ${date}. This is a read-only copy.`,
@@ -1472,5 +1535,35 @@ export const messages = {
     composerLinkHint: 'Where the groups can talk it over.',
     composerVisibility:
       'Your draft stays on this device until you propose it. Then every group in the coalition sees this Proposal, under the name you take part as.',
+  },
+  /** A coalition's room (#125): one small encrypted room where its member groups' people talk. */
+  room: {
+    /** The room's entry on the coalition's home. */
+    homeTitle: 'Room',
+    open: 'Open the room',
+    homeLine: 'Where people from every member group talk. Only the member groups can read it.',
+    eyebrow: 'Room',
+    pageTitle: 'Room',
+    /** Under the room's heading: who can read it, and the 30-day rule. */
+    note: 'Only people in the coalition’s member groups can read this room. The relay can’t, and neither can anyone who only follows the coalition. Each device deletes a message 30 days after the relay received it.',
+    listLabel: 'Messages',
+    empty: 'No messages yet.',
+    /** The polite announcement of messages that arrive while the person is at the bottom. */
+    newFrom: (name: string, text: string) => `New message from ${name}: ${text}`,
+    newMessages: (n: number) => `${count(n)} new messages`,
+    messageLabel: 'Message',
+    messageHint:
+      'Plain text. Everyone in the coalition’s member groups sees it under your coalition name.',
+    send: 'Send',
+    emptyMessage: 'Write a message first.',
+    longMessage: 'A message can be up to 2,000 characters.',
+    failed: 'That didn’t save. Try again.',
+    takePartFirst: 'To write here, take part in the coalition first.',
+    joining: 'You can write here once you’ve joined the coalition. That happens at the next sync.',
+    reads:
+      'People who take part in the coalition write here. To take part, you need to be able to propose in your group.',
+    missingTitle: 'There’s no room for you here',
+    missing:
+      'Only people in the coalition’s member groups can read its room. Go back to the coalition’s home.',
   },
 } as const;
