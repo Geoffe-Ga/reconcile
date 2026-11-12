@@ -24,7 +24,7 @@ import type { TestDevice } from '../test/appServices';
 import { testDevice } from '../test/appServices';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
-import { go, members, type MountedApp, mountApp } from '../test/members';
+import { APP_USER, go, members, type MountedApp, mountApp } from '../test/members';
 import { lookupInvite, makeInvite } from './actions';
 import { parseInviteLink } from './invite';
 import { messages } from './messages';
@@ -66,6 +66,16 @@ function unmountAll(): void {
   for (const done of mounted.splice(0)) done.unmount();
 }
 
+/** Puts `text` in `field` in one paste: no keystroke of a passphrase is under test here (#260). */
+async function fill(
+  user: ReturnType<typeof userEvent.setup>,
+  field: HTMLElement,
+  text: string,
+): Promise<void> {
+  await user.click(field);
+  await user.paste(text);
+}
+
 async function syncAll(devices: readonly TestDevice[]): Promise<void> {
   for (const device of devices) await act(() => device.services.sync.syncOnce());
 }
@@ -96,11 +106,11 @@ async function riverside(names: readonly string[] = ['Ben', 'Cal']) {
 
 /** Saves a backup of `device` from Settings, through the download path, and returns the file. */
 async function saveFrom(device: TestDevice): Promise<File> {
-  const user = userEvent.setup();
+  const user = userEvent.setup(APP_USER);
   go('#/settings');
   const app = mount(device, 'save');
-  await user.type(await app.findByLabelText('Passphrase'), PASSPHRASE);
-  await user.type(app.getByLabelText('Passphrase again'), PASSPHRASE);
+  await fill(user, await app.findByLabelText('Passphrase'), PASSPHRASE);
+  await fill(user, app.getByLabelText('Passphrase again'), PASSPHRASE);
   await user.click(app.getByRole('button', { name: 'Make a backup file' }));
   await user.click(await app.findByRole('button', { name: 'Save the file' }));
   await app.findByText('Saved. Keep the file and the passphrase in different places.');
@@ -139,14 +149,14 @@ async function dissolve(groupId: string, devices: readonly TestDevice[]): Promis
 async function restoreOnPhone(fake: FakeRelay, file: File): Promise<TestDevice> {
   const phone = await testDevice(fake, 'ana-phone');
   opened.push(phone);
-  const user = userEvent.setup();
+  const user = userEvent.setup(APP_USER);
   go('#/');
   const app = mount(phone, 'restore');
   const section = await app.findByRole('region', { name: 'Have a backup file?' });
   const input = section.querySelector('input[type="file"]');
   if (!(input instanceof HTMLInputElement)) throw new Error('Expected the file input.');
   await user.upload(input, file);
-  await user.type(within(section).getByLabelText('Its passphrase'), PASSPHRASE);
+  await fill(user, within(section).getByLabelText('Its passphrase'), PASSPHRASE);
   await user.click(within(section).getByRole('button', { name: 'Restore' }));
   await within(section).findByText('1 group is back on this device.');
   // Restore syncs at once; this joins that pass.
