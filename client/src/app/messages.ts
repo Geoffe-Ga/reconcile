@@ -1079,6 +1079,12 @@ export const messages = {
         'Sharing stopped. People who opened the link may have kept a copy, and earlier copies stay on the relay, still sealed, until they expire within a month.',
       stopFailed:
         'Sharing couldn’t be stopped, so nothing changed and the link still works. Stopping needs the relay. Check your connection, then try again.',
+      /** In place of the link while the device's keys are locked with a passkey, which holds its seed (#255). */
+      locked:
+        'This Document is shared by link, but your keys on this device are locked with your passkey. Close Reconcile, open it again and unlock it to see the link, stop sharing or delete this Document.',
+      /** When Share link or Stop sharing finds the keys locked, as another tab can lock them (#255). */
+      lockedNow:
+        'Your keys on this device are locked with your passkey, so nothing changed. Close Reconcile, open it again and unlock it, then try again.',
     },
   },
   /**
