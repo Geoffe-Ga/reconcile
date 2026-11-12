@@ -83,9 +83,21 @@ function ShareOff({ share }: Pick<ShareByLinkProps, 'share'>) {
   );
 }
 
-/** On, while the device's keys are locked (#255): that it's shared, how to unlock, and whether an edit waits. */
+/**
+ * On, while the device's keys are locked (#255): that it's shared, how to
+ * unlock, and whether an edit waits; or, for a share a restore paused
+ * (#328), that nothing goes to its link until the person unlocks and chooses.
+ */
 function ShareLocked({ view }: { readonly view: ShareView }) {
   const { personal } = messages;
+  // A paused share (#328) waits for a choice the keys must unlock, and sends nothing meanwhile.
+  if (view.paused) {
+    return (
+      <div className="stack">
+        <p className="lede">{personal.share.lockedPaused}</p>
+      </div>
+    );
+  }
   return (
     <div className="stack">
       <p className="lede">{personal.share.locked}</p>

@@ -1098,7 +1098,13 @@ export const messages = {
       /** In place of the link while the device's keys are locked with a passkey, which holds its seed (#255). */
       locked:
         'This Document is shared by link, but your keys on this device are locked with your passkey. Close Reconcile, open it again and unlock it to see the link, stop sharing or delete this Document.',
-      /** When Share link or Stop sharing finds the keys locked, as another tab can lock them (#255). */
+      /**
+       * In place of the paused question while the device's keys are locked (#255, #328):
+       * keeping or stopping a share needs its keys, and nothing goes to the link meanwhile.
+       */
+      lockedPaused:
+        'This link was live when the backup was made, and nothing goes to it until you choose. Your keys on this device are locked with your passkey. Close Reconcile, open it again and unlock it to keep sharing, stop sharing or delete this Document.',
+      /** When Share link, Stop sharing or Keep sharing finds the keys locked, as another tab can lock them (#255). */
       lockedNow:
         'Your keys on this device are locked with your passkey, so nothing changed. Close Reconcile, open it again and unlock it, then try again.',
     },

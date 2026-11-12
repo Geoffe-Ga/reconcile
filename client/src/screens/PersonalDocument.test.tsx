@@ -1012,6 +1012,34 @@ describe('PersonalDocument, a share a restore paused (#328)', () => {
       other.close();
     }
 
+    it('says the link waits for a choice and how to unlock, with no link, Keep sharing, Stop sharing or Delete', async () => {
+      await store.sealKeys(LOCK, KEY);
+      await restored();
+      // An edit while paused marks the share pending, but nothing goes until the person chooses.
+      await store.savePersonal({ ...STATEMENT, text: 'Edited while paused.\n', updatedAt: NOW });
+      store.close();
+      store = await openStore();
+      const requests = relay.requests.length;
+
+      open();
+
+      const section = await shareSection();
+      expect(within(section).getByText(share.lockedPaused)).toBeVisible();
+      expect(within(section).queryByText(share.locked)).not.toBeInTheDocument();
+      expect(within(section).queryByText(share.pending)).not.toBeInTheDocument();
+      expect(within(section).queryByRole('textbox')).not.toBeInTheDocument();
+      expect(within(section).queryByRole('button')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
+      // Nothing goes to a paused link, so the line says nothing is sent.
+      expect(screen.getByText(messages.personal.documentPrivacy)).toBeVisible();
+      expect(relay.requests).toHaveLength(requests);
+      expect((await store.listPersonalEntries())[0]?.share).toMatchObject({
+        pending: true,
+        paused: true,
+      });
+      expect(await axeViolations()).toEqual([]);
+    });
+
     it('says nothing changed when another tab locked the keys before Keep sharing or Stop sharing, sends nothing, and still asks', async () => {
       const link = await restored();
       const { user } = open();
