@@ -73,7 +73,8 @@ export interface GroupHomeProps {
   readonly onRemove?: () => Promise<void>;
   /**
    * The quiet card that suggests a backup (#78), after the open Proposals;
-   * none when absent, or once the group has dissolved (#108).
+   * none when absent, once the group has dissolved (#108), or once its key
+   * changed past this device (#226).
    */
   readonly backupCard?: ReactNode;
   /**
@@ -454,6 +455,15 @@ const KEY_CHANGE_LINE: Readonly<Record<KeyChange, string>> = {
   left: messages.home.keyLeft,
   missed: messages.home.keyMissed,
 };
+
+/**
+ * The backup card (#78) while this device reads the group's key: none once
+ * the key changed past it (#98), while {@link SyncNotices} says so, since a
+ * backup made then can't read what comes next either (#226).
+ */
+function backupCardOf({ sync, backupCard }: GroupHomeProps): ReactNode {
+  return (sync.keyChange ?? null) === null ? backupCard : null;
+}
 
 /**
  * "Can't reach the relay right now", the catch-up line while some history
@@ -1114,16 +1124,17 @@ function HomeTop({ props, removed, readOnly }: HomeTopProps) {
 /**
  * The quiet cards a group that goes on may show, after the last list of open
  * Proposals: the recovery alert while a recovery of this person waits (#118),
- * a backup (#78), then the recovery shares this device holds there (#109).
- * None once it has dissolved: no backup file carries its read-only copy, and
- * no share held there can go back to anyone (#108).
+ * a backup (#78), then the recovery shares this device holds there (#109). No
+ * backup card once the group's key changed past this device (#226). None once
+ * it has dissolved: no backup file carries its read-only copy, and no share
+ * held there can go back to anyone (#108).
  */
 function QuietCards({ props }: { readonly props: GroupHomeProps }) {
   if (props.state.dissolved !== null) return null;
   return (
     <>
       {props.alertCard}
-      {props.backupCard}
+      {backupCardOf(props)}
       {props.recoveryCard}
     </>
   );

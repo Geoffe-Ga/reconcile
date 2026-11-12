@@ -522,10 +522,16 @@ export type RecordedOutcome =
  * version's counts in ballot order, the outcome, and `commit`, a commitment
  * to the counted ballots (`commit.ts`) that never covers notes (ADR-0065).
  * Devices keep it, and only it, once they clear the ballots.
+ *
+ * `closedSeq` is the relay seq of the ballot that closed it early (#289), so
+ * a device that has cleared the ballots knows where in the close's minute the
+ * Proposal closed. A deadline close has none, and nor does a result from
+ * before #289, which still counts.
  */
 export interface ResultBody {
   readonly proposal: string;
   readonly closedAt: number;
+  readonly closedSeq?: number;
   readonly eligible: number;
   readonly versions: readonly ResultVersion[];
   readonly outcome: RecordedOutcome;
@@ -1291,13 +1297,20 @@ function parseOutcome(value: unknown): RecordedOutcome | null {
   return kind === 'fail' || kind === 'lapse' ? { kind } : null;
 }
 
+/** A result's `closedSeq` (#289) as a field: `{}` when it has none, or null when it isn't a seq. */
+function closedSeqField(value: unknown): { readonly closedSeq?: number } | null {
+  if (value === undefined) return {};
+  return isCount(value) ? { closedSeq: value } : null;
+}
+
 function parseResult(body: Json): ResultBody | null {
   const { proposal, closedAt, eligible, commit } = body;
   if (!isString(proposal) || !isTimestamp(closedAt) || !isCount(eligible)) return null;
   const versions = parseResultVersions(body.versions);
   const outcome = parseOutcome(body.outcome);
-  if (versions === null || outcome === null || !isString(commit)) return null;
-  return { proposal, closedAt, eligible, versions, outcome, commit };
+  const place = closedSeqField(body.closedSeq);
+  if (versions === null || outcome === null || place === null || !isString(commit)) return null;
+  return { proposal, closedAt, ...place, eligible, versions, outcome, commit };
 }
 
 /** The event a parsed body makes, or null when the body didn't parse. */
