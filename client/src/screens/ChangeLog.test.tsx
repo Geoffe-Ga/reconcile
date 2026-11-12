@@ -113,6 +113,33 @@ describe('GroupChangeLog', () => {
     expect(founded === undefined ? null : within(founded).queryByRole('button')).toBeNull();
   });
 
+  it('says where each passed move put its section, by the first words of the section it follows (#103)', async () => {
+    const user = userEvent.setup();
+    const log = groupLog({
+      members: ['Ben', 'Cal'],
+      atoms: ['Quiet hours start at ten tonight.', 'Bins go out on Tuesday.', 'Guests leave.'],
+    });
+    const { group } = log;
+    const guests = log.move('Ana', `${group}.2`, `${group}.0`, { title: 'Guests after quiet' });
+    everyone(log, guests, 4);
+    log.minute += 5;
+    const bins = log.move('Ben', `${group}.1`, null, { title: 'Bins first' });
+    everyone(log, bins, 4);
+    const state = log.state(log.minute + 1);
+    changeLog(state, group);
+    const [first, after] = rows();
+    expect(first).toHaveTextContent(`Bins first${messages.history.movedToTop}`);
+    expect(after).toHaveTextContent(
+      `Guests after quiet${messages.history.movedAfter('Quiet hours start at ten…')}`,
+    );
+    expect(document.body.textContent).not.toMatch(/Cal|scored|average/i);
+    expect(await axeViolations()).toEqual([]);
+    // Bins now sits first: its row opens section 1's history.
+    if (first === undefined) throw new Error();
+    await user.click(within(first).getByRole('button'));
+    expect(screen.getByRole('dialog', { name: messages.history.title(1) })).toBeVisible();
+  });
+
   it('says nothing has changed a Document since it began', () => {
     const fresh = groupLog({ members: ['Ben'] });
     changeLog(fresh.state(), fresh.group);

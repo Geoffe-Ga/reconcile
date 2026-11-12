@@ -13,6 +13,7 @@
  */
 import { useSyncExternalStore } from 'react';
 
+import type { HeadingLevel } from '../engine/atomText';
 import { isOptIn, type OptIn } from '../engine/optIns';
 import { SEATS, type SeatNumber } from '../engine/stewards';
 
@@ -57,14 +58,18 @@ export type Route =
   /**
    * Add a section (#75): after the Atom `after`, in its Document, or at the
    * start of `document` (#92), or of the group's first Document without one.
+   * `heading` makes it a section header (1) or a subsection header (2) (#103).
    */
   | {
       readonly name: 'add';
       readonly groupId: string;
       readonly after: string | null;
       readonly document?: string;
+      readonly heading?: HeadingLevel;
     }
   | { readonly name: 'remove'; readonly groupId: string; readonly atomId: string }
+  /** Move this section (#103). */
+  | { readonly name: 'move'; readonly groupId: string; readonly atomId: string }
   | { readonly name: 'again'; readonly groupId: string; readonly proposalId: string }
   | {
       readonly name: 'steward';
@@ -190,6 +195,19 @@ function idPage(pattern: RegExp, make: (groupId: string, id: string) => Route): 
   return (groupId, arg) => (pattern.test(arg) ? make(groupId, arg) : START);
 }
 
+/** A header's page (#103): after the Atom it names, or, `first`, at the start of the Document it names. */
+function headerPage(heading: HeadingLevel, first: boolean): ArgPage {
+  return first
+    ? idPage(DOCUMENT_ID, (groupId, document) => ({
+        name: 'add',
+        groupId,
+        after: null,
+        document,
+        heading,
+      }))
+    : idPage(ATOM_ID, (groupId, after) => ({ name: 'add', groupId, after, heading }));
+}
+
 /** The pages inside a group that take one argument. */
 const ARG_PAGES: ReadonlyMap<string, ArgPage> = new Map<string, ArgPage>([
   [
@@ -204,7 +222,12 @@ const ARG_PAGES: ReadonlyMap<string, ArgPage> = new Map<string, ArgPage>([
   ['p', idPage(ID, (groupId, proposalId) => ({ name: 'proposal', groupId, proposalId }))],
   ['again', idPage(ID, (groupId, proposalId) => ({ name: 'again', groupId, proposalId }))],
   ['add', idPage(ATOM_ID, (groupId, after) => ({ name: 'add', groupId, after }))],
+  ['add-header', headerPage(1, false)],
+  ['add-subheader', headerPage(2, false)],
+  ['add-first-header', headerPage(1, true)],
+  ['add-first-subheader', headerPage(2, true)],
   ['remove', idPage(ATOM_ID, (groupId, atomId) => ({ name: 'remove', groupId, atomId }))],
+  ['move', idPage(ATOM_ID, (groupId, atomId) => ({ name: 'move', groupId, atomId }))],
   ['steward', (groupId, arg) => stewardPage(groupId, false, arg)],
   ['recall', (groupId, arg) => stewardPage(groupId, true, arg)],
   ['rules', (groupId, arg) => optInPage(groupId, false, arg)],
@@ -227,7 +250,9 @@ const BARE_PAGES: ReadonlyMap<string, ArgPage> = new Map<string, ArgPage>([
  * in it, #75), or `doc/{documentId}` (#92), `add-first/{documentId}` (a new
  * first section in that Document, #92), `propose/{atomId}`, `p/{proposalId}`,
  * `again/{proposalId}`, `add/{atomId}` (a new section after that Atom),
- * `remove/{atomId}` (#75), `steward/{seat}`, `recall/{seat}`, `rules/{optIn}`,
+ * `remove/{atomId}` (#75), `add-header/{atomId}`, `add-subheader/{atomId}`,
+ * `add-first-header/{documentId}`, `add-first-subheader/{documentId}` and
+ * `move/{atomId}` (#103), `steward/{seat}`, `recall/{seat}`, `rules/{optIn}`,
  * `narrow/{optIn}` or `remove-member/{member}` (#115), which a section's own
  * `remove` can't share: an added Atom's id is a Proposal's.
  */
@@ -453,19 +478,42 @@ function optInPath(route: Extract<Route, { readonly name: 'optIn' }>): string {
   return `/${route.narrow ? 'narrow' : 'rules'}/${route.optIn}`;
 }
 
-/**
- * An add's path (#75): after its anchor, or at the start of the Document it
- * names (#92), or of the group's first Document when it names none.
- */
-function addPath(route: Extract<Route, { readonly name: 'add' }>): string {
-  if (route.after === null && route.document !== undefined) return `/add-first/${route.document}`;
-  return `/add${idPath(route.after)}`;
+/** What a header's page adds to `add` or `add-first` (#103): nothing for a section. */
+function headerSuffix(heading: HeadingLevel | undefined): string {
+  if (heading === undefined) return '';
+  return heading === 1 ? '-header' : '-subheader';
 }
 
-/** A section composer's path (#75): proposing a change, adding a section, or removing one. */
-function sectionPath(
-  route: Extract<Route, { readonly name: 'propose' | 'add' | 'remove' }>,
-): string {
+/**
+ * An add's path (#75): after its anchor, or at the start of the Document it
+ * names (#92), or of the group's first Document when it names none; a
+ * header's names its level (#103).
+ */
+function addPath(route: Extract<Route, { readonly name: 'add' }>): string {
+  const suffix = headerSuffix(route.heading);
+  if (route.after === null && route.document !== undefined) {
+    return `/add-first${suffix}/${route.document}`;
+  }
+  return `/add${suffix}${idPath(route.after)}`;
+}
+
+/** A section composer's route (#75): proposing a change, adding, removing or moving a section (#103). */
+type SectionRoute = Extract<GroupRoute, { readonly name: 'propose' | 'add' | 'remove' | 'move' }>;
+
+const SECTION_NAMES: ReadonlySet<string> = new Set<SectionRoute['name']>([
+  'propose',
+  'add',
+  'remove',
+  'move',
+]);
+
+/** True for a section composer's route, whose path {@link sectionPath} writes. */
+function isSectionRoute(route: GroupRoute): route is SectionRoute {
+  return SECTION_NAMES.has(route.name);
+}
+
+/** A section composer's path (#75): proposing a change, adding, removing or moving a section (#103). */
+function sectionPath(route: SectionRoute): string {
   switch (route.name) {
     case 'propose':
       return `/propose/${route.atomId}`;
@@ -473,11 +521,14 @@ function sectionPath(
       return addPath(route);
     case 'remove':
       return `/remove/${route.atomId}`;
+    case 'move':
+      return `/move/${route.atomId}`;
   }
 }
 
 /** The path of a page inside a group, after `#/g/{groupId}`. */
 function groupPath(route: GroupRoute): string {
+  if (isSectionRoute(route)) return sectionPath(route);
   switch (route.name) {
     case 'group':
       return '';
@@ -491,10 +542,6 @@ function groupPath(route: GroupRoute): string {
       return optInPath(route);
     case 'removal':
       return `/remove-member/${route.member}`;
-    case 'propose':
-    case 'add':
-    case 'remove':
-      return sectionPath(route);
     default:
       return pagePath(route);
   }

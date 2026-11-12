@@ -6,6 +6,7 @@ import { createElement, Fragment } from 'react';
 import { describe, expect, it } from 'vitest';
 
 import {
+  lastHeadingLevel,
   MARKDOWN_PROTOCOLS,
   parseAtom,
   plainText,
@@ -161,6 +162,48 @@ describe('renderAtom', () => {
 
   it('formats through the shared instance by default', () => {
     expect(mount(renderAtom('*x*\n')).querySelector('em')).toHaveTextContent('x');
+  });
+});
+
+describe('renderAtom in a Document’s outline (#103)', () => {
+  const headings = (nodes: ReturnType<typeof renderAtom>) =>
+    Array.from(mount(nodes).querySelectorAll('h2, h3, h4, h5, h6')).map(
+      (h) =>
+        `${h.tagName}${h.classList.contains('atom-subheading') ? ' sub' : ''} ${h.textContent}`,
+    );
+
+  it('never sets a heading more than one level below the one before it on the page', () => {
+    expect(headings(renderAtom('## Organization\n', parseAtom, 1))).toEqual([
+      'H2 sub Organization',
+    ]);
+    expect(headings(renderAtom('## Organization\n', parseAtom, 2))).toEqual(['H3 Organization']);
+    expect(headings(renderAtom('#### Deep\n', parseAtom, 2))).toEqual(['H3 sub Deep']);
+    expect(headings(renderAtom('# Values\n\n### Deep\n', parseAtom, 1))).toEqual([
+      'H2 Values',
+      'H3 sub Deep',
+    ]);
+  });
+
+  it('keeps every heading’s own level with no heading before it given', () => {
+    expect(headings(renderAtom('## Organization\n'))).toEqual(['H3 Organization']);
+  });
+
+  it('gives the level of an Atom’s last heading on the page, or the one before it when it has none', () => {
+    expect(lastHeadingLevel('## Organization\n', 1)).toBe(2);
+    expect(lastHeadingLevel('## Organization\n', 2)).toBe(3);
+    expect(lastHeadingLevel('# Values\n\n#### Deep\n', 1)).toBe(3);
+    expect(lastHeadingLevel('We care.\n', 3)).toBe(3);
+  });
+
+  it('counts no heading for an Atom set as plain text, as renderAtom sets it', () => {
+    const parse = (text: string) => {
+      const tokens = parseAtom(text);
+      const last = tokens.at(-1);
+      if (last !== undefined) last.type = 'html_block';
+      return tokens;
+    };
+    expect(lastHeadingLevel('# Values\n\nWe care.\n', 1, parse)).toBe(1);
+    expect(mount(renderAtom('# Values\n\nWe care.\n', parse, 1)).querySelector('h2')).toBeNull();
   });
 });
 

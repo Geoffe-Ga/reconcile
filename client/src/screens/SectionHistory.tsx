@@ -9,7 +9,8 @@
  *
  * Top to bottom: each pass that shaped the section, newest first, ending
  * where it began. A pass shows its Proposal's title, the text it left
- * through `<AtomText>` (or that it removed the section), "Proposed by
+ * through `<AtomText>` (or that it removed the section, or, for a move,
+ * where it put the section over the text it still reads, #103), "Proposed by
  * <name>" and "Decided <date>", its why, the winning version's one totals
  * line, and See the full result, the Proposal's page, where `<ResultView>`
  * shows its ballots. A coalition motion shows each group's pass or fail in
@@ -31,6 +32,7 @@ import {
 } from 'react-aria-components';
 
 import { formatAverage, formatDay } from '../app/format';
+import { movedLine } from '../app/historyLines';
 import type { HistorySource } from '../app/historySource';
 import { messages } from '../app/messages';
 import { AtomText } from '../app/text/AtomText';
@@ -55,6 +57,18 @@ const { history } = messages;
 /** A relay minute as a day, in a `<time>` element that never breaks across lines. */
 export function Day({ minute }: { readonly minute: number }) {
   return <time dateTime={minuteIso(minute)}>{formatDay(minute)}</time>;
+}
+
+/** What a pass left: its text, that it removed the section, or where a move put it over its text (#103). */
+function EntryText({ entry }: { readonly entry: PassedChange }) {
+  const { change } = entry;
+  if (change.kind === 'removed') return <p className="history-removed">{history.removed}</p>;
+  return (
+    <>
+      {change.kind === 'moved' ? <p className="history-moved">{movedLine(change.to)}</p> : null}
+      <AtomText text={entry.text} />
+    </>
+  );
 }
 
 /** Each group's pass or fail on a coalition motion, in seat order (ADR-0036). */
@@ -120,11 +134,7 @@ function Entry({
       <h3 className="heading-3">
         {entry.title === null ? history.founding : <bdi>{entry.title}</bdi>}
       </h3>
-      {entry.change.kind === 'removed' ? (
-        <p className="history-removed">{history.removed}</p>
-      ) : (
-        <AtomText text={entry.text} />
-      )}
+      <EntryText entry={entry} />
       <Byline entry={entry} source={source} />
       {entry.why === null || entry.why === '' ? null : (
         <p className="history-why" dir="auto">

@@ -3,7 +3,8 @@
  * share one fake relay: group home suggests a backup until one holds the
  * group, Settings saves the file, a second and third device restore it from
  * Start and vote as the same person, so the tally counts one voter with the
- * later ballot, and Erase runs from Settings behind its hold. A file with a
+ * later ballot, a file from before #98 says plainly what that device will
+ * miss (#225), and Erase runs from Settings behind its hold. A file with a
  * group entry that doesn't check out brings back the rest, and says so (#336).
  */
 import { act, fireEvent, waitFor, within } from '@testing-library/react';
@@ -14,6 +15,7 @@ import { base64url } from '../crypto/base64url';
 import { openBackup, sealBackup } from '../crypto/backup';
 import { backupIdFor } from '../crypto/relayBackup';
 import { fold } from '../engine/fold';
+import { keyChangeOf } from '../store/epochs';
 import { startRelayBackup } from '../store/relayBackup';
 import type { TestDevice } from '../test/appServices';
 import { testDevice } from '../test/appServices';
@@ -21,7 +23,8 @@ import { text, utf8 } from '../test/bytes';
 import { createFakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { go, members, type MountedApp, mountApp } from '../test/members';
-import { createGroup } from './actions';
+import { createGroup, leaveGroup } from './actions';
+import { messages } from './messages';
 import { castBallot, propose } from './proposals';
 
 freshIndexedDBPerTest();
@@ -188,6 +191,45 @@ describe('a restored device', () => {
     expect(proposal?.ballots.map((ballot) => [ballot.voter, ballot.scores])).toEqual([
       [original.me.author, { [versionId]: 4 }],
     ]);
+  });
+});
+
+/** `file` as #78 saved it, before #98: format 1, with no encryption key or epoch, under the same passphrase. */
+async function asFormat1(file: File): Promise<File> {
+  const plaintext = await openBackup(new Uint8Array(await file.arrayBuffer()), PASSPHRASE);
+  const json = JSON.parse(new TextDecoder().decode(plaintext)) as {
+    groups: Record<string, unknown>[];
+  };
+  const groups = json.groups.map((group) =>
+    Object.fromEntries(Object.entries(group).filter(([key]) => !['kxKey', 'epoch'].includes(key))),
+  );
+  const older = new TextEncoder().encode(JSON.stringify({ ...json, format: 1, groups }));
+  return new File([await sealBackup(older, PASSPHRASE)], 'reconcile-backup-2026-10-01.bin');
+}
+
+describe('a device restored from a file saved before #98 (#225)', () => {
+  it('says plainly that it won’t get a group’s new key once another device has one, how to get back in, and then misses the next', async () => {
+    const { fake, ana, ben, groupId } = await anaAndBen();
+    const file = await asFormat1(await saveFrom(ana, 'a'));
+    for (const done of mounted.splice(0)) done.unmount();
+    const phone = await testDevice(fake, 'ana-phone');
+    opened.push(phone);
+
+    const start = await restoreOn(phone, 'p', file);
+
+    const section = await start.findByRole('region', { name: 'Have a backup file?' });
+    expect(within(section).getByRole('status')).toHaveTextContent(messages.restore.older);
+    // Ana's first device gave the group her key, so the phone, which holds none, posts none.
+    await phone.services.sync.syncOnce();
+    const restored = await phone.services.store.getGroup(groupId);
+    expect(restored?.kxKey).toBeUndefined();
+    await leaveGroup(ben.services, groupId);
+    await ben.services.sync.syncOnce();
+    await ana.services.sync.syncOnce();
+    await phone.services.sync.syncOnce();
+    const held = await phone.services.store.getGroup(groupId);
+    if (held === undefined) throw new Error('Expected the group on the phone.');
+    expect(keyChangeOf(held, fold(held.log, held.relayNow))).toBe('missed');
   });
 });
 

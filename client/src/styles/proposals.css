@@ -407,6 +407,14 @@
   background: none;
 }
 
+/* A move's section (#103) keeps its sunken box inside the card: it is the text that moves, as it
+ * reads now, not the card's own words, so a header there never reads as the card's heading. */
+.version > .atom-card-current {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--sunken);
+}
+
 /* The pills sit at the foot of each card, so side by side they line up. */
 .version .score-group {
   margin-block-start: auto;

@@ -285,6 +285,7 @@ export interface OptInProposalState extends Closing {
           | 'edit'
           | 'add'
           | 'new-document'
+          | 'move'
           | 'steward'
           | 'dissolve'
           | 'remove'

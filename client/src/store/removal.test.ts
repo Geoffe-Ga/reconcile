@@ -358,7 +358,11 @@ describe('a removed member’s group and backup files (#78)', () => {
     });
     opened.push(sync);
 
-    expect(await importGroups(other, file, 'a long walk')).toEqual({ groups: 1, skipped: 0 });
+    expect(await importGroups(other, file, 'a long walk')).toEqual({
+      groups: 1,
+      skipped: 0,
+      older: false,
+    });
 
     const restored = (await other.getGroup(groupId)) ?? never();
     expect(restored.archived).toEqual({ reason: 'removed' });

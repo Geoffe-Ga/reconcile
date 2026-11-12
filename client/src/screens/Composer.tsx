@@ -31,7 +31,7 @@ import { sectionsPreview } from '../app/sectionsPreview';
 import { useDraft } from '../app/useDraft';
 import { versionDoes } from '../app/versionViews';
 import { WindowField } from '../app/WindowField';
-import { normalizeAtomText } from '../engine/atomText';
+import { type HeadingLevel, normalizeAtomText } from '../engine/atomText';
 import { composeOption, openProposalOn } from '../engine/composeOption';
 import { DOCUMENT_TITLE_MAX, documentTitle } from '../engine/documents';
 import { type Atom, type GroupState, type Proposal, TITLE_MAX, WHY_MAX } from '../engine/fold';
@@ -114,8 +114,14 @@ function proposesDocument(place: ProposalPlace): boolean {
   return 'target' in place && place.target.kind === 'new-document';
 }
 
-/** Where the Proposal goes, a new Document's title taken from the draft, trimmed (#92). */
+/**
+ * Where the Proposal goes: a new Document's title taken from the draft,
+ * trimmed (#92), and a move's place from the draft too (#103).
+ */
 function placeFor(place: ProposalPlace, draft: Draft): ProposalPlace {
+  if ('target' in place && place.target.kind === 'move') {
+    return { target: { ...place.target, after: draft.moveAfter ?? null } };
+  }
   if (!proposesDocument(place)) return place;
   return { target: { kind: 'new-document', title: (draft.documentTitle ?? '').trim() } };
 }
@@ -141,15 +147,22 @@ function toValues(draft: Draft, place: ProposalPlace, window: number): ProposalV
 }
 
 /** `draft` with no Dispatch (#112): "Send a Dispatch if this passes" unchecked. */
-function withoutDispatch({ title, why, text, link, window, documentTitle }: Draft): Draft {
-  return {
-    title,
-    why,
-    text,
-    link,
-    ...(window === undefined ? {} : { window }),
-    ...(documentTitle === undefined ? {} : { documentTitle }),
-  };
+function withoutDispatch(draft: Draft): Draft {
+  const rest = { ...draft };
+  delete rest.dispatch;
+  return rest;
+}
+
+/**
+ * The Document a Proposal changes (#92): its section's for a change, a
+ * removal or a move (#103), the one an add names, or none yet for a new
+ * Document.
+ */
+function changedDocument(state: GroupState, place: ProposalPlace): string | undefined {
+  if (!('target' in place)) return sectionPlace(state, place.atom)?.document.id;
+  const { target } = place;
+  if (target.kind === 'move') return sectionPlace(state, target.atom)?.document.id;
+  return target.kind === 'add' ? target.document : undefined;
 }
 
 /**
@@ -157,10 +170,9 @@ function withoutDispatch({ title, why, text, link, window, documentTitle }: Draf
  * is in, or Group home for a new Document, which no Document holds yet.
  */
 function backFor(state: GroupState, place: ProposalPlace): Back {
-  if (!('target' in place))
-    return documentBack(state, sectionPlace(state, place.atom)?.document.id);
-  const { target } = place;
-  return target.kind === 'add' ? documentBack(state, target.document) : groupBack(state);
+  return proposesDocument(place)
+    ? groupBack(state)
+    : documentBack(state, changedDocument(state, place));
 }
 
 /**
@@ -171,9 +183,7 @@ function dispatchStart(state: GroupState, values: Draft, place: ProposalPlace): 
   const { composer } = messages;
   if (proposesDocument(place))
     return composer.dispatchNewTitle((values.documentTitle ?? '').trim());
-  const id = 'target' in place && place.target.kind === 'add' ? place.target.document : undefined;
-  const changed = 'atom' in place ? sectionPlace(state, place.atom)?.document.id : id;
-  return composer.dispatchTitle(documentTitle(state, changed ?? null) ?? '');
+  return composer.dispatchTitle(documentTitle(state, changedDocument(state, place) ?? null) ?? '');
 }
 
 /** The class `targetClass` gives this Proposal as it stands, which bounds its voting time. */
@@ -191,14 +201,20 @@ function startOf(state: GroupState, atom: Atom): Draft {
   return { title: '', why: '', text: atom.text, link: latestLink(state) ?? '' };
 }
 
-/** The entries as the Proposal takes them, and, proposing again, the other versions' texts too. */
+/**
+ * The entries as the Proposal takes them, a header's level with them (#103),
+ * and, proposing again, the other versions' texts too.
+ */
 function valuesOf(
   draft: Draft,
-  place: ProposalPlace,
-  again: Proposal | undefined,
+  form: Pick<ProposalFormProps, 'place' | 'again' | 'heading'>,
   window: number,
 ): ProposalValues {
-  const values = toValues(draft, place, window);
+  const { again, heading } = form;
+  const values = {
+    ...toValues(draft, form.place, window),
+    ...(heading === undefined ? {} : { heading }),
+  };
   if (again === undefined) return values;
   return { ...values, again: again.id, versions: again.versions.slice(1).map((v) => v.text) };
 }
@@ -334,11 +350,19 @@ function DispatchChoice({ values, start, onChange, hint }: DispatchChoiceProps) 
   );
 }
 
+/**
+ * A field of a form's own in place of the text field (#103): a header's one
+ * Heading line, or where a move puts its section. It reads and changes the draft.
+ */
+export type OwnField = (values: Draft, onChange: (values: Draft) => void) => ReactNode;
+
 interface FieldsProps {
   readonly state: GroupState;
   readonly values: Draft;
   /** The text field, or null for a removal, whose text is `""` (#75). */
   readonly text: TextEntry | null;
+  /** A field of the form's own in place of the text field, if any (#103). */
+  readonly field: OwnField | undefined;
   /** Where the Proposal goes, whose class bounds its voting time (#106). */
   readonly place: ProposalPlace;
   readonly now: number;
@@ -367,13 +391,49 @@ function DocumentTitleField({ values, onChange }: Pick<FieldsProps, 'values' | '
   );
 }
 
+/** The text field, a form's own field in its place (#103), or nothing for a removal (#75). */
+function TextOrOwn({
+  values,
+  text,
+  field,
+  onChange,
+}: Omit<FieldsProps, 'state' | 'place' | 'now' | 'words' | 'dispatch'>) {
+  if (field !== undefined) return <>{field(values, onChange)}</>;
+  if (text === null) return null;
+  return (
+    <MarkdownField
+      name="text"
+      label={text.label}
+      hint={text.hint}
+      value={values.text}
+      onChange={(value) => {
+        onChange({ ...values, text: value });
+      }}
+      validate={text.validate}
+      isRequired
+      preview={text.preview ?? preview}
+    />
+  );
+}
+
 /**
  * The four entries, or three for a removal (#75) and five for a new Document,
  * whose title comes after the why (#92), the voting time and any Dispatch it
- * carries (#112), each kept in the draft as it changes.
+ * carries (#112), each kept in the draft as it changes. A header or a move
+ * has a field of its own where the text goes (#103).
  */
-function Fields({ state, values, text, place, now, onChange, words, dispatch }: FieldsProps) {
-  const set = (key: 'title' | 'why' | 'text' | 'link') => (value: string) => {
+function Fields({
+  state,
+  values,
+  text,
+  place,
+  now,
+  onChange,
+  words,
+  dispatch,
+  field,
+}: FieldsProps) {
+  const set = (key: 'title' | 'why' | 'link') => (value: string) => {
     onChange({ ...values, [key]: value });
   };
   return (
@@ -399,18 +459,7 @@ function Fields({ state, values, text, place, now, onChange, words, dispatch }: 
         onChange={set('why')}
       />
       {proposesDocument(place) ? <DocumentTitleField values={values} onChange={onChange} /> : null}
-      {text === null ? null : (
-        <MarkdownField
-          name="text"
-          label={text.label}
-          hint={text.hint}
-          value={values.text}
-          onChange={set('text')}
-          validate={text.validate}
-          isRequired
-          preview={text.preview ?? preview}
-        />
-      )}
+      <TextOrOwn values={values} text={text} field={field} onChange={onChange} />
       <Field
         name="link"
         label={messages.composer.linkLabel}
@@ -522,6 +571,10 @@ export interface ProposalFormProps {
   readonly back?: Back;
   /** Whether it offers "Send a Dispatch if this passes" (#112): yes unless false. */
   readonly dispatch?: boolean;
+  /** A field of its own in place of the text field (#103): a header's Heading, or a move's place. */
+  readonly field?: OwnField;
+  /** For an add written as a header (#103), its level, whose draft it is kept in. */
+  readonly heading?: HeadingLevel;
 }
 
 /**
@@ -542,7 +595,7 @@ export function ProposalForm(props: ProposalFormProps) {
   if (values === null) return null;
   const submit = (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
-    void run(valuesOf(values, place, props.again, windowOf(state, values, place)));
+    void run(valuesOf(values, props, windowOf(state, values, place)));
   };
   const change = (next: Draft) => {
     setSaid('');
@@ -570,6 +623,7 @@ export function ProposalForm(props: ProposalFormProps) {
           onChange={change}
           words={words}
           dispatch={props.dispatch ?? true}
+          field={props.field}
         />
         <OtherVersions again={props.again} />
         <p className="caption">{words.visibility ?? messages.composer.visibility}</p>
@@ -854,7 +908,14 @@ export function Composer(props: ComposerProps) {
       />
     );
   }
-  if (composeOption(state, atomId) === 'ballot-full') {
+  const option = composeOption(state, atomId);
+  if (option === 'moving') {
+    const back = documentBack(state, what.section?.atom.documentId);
+    return (
+      <Unavailable state={state} title={composer.movingTitle} text={composer.moving} back={back} />
+    );
+  }
+  if (option === 'ballot-full') {
     return <Unavailable state={state} title={composer.fullTitle} text={composer.full} />;
   }
   return (

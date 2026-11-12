@@ -90,11 +90,11 @@ interface Again {
 
 /**
  * Whether `props`' Proposal can be proposed again here, and if so whether it
- * waits: a change, a section's removal, an add (#75) or a new Document (#92)
- * while another Proposal is open on its section or its own id, and a priority
- * vote (#107) while another priority vote is open. A member's removal (#115)
- * isn't proposed again from here. A steward or rules vote isn't proposed
- * again from here: Group home
+ * waits: a change, a section's removal, an add (#75), a new Document (#92) or
+ * a move (#103) while another Proposal is open on its section or its own id,
+ * and a priority vote (#107) while another priority vote is open. A member's
+ * removal (#115) isn't proposed again from here. A steward or rules vote
+ * isn't proposed again from here: Group home
  * says when an election is due (#102), and the Rules page offers each opt-in
  * (#117). Nothing is, while this member leaves or for someone who can't
  * propose.
@@ -103,7 +103,8 @@ function againOf(props: ResultViewProps): Again | null {
   const { state, me, proposal, leaving = false } = props;
   const priority = isPriority(proposal);
   const { kind } = proposal.target;
-  const again = priority || kind === 'edit' || kind === 'add' || kind === 'new-document';
+  const again =
+    priority || kind === 'edit' || kind === 'add' || kind === 'new-document' || kind === 'move';
   if (leaving || !again || !can(state, me, 'propose')) return null;
   const { result } = messages;
   return priority
@@ -161,11 +162,12 @@ export type Naming = 'versions' | 'options';
 
 /**
  * "Version 1 · Ana", the version's heading wherever the result names it, what a
- * steward, rules, dissolve or member removal ballot decided (#102, #117, #108,
- * #115), or a priority option's text (#107).
+ * steward, rules, dissolve, member removal or move ballot decided (#102,
+ * #117, #108, #115, #103), or a priority option's text (#107).
  */
 function VersionName({ version, naming }: { readonly version: VersionView; naming: Naming }) {
   if (naming === 'options') return <bdi>{version.text}</bdi>;
+  if (version.move !== undefined) return <>{version.move.line}</>;
   if (version.steward !== undefined) return <MotionTitle motion={version.steward.motion} />;
   if (version.rules !== undefined) return <>{version.rules.title}</>;
   if (version.dissolve !== undefined) return <>{version.dissolve.title}</>;

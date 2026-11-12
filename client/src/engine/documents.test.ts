@@ -96,6 +96,15 @@ describe('documentOf (#92)', () => {
     expect(documentOf(STATE, change('P', 'R', { kind: 'edit' }))).toBe('G:1');
   });
 
+  it('names the Document of the section a move moves, even once a removal has taken it out (#103)', () => {
+    expect(
+      documentOf(STATE, change('P', 'G:1.0', { kind: 'move', atom: 'G:1.0', after: null })),
+    ).toBe('G:1');
+    expect(documentOf(STATE, change('P', 'G.1', { kind: 'move', atom: 'G.1', after: 'G.0' }))).toBe(
+      'G',
+    );
+  });
+
   it('names nothing for a section it has no trace of', () => {
     expect(documentOf(STATE, change('P', 'nowhere', { kind: 'edit' }))).toBeNull();
   });
