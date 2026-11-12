@@ -86,12 +86,16 @@ async function vote(person: Person): Promise<void> {
   await expect(page.locator('.ballot-send').getByRole('status')).toHaveText('Sent');
 }
 
-/** The Document's sections as a profile reads them, from its Document view. */
+/**
+ * The Document's sections as a profile reads them, from its Document view,
+ * where a read-only copy offers no Propose, only each section's History (#104).
+ */
 async function documentText(page: Page): Promise<string[]> {
   await page.getByRole('link', { name: TITLE, exact: true }).click();
   await expect(heading(page, TITLE)).toBeVisible();
   await expect(page.getByRole('button', { name: /Propose a change/ })).toHaveCount(0);
-  return page.locator('article.document .atom').allInnerTexts();
+  await expect(page.getByRole('button', { name: /^History of section/ })).toHaveCount(ATOMS.length);
+  return page.locator('article.document .atom-text').allInnerTexts();
 }
 
 test('three members dissolve their group, and every device keeps the same read-only copy', async ({

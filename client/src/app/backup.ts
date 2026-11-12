@@ -7,13 +7,14 @@
  * it hands the file to the share sheet or downloads it (`share.ts`), and only
  * once it's saved are its groups marked, so group home stops suggesting a
  * backup for them. Restoring checks the whole file before it writes anything,
+ * leaving out any group entry that doesn't check out and saying so (#336),
  * then syncs at once, so the restored groups catch up with the relay. The file
  * carries the device's relay backup key (#97), and a device restored from it
  * keeps the key if it has none, so its first complete sync pass refreshes the
  * relay backup.
  */
 import type { Store } from '../store/db';
-import { exportGroups, importGroups, type Restored } from '../store/snapshot';
+import { exportGroups, importGroups, type RestoredFile } from '../store/snapshot';
 import type { Sync } from '../store/sync';
 import { backupFile, type FileTargets, type SaveOutcome, saveFile } from './share';
 import { messages } from './messages';
@@ -70,8 +71,8 @@ export async function saveBackup(
 
 /**
  * Restores the backup in `bytes` under `passphrase`, then syncs. Returns how
- * many groups it held, and whether it is an older file, which holds no
- * encryption key (#225).
+ * many groups it brought back, how many group entries it left out (#336),
+ * and whether it is an older file, which holds no encryption key (#225).
  *
  * @throws {BackupUnreadable} when it doesn't open or doesn't check out; nothing is written then.
  */
@@ -82,7 +83,7 @@ export async function restoreBackup(
   },
   bytes: Uint8Array,
   passphrase: string,
-): Promise<Restored> {
+): Promise<RestoredFile> {
   const restored = await importGroups(services.store, bytes, passphrase);
   void services.sync.syncOnce();
   return restored;

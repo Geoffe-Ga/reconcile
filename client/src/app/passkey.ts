@@ -31,7 +31,7 @@ import { prfTrusted } from '../platform/prfPolicy';
 import { PasskeyUnanswered, type WebAuthn } from '../platform/webauthn';
 import { sweepArchives } from '../store/archive';
 import type { Store } from '../store/db';
-import { replaceWithBackup, type Restored } from '../store/snapshot';
+import { replaceWithBackup, type RestoredFile } from '../store/snapshot';
 import type { Sync } from '../store/sync';
 
 /** What passkey setup and unlock run on. */
@@ -128,12 +128,13 @@ export interface DeviceLock {
   unlock(): Promise<boolean>;
   /**
    * Puts a backup file's groups in place of the locked ones, then opens the
-   * app's background work. Returns how many groups came back, and whether
-   * the file is an older one (#225).
+   * app's background work. Returns how many groups came back, how many group
+   * entries the file held that didn't check out (#336), and whether the file
+   * is an older one (#225).
    *
    * @throws {BackupUnreadable} when the file doesn't open; nothing is written then.
    */
-  restore(file: Uint8Array, passphrase: string): Promise<Restored>;
+  restore(file: Uint8Array, passphrase: string): Promise<RestoredFile>;
 }
 
 /** Opens the store's vault with the passkey's PRF output; false on any failure, writing nothing. */

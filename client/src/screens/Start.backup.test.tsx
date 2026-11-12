@@ -11,7 +11,7 @@ describe('Start', () => {
       <Start
         groups={[]}
         onOpenInvite={vi.fn()}
-        onRestore={vi.fn(() => Promise.resolve({ groups: 1, older: false }))}
+        onRestore={vi.fn(() => Promise.resolve({ groups: 1, skipped: 0, older: false }))}
       />,
     );
 

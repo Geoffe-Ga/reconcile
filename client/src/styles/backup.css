@@ -144,13 +144,18 @@
 }
 
 /*
- * What a restore says: how many groups came back, then, from an older file,
- * why this device may miss a new key (#225), as a lede: plain words in the
- * reading measure, no semantic color, since nothing went wrong.
+ * What a restore says: how many groups came back, two sentences once it left
+ * a group out (#336), kept to a field hint's measure; then, from an older
+ * file, why this device may miss a new key (#225), as a lede: plain words in
+ * the reading measure, no semantic color, since nothing went wrong.
  */
 .restore-status {
   display: grid;
   gap: var(--space-2);
+}
+
+.restore-status .status {
+  max-width: 34em;
 }
 
 /* The chosen backup file's name, which may be anything the person's device called it. */
