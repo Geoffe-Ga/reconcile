@@ -11,29 +11,39 @@ import { sendInvite } from '../door/inbox';
 import type { OpenPage } from '../door/page';
 import { can, type Level } from '../engine/capabilities';
 import type { GroupState, Proposal } from '../engine/fold';
+import { removedFrom } from '../engine/removal';
 import { ownBallot } from '../engine/ownBallot';
 import { isPriority } from '../engine/priority';
 import { Applications } from '../screens/Applications';
+import { GroupChangeLog } from '../screens/ChangeLog';
 import { Composer, type ComposeOutcome } from '../screens/Composer';
 import { CreateGroup, type CreateOutcome } from '../screens/CreateGroup';
 import { Dispatches } from '../screens/Dispatches';
 import { DissolveComposer } from '../screens/DissolveComposer';
-import { DocumentView } from '../screens/DocumentView';
+import { type AddPlace, DocumentView } from '../screens/DocumentView';
 import { FrontDoor } from '../screens/FrontDoor';
 import { GroupHome } from '../screens/GroupHome';
+import { RecoveryContacts } from '../screens/RecoveryContacts';
 import { GroupRules } from '../screens/GroupRules';
-import { GroupArchived, GroupMissing, GroupSettingUp } from '../screens/GroupStatus';
+import {
+  GroupArchived,
+  GroupMissing,
+  GroupSettingUp,
+  GroupUnconfirmed,
+} from '../screens/GroupStatus';
 import { BringCard } from '../screens/BringCard';
 import { Join } from '../screens/Join';
 import { type CardStep, ReconcileCard } from '../screens/ReconcileCard';
 import { LinkNewDevice } from '../screens/LinkNewDevice';
 import { LinkThisDevice } from '../screens/LinkThisDevice';
+import { NewDocumentComposer } from '../screens/NewDocumentComposer';
 import type { OptIn } from '../engine/optIns';
 import { OptInComposer, type OptInOutcome } from '../screens/OptInComposer';
 import { Personal } from '../screens/Personal';
 import { PersonalDocument } from '../screens/PersonalDocument';
 import { PriorityComposer } from '../screens/PriorityComposer';
 import { ProposalView } from '../screens/ProposalView';
+import { RemovalComposer } from '../screens/RemovalComposer';
 import { AddSection, RemoveSection } from '../screens/SectionComposer';
 import { SendDispatch } from '../screens/SendDispatch';
 import { type NotifyGroup, Settings, type SettingsPasskey } from '../screens/Settings';
@@ -41,10 +51,11 @@ import { SharedPage } from '../screens/SharedPage';
 import type { SeatNumber } from '../engine/stewards';
 import type { GuideRecord } from '../platform/guide';
 import type { Persistence } from '../platform/persist';
-import { Start, type StartRequest } from '../screens/Start';
+import { Start, type StartFollowing, type StartRequest } from '../screens/Start';
 import { StewardComposer, type StewardOutcome } from '../screens/StewardComposer';
 import { dismissed } from '../store/applications';
 import { dispatchOf, notesElsewhere, skipCarry } from '../store/carry';
+import type { HeldCoalition } from '../store/coalitions';
 import type { Group, Me } from '../store/db';
 import { type GroupDrafts, groupDrafts } from '../store/drafts';
 import { foldGroup } from '../store/expiry';
@@ -63,6 +74,7 @@ import {
 import { makeBackup, restoreBackup, saveBackup } from './backup';
 import { personalSharing } from './personalSharing';
 import { BackupCard } from './BackupCard';
+import { HeldShareCard } from './HeldShares';
 import { CoalitionSection } from './CoalitionSection';
 import { coalitionRows, sitsInFormed, withMotionWords } from './coalitionLines';
 import {
@@ -89,9 +101,12 @@ import {
   propose,
   proposeDispatch,
   proposeDissolve,
+  proposeRemoval,
   proposeRules,
   proposeSteward,
   type RisingValues,
+  type RemovalValues,
+  respondToRemoval,
   type RulesValues,
   sendDispatch,
   type StewardValues,
@@ -101,10 +116,12 @@ import {
   type VersionValues,
   vouch,
 } from './proposals';
-import { CoalitionRouteScreen } from './CoalitionScreens';
+import { CoalitionRouteScreen, FollowScreen } from './CoalitionScreens';
 import {
+  type BareRoute,
   type CoalitionRoute,
   type GroupRoute,
+  isBare,
   navigate,
   replaceRoute,
   type Route,
@@ -114,10 +131,19 @@ import type { AppServices } from './services';
 import type { ChatDetails, ChatMoment } from './chatMessages';
 import { chatPayload, shareOrCopy } from './share';
 import { relayMinuteNow } from './time';
-import { GroupServicesContext, type GroupView, useGroup } from './useGroup';
+import { GroupServicesContext, type GroupView, useCoalitionList, useGroup } from './useGroup';
 import { useGroupList, useGroups } from './useGroupList';
 import { useNow } from './useNow';
 import { usePersonalList } from './usePersonalList';
+import { chooseContacts } from '../store/recovery';
+import { approveRecovery, holdViews } from '../recovery/holder';
+import { recoverSession, startRecovery, stopRecovery } from '../recovery/request';
+import { HelpRecover } from '../screens/HelpRecover';
+import { RecoverStart } from '../screens/RecoverStart';
+import { messages } from './messages';
+import { RecoveryAlert } from './RecoveryAlert';
+import { useRecovery } from './useRecovery';
+import { useRecoveryAlert } from './useRecoveryAlert';
 import { useSentApplications } from './useSent';
 import { useRelayBackupStatus } from './useRelayBackup';
 
@@ -135,7 +161,27 @@ interface StartScreenProps {
   readonly services: AppServices;
   readonly onOpenInvite: (seed: Uint8Array) => void;
   readonly onOpenCard: (seed: Uint8Array) => void;
+  readonly onOpenFollow: (seed: Uint8Array) => void;
   readonly persistence: Persistence | null;
+}
+
+/**
+ * The recovery alert (#118) while a recovery of this person waits, with
+ * Cancel this recovery; null when there is none. Start shows it first, and
+ * every group home first among its quiet cards.
+ */
+function useAlertCard(services: AppServices): ReactNode {
+  const { summary, cancel } = useRecoveryAlert(services);
+  return summary === null ? null : <RecoveryAlert summary={summary} onCancel={cancel} />;
+}
+
+/** The coalitions this device follows (#124), once each has its genesis, as Start lists them. */
+function followingOf(coalitions: readonly HeldCoalition[]): StartFollowing[] {
+  return coalitions.flatMap(({ entry, state }) => {
+    if (entry.following !== true || state.group === null || state.coalition === null) return [];
+    const groups = state.coalition.seats.map((seat) => seat.name);
+    return [{ coalitionId: state.group, name: state.name, groups }];
+  });
 }
 
 /** Opens a front door link pasted into Start (#121). */
@@ -144,8 +190,11 @@ function openDoor(payload: string): void {
 }
 
 function StartScreen(props: StartScreenProps) {
-  const { services, onOpenInvite, onOpenCard, persistence } = props;
+  const { services, onOpenInvite, onOpenCard, onOpenFollow, persistence } = props;
   const groups = useGroupList(services.store);
+  const alert = useAlertCard(services);
+  const coalitions = useCoalitionList(services.store);
+  const following = useMemo(() => followingOf(coalitions ?? []), [coalitions]);
   const sent = useSentApplications(services.store);
   const requests = useMemo(
     () =>
@@ -168,8 +217,11 @@ function StartScreen(props: StartScreenProps) {
       onOpenInvite={onOpenInvite}
       onOpenDoor={openDoor}
       onOpenCard={onOpenCard}
+      onOpenFollow={onOpenFollow}
+      following={following}
       persistence={persistence}
       onRestore={onRestore}
+      alert={alert}
     />
   );
 }
@@ -228,17 +280,18 @@ function notifyGroupOf(group: Group): NotifyGroup | null {
 }
 
 /**
- * Settings (#78, #95, #96, #99): Notifications, Save a backup with the relay
- * backup's line (#97), Restore a backup, Link a new device, Lock with a
- * passkey, and Erase.
+ * Settings (#78, #95, #96, #99, #109): Notifications, Save a backup with the
+ * relay backup's line (#97), Recovery contacts (#109), Restore a backup, Link
+ * a new device, Lock with a passkey, and Erase.
  */
 function SettingsScreen({ services }: { readonly services: AppServices }) {
   const groups = useGroupList(services.store);
   const switches = useGroups(services.store, notifyGroupOf);
   const relayBackup = useRelayBackupStatus(services.store);
+  const recovery = useRecovery(services.store);
   const { push, passkey } = services;
   const passkeyState = usePasskeyState(passkey);
-  const loaded = groups !== null && switches !== null && relayBackup !== null;
+  const loaded = groups !== null && switches !== null && relayBackup !== null && recovery !== null;
   return !loaded || passkeyState === null ? null : (
     <Settings
       notify={{
@@ -249,6 +302,12 @@ function SettingsScreen({ services }: { readonly services: AppServices }) {
       }}
       hasGroups={groups.length > 0}
       relayBackup={relayBackup}
+      recovery={{
+        status: recovery.status,
+        held: recovery.held,
+        canChoose: recovery.groups.length > 0,
+        recovered: recovery.recovered,
+      }}
       onMake={(passphrase) => makeBackup(services, passphrase)}
       onSave={(backup) => saveBackup(services, backup)}
       onRestore={(bytes, passphrase) => restoreBackup(services, bytes, passphrase)}
@@ -262,12 +321,109 @@ function SettingsScreen({ services }: { readonly services: AppServices }) {
   );
 }
 
-/** Personal (#93): this device's personal Documents, and the id a new one opens at. */
+/**
+ * Whether the device keeps a relay backup key (#97), kept current as the
+ * store changes, or null until the store answers: what Personal and each
+ * personal Document's line on where they go depends on (#248).
+ */
+function useKeepsRelayBackup(store: AppServices['store']): boolean | null {
+  const status = useRelayBackupStatus(store);
+  return status === null ? null : status.kind !== 'off';
+}
+
+/**
+ * Choose recovery contacts (#109): the picker, from the people in this
+ * device's groups. Saving chooses them, then goes back to Settings, where
+ * their status shows.
+ */
+function RecoveryScreen({ services }: { readonly services: AppServices }) {
+  const recovery = useRecovery(services.store);
+  return recovery === null ? null : (
+    <RecoveryContacts
+      groups={recovery.groups}
+      current={recovery.status}
+      recovered={recovery.recovered && recovery.status === null}
+      onSave={async (choice) => {
+        await chooseContacts(services, choice);
+        replaceRoute({ name: 'settings' });
+      }}
+    />
+  );
+}
+
+/** A stored group as it is, for `useGroups`. */
+const wholeGroup = (group: Group): Group => group;
+
+/**
+ * Recover with my contacts (#118), on a new device: keeps a request and
+ * shows its code, shares it with fixed words and the app's address beside
+ * it (the code's whole point is to reach the person's contacts), and polls
+ * until a backup opens. Then it syncs and opens the picker, which asks the
+ * person to choose their contacts again. Stop recovering forgets the code.
+ */
+function RecoverScreen({ services }: { readonly services: AppServices }) {
+  const start = useCallback(() => startRecovery(services), [services]);
+  const session = useMemo(() => recoverSession(services), [services]);
+  const onShare = useCallback(
+    (code: string) =>
+      shareOrCopy(
+        { text: `${messages.recover.message} ${code}`, url: `${services.origin}/` },
+        services,
+      ),
+    [services],
+  );
+  const onRestored = useCallback(() => {
+    void services.sync.syncOnce();
+    replaceRoute({ name: 'recovery' });
+  }, [services]);
+  const onStop = useCallback(async () => {
+    await stopRecovery(services);
+    replaceRoute({ name: 'start' });
+  }, [services]);
+  return (
+    <RecoverStart
+      start={start}
+      poll={session.poll}
+      onShare={onShare}
+      onRestored={onRestored}
+      onStop={onStop}
+    />
+  );
+}
+
+/**
+ * Help someone recover (#118), on a recovery contact's device: the shares it
+ * holds, each recovery it's helping with read at the relay's minute as this
+ * device estimates it, and Approve.
+ */
+function HelpRecoverScreen({ services }: { readonly services: AppServices }) {
+  const recovery = useRecovery(services.store);
+  const groups = useGroups(services.store, wholeGroup);
+  const deviceNow = useNow(services.now);
+  if (recovery === null || groups === null) return null;
+  const holds = holdViews(groups, (group) => relayMinuteNow(group, deviceNow));
+  return (
+    <HelpRecover
+      held={recovery.held}
+      holds={holds}
+      onApprove={(approval) => approveRecovery(services, approval)}
+    />
+  );
+}
+
+/**
+ * Personal (#93): this device's personal Documents, and the id a new one
+ * opens at, at the device time that says which shares wait for the person (#339).
+ */
 function PersonalScreen({ services }: { readonly services: AppServices }) {
   const documents = usePersonalList(services.store);
+  const relayBackup = useKeepsRelayBackup(services.store);
+  const now = useNow(services.now);
   // One id per visit: nothing is stored under it until that Document's first save.
   const [newId] = useState(newPersonalId);
-  return documents === null ? null : <Personal documents={documents} newId={newId} />;
+  return documents === null ? null : (
+    <Personal documents={documents} newId={newId} now={now} relayBackup={relayBackup} />
+  );
 }
 
 interface PersonalDocumentScreenProps {
@@ -281,6 +437,7 @@ function PersonalDocumentScreen({ services, id }: PersonalDocumentScreenProps) {
     replaceRoute({ name: 'personal' });
   }, []);
   const sharing = useMemo(() => personalSharing(services), [services]);
+  const relayBackup = useKeepsRelayBackup(services.store);
   return (
     <PersonalDocument
       id={id}
@@ -288,6 +445,7 @@ function PersonalDocumentScreen({ services, id }: PersonalDocumentScreenProps) {
       now={services.now}
       onDeleted={onDeleted}
       sharing={sharing}
+      relayBackup={relayBackup}
     />
   );
 }
@@ -428,9 +586,32 @@ interface ReadyGroup extends GroupView {
 
 interface GroupGateProps {
   readonly groupId: string;
-  /** True for a screen that writes something new: a dissolved group shows it only reads (#108). */
+  /**
+   * True for a screen that writes something new: a dissolved group (#108),
+   * a group a vote removed this member from (#115), and a copy back from a
+   * backup that hasn't heard from the group (#231), show they only read.
+   */
   readonly writes?: boolean;
   readonly children: (group: ReadyGroup) => ReactNode;
+}
+
+/**
+ * What a screen that writes shows in its place for a group that only reads:
+ * a dissolved group's page (#108), a removed member's (#115), or a copy back
+ * from a backup that hasn't heard from the group (#231); null for one that
+ * takes new things. `me` is this member's key.
+ */
+function readOnlyPage(
+  groupId: string,
+  state: GroupState,
+  me: string,
+  unconfirmed: boolean,
+): ReactNode {
+  const removed = removedFrom(state, me) !== undefined;
+  if (state.dissolved !== null || removed) {
+    return <GroupArchived groupId={groupId} name={state.name} removed={removed} />;
+  }
+  return unconfirmed ? <GroupUnconfirmed groupId={groupId} name={state.name} /> : null;
 }
 
 /** Renders `children` once the group is ready, or says why it isn't. */
@@ -440,8 +621,8 @@ function GroupGate({ groupId, writes = false, children }: GroupGateProps) {
   if (!loaded) return null;
   if (state === null || me === null) return <GroupMissing />;
   if (state.group === null) return <GroupSettingUp />;
-  if (writes && state.dissolved !== null)
-    return <GroupArchived groupId={groupId} name={state.name} />;
+  const page = writes ? readOnlyPage(groupId, state, me.author, group.unconfirmed) : null;
+  if (page !== null) return page;
   // A coalition motion takes its title and why from its coalition (#114).
   return children({ ...group, state: withMotionWords(state, group.coalitions), me });
 }
@@ -483,6 +664,7 @@ function applicationsFor(services: AppServices, group: GroupView & { state: Grou
 
 function GroupScreen({ services, groupId }: GroupScreenProps) {
   const deviceNow = useNow(services.now);
+  const alert = useAlertCard(services);
   return (
     <GroupGate groupId={groupId}>
       {(group) => (
@@ -502,10 +684,18 @@ function GroupScreen({ services, groupId }: GroupScreenProps) {
           }}
           pending={group.pending}
           leaving={group.leaving}
+          unconfirmed={group.unconfirmed}
           backupCard={
             group.suggestBackup && !group.leaving ? (
               <BackupCard onNotNow={() => services.store.markBackup([groupId], 'not-now')} />
             ) : null
+          }
+          alertCard={alert === null ? null : <div className="backup-slot">{alert}</div>}
+          recoveryCard={
+            <HeldShareCard
+              held={group.newShares}
+              onDismiss={(ids) => services.store.markRecoverySeen(groupId, ids)}
+            />
           }
           onChooseLevel={(level) => chooseLevel(services, groupId, level)}
           onLeave={async () => {
@@ -540,9 +730,9 @@ function coalitionNames(coalitions: GroupView['coalitions']): Record<string, str
  * the group takes new things and this device reads its current key.
  */
 function Coalitions({ services, group }: { services: AppServices; group: ReadyGroup }) {
-  const { state, me, coalitions, leaving, keyChange } = group;
+  const { state, me, coalitions, leaving, unconfirmed, keyChange } = group;
   const groupId = state.group ?? '';
-  const open = !leaving && state.dissolved === null && keyChange === null;
+  const open = !leaving && !unconfirmed && state.dissolved === null && keyChange === null;
   return (
     <CoalitionSection
       groupId={groupId}
@@ -618,27 +808,51 @@ function BringScreen({ services, payload, heldSeed, releaseSeed }: BringScreenPr
   );
 }
 
-function DocumentScreen({ services, groupId }: GroupScreenProps) {
+/** One of the group's Documents (#92), by its id from the route, or its first. */
+function DocumentScreen({
+  services,
+  groupId,
+  documentId,
+}: GroupScreenProps & { readonly documentId?: string }) {
   const openComposer = (atomId: string) => {
     navigate({ name: 'propose', groupId, atomId });
   };
-  const openAdd = (after: string | null) => {
-    navigate({ name: 'add', groupId, after });
+  // After an Atom, its Document is the Atom's; at the start, the route names the Document (#92).
+  const openAdd = ({ document, after }: AddPlace) => {
+    navigate({ name: 'add', groupId, after, ...(after === null ? { document } : {}) });
   };
   const openRemove = (atomId: string) => {
     navigate({ name: 'remove', groupId, atomId });
   };
   return (
     <GroupGate groupId={groupId}>
-      {({ state, me, leaving }) => (
+      {({ state, me, leaving, cleared, unconfirmed }) => (
         <DocumentView
           state={state}
           me={me.author}
+          {...(documentId === undefined ? {} : { documentId })}
           onPropose={openComposer}
           onAdd={openAdd}
           onRemove={openRemove}
           copyText={services.copyText}
           leaving={leaving}
+          unconfirmed={unconfirmed}
+          {...(cleared === null ? {} : { kept: cleared.tallies })}
+        />
+      )}
+    </GroupGate>
+  );
+}
+
+/** One of the group's Documents' change log (#104), with a cleared archive's kept tallies (#108). */
+function ChangeLogScreen({ groupId, documentId }: { groupId: string; documentId: string }) {
+  return (
+    <GroupGate groupId={groupId}>
+      {({ state, cleared }) => (
+        <GroupChangeLog
+          state={state}
+          documentId={documentId}
+          {...(cleared === null ? {} : { kept: cleared.tallies })}
         />
       )}
     </GroupGate>
@@ -730,15 +944,19 @@ function Ask({ again, ...props }: ComposeProps & { readonly again?: Proposal }) 
 /**
  * Propose again (#74): the composer for what the lapsed Proposal targets,
  * starting from it. A change opens the composer on its section, a removal the
- * removal composer, an add Add a section at its spot (#75), and a priority
- * vote Ask what to focus on (#107).
+ * removal composer, an add Add a section at its spot in its Document (#75,
+ * #92), a new Document the new-Document composer (#92), and a priority vote
+ * Ask what to focus on (#107).
  */
 function ProposeAgain({ againId, ...props }: ComposeProps & { readonly againId: string }) {
   const again = props.state.proposals.find((proposal) => proposal.id === againId);
   if (again === undefined) return <Composer {...props} atomId="" />;
   if (isPriority(again)) return <Ask {...props} again={again} />;
   const { target } = again;
-  if (target.kind === 'add') return <AddSection {...props} after={target.after} again={again} />;
+  if (target.kind === 'new-document') return <NewDocumentComposer {...props} again={again} />;
+  if (target.kind === 'add') {
+    return <AddSection {...props} after={target.after} document={target.document} again={again} />;
+  }
   if (again.text === '') return <RemoveSection {...props} atomId={again.atom} again={again} />;
   return <Composer {...props} atomId={again.atom} again={again} />;
 }
@@ -804,6 +1022,8 @@ function GroupProposal({ services, group, proposalId }: GroupProposalProps) {
   };
   const onTell = (moment: ChatMoment, details: ChatDetails) =>
     shareOrCopy(chatPayload(moment, details, services.origin), services);
+  const onRespond = (text: string) =>
+    respondToRemoval(services, groupId, { proposal: proposalId, text });
   return (
     <ProposalView
       state={group.state}
@@ -814,11 +1034,13 @@ function GroupProposal({ services, group, proposalId }: GroupProposalProps) {
       now={relayMinuteNow(group, deviceNow)}
       own={ownBallot(group.state, group.log, proposalId, author)}
       leaving={group.leaving}
+      unconfirmed={group.unconfirmed}
       {...(group.cleared === null ? {} : { cleared: group.cleared })}
       coalitions={group.coalitions}
       onVote={onVote}
       onProposeAgain={onProposeAgain}
       onTell={onTell}
+      onRespond={onRespond}
       carry={group.carries.find((plan) => plan.motion === proposalId) ?? null}
       onSkipCarry={() => skipCarry(services.store, groupId, proposalId)}
       notesElsewhere={notes}
@@ -829,7 +1051,7 @@ function GroupProposal({ services, group, proposalId }: GroupProposalProps) {
 /** A route that opens a composer. */
 type ComposeRoute = Extract<
   Route,
-  { readonly name: 'propose' | 'add' | 'remove' | 'again' | 'priority' }
+  { readonly name: 'propose' | 'add' | 'remove' | 'again' | 'newDocument' | 'priority' }
 >;
 
 /** The composer a route opens, given what every composer is handed. */
@@ -838,7 +1060,15 @@ function composerFor(route: ComposeRoute): (props: ComposeProps) => ReactNode {
     case 'propose':
       return (props) => <Composer {...props} atomId={route.atomId} />;
     case 'add':
-      return (props) => <AddSection {...props} after={route.after} />;
+      return (props) => (
+        <AddSection
+          {...props}
+          after={route.after}
+          {...(route.document === undefined ? {} : { document: route.document })}
+        />
+      );
+    case 'newDocument':
+      return (props) => <NewDocumentComposer {...props} />;
     case 'remove':
       return (props) => <RemoveSection {...props} atomId={route.atomId} />;
     case 'again':
@@ -948,17 +1178,46 @@ function DissolveScreen({ services, groupId }: GroupScreenProps) {
   );
 }
 
+interface RemovalScreenProps extends GroupScreenProps {
+  readonly member: string;
+}
+
+/** The removal composer (#115); sending the Proposal replaces it with the Proposal's ballot. */
+function RemovalScreen({ services, groupId, member }: RemovalScreenProps) {
+  const onPropose = async (values: RemovalValues) => {
+    const result = await proposeRemoval(services, groupId, values);
+    if (result.outcome === 'too-large') return result.outcome;
+    // Replace the composer, so Back from the Proposal returns to Group home.
+    replaceRoute({ name: 'proposal', groupId, proposalId: result.proposalId });
+    return result.outcome;
+  };
+  return (
+    <GroupGate groupId={groupId} writes>
+      {({ state, me, leaving }) => (
+        <RemovalComposer
+          state={state}
+          me={me.author}
+          member={member}
+          leaving={leaving}
+          onPropose={onPropose}
+        />
+      )}
+    </GroupGate>
+  );
+}
+
 /** The group's Dispatches (#112), newest first, with this device's own while they wait. */
 function DispatchesScreen({ groupId }: { readonly groupId: string }) {
   return (
     <GroupGate groupId={groupId}>
-      {({ state, me, pending, reachable, leaving }) => (
+      {({ state, me, pending, reachable, leaving, unconfirmed }) => (
         <Dispatches
           state={state}
           me={me.author}
           pending={pending}
           reachable={reachable}
           leaving={leaving}
+          unconfirmed={unconfirmed}
         />
       )}
     </GroupGate>
@@ -1005,9 +1264,20 @@ function GroupRouteScreen({ route, services }: { route: GroupRoute; services: Ap
     case 'group':
       return <GroupScreen services={services} groupId={groupId} />;
     case 'document':
-      return <DocumentScreen services={services} groupId={groupId} />;
+      return (
+        <DocumentScreen
+          key={route.documentId ?? ''}
+          services={services}
+          groupId={groupId}
+          {...(route.documentId === undefined ? {} : { documentId: route.documentId })}
+        />
+      );
     case 'proposal':
       return <ProposalScreen services={services} groupId={groupId} proposalId={route.proposalId} />;
+    case 'documentLog':
+      return (
+        <ChangeLogScreen key={route.documentId} groupId={groupId} documentId={route.documentId} />
+      );
     case 'rules':
       return <RulesScreen services={services} groupId={groupId} />;
     case 'dispatches':
@@ -1019,15 +1289,19 @@ function GroupRouteScreen({ route, services }: { route: GroupRoute; services: Ap
 
 /** A route inside one group whose screen is a form of its own. */
 type FormRoute =
-  | Extract<GroupRoute, { name: 'steward' | 'optIn' | 'dissolve' | 'sendDispatch' | 'reconcile' }>
+  | Extract<
+      GroupRoute,
+      { name: 'steward' | 'optIn' | 'dissolve' | 'sendDispatch' | 'removal' | 'reconcile' }
+    >
   | ComposeRoute;
 
 /**
  * The screen for a route inside one group that opens a form of its own: the
- * steward (#102), opt-in (#117) and dissolve (#108) composers, Send a
- * Dispatch (#112), and the composers that propose a change, add or remove a
- * section (#75), ask what to focus on (#107), or propose a lapsed Proposal
- * again (#74).
+ * steward (#102), opt-in (#117), dissolve (#108) and removal (#115)
+ * composers, Reconcile with another group (#114), Send a Dispatch (#112), and
+ * the composers that propose a change, add or remove a section (#75), propose
+ * a new Document (#92), ask what to focus on (#107), or propose a lapsed
+ * Proposal again (#74).
  */
 function FormRouteScreen({ route, services }: { route: FormRoute; services: AppServices }) {
   const { groupId } = route;
@@ -1054,6 +1328,8 @@ function FormRouteScreen({ route, services }: { route: FormRoute; services: AppS
       return <DissolveScreen services={services} groupId={groupId} />;
     case 'sendDispatch':
       return <SendDispatchScreen services={services} groupId={groupId} />;
+    case 'removal':
+      return <RemovalScreen services={services} groupId={groupId} member={route.member} />;
     case 'reconcile':
       return <ReconcileScreen services={services} groupId={groupId} />;
     default:
@@ -1074,6 +1350,35 @@ interface ScreenProps {
   readonly guide: GuideOffer;
 }
 
+interface BareScreenProps {
+  readonly route: BareRoute;
+  readonly services: AppServices;
+  readonly guide: GuideOffer;
+}
+
+/**
+ * A page that takes no argument: Create group, Settings, either side of
+ * linking, the recovery picker, or either side of recovering with contacts.
+ */
+function BareScreen({ route, services, guide }: BareScreenProps) {
+  switch (route.name) {
+    case 'create':
+      return <CreateScreen services={services} offerGuide={guide.offer} />;
+    case 'settings':
+      return <SettingsScreen services={services} />;
+    case 'linkNew':
+      return <LinkNewScreen services={services} />;
+    case 'linkThis':
+      return <LinkThisScreen services={services} />;
+    case 'recovery':
+      return <RecoveryScreen services={services} />;
+    case 'recover':
+      return <RecoverScreen services={services} />;
+    case 'helpRecover':
+      return <HelpRecoverScreen services={services} />;
+  }
+}
+
 /** A route that names no group or coalition and carries no link: the device's own pages. */
 type PlainRoute = Exclude<Route, GroupRoute | CoalitionRoute | { readonly payload: unknown }>;
 
@@ -1088,11 +1393,14 @@ interface PlainScreenProps extends Omit<ScreenProps, 'route' | 'heldSeed' | 'hol
   readonly openInvite: (seed: Uint8Array) => void;
   /** Opens a reconcile card pasted into Start (#114), its seed held in memory. */
   readonly openCard: (seed: Uint8Array) => void;
+  /** Opens a follow link pasted into Start (#124), its seed held in memory. */
+  readonly openFollow: (seed: Uint8Array) => void;
 }
 
-/** Start, Create group, Settings, Personal and the two sides of linking a device. */
+/** Start, Personal, and the pages that take no argument (`BareScreen`). */
 function PlainScreen(props: PlainScreenProps) {
-  const { route, services, persistence, guide, openInvite, openCard } = props;
+  const { route, services, persistence, guide, openInvite, openCard, openFollow } = props;
+  if (isBare(route)) return <BareScreen route={route} services={services} guide={guide} />;
   switch (route.name) {
     case 'start':
       return (
@@ -1100,22 +1408,15 @@ function PlainScreen(props: PlainScreenProps) {
           services={services}
           onOpenInvite={openInvite}
           onOpenCard={openCard}
+          onOpenFollow={openFollow}
           persistence={persistence}
         />
       );
-    case 'create':
-      return <CreateScreen services={services} offerGuide={guide.offer} />;
-    case 'settings':
-      return <SettingsScreen services={services} />;
     case 'personal':
       return <PersonalScreen services={services} />;
     case 'personalDocument':
       // Keyed by id, so another Document starts its editor afresh.
       return <PersonalDocumentScreen key={route.id} services={services} id={route.id} />;
-    case 'linkNew':
-      return <LinkNewScreen services={services} />;
-    case 'linkThis':
-      return <LinkThisScreen services={services} />;
   }
 }
 
@@ -1124,9 +1425,18 @@ interface LinkScreenProps extends Omit<ScreenProps, 'route' | 'holdSeed' | 'pers
   readonly releaseSeed: () => void;
 }
 
-/** Join, a shared page, a front door and a card: each reads what follows its link's `#`. */
+/** Join, a shared page, a front door, a card and a follow link: each reads what follows its link's `#`. */
 function LinkScreen({ route, services, heldSeed, releaseSeed, guide }: LinkScreenProps) {
   switch (route.name) {
+    case 'follow':
+      return (
+        <FollowScreen
+          services={services}
+          payload={route.payload}
+          heldSeed={heldSeed}
+          releaseSeed={releaseSeed}
+        />
+      );
     case 'card':
       return (
         <BringScreen
@@ -1172,6 +1482,13 @@ function Screen({ route, services, heldSeed, holdSeed, persistence, guide }: Scr
     },
     [holdSeed],
   );
+  const openFollow = useCallback(
+    (seed: Uint8Array) => {
+      holdSeed(seed);
+      navigate({ name: 'follow', payload: null });
+    },
+    [holdSeed],
+  );
   if ('groupId' in route) {
     return (
       <>
@@ -1201,6 +1518,7 @@ function Screen({ route, services, heldSeed, holdSeed, persistence, guide }: Scr
       guide={guide}
       openInvite={openInvite}
       openCard={openCard}
+      openFollow={openFollow}
     />
   );
 }

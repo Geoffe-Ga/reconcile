@@ -5,8 +5,9 @@
  * anywhere: `${origin}/#door/${address}`, where the address is the door's
  * 43-character Ed25519 public key (`crypto/door.ts`). Whoever opens it reads
  * the page from its mailbox: UTF-8 JSON, `{v: 1, open: true, name, excerpt,
- * count?, box}`, or `{v: 1, open: false}` once the door closes. `name` is the
- * group's name, `excerpt` the first section of its Document as plain text, cut
+ * count?, box}`, or `{v: 1, open: false}` once the door closes, and `{v: 1,
+ * open: false, final: true}` once it has closed for good (#288). `name` is the
+ * group's name, `excerpt` the first section of its first Document (#92) as plain text, cut
  * to 280 code points and "…", `count` how many people are in the group only
  * when the group chose to show it, and `box` the X25519 key applications are
  * sealed to. Never a member's name, key or anything else of the group.
@@ -14,9 +15,14 @@
  * Each copy is signed with the door's key, sealed and padded with the app's
  * `Seal` under the page key, and kept 30 days. Readers take the last copy
  * whose signature verifies and whose page parses, so a copy anyone else
- * seals into the mailbox, or a damaged blob, changes nothing. Members'
+ * seals into the mailbox, or a damaged blob, changes nothing. A final copy
+ * outranks every other, wherever it sits ({@link latestCopy}): once a door
+ * has closed for good, as it does when a membership ends, an open copy
+ * posted after it, forged by someone who left and still holds the door's
+ * key or replayed from before (#277), changes nothing either. Members'
  * devices post a fresh copy when what the page says changes, and when the
- * newest is {@link REFRESH_MINUTES} old, in relay time (`door/keeper.ts`).
+ * newest is {@link REFRESH_MINUTES} old, in relay time (`door/keeper.ts`);
+ * a final copy too, so one stays while the group goes on.
  */
 import { base64url, fromBase64url } from '../crypto/base64url';
 import {
@@ -53,7 +59,7 @@ export interface OpenPage {
   readonly open: true;
   /** The group's name, cut to 120 code points and "…". */
   readonly name: string;
-  /** The first section of the group's Document as plain text, cut to 280 code points and "…". */
+  /** The first section of the group's first Document (#92) as plain text, cut to 280 code points and "…". */
   readonly excerpt: string;
   /** How many people are in the group, only when the group chose to show it. */
   readonly count?: number;
@@ -61,14 +67,27 @@ export interface OpenPage {
   readonly box: string;
 }
 
-/** A door that has closed. */
+/**
+ * A door that has closed. A final one has closed for good (#288): its keys
+ * never open it again, so readers let no copy after it reopen it.
+ */
 export interface ClosedPage {
   readonly v: typeof PAGE_VERSION;
   readonly open: false;
+  /** Present, and true, only on a page that closes its door for good. */
+  readonly final?: true;
 }
 
 /** One copy of a door's page. */
 export type DoorPage = OpenPage | ClosedPage;
+
+/** The page of a door closed for good (#288): every door that stood and can't open again shows it. */
+export const FINAL: ClosedPage = { v: PAGE_VERSION, open: false, final: true };
+
+/** True for a page that closes its door for good. */
+export function isFinal(page: DoorPage): boolean {
+  return !page.open && page.final === true;
+}
 
 /** What a door link shows: the page, or that the door is closed. */
 export type DoorView =
@@ -148,13 +167,20 @@ export function excerptOf(plain: string): string {
   return clip(plain, EXCERPT_MAX);
 }
 
+/** The text of the first section of `state`'s first Document, or "" when it has none (#92). */
+function firstSection(state: Pick<GroupState, 'documents' | 'atoms'>): string {
+  const first = state.documents[0]?.id;
+  return state.atoms.find((atom) => atom.documentId === first)?.text ?? '';
+}
+
 /**
- * The page `door` shows for `state`: the group's name, its first section as
- * plain text (`plainText` turns its Markdown into words, as the invite
- * preview does), the box key, and the member count only when `showCount`.
+ * The page `door` shows for `state`: the group's name, the first section of
+ * its first Document as plain text (`plainText` turns its Markdown into words,
+ * as the invite preview does), or none once that Document has no sections
+ * (#92), the box key, and the member count only when `showCount`.
  */
 export function pageFor(
-  state: Pick<GroupState, 'name' | 'atoms' | 'members'>,
+  state: Pick<GroupState, 'name' | 'documents' | 'atoms' | 'members'>,
   door: FrontDoor,
   plainText: (markdown: string) => string,
 ): OpenPage {
@@ -163,10 +189,15 @@ export function pageFor(
     v: PAGE_VERSION,
     open: true,
     name: clip(state.name, NAME_MAX),
-    excerpt: excerptOf(plainText(state.atoms[0]?.text ?? '')),
+    excerpt: excerptOf(plainText(firstSection(state))),
     ...(door.showCount ? { count: state.members.length } : {}),
     box: base64url(boxPublic),
   };
+}
+
+/** A closed page's fields, in the order a copy writes them. */
+function closedJson(page: ClosedPage) {
+  return page.final === true ? { v: page.v, open: false, final: true } : { v: page.v, open: false };
 }
 
 /** `page` as the bytes a copy signs: compact JSON, its keys in a fixed order. */
@@ -180,7 +211,7 @@ export function encodePage(page: DoorPage): Uint8Array<ArrayBuffer> {
         ...(page.count === undefined ? {} : { count: page.count }),
         box: page.box,
       }
-    : { v: page.v, open: false };
+    : closedJson(page);
   return Uint8Array.from(new TextEncoder().encode(JSON.stringify(json)));
 }
 
@@ -222,16 +253,23 @@ function openIn(json: Record<string, unknown>, keys: string): OpenPage | null {
   return counted ? { ...page, count: count as number } : page;
 }
 
+/** The closed page `json` spells: its two fields, or those and `final: true` (#288), or null. */
+function closedIn(json: Record<string, unknown>, keys: string): ClosedPage | null {
+  if (keys === 'open,v') return { v: PAGE_VERSION, open: false };
+  return keys === 'final,open,v' && json.final === true ? { ...FINAL } : null;
+}
+
 /**
  * The page `bytes` spell, or null: anything but exactly an open page's
- * fields, with or without a count, or a closed page's two, of format 1, is
- * refused, so nothing beside them reaches a screen.
+ * fields, with or without a count, or a closed page's two, with or without
+ * `final: true`, of format 1, is refused, so nothing beside them reaches a
+ * screen.
  */
 export function parsePage(bytes: Uint8Array): DoorPage | null {
   const json = objectIn(bytes);
   if (json === null || json.v !== PAGE_VERSION) return null;
   const keys = Object.keys(json).sort().join();
-  if (json.open === false) return keys === 'open,v' ? { v: PAGE_VERSION, open: false } : null;
+  if (json.open === false) return closedIn(json, keys);
   return json.open === true ? openIn(json, keys) : null;
 }
 
@@ -249,8 +287,12 @@ export interface PageCopy {
 }
 
 /**
- * The last copy in the door's page mailbox, in relay order, that the door
- * signed and that parses, or undefined for none.
+ * The copy readers go by, of those in the door's page mailbox that the door
+ * signed and that parse: the newest final one, when any is, whatever comes
+ * after it (#288); else the last in relay order; undefined for none. So
+ * once a door has closed for good, no copy anyone posts later, a replay of
+ * an old open one (#277) or one forged with the door's key by someone who
+ * left, opens it again.
  *
  * @throws {Error} when the relay can't be reached or answers wrongly.
  */
@@ -261,12 +303,15 @@ export async function latestCopy(
   const { page: mailbox, pageKey } = doorChannelsOf(address);
   const { records } = await relay.getBlobs(mailbox, 0);
   let latest: PageCopy | undefined;
+  let final: PageCopy | undefined;
   for (const { seq, received, data } of records) {
     const record = seal.open(mailbox, pageKey, data);
     const page = record && openPage(record, address);
-    if (page) latest = { seq, received, page };
+    if (!page) continue;
+    latest = { seq, received, page };
+    if (isFinal(page)) final = latest;
   }
-  return latest;
+  return final ?? latest;
 }
 
 /**
@@ -281,13 +326,14 @@ export async function readDoor(reader: DoorReader, address: Uint8Array): Promise
 }
 
 /**
- * Whether `copy` already serves for `page` at relay minute `now`: an open
- * page it says, while under {@link REFRESH_MINUTES} old; and for a closed
- * page, any copy that doesn't say open, none included, since a door with no
- * copy reads as closed already.
+ * Whether `copy`, the one readers go by, already serves for `page` at relay
+ * minute `now`: an open page it says, or a final one (#288), while under
+ * {@link REFRESH_MINUTES} old, so a door closed for good stays so as long as
+ * the group goes on; and for a plain closed page, any copy that doesn't say
+ * open, none included, since a door with no copy reads as closed already.
  */
 function isCurrent(copy: PageCopy | undefined, page: DoorPage, now: number): boolean {
-  if (!page.open) return copy?.page.open !== true;
+  if (!page.open && !isFinal(page)) return copy?.page.open !== true;
   if (copy === undefined) return false;
   const same = base64url(encodePage(copy.page)) === base64url(encodePage(page));
   return same && now - copy.received < REFRESH_MINUTES;

@@ -29,19 +29,41 @@ export type Route =
   | { readonly name: 'linkNew' }
   /** Link to my other device, on the new device (#96). */
   | { readonly name: 'linkThis' }
+  /** Choose recovery contacts, or choose again (#109). */
+  | { readonly name: 'recovery' }
+  /** Recover with my contacts, on a new device (#118). */
+  | { readonly name: 'recover' }
+  /** Help someone recover, on a recovery contact's device (#118). */
+  | { readonly name: 'helpRecover' }
   | { readonly name: 'join'; readonly payload: string | null }
   /** A reconcile card (#114): its seed as written after `#reconcile/`, or null once read. */
   | { readonly name: 'card'; readonly payload: string | null }
+  /** A coalition's follow link (#124): its seed as written after `#follow/`, or null once read. */
+  | { readonly name: 'follow'; readonly payload: string | null }
   /** A shared personal Document, read-only (#105): what follows `#share/`, as written. */
   | { readonly name: 'shared'; readonly payload: string }
   /** A group's front door (#121): what follows `#door/`, as written. */
   | { readonly name: 'door'; readonly payload: string }
   | { readonly name: 'group'; readonly groupId: string }
-  | { readonly name: 'document'; readonly groupId: string }
+  /** One of the group's Documents (#92), by its id; without one, the group's first. */
+  | { readonly name: 'document'; readonly groupId: string; readonly documentId?: string }
+  /** Propose a new Document (#92). */
+  | { readonly name: 'newDocument'; readonly groupId: string }
+  /** A Document's change log (#104): every change that passed, newest first. */
+  | { readonly name: 'documentLog'; readonly groupId: string; readonly documentId: string }
   | { readonly name: 'propose'; readonly groupId: string; readonly atomId: string }
   | { readonly name: 'priority'; readonly groupId: string }
   | { readonly name: 'proposal'; readonly groupId: string; readonly proposalId: string }
-  | { readonly name: 'add'; readonly groupId: string; readonly after: string | null }
+  /**
+   * Add a section (#75): after the Atom `after`, in its Document, or at the
+   * start of `document` (#92), or of the group's first Document without one.
+   */
+  | {
+      readonly name: 'add';
+      readonly groupId: string;
+      readonly after: string | null;
+      readonly document?: string;
+    }
   | { readonly name: 'remove'; readonly groupId: string; readonly atomId: string }
   | { readonly name: 'again'; readonly groupId: string; readonly proposalId: string }
   | {
@@ -60,6 +82,8 @@ export type Route =
       readonly narrow: boolean;
     }
   | { readonly name: 'dissolve'; readonly groupId: string }
+  /** Propose removing a member (#115), by their key in the group. */
+  | { readonly name: 'removal'; readonly groupId: string; readonly member: string }
   /** The group's Dispatches, newest first (#112). */
   | { readonly name: 'dispatches'; readonly groupId: string }
   /** Send a Dispatch (#112). */
@@ -77,7 +101,11 @@ export type Route =
   /** Propose a change to one of a coalition's sections (#120). */
   | { readonly name: 'coalitionPropose'; readonly coalitionId: string; readonly atomId: string }
   /** Reconcile with another coalition (#122): the card's form, one level up. */
-  | { readonly name: 'coalitionReconcile'; readonly coalitionId: string };
+  | { readonly name: 'coalitionReconcile'; readonly coalitionId: string }
+  /** A coalition Document's change log (#104). */
+  | { readonly name: 'coalitionLog'; readonly coalitionId: string; readonly documentId: string }
+  /** A coalition's room (#125). */
+  | { readonly name: 'coalitionRoom'; readonly coalitionId: string };
 
 /** A route inside one group. */
 export type GroupRoute = Extract<Route, { readonly groupId: string }>;
@@ -88,13 +116,16 @@ export type CoalitionRoute = Extract<Route, { readonly coalitionId: string }>;
 /** Ids and invite payloads are base64url, joined by at most a dot. */
 const SEGMENT = /^[A-Za-z0-9_.-]+$/;
 const ID = /^[A-Za-z0-9_-]+$/;
-/** A genesis Atom's id is `${genesisId}.${index}`; an added Atom's is its Proposal's id (#75). */
-const ATOM_ID = /^[A-Za-z0-9_-]+(\.[0-9]+)?$/;
 /**
- * A Document's id (#120): its group's or coalition's genesis id for the first,
- * and `${genesisId}:${k}` for each later one, as several Documents name them (#92).
+ * A Document's id (#92): the genesis id, `${genesisId}:${k}` for founding
+ * Document k ≥ 1, or a new Document's Proposal id.
  */
 const DOCUMENT_ID = /^[A-Za-z0-9_-]+(:[0-9]+)?$/;
+/**
+ * An Atom's id: `${documentId}.${index}` for a Document's first sections, or
+ * an added Atom's Proposal id (#75, #92).
+ */
+const ATOM_ID = /^[A-Za-z0-9_-]+(:[0-9]+)?(\.[0-9]+)?$/;
 /** A personal Document's id (#93): 16 bytes in canonical unpadded base64url, 22 characters. */
 const PERSONAL_ID = /^[A-Za-z0-9_-]{21}[AQgw]$/;
 
@@ -118,16 +149,16 @@ function optInPage(groupId: string, narrow: boolean, arg: string): Route {
 
 /**
  * The pages inside a group, Group home apart, that take nothing but the
- * group: the Document, the rules (#117), dissolving (#108), the Dispatches
- * and Send a Dispatch (#112), Ask what to focus on (#107), and Reconcile
- * with another group (#114).
+ * group: the rules (#117), dissolving (#108), the Dispatches and Send a
+ * Dispatch (#112), Propose a new Document (#92), Ask what to focus on (#107),
+ * and Reconcile with another group (#114).
  */
 const FIXED_NAMES = [
-  'document',
   'rules',
   'dissolve',
   'dispatches',
   'sendDispatch',
+  'newDocument',
   'priority',
   'reconcile',
 ] as const;
@@ -137,11 +168,11 @@ type FixedName = (typeof FIXED_NAMES)[number];
 
 /** Each fixed page's path after `#/g/{groupId}/`. */
 const FIXED_PATHS: Readonly<Record<FixedName, string>> = {
-  document: 'doc',
   rules: 'rules',
   dissolve: 'dissolve',
   dispatches: 'dispatches',
   sendDispatch: 'dispatch/new',
+  newDocument: 'doc/new',
   priority: 'priority',
   reconcile: 'reconcile',
 };
@@ -161,6 +192,14 @@ function idPage(pattern: RegExp, make: (groupId: string, id: string) => Route): 
 
 /** The pages inside a group that take one argument. */
 const ARG_PAGES: ReadonlyMap<string, ArgPage> = new Map<string, ArgPage>([
+  [
+    'doc',
+    idPage(DOCUMENT_ID, (groupId, documentId) => ({ name: 'document', groupId, documentId })),
+  ],
+  [
+    'add-first',
+    idPage(DOCUMENT_ID, (groupId, document) => ({ name: 'add', groupId, after: null, document })),
+  ],
   ['propose', idPage(ATOM_ID, (groupId, atomId) => ({ name: 'propose', groupId, atomId }))],
   ['p', idPage(ID, (groupId, proposalId) => ({ name: 'proposal', groupId, proposalId }))],
   ['again', idPage(ID, (groupId, proposalId) => ({ name: 'again', groupId, proposalId }))],
@@ -170,25 +209,53 @@ const ARG_PAGES: ReadonlyMap<string, ArgPage> = new Map<string, ArgPage>([
   ['recall', (groupId, arg) => stewardPage(groupId, true, arg)],
   ['rules', (groupId, arg) => optInPage(groupId, false, arg)],
   ['narrow', (groupId, arg) => optInPage(groupId, true, arg)],
+  ['remove-member', idPage(ID, (groupId, member) => ({ name: 'removal', groupId, member }))],
 ]);
 
 /**
- * A page inside a group: one of the fixed pages, such as `doc`, `priority`
- * (#107) or `dispatch/new`, `add` (a new first section, #75), or
- * `propose/{atomId}`, `p/{proposalId}`, `again/{proposalId}`, `add/{atomId}`
- * (a new section after that Atom), `remove/{atomId}` (#75), `steward/{seat}`,
- * `recall/{seat}`, `rules/{optIn}` or `narrow/{optIn}`.
+ * The pages inside a group that take nothing, and say so by taking nothing:
+ * the group's first Document (`doc`), and a new first section in it (`add`).
+ */
+const BARE_PAGES: ReadonlyMap<string, ArgPage> = new Map<string, ArgPage>([
+  ['doc', (groupId) => ({ name: 'document', groupId })],
+  ['add', (groupId) => ({ name: 'add', groupId, after: null })],
+]);
+
+/**
+ * A page inside a group: one of the fixed pages, such as `dispatch/new`,
+ * `priority` (#107) or `doc/new` (#92), `doc` (the first Document) or `add` (a new first section
+ * in it, #75), or `doc/{documentId}` (#92), `add-first/{documentId}` (a new
+ * first section in that Document, #92), `propose/{atomId}`, `p/{proposalId}`,
+ * `again/{proposalId}`, `add/{atomId}` (a new section after that Atom),
+ * `remove/{atomId}` (#75), `steward/{seat}`, `recall/{seat}`, `rules/{optIn}`,
+ * `narrow/{optIn}` or `remove-member/{member}` (#115), which a section's own
+ * `remove` can't share: an added Atom's id is a Proposal's.
  */
 function groupPage(groupId: string, page: string, arg: string | undefined): Route {
   const fixed = FIXED_PAGES.get(arg === undefined ? page : `${page}/${arg}`);
   if (fixed !== undefined) return { name: fixed, groupId };
-  if (arg === undefined) return page === 'add' ? { name: 'add', groupId, after: null } : START;
-  return ARG_PAGES.get(page)?.(groupId, arg) ?? START;
+  const make = arg === undefined ? BARE_PAGES.get(page) : ARG_PAGES.get(page);
+  return make?.(groupId, arg ?? '') ?? START;
 }
 
+/**
+ * The Document id of a change log's path, `doc/{documentId}/log` (#104), from
+ * a route's page, its argument and what follows them; null for any other path.
+ */
+function logOf(page: string | undefined, arg: string | undefined, extra: readonly string[]) {
+  const [last, ...more] = extra;
+  const fits = page === 'doc' && last === 'log' && more.length === 0;
+  return fits && arg !== undefined && DOCUMENT_ID.test(arg) ? arg : null;
+}
+
+/** `#/g/{groupId}`, Group home, or one of its pages, the deepest being a change log (#104). */
 function groupRoute(rest: readonly string[]): Route {
   const [groupId, page, arg, ...extra] = rest;
-  if (groupId === undefined || !ID.test(groupId) || extra.length > 0) return START;
+  if (groupId === undefined || !ID.test(groupId)) return START;
+  if (extra.length > 0) {
+    const documentId = logOf(page, arg, extra);
+    return documentId === null ? START : { name: 'documentLog', groupId, documentId };
+  }
   return page === undefined ? { name: 'group', groupId } : groupPage(groupId, page, arg);
 }
 
@@ -206,17 +273,28 @@ const COALITION_PAGES: ReadonlyMap<string, (coalitionId: string, arg: string) =>
   ],
 ]);
 
+/** The pages inside a coalition that take no argument: its card's form (#122), and its room (#125). */
+const COALITION_PLAIN_PAGES: ReadonlyMap<string, 'coalitionReconcile' | 'coalitionRoom'> = new Map([
+  ['reconcile', 'coalitionReconcile'],
+  ['room', 'coalitionRoom'],
+]);
+
 /**
- * `#/c/{coalitionId}`, a coalition's home, or one of its pages: `doc/{documentId}`
- * or `propose/{atomId}` (#120), or `reconcile`, its card's form (#122).
+ * `#/c/{coalitionId}`, a coalition's home, or one of its pages:
+ * `doc/{documentId}` or `propose/{atomId}` (#120), `doc/{documentId}/log`,
+ * a Document's change log (#104), `reconcile`, its card's form (#122), or
+ * `room` (#125).
  */
 function coalitionRoute(rest: readonly string[]): Route {
   const [coalitionId, page, arg, ...extra] = rest;
-  if (coalitionId === undefined || !ID.test(coalitionId) || extra.length > 0) return START;
-  if (page === undefined) return { name: 'coalition', coalitionId };
-  if (page === 'reconcile') {
-    return arg === undefined ? { name: 'coalitionReconcile', coalitionId } : START;
+  if (coalitionId === undefined || !ID.test(coalitionId)) return START;
+  if (extra.length > 0) {
+    const documentId = logOf(page, arg, extra);
+    return documentId === null ? START : { name: 'coalitionLog', coalitionId, documentId };
   }
+  if (page === undefined) return { name: 'coalition', coalitionId };
+  const plain = COALITION_PLAIN_PAGES.get(page);
+  if (plain !== undefined) return arg === undefined ? { name: plain, coalitionId } : START;
   const open = COALITION_PAGES.get(page);
   return open === undefined || arg === undefined ? START : open(coalitionId, arg);
 }
@@ -244,27 +322,66 @@ const INVITE_PREFIX = '#join/';
 /** A reconcile card's own form (#114): `#reconcile/{seed}`, with no slash after `#`. */
 const CARD_PREFIX = '#reconcile/';
 
-/** `#reconcile/{seed}`: the card, or Start for anything with more after the seed. */
-function cardRoute(rest: readonly string[]): Route {
+/** A follow link's own form (#124): `#follow/{seed}`, with no slash after `#`. */
+const FOLLOW_PREFIX = '#follow/';
+
+/**
+ * `#reconcile/{seed}` or `#follow/{seed}`: the card's or the follow link's
+ * page, named `name`, or Start for anything with more after the seed.
+ */
+function seedRoute(name: 'card' | 'follow', rest: readonly string[]): Route {
   const [payload] = rest;
   return rest.length === 1 && payload !== undefined && SEGMENT.test(payload)
-    ? { name: 'card', payload }
+    ? { name, payload }
     : START;
 }
 
 /**
  * The pages that take no argument after `#/`: Create group, Settings (#78),
- * and the two sides of linking a device (#96). A linking code never travels
- * in a route: it's shown, scanned or pasted, and held only in memory.
+ * the two sides of linking a device (#96), Choose recovery contacts (#109),
+ * and the two sides of recovering with contacts (#118). A linking code never
+ * travels in a route: it's shown, scanned or pasted, and held only in
+ * memory. Nor does a recovery contact, or a recovery code.
  */
+/** A page that takes no argument. */
+export type BareRoute = Extract<
+  Route,
+  {
+    readonly name:
+      'create' | 'settings' | 'linkNew' | 'linkThis' | 'recovery' | 'recover' | 'helpRecover';
+  }
+>;
+
+/** Each page that takes no argument, by its path after `#/`. */
 const PAGES: ReadonlyMap<string, Route> = new Map<string, Route>([
   ['create', { name: 'create' }],
   ['settings', { name: 'settings' }],
   ['link-new', { name: 'linkNew' }],
   ['link-this', { name: 'linkThis' }],
+  ['recovery', { name: 'recovery' }],
+  ['recover', { name: 'recover' }],
+  ['help-recover', { name: 'helpRecover' }],
   // A card once its seed has left the address bar (#114).
   ['card', { name: 'card', payload: null }],
+  // A follow link once its seed has left the address bar (#124).
+  ['follow', { name: 'follow', payload: null }],
 ]);
+
+/** The names of the pages that take no argument. */
+const BARE_NAMES: ReadonlySet<Route['name']> = new Set<BareRoute['name']>([
+  'create',
+  'settings',
+  'linkNew',
+  'linkThis',
+  'recovery',
+  'recover',
+  'helpRecover',
+]);
+
+/** Whether `route` is a page that takes no argument. */
+export function isBare(route: Route): route is BareRoute {
+  return BARE_NAMES.has(route.name);
+}
 
 /** The pages after `#/` that read what follows them: Join, a group, Personal (#93) and a coalition (#120). */
 const NESTED: ReadonlyMap<string, (rest: readonly string[]) => Route> = new Map([
@@ -283,7 +400,8 @@ const DOOR_PREFIX = '#door/';
 /**
  * A link's own route, with no slash after `#`: a share link's page (#105) or
  * a front door (#121), each reading its payload itself, an invite's (spec
- * §3) or a reconcile card's (#114); null for any other hash.
+ * §3), a reconcile card's (#114) or a follow link's (#124); null for any
+ * other hash.
  */
 function linkRoute(hash: string): Route | null {
   if (hash.startsWith(SHARE_PREFIX))
@@ -294,7 +412,12 @@ function linkRoute(hash: string): Route | null {
     const rest = hash.slice(INVITE_PREFIX.length).split('/');
     return rest.length === 1 && rest[0] !== '' ? joinRoute(rest) : START;
   }
-  if (hash.startsWith(CARD_PREFIX)) return cardRoute(hash.slice(CARD_PREFIX.length).split('/'));
+  if (hash.startsWith(CARD_PREFIX)) {
+    return seedRoute('card', hash.slice(CARD_PREFIX.length).split('/'));
+  }
+  if (hash.startsWith(FOLLOW_PREFIX)) {
+    return seedRoute('follow', hash.slice(FOLLOW_PREFIX.length).split('/'));
+  }
   return null;
 }
 
@@ -330,6 +453,15 @@ function optInPath(route: Extract<Route, { readonly name: 'optIn' }>): string {
   return `/${route.narrow ? 'narrow' : 'rules'}/${route.optIn}`;
 }
 
+/**
+ * An add's path (#75): after its anchor, or at the start of the Document it
+ * names (#92), or of the group's first Document when it names none.
+ */
+function addPath(route: Extract<Route, { readonly name: 'add' }>): string {
+  if (route.after === null && route.document !== undefined) return `/add-first/${route.document}`;
+  return `/add${idPath(route.after)}`;
+}
+
 /** A section composer's path (#75): proposing a change, adding a section, or removing one. */
 function sectionPath(
   route: Extract<Route, { readonly name: 'propose' | 'add' | 'remove' }>,
@@ -338,7 +470,7 @@ function sectionPath(
     case 'propose':
       return `/propose/${route.atomId}`;
     case 'add':
-      return `/add${idPath(route.after)}`;
+      return addPath(route);
     case 'remove':
       return `/remove/${route.atomId}`;
   }
@@ -357,13 +489,28 @@ function groupPath(route: GroupRoute): string {
       return stewardPath(route);
     case 'optIn':
       return optInPath(route);
+    case 'removal':
+      return `/remove-member/${route.member}`;
     case 'propose':
     case 'add':
     case 'remove':
       return sectionPath(route);
     default:
-      return `/${FIXED_PATHS[route.name]}`;
+      return pagePath(route);
   }
+}
+
+/**
+ * The path of a group page that names at most a Document (#92): one of the
+ * group's Documents, a Document's change log (#104), or a fixed page.
+ */
+function pagePath(
+  route: Extract<GroupRoute, { readonly name: 'document' | 'documentLog' | FixedName }>,
+): string {
+  if (route.name === 'documentLog') return `/doc/${route.documentId}/log`;
+  return route.name === 'document'
+    ? `/doc${idPath(route.documentId ?? null)}`
+    : `/${FIXED_PATHS[route.name]}`;
 }
 
 /** The `href` of a page inside a coalition (#120). */
@@ -378,13 +525,28 @@ function coalitionHref(route: CoalitionRoute): string {
       return `${home}/propose/${route.atomId}`;
     case 'coalitionReconcile':
       return `${home}/reconcile`;
+    case 'coalitionLog':
+      return `${home}/doc/${route.documentId}/log`;
+    case 'coalitionRoom':
+      return `${home}/room`;
   }
 }
 
 /** A route outside any group that takes nothing. */
 type FixedTop = Extract<
   Route,
-  { readonly name: 'start' | 'create' | 'settings' | 'personal' | 'linkNew' | 'linkThis' }
+  {
+    readonly name:
+      | 'start'
+      | 'create'
+      | 'settings'
+      | 'personal'
+      | 'linkNew'
+      | 'linkThis'
+      | 'recovery'
+      | 'recover'
+      | 'helpRecover';
+  }
 >;
 
 /** Each such route's `href`. */
@@ -395,6 +557,9 @@ const TOP_HREFS: Readonly<Record<FixedTop['name'], string>> = {
   personal: '#/me',
   linkNew: '#/link-new',
   linkThis: '#/link-this',
+  recovery: '#/recovery',
+  recover: '#/recover',
+  helpRecover: '#/help-recover',
 };
 
 /** The `href` of a route outside any group or coalition. */
@@ -406,6 +571,8 @@ function topHref(route: Exclude<Route, GroupRoute | CoalitionRoute>): string {
       return joinHref(route.payload);
     case 'card':
       return route.payload === null ? '#/card' : `${CARD_PREFIX}${route.payload}`;
+    case 'follow':
+      return route.payload === null ? '#/follow' : `${FOLLOW_PREFIX}${route.payload}`;
     case 'shared':
       return `${SHARE_PREFIX}${route.payload}`;
     case 'door':

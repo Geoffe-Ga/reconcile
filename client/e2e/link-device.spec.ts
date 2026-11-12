@@ -41,7 +41,7 @@ import {
   scan,
   textCanary,
 } from './support/scan';
-import { onlyGroup, storedLogs } from './support/stored';
+import { onlyGroup, type StoredGroup, storedLogs } from './support/stored';
 
 const CANARY = {
   group: 'Canary Linked Commons',
@@ -113,7 +113,7 @@ test('a second device links by a pasted code, the relay learns nothing, and both
     await expect(heading(ben.page, CANARY.group)).toBeVisible();
     const people = phone.page.getByRole('region', { name: 'People', exact: true });
     await expect(people).toContainText(CANARY.joiner);
-    await phone.page.getByRole('link', { name: 'Our garden' }).click();
+    await phone.page.getByRole('link', { name: 'Our garden', exact: true }).click();
     await phone.page.getByRole('button', { name: 'Propose a change to section 1' }).click();
     await phone.page.getByRole('textbox', { name: 'Title' }).fill(CANARY.title);
     await phone.page.getByRole('textbox', { name: 'Why' }).fill('Mornings are cooler.');
@@ -186,11 +186,13 @@ test('a second device links by a pasted code, the relay learns nothing, and both
       .poll(async () => JSON.stringify(await storedLogs(laptop.page)))
       .toBe(JSON.stringify(await storedLogs(phone.page)));
     // The same member (#98): the same keys and epoch, so the laptop opens what the phone opens.
-    expect(await onlyGroup(laptop.page)).toEqual(await onlyGroup(phone.page));
+    // Each keeps the relay minute its own last pass read, which can differ by one (#361).
+    const member = (group: StoredGroup) => ({ ...group, relayNow: null });
+    expect(member(await onlyGroup(laptop.page))).toEqual(member(await onlyGroup(phone.page)));
     const { page } = laptop;
     await page.getByRole('link', { name: 'Your groups' }).first().click();
     await page.getByRole('link', { name: new RegExp(CANARY.group) }).click();
-    await page.getByRole('link', { name: 'Our garden' }).click();
+    await page.getByRole('link', { name: 'Our garden', exact: true }).click();
     await expect(page.getByText(CANARY.atom)).toBeVisible();
   });
 

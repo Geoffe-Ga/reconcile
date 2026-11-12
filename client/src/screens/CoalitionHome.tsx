@@ -3,13 +3,20 @@
  *
  * Reached from group home's Coalitions row, it shows what the coalition's own
  * log holds: its name, its open Proposals, each with its progress line and
- * deadline, its Documents, its Decided list, each closed motion with whether
- * the coalition passed it and when, and its member groups, marking those
- * this device is in. Each motion opens as the coalition vote in a member
- * group on this device whose seat decides it, where that group's own ballot
- * lives. Someone in a member group who may propose and hasn't joined is
- * offered Take part first. No count of people, ballot or voter's name from
+ * deadline, its Dispatches (#124), its Documents, its Decided list, each
+ * closed motion with whether the coalition passed it and when, and its member
+ * groups, marking those this device is in. Each motion opens as the
+ * coalition vote in a member group on this device whose seat decides it,
+ * where that group's own ballot lives. Someone in a member group who may
+ * propose and hasn't joined is offered Take part first, and a participant
+ * bound to a seat may share a follow link (#124). A device in a member group
+ * also finds the coalition's room here (#125), and one in none, as a
+ * follower's, never does. No count of people, ballot or voter's name from
  * any group appears here: the coalition's log holds none (ADR-0036).
+ *
+ * Someone who only follows the coalition (#124) reads it at the Member
+ * level: its member groups under its name, then its Dispatches, Documents
+ * and Decided list, with nothing to propose or take part in, and Unfollow.
  */
 import { type ReactNode } from 'react';
 import { Link } from 'react-aria-components';
@@ -17,24 +24,35 @@ import { Link } from 'react-aria-components';
 import type { CoalitionHomeView, MotionItem } from '../app/coalitionHome';
 import { ProgressLine } from '../app/CoalitionProgress';
 import { TakePart } from '../app/CoalitionSection';
+import { ConfirmDialog } from '../app/ConfirmDialog';
 import { Countdown } from '../app/Countdown';
-import { RisenDispatchCard } from '../app/DispatchCard';
+import { DispatchCard } from '../app/DispatchCard';
 import { formatDay } from '../app/format';
 import { messages } from '../app/messages';
 import { routeHref } from '../app/router';
+import { ShareLink } from '../app/ShareLink';
 import { minuteIso } from '../app/time';
 import { BackLink, PageHeader, Section } from '../app/ui';
+import type { GroupState } from '../engine/fold';
 
 /** Props for {@link CoalitionHome}. */
 export interface CoalitionHomeProps {
   /** The coalition as this device reads it (`coalitionHome`). */
   readonly view: CoalitionHomeView;
+  /** The coalition folded, which its Dispatches' cards read (#124). */
+  readonly state: GroupState;
   /** The relay's minute now, as this device estimates it, for the countdowns. */
   readonly now: number;
   /** The member group Back returns to, or null for Your groups. */
   readonly back: { readonly groupId: string; readonly name: string } | null;
   /** Takes part under the seat of the group `view.standing` names, as `name`; rejects when it couldn't be saved. */
   readonly onTakePart: (name: string) => Promise<void>;
+  /** Posts a fresh follow link's envelope and resolves to its link (#124); rejects without the relay. */
+  readonly makeFollowLink: () => Promise<string>;
+  /** Puts a link on the clipboard once it resolves; rejects when the browser blocks it. */
+  readonly copyText: (text: string | Promise<string>) => Promise<void>;
+  /** Unfollows (#124): purges the coalition from this device; rejects when it couldn't be saved. */
+  readonly onUnfollow: () => Promise<void>;
 }
 
 const { coalitions } = messages;
@@ -120,17 +138,19 @@ function Decided({ decided }: { readonly decided: readonly MotionItem[] }) {
   );
 }
 
-/** The Dispatches the coalition passed and sent out, newest first (#126). */
-function Dispatches({ view }: { readonly view: CoalitionHomeView }) {
-  if (view.dispatches.length === 0) return <p>{messages.dispatches.empty}</p>;
+/** The room's entry (#125): a card that opens it, and who can read it. */
+function RoomEntry({ coalitionId }: { readonly coalitionId: string }) {
+  const { room } = messages;
   return (
-    <ul className="dispatch-list">
-      {view.dispatches.map((dispatch) => (
-        <li key={dispatch.id}>
-          <RisenDispatchCard {...dispatch} />
-        </li>
-      ))}
-    </ul>
+    <Link className="card-link" href={routeHref({ name: 'coalitionRoom', coalitionId })}>
+      <span className="card-link-title">
+        <span className="heading-3">{room.open}</span>
+        <span className="card-link-arrow" aria-hidden="true">
+          {messages.app.forward}
+        </span>
+      </span>
+      <span className="meta">{room.homeLine}</span>
+    </Link>
   );
 }
 
@@ -163,6 +183,31 @@ function Documents({ view }: { readonly view: CoalitionHomeView }) {
   );
 }
 
+/** The coalition's Dispatches, newest first (#124), or the one line that says there are none. */
+function Dispatches({ view, state }: { readonly view: CoalitionHomeView; state: GroupState }) {
+  if (view.dispatches.length === 0) return <p>{messages.dispatches.empty}</p>;
+  return (
+    <ul className="card-list">
+      {view.dispatches.map((dispatch) => (
+        <li key={dispatch.id}>
+          <DispatchCard state={state} dispatch={dispatch} level={3} place="coalition" />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** Share a follow link's words, with what the link exposes beside it (#124; ADR-0053). */
+const SHARE_WORDS = {
+  warning: coalitions.shareWarning,
+  button: coalitions.share,
+  field: coalitions.shareField,
+  making: coalitions.sharing,
+  failed: coalitions.shareFailed,
+  copied: coalitions.shareCopied,
+  copyFailed: messages.home.copyFailed,
+};
+
 /** The badge beside a member: yours, a group's or a coalition's (#122), or a coalition's. */
 function badgeOf(member: CoalitionHomeView['members'][number]): string | null {
   if (member.mine) return member.coalition ? coalitions.yourCoalition : coalitions.yourGroup;
@@ -191,11 +236,79 @@ function MemberGroups({ view }: { readonly view: CoalitionHomeView }) {
 }
 
 /**
- * The coalition home (#120): Take part first for whoever may, then its open
- * Proposals, the Dispatches it sent out (#126), its Documents, its Decided
- * list and its member groups.
+ * The member groups on one line under the coalition's name (#124),
+ * "Riverside Tenants · Oak St Co-op", as a list, each name in its own
+ * `<bdi>`, with the dot between them hidden from screen readers.
  */
-export function CoalitionHome({ view, now, back, onTakePart }: CoalitionHomeProps) {
+function GroupsLine({ view }: { readonly view: CoalitionHomeView }) {
+  return (
+    <ul className="coalition-groups-line" aria-label={coalitions.groups}>
+      {view.members.map((member, index) => (
+        <li key={index}>
+          {index === 0 ? null : (
+            <span className="coalition-groups-separator" aria-hidden="true">
+              {coalitions.groupsSeparator}
+            </span>
+          )}
+          <bdi>{member.name}</bdi>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * The home of someone who only follows the coalition (#124): its member
+ * groups under its name, then its Dispatches, Documents and Decided list,
+ * and Unfollow, which works like Leave and posts nothing.
+ */
+function FollowerHome(props: CoalitionHomeProps) {
+  const { view, state, onUnfollow } = props;
+  return (
+    <main className="shell">
+      <BackLink to={{ name: 'start' }} label={messages.app.yourGroups} />
+      <PageHeader
+        eyebrow={coalitions.followingEyebrow}
+        title={view.name}
+        pageTitle={coalitions.homePageTitle}
+      />
+      <GroupsLine view={view} />
+      <div className="sections">
+        <Section title={messages.dispatches.title}>
+          <Dispatches view={view} state={state} />
+        </Section>
+        <Section title={coalitions.documents}>
+          <Documents view={view} />
+        </Section>
+        <Section title={messages.decided.title}>
+          <Decided decided={view.decided} />
+        </Section>
+      </div>
+      <div>
+        <ConfirmDialog
+          open={coalitions.unfollow}
+          title={coalitions.unfollowTitle}
+          body={coalitions.unfollowBody}
+          confirm={coalitions.unfollow}
+          cancel={coalitions.unfollowCancel}
+          failed={coalitions.unfollowFailed}
+          onConfirm={onUnfollow}
+        />
+      </div>
+    </main>
+  );
+}
+
+/**
+ * The coalition home (#120): Take part first for whoever may, then its open
+ * Proposals, its Dispatches (#124), those risen from below among them (#126),
+ * its Documents, its Decided list, its
+ * member groups and, for a participant, Share a follow link (#124). Someone
+ * who only follows it reads {@link FollowerHome} instead.
+ */
+export function CoalitionHome(props: CoalitionHomeProps) {
+  const { view, state, now, back, onTakePart } = props;
+  if (view.follower) return <FollowerHome {...props} />;
   return (
     <main className="shell">
       {back === null ? (
@@ -221,8 +334,13 @@ export function CoalitionHome({ view, now, back, onTakePart }: CoalitionHomeProp
           <OpenMotions view={view} now={now} />
         </Section>
         <Section title={messages.dispatches.title}>
-          <Dispatches view={view} />
+          <Dispatches view={view} state={state} />
         </Section>
+        {view.room ? (
+          <Section title={messages.room.homeTitle}>
+            <RoomEntry coalitionId={view.coalitionId} />
+          </Section>
+        ) : null}
         <Section title={coalitions.documents}>
           <Documents view={view} />
         </Section>
@@ -232,6 +350,16 @@ export function CoalitionHome({ view, now, back, onTakePart }: CoalitionHomeProp
         <Section title={coalitions.groups}>
           <MemberGroups view={view} />
         </Section>
+        {view.share ? (
+          <Section title={coalitions.followers}>
+            <ShareLink
+              words={SHARE_WORDS}
+              makeLink={props.makeFollowLink}
+              copyText={props.copyText}
+              primary={false}
+            />
+          </Section>
+        ) : null}
       </div>
     </main>
   );

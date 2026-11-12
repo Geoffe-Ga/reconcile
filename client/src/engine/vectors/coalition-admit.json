@@ -17,8 +17,7 @@
               "body": {
                 "name": "Riverside",
                 "founder": "Ana",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -94,8 +93,7 @@
               "body": {
                 "name": "Hillside",
                 "founder": "Ben",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -171,8 +169,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Rivers United",
-                "title": "Shared ground",
-                "atoms": ["We keep the river clean."],
+                "documents": [{ "title": "Shared ground", "atoms": ["We keep the river clean."] }],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -272,7 +269,8 @@
                   },
                   "proof": {
                     "$seatProof": ["C", "@7", "%dee"]
-                  }
+                  },
+                  "kx": "&^C"
                 },
                 "title": "Admit Oak St",
                 "why": "They share the river too."
@@ -360,8 +358,7 @@
               "body": {
                 "name": "Oak St",
                 "founder": "Cal",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -613,8 +610,7 @@
               "body": {
                 "name": "Riverside",
                 "founder": "Ana",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -673,8 +669,7 @@
               "body": {
                 "name": "Hillside",
                 "founder": "Ben",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -733,8 +728,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Rivers United",
-                "title": "Shared ground",
-                "atoms": ["We keep the river clean."],
+                "documents": [{ "title": "Shared ground", "atoms": ["We keep the river clean."] }],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -834,7 +828,8 @@
                   },
                   "proof": {
                     "$seatProof": ["C", "@7", "%dee"]
-                  }
+                  },
+                  "kx": "&^C"
                 },
                 "title": "Admit Oak St",
                 "why": "They share the river too."
@@ -905,8 +900,7 @@
               "body": {
                 "name": "Oak St",
                 "founder": "Cal",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -1009,8 +1003,7 @@
               "body": {
                 "name": "Riverside",
                 "founder": "Ana",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -1086,8 +1079,7 @@
               "body": {
                 "name": "Hillside",
                 "founder": "Ben",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -1164,8 +1156,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Rivers United",
-                "title": "Shared ground",
-                "atoms": ["We keep the river clean."],
+                "documents": [{ "title": "Shared ground", "atoms": ["We keep the river clean."] }],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -1265,7 +1256,8 @@
                   },
                   "proof": {
                     "$seatProof": ["C", "@7", "%dee"]
-                  }
+                  },
+                  "kx": "&^C"
                 },
                 "title": "Admit Oak St",
                 "why": "They share the river too."
@@ -1336,8 +1328,7 @@
               "body": {
                 "name": "Oak St",
                 "founder": "Cal",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -1450,8 +1441,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Rivers United",
-                "title": "Shared ground",
-                "atoms": ["We keep the river clean."],
+                "documents": [{ "title": "Shared ground", "atoms": ["We keep the river clean."] }],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -1665,7 +1655,8 @@
                   },
                   "proof": {
                     "$seatProof": ["F", "@1", "%hal"]
-                  }
+                  },
+                  "kx": "&^F"
                 },
                 "title": "Admit Ferry Road",
                 "why": "They share the river too."
@@ -1896,8 +1887,7 @@
               "body": {
                 "name": "Riverside",
                 "founder": "Ana",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -1956,8 +1946,7 @@
               "body": {
                 "name": "Hillside",
                 "founder": "Ben",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -2016,8 +2005,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Rivers United",
-                "title": "Shared ground",
-                "atoms": ["We keep the river clean."],
+                "documents": [{ "title": "Shared ground", "atoms": ["We keep the river clean."] }],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -2117,7 +2105,8 @@
                   },
                   "proof": {
                     "$seatProof": ["C", "@7", "%eve"]
-                  }
+                  },
+                  "kx": "&^C"
                 },
                 "title": "Admit Oak St",
                 "why": "They share the river too."
@@ -2138,8 +2127,326 @@
               "body": {
                 "name": "Oak St",
                 "founder": "Cal",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
+              }
+            }
+          },
+          {
+            "seq": 13,
+            "received": 29375007,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@12",
+              "author": "%cal",
+              "ts": 1762500780000,
+              "body": {
+                "target": {
+                  "kind": "reconcile",
+                  "secret": "~coalition",
+                  "inner": "~inner",
+                  "seat": "!C",
+                  "name": "Rivers United",
+                  "title": "Shared ground",
+                  "atoms": ["We keep the river clean."]
+                },
+                "title": "Reconcile",
+                "why": "We share a river."
+              }
+            }
+          },
+          {
+            "seq": 14,
+            "received": 29375008,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@12",
+              "author": "%cal",
+              "ts": 1762500840000,
+              "body": {
+                "proposal": "@13",
+                "scores": {
+                  "@13": 4
+                }
+              }
+            }
+          }
+        ]
+      },
+      "relayNow": 29375019,
+      "expect": {
+        "coalition": {
+          "proposals": [],
+          "ignored": [
+            {
+              "seq": 15,
+              "id": "@15"
+            }
+          ]
+        }
+      },
+      "unchangedWithout": {
+        "coalition": [15]
+      }
+    },
+    {
+      "name": "forgery-admit-kx: an admit whose kx no box can be sealed to (here all zeros, a key of low order) is ignored, since the room's inner could never reach its seat (#313)",
+      "logs": {
+        "A": [
+          {
+            "seq": 1,
+            "received": 29375000,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%ana",
+              "ts": 1762500060000,
+              "body": {
+                "name": "Riverside",
+                "founder": "Ana",
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
+              }
+            }
+          },
+          {
+            "seq": 2,
+            "received": 29375001,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@1",
+              "author": "%ana",
+              "ts": 1762500120000,
+              "body": {
+                "target": {
+                  "kind": "reconcile",
+                  "secret": "~coalition",
+                  "inner": "~inner",
+                  "seat": "!A",
+                  "name": "Rivers United",
+                  "title": "Shared ground",
+                  "atoms": ["We keep the river clean."]
+                },
+                "title": "Reconcile",
+                "why": "We share a river."
+              }
+            }
+          },
+          {
+            "seq": 3,
+            "received": 29375002,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@1",
+              "author": "%ana",
+              "ts": 1762500180000,
+              "body": {
+                "proposal": "@2",
+                "scores": {
+                  "@2": 4
+                }
+              }
+            }
+          }
+        ],
+        "B": [
+          {
+            "seq": 4,
+            "received": 29375000,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%ben",
+              "ts": 1762500240000,
+              "body": {
+                "name": "Hillside",
+                "founder": "Ben",
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
+              }
+            }
+          },
+          {
+            "seq": 5,
+            "received": 29375001,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@4",
+              "author": "%ben",
+              "ts": 1762500300000,
+              "body": {
+                "target": {
+                  "kind": "reconcile",
+                  "secret": "~coalition",
+                  "inner": "~inner",
+                  "seat": "!B",
+                  "name": "Rivers United",
+                  "title": "Shared ground",
+                  "atoms": ["We keep the river clean."]
+                },
+                "title": "Reconcile",
+                "why": "We share a river."
+              }
+            }
+          },
+          {
+            "seq": 6,
+            "received": 29375002,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@4",
+              "author": "%ben",
+              "ts": 1762500360000,
+              "body": {
+                "proposal": "@5",
+                "scores": {
+                  "@5": 4
+                }
+              }
+            }
+          }
+        ],
+        "coalition": [
+          {
+            "seq": 7,
+            "received": 29375003,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%kim",
+              "ts": 1762500420000,
+              "body": {
+                "kind": "coalition",
+                "name": "Rivers United",
+                "documents": [{ "title": "Shared ground", "atoms": ["We keep the river clean."] }],
+                "seats": [
+                  {
+                    "name": "Riverside",
+                    "key": "^A"
+                  },
+                  {
+                    "name": "Hillside",
+                    "key": "^B"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "seq": 8,
+            "received": 29375004,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@7",
+              "author": "%kim",
+              "ts": 1762500480000,
+              "body": {
+                "name": "Kim",
+                "seat": "^A",
+                "proof": {
+                  "$seatProof": ["A", "@7", "%kim"]
+                }
+              }
+            }
+          },
+          {
+            "seq": 9,
+            "received": 29375004,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@7",
+              "author": "%zed",
+              "ts": 1762500540000,
+              "body": {
+                "name": "Zed",
+                "seat": "^B",
+                "proof": {
+                  "$seatProof": ["B", "@7", "%zed"]
+                }
+              }
+            }
+          },
+          {
+            "seq": 10,
+            "received": 29375005,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@7",
+              "author": "%kim",
+              "ts": 1762500600000,
+              "body": {
+                "motion": "@7",
+                "seat": "^A",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 11,
+            "received": 29375005,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@7",
+              "author": "%zed",
+              "ts": 1762500660000,
+              "body": {
+                "motion": "@7",
+                "seat": "^B",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 15,
+            "received": 29375009,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@7",
+              "author": "%dee",
+              "ts": 1762500900000,
+              "body": {
+                "target": {
+                  "kind": "admit",
+                  "seat": {
+                    "name": "Oak St",
+                    "key": "^C"
+                  },
+                  "proof": {
+                    "$seatProof": ["C", "@7", "%dee"]
+                  },
+                  "kx": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                },
+                "title": "Admit Oak St",
+                "why": "They share the river too."
+              }
+            }
+          }
+        ],
+        "C": [
+          {
+            "seq": 12,
+            "received": 29375006,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%cal",
+              "ts": 1762500720000,
+              "body": {
+                "name": "Oak St",
+                "founder": "Cal",
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -2218,8 +2525,7 @@
               "body": {
                 "name": "Riverside",
                 "founder": "Ana",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -2278,8 +2584,7 @@
               "body": {
                 "name": "Hillside",
                 "founder": "Ben",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -2338,8 +2643,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Rivers United",
-                "title": "Shared ground",
-                "atoms": ["We keep the river clean."],
+                "documents": [{ "title": "Shared ground", "atoms": ["We keep the river clean."] }],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -2439,7 +2743,8 @@
                   },
                   "proof": {
                     "$seatProof": ["C", "@7", "%kim"]
-                  }
+                  },
+                  "kx": "&^C"
                 },
                 "title": "Admit Oak St",
                 "why": "They share the river too."
@@ -2460,8 +2765,7 @@
               "body": {
                 "name": "Oak St",
                 "founder": "Cal",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -2540,8 +2844,7 @@
               "body": {
                 "name": "Riverside",
                 "founder": "Ana",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -2600,8 +2903,7 @@
               "body": {
                 "name": "Hillside",
                 "founder": "Ben",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -2660,8 +2962,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Rivers United",
-                "title": "Shared ground",
-                "atoms": ["We keep the river clean."],
+                "documents": [{ "title": "Shared ground", "atoms": ["We keep the river clean."] }],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -2761,7 +3062,8 @@
                   },
                   "proof": {
                     "$seatProof": ["B", "@7", "%dee"]
-                  }
+                  },
+                  "kx": "&^B"
                 },
                 "title": "Admit Hillside",
                 "why": "They share the river too."
@@ -2782,8 +3084,7 @@
               "body": {
                 "name": "Oak St",
                 "founder": "Cal",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -2862,8 +3163,7 @@
               "body": {
                 "name": "Riverside",
                 "founder": "Ana",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -2922,8 +3222,7 @@
               "body": {
                 "name": "Hillside",
                 "founder": "Ben",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -2982,8 +3281,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Rivers United",
-                "title": "Shared ground",
-                "atoms": ["We keep the river clean."],
+                "documents": [{ "title": "Shared ground", "atoms": ["We keep the river clean."] }],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -3083,7 +3381,8 @@
                   },
                   "proof": {
                     "$seatProof": ["C", "@7", "%dee"]
-                  }
+                  },
+                  "kx": "&^C"
                 },
                 "title": "Admit Oak St",
                 "why": "They share the river too."
@@ -3108,7 +3407,8 @@
                   },
                   "proof": {
                     "$seatProof": ["C", "@7", "%hal"]
-                  }
+                  },
+                  "kx": "&^C"
                 },
                 "title": "Admit Oak St",
                 "why": "They share the river too."
@@ -3129,8 +3429,7 @@
               "body": {
                 "name": "Oak St",
                 "founder": "Cal",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -3213,8 +3512,7 @@
               "body": {
                 "name": "Riverside",
                 "founder": "Ana",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -3273,8 +3571,7 @@
               "body": {
                 "name": "Hillside",
                 "founder": "Ben",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -3333,8 +3630,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Rivers United",
-                "title": "Shared ground",
-                "atoms": ["We keep the river clean."],
+                "documents": [{ "title": "Shared ground", "atoms": ["We keep the river clean."] }],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -3434,7 +3730,8 @@
                   },
                   "proof": {
                     "$seatProof": ["C", "@7", "%dee"]
-                  }
+                  },
+                  "kx": "&^C"
                 },
                 "title": "Admit Oak St",
                 "why": "They share the river too.",
@@ -3459,8 +3756,7 @@
               "body": {
                 "name": "Oak St",
                 "founder": "Cal",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -3539,8 +3835,7 @@
               "body": {
                 "name": "Riverside",
                 "founder": "Ana",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -3603,7 +3898,8 @@
                   },
                   "proof": {
                     "$seatProof": ["C", "@7", "%ana"]
-                  }
+                  },
+                  "kx": "&^C"
                 },
                 "title": "Admit Oak St",
                 "why": "They share the river too."
@@ -3624,8 +3920,7 @@
               "body": {
                 "name": "Hillside",
                 "founder": "Ben",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -3684,8 +3979,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Rivers United",
-                "title": "Shared ground",
-                "atoms": ["We keep the river clean."],
+                "documents": [{ "title": "Shared ground", "atoms": ["We keep the river clean."] }],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -3781,8 +4075,7 @@
               "body": {
                 "name": "Oak St",
                 "founder": "Cal",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -3865,8 +4158,7 @@
               "body": {
                 "name": "Riverside",
                 "founder": "Ana",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -3925,8 +4217,7 @@
               "body": {
                 "name": "Hillside",
                 "founder": "Ben",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -3985,8 +4276,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Rivers United",
-                "title": "Shared ground",
-                "atoms": ["We keep the river clean."],
+                "documents": [{ "title": "Shared ground", "atoms": ["We keep the river clean."] }],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -4086,7 +4376,8 @@
                   },
                   "proof": {
                     "$seatProof": ["C", "@7", "%dee"]
-                  }
+                  },
+                  "kx": "&^C"
                 },
                 "title": "Admit Oak St",
                 "why": "They share the river too."
@@ -4173,8 +4464,7 @@
               "body": {
                 "name": "Oak St",
                 "founder": "Cal",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -4260,8 +4550,7 @@
               "body": {
                 "name": "Riverside",
                 "founder": "Ana",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -4320,8 +4609,7 @@
               "body": {
                 "name": "Hillside",
                 "founder": "Ben",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -4380,8 +4668,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Rivers United",
-                "title": "Shared ground",
-                "atoms": ["We keep the river clean."],
+                "documents": [{ "title": "Shared ground", "atoms": ["We keep the river clean."] }],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -4465,7 +4752,8 @@
                   },
                   "proof": {
                     "$seatProof": ["C", "@7", "%dee"]
-                  }
+                  },
+                  "kx": "&^C"
                 },
                 "title": "Admit Oak St",
                 "why": "They share the river too."
@@ -4486,8 +4774,7 @@
               "body": {
                 "name": "Oak St",
                 "founder": "Cal",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -4569,8 +4856,7 @@
               "body": {
                 "name": "Riverside",
                 "founder": "Ana",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -4629,8 +4915,7 @@
               "body": {
                 "name": "Hillside",
                 "founder": "Ben",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -4689,8 +4974,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Rivers United",
-                "title": "Shared ground",
-                "atoms": ["We keep the river clean."],
+                "documents": [{ "title": "Shared ground", "atoms": ["We keep the river clean."] }],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -4790,7 +5074,8 @@
                   },
                   "proof": {
                     "$seatProof": ["C", "@7", "%dee"]
-                  }
+                  },
+                  "kx": "&^C"
                 },
                 "title": "Admit Oak St",
                 "why": "They share the river too."
@@ -4809,6 +5094,7 @@
               "body": {
                 "target": {
                   "kind": "add",
+                  "document": "@7",
                   "after": null
                 },
                 "title": "More",
@@ -4848,8 +5134,7 @@
               "body": {
                 "name": "Oak St",
                 "founder": "Cal",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },

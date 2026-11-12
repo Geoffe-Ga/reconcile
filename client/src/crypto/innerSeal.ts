@@ -10,8 +10,13 @@
  * and followers never get, with C's id as associated data, so a field moved
  * into another coalition's log never opens. The field is base64url of
  * exactly one 1,024-byte blob, the smallest a Seal makes, holding the 96
- * bytes `secret ‖ inner ‖ seat`. `vectors/innerSeal.json` pins the key and
- * one field, computed outside @noble.
+ * bytes `secret ‖ inner ‖ seat`.
+ *
+ * A coalition asking into a formed D holds no `inner` of D's until it is
+ * seated, as a group asking in doesn't (#313): its field holds the 64 bytes
+ * `secret ‖ seat`, in the same one blob, and C's devices open D's `inner`
+ * from a wrap for C's seat once D admits it. `vectors/innerSeal.json` pins
+ * the key and a field of each kind, computed outside @noble.
  */
 import { concatBytes } from '@noble/hashes/utils.js';
 
@@ -31,10 +36,13 @@ export const SEALED_FIELD_CHARS = Math.ceil((SEALED_SECRETS_BYTES * 4) / 3);
 /** Each secret's length in bytes. */
 const SECRET_BYTES = 32;
 
-/** What a sealed field holds: the coalition above's secret and `inner`, and the seat secret there. */
+/**
+ * What a sealed field holds: the coalition above's secret and `inner`, and the
+ * seat secret there; no `inner` for a coalition asking into a formed one (#313).
+ */
 export interface SeatSecrets {
   readonly secret: Uint8Array;
-  readonly inner: Uint8Array;
+  readonly inner?: Uint8Array;
   readonly seat: Uint8Array;
 }
 
@@ -56,15 +64,16 @@ export function innerSealKey(inner: Uint8Array): Uint8Array<ArrayBuffer> {
 
 /**
  * The `sealed` field of a reconcile motion in the coalition `coalitionId`,
- * whose `inner` is `inner`: the three secrets in one blob, in base64url.
+ * whose `inner` is `inner`: the secrets in one blob, in base64url.
  *
  * @throws {RangeError} when `inner` or any secret isn't 32 bytes.
  */
 export function sealSeatSecrets(coalitionId: string, inner: Uint8Array, held: SeatSecrets): string {
   check32(held.secret, 'A secret');
-  check32(held.inner, 'An inner');
+  if (held.inner !== undefined) check32(held.inner, 'An inner');
   check32(held.seat, 'A seat secret');
-  const plaintext = concatBytes(held.secret, held.inner, held.seat);
+  const above = held.inner === undefined ? [] : [held.inner];
+  const plaintext = concatBytes(held.secret, ...above, held.seat);
   return base64url(seal(coalitionId, innerSealKey(inner), plaintext));
 }
 
@@ -77,10 +86,20 @@ function bytesOf(text: string): Uint8Array | null {
   }
 }
 
+/** The secrets in an opened field: 96 bytes with the `inner` above, 64 without (#313), else null. */
+function secretsOf(plaintext: Uint8Array): SeatSecrets | null {
+  const secret = plaintext.slice(0, SECRET_BYTES);
+  const seat = plaintext.slice(-SECRET_BYTES);
+  if (plaintext.length === 2 * SECRET_BYTES) return { secret, seat };
+  if (plaintext.length !== 3 * SECRET_BYTES) return null;
+  return { secret, inner: plaintext.slice(SECRET_BYTES, 2 * SECRET_BYTES), seat };
+}
+
 /**
- * The three secrets in a `sealed` field of the coalition `coalitionId`, or
- * null when it doesn't open under `inner`: another key, another coalition,
- * any changed byte, or anything but exactly 96 bytes inside.
+ * The secrets in a `sealed` field of the coalition `coalitionId`, or null
+ * when it doesn't open under `inner`: another key, another coalition, any
+ * changed byte, or anything but exactly 96 bytes inside, or 64 for a seat
+ * with no `inner` above (#313).
  */
 export function openSeatSecrets(
   coalitionId: string,
@@ -90,10 +109,5 @@ export function openSeatSecrets(
   const blob = bytesOf(sealed);
   if (blob === null || inner.length !== SECRET_BYTES) return null;
   const plaintext = open(coalitionId, innerSealKey(inner), blob);
-  if (plaintext?.length !== 3 * SECRET_BYTES) return null;
-  return {
-    secret: plaintext.slice(0, SECRET_BYTES),
-    inner: plaintext.slice(SECRET_BYTES, 2 * SECRET_BYTES),
-    seat: plaintext.slice(2 * SECRET_BYTES),
-  };
+  return plaintext === null ? null : secretsOf(plaintext);
 }

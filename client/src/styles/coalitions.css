@@ -214,3 +214,119 @@
   gap: var(--space-2);
   overflow-wrap: anywhere;
 }
+
+/* Following a coalition (#124) -------------------------------------------- */
+
+/* Under a followed coalition's name: its member groups on one line, a dot
+ * between each, wrapping at a name rather than inside one. */
+.coalition-groups-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+  max-width: 30em;
+  margin: 0;
+  padding: 0;
+  color: var(--body);
+  font: var(--type-body);
+  list-style: none;
+}
+
+.coalition-groups-line > li {
+  display: flex;
+  gap: var(--space-2);
+  overflow-wrap: anywhere;
+}
+
+.coalition-groups-separator {
+  color: var(--muted);
+}
+
+/* A follow link's preview: its member groups, then its first section under a
+ * hairline, as an invite's preview sets its Document. */
+.follow-groups {
+  display: grid;
+  gap: var(--space-1);
+}
+
+/* On Start's Following, a coalition's member groups under its name, a dot
+ * between each name, wrapping at a name rather than inside one. */
+.following-groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-2);
+  overflow-wrap: anywhere;
+}
+
+.following-groups > span {
+  display: inline-flex;
+  gap: var(--space-2);
+}
+
+/* A coalition's room (#125) ------------------------------------------------ */
+
+/* The messages, oldest at the top: hairline rows on the paper, each its
+ * author's coalition name and the relay's time on one line, then its text. */
+.room-messages {
+  display: grid;
+  padding: 0;
+  border-top: 1px solid var(--hairline);
+  list-style: none;
+}
+
+.room-message {
+  display: grid;
+  gap: var(--space-1);
+  padding-block: var(--space-3);
+  border-bottom: 1px solid var(--hairline);
+}
+
+/* A name can be long, so the time wraps under it rather than off the row. */
+.room-message-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-3);
+  justify-content: space-between;
+  align-items: baseline;
+  overflow-wrap: anywhere;
+}
+
+.room-author {
+  color: var(--ink);
+  font: var(--type-ui);
+  font-weight: 650;
+}
+
+.room-time {
+  color: var(--muted);
+  font: var(--type-caption);
+  white-space: nowrap;
+}
+
+/* Plain text, never Markdown or links: line breaks and spaces show as typed. */
+.room-text {
+  max-width: 34em;
+  color: var(--body);
+  font: var(--type-body);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.room-empty,
+.room-note {
+  max-width: 30em;
+  color: var(--body);
+  font: var(--type-body);
+}
+
+/* The box: a few lines to start, taller as the person likes. */
+.input-message {
+  min-height: 6rem;
+  resize: vertical;
+}
+
+/* Take part in the room's place for the box: the form follows its line. */
+.room-take-part > .coalition-take-part {
+  margin-block-start: 0;
+  padding-block-start: 0;
+  border-top: 0;
+}

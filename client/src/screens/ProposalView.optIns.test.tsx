@@ -100,6 +100,39 @@ describe('ProposalView: turning the chat bot on (#117)', () => {
   });
 });
 
+describe('ProposalView: a front door Proposal open when a member left (#288)', () => {
+  /** Ana proposes opening the door, Ana and Cal score it, then Cal leaves and the key changes. */
+  function exposedOpening() {
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    const id = log.rules('Ana', 'frontDoor', DOOR, { title: 'Open a front door' });
+    for (const name of ['Ana', 'Cal']) log.vote(name, id, 4);
+    log.leave('Cal');
+    log.rotate('Ana');
+    return { log, id };
+  }
+
+  it('says on the ballot that passing it won’t open the door, and how to reopen it', async () => {
+    const { log, id } = exposedOpening();
+    setup(log.state(), id, 'ben');
+    const card = screen.getByRole('region', { name: 'Open a front door' });
+    expect(within(card).getByText(/A member left while this vote was open/)).toHaveTextContent(
+      messages.optIns.exposed.line,
+    );
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('says its pass leaves the door closed', () => {
+    const { log, id } = exposedOpening();
+    log.vote('Ben', id, 4);
+    const state = log.state();
+    expect(state.optIns.frontDoor).toBe(false);
+    setup(state, id, 'ana');
+    const result = screen.getByRole('region', { name: 'Result' });
+    expect(within(result).getByText(messages.optIns.exposed.passed)).toBeVisible();
+    expect(within(result).queryByText('This passed. Your group’s front door is open.')).toBeNull();
+  });
+});
+
 describe('ProposalView: a steward’s Turn off now (#117)', () => {
   it('says who turned it off and that it stays off while the group votes', async () => {
     const log = groupLog({ members: ['Ben', 'Cal'] });

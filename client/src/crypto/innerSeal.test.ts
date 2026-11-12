@@ -15,7 +15,10 @@ import {
 } from './innerSeal';
 import { seal } from './seal';
 
-/** `vectors/innerSeal.json`: fixed inners' keys, and one sealed field, computed outside @noble. */
+/**
+ * `vectors/innerSeal.json`: fixed inners' keys, a sealed field holding the
+ * inner above, and one holding none (#313), all computed outside @noble.
+ */
 interface InnerSealFile {
   readonly kind: 'inner-seal';
   readonly info: string;
@@ -29,6 +32,13 @@ interface InnerSealFile {
     readonly sealed: readonly number[];
     readonly secret: readonly number[];
     readonly innerAbove: readonly number[];
+    readonly seat: readonly number[];
+  };
+  readonly opensWithoutInner: {
+    readonly inner: readonly number[];
+    readonly coalitionId: string;
+    readonly sealed: readonly number[];
+    readonly secret: readonly number[];
     readonly seat: readonly number[];
   };
 }
@@ -67,6 +77,16 @@ describe('innerSeal.json', () => {
     expect([...(opened?.inner ?? [])]).toEqual(innerAbove);
     expect([...(opened?.seat ?? [])]).toEqual(seat);
   });
+
+  it('opens the 64-byte field sealed outside @noble to its secret and seat, with no inner (#313)', () => {
+    const { inner, coalitionId, sealed, secret, seat } = file.opensWithoutInner;
+    const field = base64url(Uint8Array.from(sealed));
+    const opened = openSeatSecrets(coalitionId, Uint8Array.from(inner), field);
+    expect(opened).toEqual({ secret: Uint8Array.from(secret), seat: Uint8Array.from(seat) });
+    expect(opened).not.toHaveProperty('inner');
+    expect(field).toHaveLength(SEALED_FIELD_CHARS);
+    expect(openSeatSecrets(coalitionId, Uint8Array.from(file.opens.inner), field)).toBeNull();
+  });
 });
 
 describe('sealSeatSecrets and openSeatSecrets', () => {
@@ -79,6 +99,19 @@ describe('sealSeatSecrets and openSeatSecrets', () => {
         expect(SEALED_FIELD_CHARS).toBe(1366);
         expect(SEALED_SECRETS_BYTES).toBe(1024);
         expect(openSeatSecrets(ID, inner, sealed)).toEqual(held);
+      }),
+      { numRuns: 25 },
+    );
+  });
+
+  it('round-trip a seat with no inner above, as a coalition asking into a formed one seals it (#313)', () => {
+    fc.assert(
+      fc.property(bytes32, secrets, (inner, { secret, seat }) => {
+        const sealed = sealSeatSecrets(ID, inner, { secret, seat });
+        // The same one blob: whether it holds an inner shows only once it's open.
+        expect(sealed).toHaveLength(SEALED_FIELD_CHARS);
+        expect(openSeatSecrets(ID, inner, sealed)).toEqual({ secret, seat });
+        expect(openSeatSecrets(`${ID}x`, inner, sealed)).toBeNull();
       }),
       { numRuns: 25 },
     );
@@ -118,14 +151,23 @@ describe('sealSeatSecrets and openSeatSecrets', () => {
     expect(openSeatSecrets(ID, inner, sealed.slice(0, 100))).toBeNull();
   });
 
-  it('opens only a field holding exactly 96 bytes', () => {
+  it('opens only a field holding exactly 96 bytes, or 64 with no inner (#313)', () => {
     const inner = new Uint8Array(32).fill(9);
     const key = innerSealKey(inner);
-    for (const length of [95, 97]) {
+    for (const length of [0, 32, 63, 65, 95, 97]) {
       const sealed = base64url(seal(ID, key, new Uint8Array(length)));
       expect(openSeatSecrets(ID, inner, sealed)).toBeNull();
     }
-    expect(openSeatSecrets(ID, inner, base64url(seal(ID, key, new Uint8Array(96))))).not.toBeNull();
+    const held = Uint8Array.from({ length: 96 }, (_, i) => i);
+    const all = openSeatSecrets(ID, inner, base64url(seal(ID, key, held)));
+    expect(all).toEqual({
+      secret: held.slice(0, 32),
+      inner: held.slice(32, 64),
+      seat: held.slice(64),
+    });
+    const two = openSeatSecrets(ID, inner, base64url(seal(ID, key, held.slice(0, 64))));
+    expect(two).toEqual({ secret: held.slice(0, 32), seat: held.slice(32, 64) });
+    expect(two).not.toHaveProperty('inner');
   });
 
   it('refuses an inner or a secret that isn’t 32 bytes', () => {
@@ -139,5 +181,11 @@ describe('sealSeatSecrets and openSeatSecrets', () => {
     expect(() =>
       sealSeatSecrets(ID, new Uint8Array(32), { ...held, secret: new Uint8Array(1) }),
     ).toThrow(RangeError);
+    expect(() =>
+      sealSeatSecrets(ID, new Uint8Array(32), { ...held, inner: new Uint8Array(31) }),
+    ).toThrow('An inner is 32 bytes.');
+    expect(() =>
+      sealSeatSecrets(ID, new Uint8Array(32), { secret: held.secret, seat: new Uint8Array(33) }),
+    ).toThrow('A seat secret is 32 bytes.');
   });
 });

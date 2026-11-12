@@ -11,8 +11,10 @@ import {
   isUsableKxKey,
   kxPublicKeyOf,
   newKxKey,
+  BOX_NONCE_BYTES,
   openBox,
   sealTo,
+  sealToWith,
 } from './box';
 import { concat, local, utf8 } from '../test/bytes';
 
@@ -116,6 +118,40 @@ describe('box.json, sealed outside @noble', () => {
     expect(openBox(secret, box.subarray(0, BOX_OVERHEAD - 1), known.info, aad)).toBeNull();
     expect(openBox(secret, box.subarray(0, box.length - 1), known.info, aad)).toBeNull();
     expect(openBox(secret, new Uint8Array(0), known.info, aad)).toBeNull();
+  });
+});
+
+describe('sealToWith (#224)', () => {
+  const coins = { ephemeral: bytes(known.ephemeralSecret), nonce: bytes(known.nonce) };
+
+  it('seals the vector’s box byte for byte from its ephemeral secret and nonce', () => {
+    const box = sealToWith(
+      bytes(known.recipientPublic),
+      bytes(known.plaintext),
+      known.info,
+      bytes(known.aad),
+      coins,
+    );
+    expect(box).toEqual(bytes(known.box));
+    // The coins are the caller's: they come back as they went in.
+    expect(coins.ephemeral).toEqual(bytes(known.ephemeralSecret));
+  });
+
+  it('refuses coins of the wrong length, or a key no box can be sealed to', () => {
+    const seal =
+      (coinsGiven: { ephemeral: Uint8Array; nonce: Uint8Array }, to = known.recipientPublic) =>
+      () =>
+        sealToWith(bytes(to), utf8('secret'), INFO, AAD, coinsGiven);
+    expect(BOX_NONCE_BYTES).toBe(24);
+    const wrongCoins = 'A box’s coins are a 32-byte key and a 24-byte nonce.';
+    expect(seal({ ...coins, ephemeral: new Uint8Array(31) })).toThrow(wrongCoins);
+    expect(seal({ ...coins, ephemeral: new Uint8Array(33) })).toThrow(wrongCoins);
+    expect(seal({ ...coins, nonce: new Uint8Array(23) })).toThrow(wrongCoins);
+    expect(seal({ ...coins, nonce: new Uint8Array(25) })).toThrow(wrongCoins);
+    const noBox = 'A box can’t be sealed to that key.';
+    expect(seal(coins, new Array<number>(32).fill(0))).toThrow(noBox);
+    expect(seal(coins, new Array<number>(31).fill(9))).toThrow(noBox);
+    expect(seal(coins, new Array<number>(32).fill(0))).toThrow(RangeError);
   });
 });
 

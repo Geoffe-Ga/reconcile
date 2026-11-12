@@ -5,26 +5,31 @@
  * The file picker is React Aria's `FileTrigger` with no `accept` list, since
  * iOS greys out a file whose type it doesn't know. Restoring reads the file
  * on the device and checks all of it before writing anything. Success says
- * how many groups came back; any failure says one plain line, whether the
- * passphrase was wrong or the file damaged, and writes nothing.
+ * how many groups came back, and how many group entries it left out because
+ * they didn't check out, if any (#336); any other failure says one plain
+ * line, whether the passphrase was wrong or the file damaged, and writes
+ * nothing.
  */
 import { type SyntheticEvent, useState } from 'react';
 import { Button, FileTrigger, Form } from 'react-aria-components';
 
-import { MAX_BACKUP_BYTES } from '../store/snapshot';
+import { MAX_BACKUP_BYTES, type Restored } from '../store/snapshot';
+import { holdPresses } from './holdPresses';
 import { messages } from './messages';
 import { Field } from './ui';
 
 /** Props for {@link RestoreBackup}. */
 export interface RestoreBackupProps {
-  /** Restores the file's bytes under the passphrase; resolves to how many groups it held. */
-  readonly onRestore: (bytes: Uint8Array, passphrase: string) => Promise<number>;
+  /**
+   * Restores the file's bytes under the passphrase; resolves to how many
+   * groups came back, and how many group entries were left out (#336).
+   */
+  readonly onRestore: (bytes: Uint8Array, passphrase: string) => Promise<Restored>;
 }
 
 /** Where restoring has got to. */
 type Outcome =
-  | { readonly kind: 'idle' | 'restoring' | 'failed' }
-  | { readonly kind: 'restored'; readonly groups: number };
+  { readonly kind: 'idle' | 'restoring' | 'failed' } | ({ readonly kind: 'restored' } & Restored);
 
 /** The file's bytes, or null when it's too large to be a backup. */
 async function bytesOf(file: File): Promise<Uint8Array | null> {
@@ -42,14 +47,14 @@ export function RestoreBackup({ onRestore }: RestoreBackupProps) {
   const restore = async (chosen: File) => {
     setOutcome({ kind: 'restoring' });
     const bytes = await bytesOf(chosen).catch(() => null);
-    const groups = bytes === null ? null : await onRestore(bytes, passphrase).catch(() => null);
-    if (groups === null) {
+    const restored = bytes === null ? null : await onRestore(bytes, passphrase).catch(() => null);
+    if (restored === null) {
       setOutcome({ kind: 'failed' });
       return;
     }
     setFile(null);
     setPassphrase('');
-    setOutcome({ kind: 'restored', groups });
+    setOutcome({ kind: 'restored', ...restored });
   };
   const submit = (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -85,16 +90,18 @@ export function RestoreBackup({ onRestore }: RestoreBackupProps) {
             isRequired
             validate={(value) => (value === '' ? messages.restore.passphraseMissing : null)}
           />
-          <div>
+          <div onPointerDownCapture={holdPresses(restoring)}>
             <Button type="submit" className="button button-secondary" isDisabled={restoring}>
               {messages.restore.submit}
             </Button>
           </div>
         </Form>
       )}
-      <p role="status" className="status">
+      <p role="status" className="status restore-status">
         {outcome.kind === 'restoring' ? messages.restore.restoring : null}
-        {outcome.kind === 'restored' ? messages.restore.restored(outcome.groups) : null}
+        {outcome.kind === 'restored'
+          ? messages.restore.restored(outcome.groups, outcome.skipped)
+          : null}
       </p>
       {outcome.kind === 'failed' ? (
         <p role="alert" className="form-error">

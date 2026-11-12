@@ -19,10 +19,14 @@
  * channel. It lives only in sealed group events and in folded state on
  * members' devices, so it never reaches the relay readable. So do a front
  * door's two secrets (#121): the proposer's device makes them, and they
- * travel only inside the rules Proposal that opens the door.
+ * travel only inside the rules Proposal that opens the door. They don't
+ * change with the group key, so whoever leaves keeps them: a membership's end
+ * closes the door, and only a door with fresh secrets opens again (#288,
+ * fold.ts's `endMembership`).
  */
 import { base64url, fromBase64url } from '../crypto/base64url';
 import { can, type Roster } from './capabilities';
+import { type Closing, isOpenAt } from './open';
 
 /** The opt-ins, in the order screens list them. */
 export const OPT_INS = ['chatBot', 'frontDoor'] as const;
@@ -233,6 +237,27 @@ export function withChange(optIns: OptIns, change: RulesChange): OptIns {
 }
 
 /**
+ * The front door a rules change would open or keep open, carrying its two
+ * secrets, or null for any other change: one to the chat bot, or one that
+ * closes the door.
+ */
+export function doorIn(change: RulesChange | null): FrontDoor | null {
+  return change?.optIn === 'frontDoor' && isFrontDoor(change.value) ? change.value : null;
+}
+
+/**
+ * Where a membership ended and closed the front door (#288): the `leave` or
+ * `remove` whose fold ended it, by event id, relay seq and receipt. Whoever
+ * left keeps the door's secrets, so the door closes on every device, and only
+ * a new opening Proposal, with fresh secrets, opens it again.
+ */
+export interface DoorClosure {
+  readonly id: string;
+  readonly seq: number;
+  readonly received: number;
+}
+
+/**
  * A steward's narrowing (ADR-0040, ADR-0075 §3): from the relay's receipt of
  * its `narrow`, `optIn` is off until `proposal`, the same steward's
  * off-Proposal, closes. `by` is the steward.
@@ -246,8 +271,11 @@ export interface Narrowing {
   readonly proposal: string;
 }
 
-/** What the opt-in rules read of a Proposal: who made it, what it changes, and when it closes. */
-export interface OptInProposalState {
+/**
+ * What the opt-in rules read of a Proposal: who made it, what it changes, and
+ * when it closes, which they read as every rule does ({@link isOpenAt}, #289).
+ */
+export interface OptInProposalState extends Closing {
   readonly id: string;
   readonly author: string;
   /** A rules change, or any other kind of target, whose details the opt-in rules don't read. */
@@ -256,8 +284,10 @@ export interface OptInProposalState {
         readonly kind:
           | 'edit'
           | 'add'
+          | 'new-document'
           | 'steward'
           | 'dissolve'
+          | 'remove'
           | 'reconcile'
           | 'motion'
           | 'priority'
@@ -266,8 +296,6 @@ export interface OptInProposalState {
           | 'promote';
       }
     | RulesChange;
-  readonly deadline: number;
-  readonly closedAt: number | null;
 }
 
 /** What the opt-in rules read of a group, at relay minute `at`. */
@@ -283,17 +311,12 @@ export function rulesChangeOf(proposal: Pick<OptInProposalState, 'target'>): Rul
   return target.kind === 'rules' ? target : null;
 }
 
-/** True while a Proposal takes ballots at relay minute `at`: before its deadline and any early close. */
-function isOpen(proposal: OptInProposalState, at: number): boolean {
-  return proposal.closedAt === null && at < proposal.deadline;
-}
-
 /** The rules Proposal open on `optIn` at `state.at`, if any. An opt-in takes one at a time. */
 export function openRulesProposal(
   state: Pick<OptInState, 'proposals' | 'at'>,
   optIn: OptIn,
 ): OptInProposalState | undefined {
-  return state.proposals.find((p) => rulesChangeOf(p)?.optIn === optIn && isOpen(p, state.at));
+  return state.proposals.find((p) => rulesChangeOf(p)?.optIn === optIn && isOpenAt(p, state.at));
 }
 
 /** True while a steward's narrowing of `optIn` is in force: its off-Proposal is still open. */
@@ -304,7 +327,7 @@ export function isNarrowed(
   return state.narrowings.some((narrowing) => {
     if (narrowing.optIn !== optIn) return false;
     const proposal = state.proposals.find((p) => p.id === narrowing.proposal);
-    return proposal !== undefined && isOpen(proposal, state.at);
+    return proposal !== undefined && isOpenAt(proposal, state.at);
   });
 }
 

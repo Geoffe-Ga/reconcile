@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { Logs } from '../test/coalitions';
 import { authorOf, signedAs } from '../test/keys';
 import { can, DEFAULT_JOIN_LEVEL, FOUNDER_LEVEL, LEVELS } from './capabilities';
 import type { EventDraft, ProposalBody, VoteBody } from './event';
@@ -26,7 +27,8 @@ class TestLog {
   }
 
   genesis(received: number, chat?: string): string {
-    const body = { name: 'Riverside', founder: 'Ana', title: 'House rules', atoms: ['A0', 'A1'] };
+    const documents = [{ title: 'House rules', atoms: ['A0', 'A1'] }];
+    const body = { name: 'Riverside', founder: 'Ana', documents };
     const withChat = chat === undefined ? body : { ...body, chat };
     const ts = received * 60_000;
     this.group = this.add(received, 'ana', { type: 'genesis', group: '', ts, body: withChat });
@@ -90,7 +92,7 @@ describe('fold', () => {
       optIns: { chatBot: null, frontDoor: false },
       name: '',
       chat: null,
-      title: '',
+      documents: [],
       members: [],
       former: [],
       atoms: [],
@@ -98,21 +100,78 @@ describe('fold', () => {
       at: 0,
       stewards: EMPTY_SEATS,
       suspensions: [],
+      removals: [],
+      responses: [],
       narrowings: [],
       vouches: [],
       chatPosts: [],
       doorInvites: [],
+      doorClosure: null,
+      exposedDoors: [],
       chatThreads: [],
       dispatches: [],
       epoch: 0,
+      nextEpoch: 1,
       rotations: [],
+      refused: [],
       rotationDue: false,
       dissolved: null,
+      recoveryShares: [],
+      recoveryAlerts: [],
+      recoveryCancels: [],
       coalitions: [],
       coalition: null,
       focus: null,
+      founding: null,
       ignored: [],
     });
+  });
+
+  it('keeps where the Documents began: the genesis’s receipt, its founder and every founded Atom’s founding text (#104)', () => {
+    const log = new TestLog();
+    const documents = [
+      { title: 'House rules', atoms: ['A0', 'A1'] },
+      { title: 'Budget', atoms: ['B0'] },
+    ];
+    const body = { name: 'Riverside', founder: 'Ana', documents };
+    const group = log.add(R, 'ana', { type: 'genesis', group: '', ts: 0, body });
+    log.group = group;
+    log.join(R + 1, 'ben');
+    const edit = log.propose(R + 10, 'ana', { atom: `${group}.0`, text: 'Changed' });
+    log.vote(R + 11, 'ana', { proposal: edit, scores: { [edit]: 4 } });
+    log.vote(R + 12, 'ben', { proposal: edit, scores: { [edit]: 4 } });
+    const removal = log.propose(R + 20, 'ana', { atom: `${group}:1.0`, text: '' });
+    log.vote(R + 21, 'ana', { proposal: removal, scores: { [removal]: 4 } });
+    log.vote(R + 22, 'ben', { proposal: removal, scores: { [removal]: 4 } });
+    const state = fold(log.records, R + 30);
+    expect(state.atoms.map((atom) => atom.text)).toEqual(['Changed', 'A1']);
+    expect(state.founding).toEqual({
+      received: R,
+      author: authorOf('ana'),
+      atoms: [
+        { id: `${group}.0`, documentId: group, text: 'A0' },
+        { id: `${group}.1`, documentId: group, text: 'A1' },
+        { id: `${group}:1.0`, documentId: `${group}:1`, text: 'B0' },
+      ],
+    });
+  });
+
+  it('names no founder for a coalition, whose genesis author isn’t a participant (#100, #104)', () => {
+    const logs = new Logs();
+    const coalition = logs.coalition(R, ['Riverside', 'Oak St']);
+    const { founding } = fold(logs.logs.coalition ?? [], R);
+    expect(founding).toEqual({
+      received: R,
+      author: null,
+      atoms: [{ id: `${coalition}.0`, documentId: coalition, text: 'We keep the river clean.' }],
+    });
+  });
+
+  it('keeps no founding for a genesis it ignores (#104)', () => {
+    const log = new TestLog();
+    const body = { name: 'Riverside', founder: 'Ana', documents: [] };
+    log.add(R, 'ana', { type: 'genesis', group: '', ts: 0, body });
+    expect(fold(log.records, R).founding).toBeNull();
   });
 
   it('stands at relayNow, or at the latest receipt when there is none yet (#102)', () => {
@@ -186,6 +245,7 @@ describe('fold', () => {
         member: authorOf('kim'),
         reason: '  <b>Threats</b> in chat  ',
         until: R + 10 + 10_080,
+        removal: null,
       },
     ]);
   });

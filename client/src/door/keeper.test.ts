@@ -3,17 +3,30 @@
  * group opens its door by Proposal, a member's sync posts the page, a stranger
  * applies, an inviter's sync reads the application, Send an invite reaches
  * the applicant, and closing the door, by a steward's narrowing, a vote or a
- * dissolve, posts `{open: false}` and stops the inbox.
+ * dissolve, posts `{open: false}` and stops the inbox. A membership that ends
+ * closes the door for good (#288): every device posts a final page, which no
+ * copy the former member forges or replays outranks, and the door reopens
+ * only by a new opening Proposal, whose secrets the former member never sees.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { base64url } from '../crypto/base64url';
-import { doorChannelsOf, replyMailboxOf } from '../crypto/door';
+import { base64url, fromBase64url } from '../crypto/base64url';
+import {
+  APPLICATION_INFO,
+  doorChannelsOf,
+  doorKeysOf,
+  openPadded,
+  replyMailboxOf,
+  signDoorRecord,
+} from '../crypto/door';
+import { deriveSealKey } from '../crypto/groupKeys';
 import { LEVELS } from '../engine/capabilities';
-import { type EventDraft, signEvent } from '../engine/event';
+import { type EventDraft, type RemovalProposalBody, signEvent } from '../engine/event';
 import { fold } from '../engine/fold';
+import { doorIn, type FrontDoor, rulesChangeOf } from '../engine/optIns';
 import { createRelay } from '../net/relay';
 import { xchachaSeal } from '../crypto/seal';
+import type { Group } from '../store/db';
 import type { TestDevice } from '../test/appServices';
 import { COUNTED, DOOR, ROTATED } from '../test/door';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
@@ -23,9 +36,24 @@ import { testDevice } from '../test/appServices';
 import { apply } from './apply';
 import { sendInvite } from './inbox';
 import { CLOSED, doorsThatStood, pagesDue } from './keeper';
-import { addressOf, latestCopy, readDoor, REFRESH_MINUTES } from './page';
+import {
+  addressOf,
+  encodePage,
+  FINAL,
+  latestCopy,
+  newFrontDoor,
+  readDoor,
+  REFRESH_MINUTES,
+} from './page';
 
 freshIndexedDBPerTest();
+
+/**
+ * Each test runs three or four real devices through real crypto on the fake
+ * relay, key changes included, which takes longer than the default 5 seconds
+ * on a busy machine.
+ */
+const DEVICES = { timeout: 30_000 };
 
 /** The follower level, which reads but doesn't invite, by place. */
 const [FOLLOWING] = LEVELS;
@@ -135,7 +163,7 @@ async function stranger(fake: FakeRelay) {
   return kim;
 }
 
-describe('the keeper keeps the page', () => {
+describe('the keeper keeps the page', DEVICES, () => {
   it('posts the open page once the opening passes, and reads it as anyone with the link does', async () => {
     const { fake, devices } = await openGroup(COUNTED);
     const view = await readDoor(reader(fake), addressOf(COUNTED));
@@ -168,7 +196,7 @@ describe('the keeper keeps the page', () => {
     expect(second?.received).toBe((first?.received ?? 0) + REFRESH_MINUTES);
   });
 
-  it('closes the page at once on a steward’s narrowing, and the old door when the keys rotate', async () => {
+  it('closes the page at once on a steward’s narrowing, which may reopen it, so not for good', async () => {
     const { fake, groupId, devices } = await openGroup();
     const [ana] = devices;
     await propose(ana, groupId, false, true);
@@ -181,6 +209,7 @@ describe('the keeper keeps the page', () => {
     const rotate = await propose(devices[1], groupId, ROTATED);
     await everyoneVotes(devices, groupId, rotate);
     expect(await readDoor(reader(fake), addressOf(DOOR))).toEqual({ kind: 'closed' });
+    expect((await latestCopy(reader(fake), addressOf(DOOR)))?.page).toEqual(FINAL);
     expect(await readDoor(reader(fake), addressOf(ROTATED))).toMatchObject({ kind: 'open' });
   });
 
@@ -196,10 +225,11 @@ describe('the keeper keeps the page', () => {
     const group = await ana.services.store.getGroup(groupId);
     expect(group?.archived).toEqual({ reason: 'dissolved' });
     expect(await readDoor(reader(fake), addressOf(DOOR))).toEqual({ kind: 'closed' });
+    expect((await latestCopy(reader(fake), addressOf(DOOR)))?.page).toEqual(FINAL);
   });
 });
 
-describe('the keeper reads the inbox, and Send an invite answers', () => {
+describe('the keeper reads the inbox, and Send an invite answers', DEVICES, () => {
   it('brings a stranger’s application to every inviter', async () => {
     const { fake, groupId, devices } = await openGroup();
     const kim = await stranger(fake);
@@ -271,7 +301,196 @@ describe('the keeper reads the inbox, and Send an invite answers', () => {
   });
 });
 
-describe('doorsThatStood and pagesDue', () => {
+describe('the keeper beside a removal (#115)', DEVICES, () => {
+  /** The PUTs to the open door's page mailbox since request `before`. */
+  function pagePuts(fake: FakeRelay, before: number) {
+    const page = doorChannelsOf(addressOf(DOOR)).page;
+    return fake.requests
+      .slice(before)
+      .filter((request) => request.method === 'PUT' && request.url.includes(page));
+  }
+
+  /** Ben proposes removing Cal, and Ana and Ben pass it with 4s, closing it early. */
+  async function removeCal(devices: readonly TestDevice[], groupId: string, cals: string) {
+    const [ana, ben] = present(devices);
+    const target = { kind: 'remove' as const, member: cals };
+    const body: RemovalProposalBody = { target, title: 'Remove Cal', why: 'Threats.' };
+    const removal = await post(ben, groupId, { type: 'proposal', body });
+    for (const device of [ana, ben]) {
+      const scores = { [removal]: 4 as const };
+      await post(device, groupId, { type: 'vote', body: { proposal: removal, scores } });
+    }
+  }
+
+  it('posts no page for the person a passed removal names, and their removed copy keeps no applications', async () => {
+    const { fake, groupId, devices } = await openGroup();
+    const cal = devices[2];
+    if (cal === undefined) throw new Error('Expected Cal.');
+    const { store } = cal.services;
+    await applyAt(fake, await stranger(fake));
+    expect(await inbox(cal, groupId)).toHaveLength(1);
+    await removeCal(devices, groupId, (await store.getGroup(groupId))?.me.author ?? '');
+    // Cal's device sees the pass before any remove has landed, once the page has come due.
+    fake.minute += REFRESH_MINUTES;
+    const before = fake.requests.length;
+    await cal.services.sync.syncOnce();
+    expect((await store.getGroup(groupId))?.archived).toBeUndefined();
+    expect(pagePuts(fake, before)).toEqual([]);
+
+    for (const device of devices) await device.services.sync.syncOnce();
+    const archived = await store.getGroup(groupId);
+    expect(archived?.archived).toEqual({ reason: 'removed' });
+    expect(archived?.door).toBeUndefined();
+    // The remove ended Cal's membership, so the group's own devices closed the door for good (#288).
+    expect(await readDoor(reader(fake), addressOf(DOOR))).toEqual({ kind: 'closed' });
+    expect((await latestCopy(reader(fake), addressOf(DOOR)))?.page).toEqual(FINAL);
+  });
+});
+
+describe('the keeper once a membership ends (#288)', DEVICES, () => {
+  /** Every request to the open door's inbox so far. */
+  function inboxReads(fake: FakeRelay, door: FrontDoor = DOOR) {
+    const { inbox } = doorChannelsOf(addressOf(door));
+    return fake.requests.filter((request) => request.url.includes(inbox)).length;
+  }
+
+  /** Cal's device leaves, then everyone else's syncs until the key has changed past him. */
+  async function calLeaves(devices: readonly TestDevice[], groupId: string): Promise<Group> {
+    const [ana, ben] = present(devices);
+    const cal = devices[2];
+    // What Cal's device holds as he goes: a former member keeps all of it.
+    const held = await cal?.services.store.getGroup(groupId);
+    if (cal === undefined || held === undefined) throw new Error('Expected Cal’s copy.');
+    // As Leave does (#77): the leave queued and the group marked leaving in one store change.
+    const leave = signEvent(held.signingKey, { type: 'leave', group: groupId, ts: 0, body: {} });
+    await cal.services.store.markLeaving(groupId, leave.record);
+    await cal.services.sync.syncOnce();
+    for (let pass = 0; pass < 3; pass += 1) {
+      for (const device of [ana, ben]) await device.services.sync.syncOnce();
+    }
+    const group = await ana.services.store.getGroup(groupId);
+    expect(group?.epoch).toBe(1);
+    return held;
+  }
+
+  /** A copy of the page signed with `door`'s own key, as anyone holding its `sign` can make. */
+  async function postSigned(
+    fake: FakeRelay,
+    door: FrontDoor,
+    page: Parameters<typeof encodePage>[0],
+  ) {
+    const address = addressOf(door);
+    const { page: mailbox, pageKey } = doorChannelsOf(address);
+    const keys = doorKeysOf(fromBase64url(door.sign), fromBase64url(door.box)).signing;
+    const record = signDoorRecord(keys, encodePage(page));
+    await createRelay({ fetch: fake.fetch }).putBlob(
+      mailbox,
+      xchachaSeal.seal(mailbox, pageKey, record),
+    );
+  }
+
+  it('closes the door for good on every device, reads its inbox no more, and keeps what it read', async () => {
+    const { fake, groupId, devices } = await openGroup();
+    const [ana, ben] = present(devices);
+    await applyAt(fake, await stranger(fake));
+    expect(await inbox(ana, groupId)).toHaveLength(1);
+    await calLeaves(devices, groupId);
+
+    expect(await readDoor(reader(fake), addressOf(DOOR))).toEqual({ kind: 'closed' });
+    expect((await latestCopy(reader(fake), addressOf(DOOR)))?.page).toEqual(FINAL);
+    const reads = inboxReads(fake);
+    for (const device of [ana, ben]) await device.services.sync.syncOnce();
+    expect(inboxReads(fake)).toBe(reads);
+    // Applications already read stay on the device as they were.
+    const kept = await ana.services.store.getGroup(groupId);
+    expect(kept?.door?.applications).toMatchObject([{ name: 'Kim', message: 'Hi.' }]);
+  });
+
+  it('lets no copy the former member forges with the door’s key, or replays, reopen the old link (#277)', async () => {
+    const { fake, groupId, devices } = await openGroup();
+    const { page: mailbox } = doorChannelsOf(addressOf(DOOR));
+    const [genuine] = fake.blobs(mailbox);
+    await calLeaves(devices, groupId);
+
+    // Cal still holds DOOR's secrets: he signs an open page naming a box of his own, and replays the old one.
+    const forged = { v: 1, open: true, name: 'Riverside Tenants', excerpt: 'Come in.' } as const;
+    await postSigned(fake, DOOR, { ...forged, box: base64url(new Uint8Array(32).fill(0x66)) });
+    await createRelay({ fetch: fake.fetch }).putBlob(mailbox, Uint8Array.from(genuine ?? []));
+    expect(await readDoor(reader(fake), addressOf(DOOR))).toEqual({ kind: 'closed' });
+  });
+
+  it('keeps the final copy posted while the group goes on', async () => {
+    const { fake, groupId, devices } = await openGroup();
+    const [ana] = present(devices);
+    await calLeaves(devices, groupId);
+    const first = await latestCopy(reader(fake), addressOf(DOOR));
+    fake.minute += REFRESH_MINUTES;
+    await ana.services.sync.syncOnce();
+    const second = await latestCopy(reader(fake), addressOf(DOOR));
+    expect(first?.page).toEqual(FINAL);
+    expect(second).toMatchObject({
+      page: FINAL,
+      received: (first?.received ?? 0) + REFRESH_MINUTES,
+    });
+  });
+
+  it('reopens only by a new opening Proposal, at a new link, and the former member’s keys open none of its applications', async () => {
+    const { fake, groupId, devices } = await openGroup();
+    const [ana, ben] = present(devices);
+    const held = await calLeaves(devices, groupId);
+    const fresh = newFrontDoor(false);
+    const reopen = await propose(ana, groupId, fresh);
+    await everyoneVotes([ana, ben], groupId, reopen);
+    expect(await readDoor(reader(fake), addressOf(DOOR))).toEqual({ kind: 'closed' });
+    const view = await readDoor(reader(fake), addressOf(fresh));
+    if (view.kind !== 'open') throw new Error('Expected the new door open.');
+
+    const kim = await stranger(fake);
+    await apply(kim.services, addressOf(fresh), view.page, { name: 'Kim', message: 'Hi again.' });
+    expect(await inbox(ana, groupId)).toMatchObject([{ name: 'Kim', message: 'Hi again.' }]);
+
+    // Every secret Cal's copy holds: the group's key, his own keys, and each door his log ever carried.
+    const carried = fold(held.log, held.relayNow).proposals.flatMap((proposal) => {
+      const door = doorIn(rulesChangeOf(proposal));
+      return door === null ? [] : [door.sign, door.box];
+    });
+    expect(carried).toEqual([DOOR.sign, DOOR.box]);
+    const keys = [...carried.map(fromBase64url), held.secret, held.signingKey, held.kxKey];
+    const { inbox: mailbox } = doorChannelsOf(addressOf(fresh));
+    const [application] = fake.blobs(mailbox);
+    if (application === undefined) throw new Error('Expected the application on the relay.');
+    for (const key of keys) {
+      expect(
+        openPadded(key ?? new Uint8Array(32), application, APPLICATION_INFO, mailbox),
+      ).toBeNull();
+    }
+    // The control: the new door's own box opens it.
+    expect(
+      openPadded(fromBase64url(fresh.box), application, APPLICATION_INFO, mailbox),
+    ).not.toBeNull();
+
+    // Nothing on the relay that Cal's group key opens carries the new door's secrets; the old door's
+    // do turn up, so the scan reads what it opens.
+    const sealKey = deriveSealKey(held.secret);
+    const named = new Set(
+      fake.requests.map((request) => /mailbox\/([\w-]{43})/.exec(request.url)?.[1]),
+    );
+    const texts = [...named].flatMap((box) =>
+      box === undefined
+        ? []
+        : fake.blobs(box).flatMap((blob) => {
+            const record = xchachaSeal.open(box, sealKey, blob);
+            return record === null ? [] : [new TextDecoder().decode(record)];
+          }),
+    );
+    expect(texts.some((text) => text.includes(DOOR.sign))).toBe(true);
+    expect(texts.filter((text) => text.includes(fresh.sign) || text.includes(fresh.box))).toEqual(
+      [],
+    );
+  });
+});
+
+describe('doorsThatStood and pagesDue', DEVICES, () => {
   it('list each door that passed once by its key, and close every one but the open door', async () => {
     const { groupId, devices } = await openGroup();
     const rotate = await propose(devices[0], groupId, ROTATED);
@@ -284,6 +503,8 @@ describe('doorsThatStood and pagesDue', () => {
       [ROTATED.sign, true],
       [DOOR.sign, false],
     ]);
+    // A door rotated away never opens again, so its page closes it for good (#288).
+    expect(due[1]?.[1]).toEqual(FINAL);
     expect(base64url(addressOf(ROTATED))).not.toBe(base64url(addressOf(DOOR)));
   });
 });

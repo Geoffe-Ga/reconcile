@@ -27,10 +27,16 @@ import type { RulesView } from '../app/optInLines';
 import { Named } from '../app/stewards';
 import { TellYourGroup } from '../app/TellYourGroup';
 import { AtomText } from '../app/text/AtomText';
-import { type StewardView, type VersionView, versionViews } from '../app/versionViews';
+import {
+  type RemovalView,
+  type StewardView,
+  type VersionView,
+  versionViews,
+} from '../app/versionViews';
 import type { CoalitionProgress } from '../engine/coalitionProgress';
-import { proposalTally } from '../engine/fold';
+import { type Proposal, proposalTally } from '../engine/fold';
 import { isPriority } from '../engine/priority';
+import { removalTarget } from '../engine/removal';
 import type { Bar } from '../engine/rules';
 import type { TallyDetail, VersionTally } from '../engine/tally';
 import { PriorityResult } from './PriorityResult';
@@ -55,11 +61,29 @@ interface OutcomeProps {
   readonly versions: readonly VersionView[];
 }
 
-/** A pass's sentence: it names the winning version when there were several, and a removal says the section is gone (#75). */
-function passSentence(versions: number, winner: number, removed: boolean): string {
+/** What a pass did: changed a section, removed it (#75), or made a new Document (#92). */
+type PassKind = 'changed' | 'removed' | 'created';
+
+/**
+ * A pass's sentence: it names the winning version when there were several, a
+ * removal says the section is gone (#75), and a new Document that it reads
+ * as its winning text (#92).
+ */
+function passSentence(versions: number, winner: number, kind: PassKind): string {
   const { result } = messages;
-  if (removed) return versions > 1 ? result.passedVersionRemoval(winner) : result.passedRemoval;
-  return versions > 1 ? result.passedVersion(winner) : result.passed;
+  const several = versions > 1;
+  if (kind === 'removed')
+    return several ? result.passedVersionRemoval(winner) : result.passedRemoval;
+  if (kind === 'created') {
+    return several ? result.passedVersionDocument(winner) : result.passedDocument;
+  }
+  return several ? result.passedVersion(winner) : result.passed;
+}
+
+/** What a passed Proposal did with its winning `text`. */
+function passKind(proposal: Proposal, text: string): PassKind {
+  if (proposal.target.kind === 'new-document') return 'created';
+  return text === '' ? 'removed' : 'changed';
 }
 
 /** A steward Proposal's pass: who is now steward for the seat, or who no longer is (#102). */
@@ -99,7 +123,9 @@ function Passed({ props, versions, winner }: OutcomeProps & { readonly winner: s
   const names = [shown?.author ?? '', ...(byProposer ? [] : [versions[0]?.author ?? ''])];
   return (
     <div className="result-outcome">
-      <p className="outcome-sentence">{passSentence(versions.length, index + 1, text === '')}</p>
+      <p className="outcome-sentence">
+        {passSentence(versions.length, index + 1, passKind(proposal, text))}
+      </p>
       {text === '' ? null : <AtomText text={text} className="atom-card result-text" />}
       <Thanks names={names} />
     </div>
@@ -170,6 +196,21 @@ function DissolvePassed() {
 }
 
 /**
+ * A removal's pass (#115): the person it named is no longer in the group, or,
+ * on their own device, they aren't.
+ */
+function RemovalPassed({ removal, you }: { readonly removal: RemovalView; readonly you: boolean }) {
+  const { removal: words } = messages;
+  return (
+    <div className="result-outcome">
+      <p className="outcome-sentence">
+        {you ? words.passedYou : <Named parts={words.passed} name={removal.name} />}
+      </p>
+    </div>
+  );
+}
+
+/**
  * A reconcile Proposal's or a coalition motion's pass (#114): only the
  * group's pass goes to the coalition, which decides with every group's. A
  * Dispatch put to the group's vote went out, and the coalition votes next (#126).
@@ -196,8 +237,11 @@ function DecisionPassed({ proposal }: { readonly proposal: OutcomeProps['props']
  * coalition (#120), whose own result says what changed.
  */
 function PassOutcome({ props, winner }: { props: OutcomeProps; winner: string }) {
-  const { steward, rules, dissolve, decision } = props.versions[0] ?? {};
-  const { proposal } = props.props;
+  const { steward, rules, dissolve, removal, decision } = props.versions[0] ?? {};
+  const { proposal, me } = props.props;
+  if (removal !== undefined) {
+    return <RemovalPassed removal={removal} you={removalTarget(proposal) === me} />;
+  }
   if (decision !== undefined || proposal.target.kind === 'motion') {
     return <DecisionPassed proposal={proposal} />;
   }

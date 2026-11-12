@@ -103,7 +103,11 @@ function genesisOf(name: string): SignedEvent {
     type: 'genesis',
     group: '',
     ts: TS,
-    body: { name, founder: CANARY.founder, title: 'House rules', atoms: [CANARY.atom] },
+    body: {
+      name,
+      founder: CANARY.founder,
+      documents: [{ title: 'House rules', atoms: [CANARY.atom] }],
+    },
   });
 }
 
@@ -123,21 +127,17 @@ function secretFor(name: string): Uint8Array {
 }
 
 /**
- * Ana founds `name` on `device`, known there as `myName`, and syncs, so the
- * relay has returned its genesis.
+ * Ana founds `name` on `device`, known there by the canary founder's name, and
+ * syncs, so the relay has returned its genesis.
  */
-async function found(
-  device: Device,
-  name = CANARY.group,
-  myName = CANARY.founder,
-): Promise<SignedEvent> {
+async function found(device: Device, name = CANARY.group): Promise<SignedEvent> {
   const genesis = genesisOf(name);
   const { secretKey, author } = testKeys('ana');
   await device.store.addGroup({
     groupId: genesis.id,
     secret: secretFor(name),
     signingKey: secretKey,
-    me: { author, name: myName },
+    me: { author, name: CANARY.founder },
   });
   await device.store.enqueue(genesis.id, genesis.record);
   expect(await device.sync.syncOnce()).toBe(true);
@@ -414,17 +414,17 @@ describe('the schedule', () => {
     ).not.toBeNull();
   });
 
-  it('keeps the last good backup when the groups grow past 16 MiB, and says so', async () => {
+  it('keeps the last good backup when what it keeps grows past 16 MiB, and says so', async () => {
     const fake = createFakeRelay({ minute: NOON });
     const device = await openDevice(fake, 'ana');
     await found(device);
     await startRelayBackup(device.services);
     const key = await keyOf(device.store);
     const good = fake.backup(backupIdFor(key));
-    // A second group whose device-only name is 17 MB takes the snapshot past 16 MiB. Only
-    // the size matters here, and a name gets there without folding megabytes of log;
-    // crypto/relayBackup.test.ts refuses the real 16 MiB plus one byte.
-    await found(device, 'Second Street Garden', 'n'.repeat(17_000_000));
+    // A 17 MB personal Document takes the snapshot past 16 MiB. Only the size matters here,
+    // and crypto/relayBackup.test.ts refuses the real 16 MiB plus one byte. Kept in a group,
+    // the 17 MB would be copied out of IndexedDB on every read a sync pass makes of it (#260).
+    await device.store.savePersonal({ ...statement(), text: 'n'.repeat(17_000_000) });
     fake.minute += DAY;
 
     expect(await device.sync.syncOnce()).toBe(true);
@@ -625,7 +625,7 @@ describe('a key change and the relay copy (#97, #98)', () => {
     const plaintext = (await fetchRelayBackup(createRelay({ fetch: fake.fetch }), key)) ?? utf8('');
     expect((JSON.parse(text(plaintext)) as { format: number }).format).toBe(2);
     const fresh = await openStore('fresh');
-    expect(await importSnapshot(fresh, plaintext)).toBe(1);
+    expect(await importSnapshot(fresh, plaintext)).toEqual({ groups: 1, skipped: 0 });
     const [held, original] = [await groupOn(fresh, groupId), await groupOn(device.store, groupId)];
     expect(held.epoch).toBe(1);
     expect(local(held.secret)).toEqual(local(next));
@@ -662,7 +662,7 @@ function plain(value: unknown): unknown {
 }
 
 describe('a share by link in the relay copy (#97, #105)', () => {
-  it('carries a shared Document’s share as the snapshot does, sealed, and a restore keeps the same link', async () => {
+  it('carries a shared Document’s share as the snapshot does, sealed, and a restore keeps the same link, paused (#328)', async () => {
     const fake = createFakeRelay({ minute: NOON });
     const device = await openDevice(fake, 'ana');
     await found(device);
@@ -694,7 +694,9 @@ describe('a share by link in the relay copy (#97, #105)', () => {
     const plaintext = await fetchRelayBackup(createRelay({ fetch: fake.fetch }), key);
     const fresh = await openStore('fresh');
     await importSnapshot(fresh, plaintext ?? new Uint8Array());
-    expect(plain(await fresh.getPersonal(shared.id))).toEqual(plain({ ...shared, share }));
+    expect(plain(await fresh.getPersonal(shared.id))).toEqual(
+      plain({ ...shared, share: { ...share, paused: true } }),
+    );
   });
 
   it('keeps the restoring device’s live share when the relay copy’s later copy holds none (`restoredCopy`)', async () => {
@@ -751,7 +753,7 @@ describe('fetchRelayBackup', () => {
     const fresh = await openStore('fresh');
     const restored = await importSnapshot(fresh, plaintext ?? new Uint8Array());
 
-    expect(restored).toBe(2);
+    expect(restored).toEqual({ groups: 2, skipped: 0 });
     expect(await folds(fresh)).toEqual(await folds(device.store));
     expect(await fresh.getRelayBackup()).toBeUndefined();
   });

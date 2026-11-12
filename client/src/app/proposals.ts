@@ -3,8 +3,8 @@
  * apart from any screen: propose, add a version, ask what to focus on (#107),
  * vote, and choose a level; for stewards (#102), propose a steward or a
  * recall, and suspend; for the opt-ins (#117), propose a rules change, with a
- * steward's narrowing; propose dissolving the group (#108); and send a
- * Dispatch (#112).
+ * steward's narrowing; propose dissolving the group (#108); propose removing a
+ * member, and that member's one response (#115); and send a Dispatch (#112).
  *
  * Each action signs one event with this device's key in the group, keeps its
  * record in the store's outbox, and asks the sync loop to send it at once.
@@ -21,6 +21,9 @@ import {
   base64url,
   type Ceiling,
   type EventDraft,
+  type NewDocumentTarget,
+  type ProposalBody,
+  type ProposalEventBody,
   type Score,
   type SignedEvent,
   signEvent,
@@ -33,9 +36,13 @@ export type ProposalServices = Pick<Services, 'store' | 'sync' | 'now'>;
 
 /**
  * Where a Proposal goes (#75): the Atom whose text it would replace, where
- * blank text proposes removing the Atom, or where a new section goes.
+ * blank text proposes removing the Atom, where a new section goes, or a new
+ * Document (#92).
  */
-export type ProposalPlace = { readonly atom: string } | { readonly target: AddTarget };
+export type ProposalPlace =
+  | { readonly atom: string }
+  | { readonly target: AddTarget }
+  | { readonly target: NewDocumentTarget };
 
 /** A Proposal's entries: title and why trimmed, the link null when blank. */
 export type ProposalValues = ProposalPlace & {
@@ -74,20 +81,40 @@ export function removalDraft(atom: string): string {
   return `remove:${atom}`;
 }
 
-/** The draft key of a new section after Atom `after`, or first for null (#75). */
-export function addDraft(after: string | null): string {
-  return `add:${after ?? ''}`;
+/**
+ * The draft key of a new section (#75): after Atom `after`, or, for null,
+ * first in the Document `document` (#92), so each Document's start keeps its
+ * own draft.
+ */
+export function addDraft({ document, after }: Pick<AddTarget, 'document' | 'after'>): string {
+  return after === null ? `add-first:${document}` : `add:${after}`;
 }
+
+/** The draft key of a new Document's Proposal (#92): one per group, as the issue names it. */
+export const NEW_DOCUMENT_DRAFT = 'new-document';
 
 /**
  * The private draft a Proposal is written in (spec §8): the lapsed
  * Proposal's when proposing again, else its Atom's for a change, the
- * removal's when its text is blank, or the add's for its spot.
+ * removal's when its text is blank, the add's for its spot, or the new
+ * Document's (#92).
  */
 function draftOf(values: ProposalValues, text: string): string {
   if (values.again !== undefined) return againDraft(values.again);
-  if ('target' in values) return addDraft(values.target.after);
-  return text === '' ? removalDraft(values.atom) : values.atom;
+  if (!('target' in values)) return text === '' ? removalDraft(values.atom) : values.atom;
+  const { target } = values;
+  return target.kind === 'add' ? addDraft(target) : NEW_DOCUMENT_DRAFT;
+}
+
+/**
+ * A Proposal's body: where it goes first, its Atom or its target (#75, #92),
+ * then its words, in the order every device has signed them.
+ */
+function bodyAt(place: ProposalPlace, fields: Omit<ProposalBody, 'atom'>): ProposalEventBody {
+  if (!('target' in place)) return { atom: place.atom, ...fields };
+  const { target } = place;
+  // The branches match on purpose: the check narrows `target`, so each body types as one member of the union.
+  return target.kind === 'add' ? { target, ...fields } : { target, ...fields };
 }
 
 /** A queued Proposal's id, or why it wasn't queued. */
@@ -151,8 +178,8 @@ function allFit(events: readonly SignedEvent[]): boolean {
 }
 
 /**
- * Proposes new text for one Atom, its removal (blank text), or a new section
- * (#75), as this device's member of `groupId`, for the voting window the
+ * Proposes new text for one Atom, its removal (blank text), a new section
+ * (#75), or a new Document (#92), as this device's member of `groupId`, for the voting window the
  * proposer chose, if any (#106). Every string is NFC-normalized before the
  * event is signed, and the text goes through `normalizeAtomText` (spec §4).
  * Queuing the Proposal clears the private draft it was written in in the same
@@ -175,9 +202,7 @@ export async function propose(
 ): Promise<ProposeResult> {
   const { title, why, link, window, versions = [], dispatch } = values;
   const text = normalizeAtomText(values.text);
-  const place = 'target' in values ? { target: values.target } : { atom: values.atom };
-  const body = {
-    ...place,
+  const fields = {
     title: nfc(title),
     why: nfc(why),
     text,
@@ -190,7 +215,7 @@ export async function propose(
     type: 'proposal',
     group: log,
     ts: services.now(),
-    body,
+    body: bodyAt(values, fields),
   });
   const others = await Promise.all(
     versions.map((version) =>
@@ -397,6 +422,64 @@ export async function proposeDissolve(
   await services.store.enqueue(groupId, event.record);
   void services.sync.syncOnce();
   return { outcome: 'proposed', proposalId: event.id };
+}
+
+/** A removal's entries (#115): whom it would remove, and title and why, trimmed. */
+export interface RemovalValues {
+  /** The key of the member it would remove. */
+  readonly member: string;
+  readonly title: string;
+  readonly why: string;
+}
+
+/**
+ * Proposes removing a member of `groupId` (ADR-0049, #115), as this device's
+ * member. It carries no window: a removal runs a fixed 14 days (ADR-0075 §3).
+ * The title and why are NFC-normalized before signing. One too large for any
+ * blob is refused before anything is queued. The fold decides whether it
+ * opens: it ignores one while another removal of that member is open.
+ */
+export async function proposeRemoval(
+  services: ProposalServices,
+  groupId: string,
+  values: RemovalValues,
+): Promise<ProposeResult> {
+  const body = {
+    target: { kind: 'remove', member: values.member } as const,
+    title: nfc(values.title),
+    why: nfc(values.why),
+  };
+  const event = await signFor(services, groupId, {
+    type: 'proposal',
+    group: groupId,
+    ts: services.now(),
+    body,
+  });
+  if (!allFit([event])) return { outcome: 'too-large' };
+  await services.store.enqueue(groupId, event.record);
+  void services.sync.syncOnce();
+  return { outcome: 'proposed', proposalId: event.id };
+}
+
+/**
+ * Posts this device's member's one response on the removal of them,
+ * `proposal` (ADR-0049, #115). The text is trimmed and NFC-normalized before
+ * signing, and the fold counts its code points: 1 to 1,000.
+ */
+export async function respondToRemoval(
+  services: ProposalServices,
+  groupId: string,
+  values: { readonly proposal: string; readonly text: string },
+): Promise<void> {
+  const body = { proposal: values.proposal, text: nfc(values.text.trim()) };
+  const event = await signFor(services, groupId, {
+    type: 'removal-response',
+    group: groupId,
+    ts: services.now(),
+    body,
+  });
+  await services.store.enqueue(groupId, event.record);
+  void services.sync.syncOnce();
 }
 
 /** A suspension's entries: the member it suspends, and the reason as typed, blank for none. */

@@ -6,7 +6,7 @@
  * stands. Dee's Elm Row asks to join the formed coalition, and every group
  * in it votes.
  */
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import { act } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -19,6 +19,7 @@ import {
   anaMakesCard,
   closeAll,
   coalitionOn,
+  formedCoalition,
   found,
   open,
   SLOW,
@@ -41,24 +42,36 @@ afterEach(() => {
 });
 
 /** Riverside and Oak St, reconciled into Eastside Housing: both groups passed. */
-async function formed(fake: FakeRelay) {
-  const groups = await twoGroups(fake);
-  const { ana, ben, cy, riverside, oak } = groups;
-  const { proposal, found: card } = await anaMakesCard(ana, cy, riverside);
-  const brought = await bringCard(cy.services, card, oak, 'Cy');
-  await syncAll(1);
-  await vote(riverside, proposal, [ana, cy]);
-  await vote(oak, brought, [ben, cy]);
-  await syncAll();
-  return groups;
-}
+const formed = formedCoalition;
 
-/** The text of `device`'s group home's Coalitions section for `groupId`, read from the app. */
-async function coalitionsOnHome(device: TestDevice, groupId: string): Promise<HTMLElement> {
+/**
+ * How long a wait gives a freshly rendered app to read the store and fold the
+ * group's log and every coalition's, checking each signature, before it shows
+ * them (#260). The file's first render also compiles the whole app: about
+ * 0.3 s unloaded, which a loaded machine stretches past Testing Library's 1 s.
+ * Every wait after a render here reads through that fold.
+ */
+const APP_FOLDS = { timeout: 3_000 };
+
+/**
+ * The Coalitions section of `device`'s group home for `groupId`, read from the
+ * app, once it shows `text`; fails if it never does. Group home can show
+ * before the device has read its coalitions (`useCoalitions` starts empty), so
+ * a section read as soon as it appears may not hold them yet.
+ */
+async function expectCoalitionsOnHome(
+  device: TestDevice,
+  groupId: string,
+  text: string | RegExp,
+): Promise<HTMLElement> {
   cleanup();
   window.history.replaceState(null, '', `#/g/${groupId}`);
   render(<App services={device.services} />);
-  return screen.findByRole('region', { name: 'Coalitions' });
+  return waitFor(() => {
+    const section = screen.getByRole('region', { name: 'Coalitions' });
+    expect(section).toHaveTextContent(text);
+    return section;
+  }, APP_FOLDS);
 }
 
 describe('reconciling two groups', SLOW, () => {
@@ -87,16 +100,19 @@ describe('reconciling two groups', SLOW, () => {
       ]);
     }
     expect((await coalitionOn(ana)).members.map((m) => m.name)).toEqual(['Cy', 'Ana E.']);
-    const home = await coalitionsOnHome(ben, oak);
-    expect(home).toHaveTextContent(
+    await expectCoalitionsOnHome(
+      ben,
+      oak,
       'CoalitionsFormedEastside HousingRiverside Tenants, Oak St Co-op',
     );
     expect(await axeViolations()).toEqual([]);
     cleanup();
     window.history.replaceState(null, '', `#/g/${riverside}/p/${proposal}`);
     render(<App services={ana.services} />);
-    expect(await screen.findByText(messages.coalitions.reconcilePassed)).toBeVisible();
-    const anaHome = await coalitionsOnHome(ana, riverside);
+    expect(
+      await screen.findByText(messages.coalitions.reconcilePassed, {}, APP_FOLDS),
+    ).toBeVisible();
+    const anaHome = await expectCoalitionsOnHome(ana, riverside, 'You take part as Ana E.');
     expect(within(anaHome).getByText(/You take part as/)).toHaveTextContent(
       'You take part as Ana E.',
     );
@@ -107,7 +123,7 @@ describe('reconciling two groups', SLOW, () => {
     const { ben, oak } = await formed(fake);
     const entry = (await ben.services.store.listCoalitions())[0];
     if (entry === undefined) throw new Error('Expected Ben’s coalition.');
-    const home = await coalitionsOnHome(ben, oak);
+    const home = await expectCoalitionsOnHome(ben, oak, 'Take part');
     expect(within(home).getByRole('button', { name: 'Take part' })).toBeVisible();
 
     await takePart(ben.services, entry.groupId, oak, 'Ben O.');
@@ -119,7 +135,7 @@ describe('reconciling two groups', SLOW, () => {
     expect(coalition.coalition?.bindings.find((b) => b.author === benIn?.author)?.seat).toBe(
       coalition.coalition?.seats[1]?.key,
     );
-    expect(await coalitionsOnHome(ben, oak)).toHaveTextContent('You take part as Ben O.');
+    await expectCoalitionsOnHome(ben, oak, 'You take part as Ben O.');
   });
 
   it('shows each group whom the coalition waits for while it forms', async () => {
@@ -131,11 +147,10 @@ describe('reconciling two groups', SLOW, () => {
     await vote(riverside, proposal, [ana, cy]);
     await syncAll();
 
-    const home = await coalitionsOnHome(ana, riverside);
+    const home = await expectCoalitionsOnHome(ana, riverside, 'Waiting for Oak St Co-op’s vote');
     expect(home).toHaveTextContent('Forming');
-    expect(home).toHaveTextContent('Waiting for Oak St Co-op’s vote');
     expect(home).not.toHaveTextContent('Riverside Tenants’s vote');
-    expect(await coalitionsOnHome(ben, oak)).toHaveTextContent('Waiting for Oak St Co-op’s vote');
+    await expectCoalitionsOnHome(ben, oak, 'Waiting for Oak St Co-op’s vote');
   });
 
   it('says the card was used once the genesis exists', async () => {
@@ -165,9 +180,8 @@ describe('reconciling two groups', SLOW, () => {
       [ana, riverside],
       [ben, oak],
     ] as const) {
-      const home = await coalitionsOnHome(device, groupId);
+      const home = await expectCoalitionsOnHome(device, groupId, 'Oak St Co-op didn’t pass this');
       expect(home).toHaveTextContent('Didn’t form');
-      expect(home).toHaveTextContent('Oak St Co-op didn’t pass this');
       expect(home).not.toHaveTextContent('Riverside Tenants didn’t pass this');
     }
   });
@@ -213,8 +227,7 @@ describe('admitting a group into a formed coalition', SLOW, () => {
     const fake = createFakeRelay();
     const { ana, ben, cy, dee, riverside, oak } = await elmRowAsks(fake, true);
     const motion = await admitMotion(ana);
-    const riversideHome = await coalitionsOnHome(ana, riverside);
-    expect(riversideHome).toHaveTextContent('Formed');
+    await expectCoalitionsOnHome(ana, riverside, 'Formed');
     await vote(riverside, motion, [ana, cy]);
     await vote(oak, motion, [ben, cy]);
     await syncAll();
@@ -223,11 +236,13 @@ describe('admitting a group into a formed coalition', SLOW, () => {
     cleanup();
     window.history.replaceState(null, '', `#/g/${riverside}/p/${motion}`);
     render(<App services={ana.services} />);
-    expect(await screen.findByRole('heading', { level: 1, name: 'Admit Elm Row' })).toBeVisible();
-    expect(screen.getByText(/^From the coalition/)).toHaveTextContent(
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Admit Elm Row' }, APP_FOLDS),
+    ).toBeVisible();
+    expect(await screen.findByText(/^From the coalition/)).toHaveTextContent(
       'From the coalition Eastside Housing',
     );
-    expect(screen.getByText(messages.coalitions.motionPassed)).toBeVisible();
+    expect(await screen.findByText(messages.coalitions.motionPassed)).toBeVisible();
     expect(await axeViolations()).toEqual([]);
     act(() => {
       fake.minute += PAST_FINAL;
@@ -241,9 +256,7 @@ describe('admitting a group into a formed coalition', SLOW, () => {
       'Elm Row',
     ]);
     expect(coalition.members.map((m) => m.name)).toContain('Dee M.');
-    expect(await coalitionsOnHome(ben, oak)).toHaveTextContent(
-      'Riverside Tenants, Oak St Co-op, Elm Row',
-    );
+    await expectCoalitionsOnHome(ben, oak, 'Riverside Tenants, Oak St Co-op, Elm Row');
   });
 
   it('leaves Elm Row out when Oak St fails the admission', async () => {
@@ -259,9 +272,8 @@ describe('admitting a group into a formed coalition', SLOW, () => {
     await syncAll();
 
     expect((await coalitionOn(dee)).coalition?.seats).toHaveLength(2);
-    const home = await coalitionsOnHome(dee, elm);
+    const home = await expectCoalitionsOnHome(dee, elm, 'Oak St Co-op didn’t pass this');
     expect(home).toHaveTextContent('Didn’t form');
-    expect(home).toHaveTextContent('Oak St Co-op didn’t pass this');
   });
 
   it('proposes nothing when Elm Row doesn’t pass its own vote', async () => {
@@ -270,6 +282,6 @@ describe('admitting a group into a formed coalition', SLOW, () => {
 
     expect((await coalitionOn(ana)).proposals).toEqual([]);
     expect((await dee.services.store.listCoalitions())[0]?.admitting).toBeUndefined();
-    expect(await coalitionsOnHome(dee, elm)).toHaveTextContent('Elm Row didn’t pass this');
+    await expectCoalitionsOnHome(dee, elm, 'Elm Row didn’t pass this');
   });
 });

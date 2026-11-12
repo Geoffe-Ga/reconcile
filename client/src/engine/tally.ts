@@ -1,7 +1,8 @@
 /**
  * The tally (docs/spec/phase-1-spec.md §5): each version against the bar its
- * Proposal's class sets, the consent floor for an ordinary change (ADR-0002)
- * or the entrenched bar (ADR-0015 §2).
+ * Proposal's class sets, the consent floor for an ordinary change (ADR-0002),
+ * the entrenched bar (ADR-0015 §2), or removal's, which forgives one 0
+ * (ADR-0075 §3, #115).
  *
  * Integers only: no floats, division or rounding, so every device reaches the
  * same outcome from the same ballots. {@link tallyDetail} also gives each
@@ -87,8 +88,19 @@ function quorumOf(eligible: number): number {
 }
 
 /**
+ * True when `zeros` among `scorers` don't block at `bar`: under
+ * `zerosUnderPercent`% of them (100·zeros < pct·n), or no more than the bar's
+ * `zerosAllowed`, when it names one (removal's, ADR-0075 §3). Never before
+ * anyone has scored.
+ */
+function zerosPass(zeros: number, scorers: number, bar: Bar): boolean {
+  const allowed = bar.zerosAllowed !== undefined && zeros <= bar.zerosAllowed;
+  return scorers > 0 && (allowed || 100 * zeros < bar.zerosUnderPercent * scorers);
+}
+
+/**
  * A version's numbers and flags: at least `avgAtLeast` on average
- * (sum ≥ avg·n), and under `zerosUnderPercent`% zeros (100·zeros < pct·n).
+ * (sum ≥ avg·n), and zeros that don't block ({@link zerosPass}).
  */
 function measure(version: TallyVersion, quorum: number, bar: Bar): VersionTally {
   let sum = 0;
@@ -100,7 +112,7 @@ function measure(version: TallyVersion, quorum: number, bar: Bar): VersionTally 
   const scorers = version.scores.length;
   const atQuorum = scorers >= quorum;
   const averageMet = scorers > 0 && sum >= bar.avgAtLeast * scorers;
-  const zerosMet = scorers > 0 && 100 * zeros < bar.zerosUnderPercent * scorers;
+  const zerosMet = zerosPass(zeros, scorers, bar);
   const passes = atQuorum && averageMet && zerosMet;
   return { id: version.id, scorers, sum, zeros, quorum, atQuorum, averageMet, zerosMet, passes };
 }

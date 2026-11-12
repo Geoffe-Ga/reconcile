@@ -13,10 +13,34 @@ export function GroupMissing() {
 }
 
 /**
- * Shown in place of a composer once the group has dissolved (#108): its copy
- * on this device only reads.
+ * Shown in place of a composer once the group has dissolved (#108), or a
+ * vote has removed this member (#115): its copy on this device only reads.
  */
 export function GroupArchived({
+  groupId,
+  name,
+  removed = false,
+}: {
+  readonly groupId: string;
+  readonly name: string;
+  /** True on the device of a member a vote removed, false for a dissolved group. */
+  readonly removed?: boolean;
+}) {
+  const { readOnlyTitle, readOnly } = removed ? messages.removal : messages.archive;
+  return (
+    <main className="shell">
+      <BackLink to={{ name: 'group', groupId }} label={name} />
+      <PageHeader title={readOnlyTitle} pageTitle={messages.home.pageTitle} />
+      <p className="lede">{readOnly}</p>
+    </main>
+  );
+}
+
+/**
+ * Shown in place of a screen that writes while a restored copy hasn't heard
+ * from its group (#231): it may have dissolved since the backup was made.
+ */
+export function GroupUnconfirmed({
   groupId,
   name,
 }: {
@@ -26,8 +50,8 @@ export function GroupArchived({
   return (
     <main className="shell">
       <BackLink to={{ name: 'group', groupId }} label={name} />
-      <PageHeader title={messages.archive.readOnlyTitle} pageTitle={messages.home.pageTitle} />
-      <p className="lede">{messages.archive.readOnly}</p>
+      <PageHeader title={messages.unconfirmed.readOnlyTitle} pageTitle={messages.home.pageTitle} />
+      <p className="lede">{messages.unconfirmed.readOnly}</p>
     </main>
   );
 }

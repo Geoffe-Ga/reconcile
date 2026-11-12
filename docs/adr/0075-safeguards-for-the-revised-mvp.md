@@ -69,6 +69,7 @@ These rules close the capture paths a steward's powers open ([ADR-0015](0015-ant
 - **Fix: one library beyond `@noble/*`.** This amends ADR-0060's "audited libraries only (`@noble/*`)".
   - It allows one more library, `shamir-secret-sharing`, pinned exactly and imported only by `client/src/crypto/shares.ts`.
   - The PR that adds it links a published third-party audit of that version. If there isn't one, the work stops and asks.
+  - **Amendment:** 0.0.4 accepted by the founder on 2026-11-12 (#271), on the basis of Zellic's audit of 0.0.2 (commit cd8422d) plus a reviewed 40-line delta: Zellic's x = 0 guard and a revert restoring full secrecy; the v0.0.4 tag rebuilds byte-identically.
 - **Disclose ([ADR-0009](0009-per-group-identities.md)): one contact in two groups links your names.** If someone picks the same person as a contact in two groups, that person can tell both names belong to one person. The picker says so.
 
 ### 5. Smaller rules
@@ -110,3 +111,81 @@ These add to ADR-0073's and ADR-0074's lists, and the outside review covers them
 ## Open Questions
 
 None. The founder answered both on 2026-11-09 (§3 and §6).
+
+## Amendment (2026-11-11): A Key Change That Doesn't Open (#224)
+
+**Proposed by an agent under the founder's standing "go with your recommendations" instruction, and confirmed by the founder on 2026-11-12, as built ([#325](https://github.com/Geoffe-Ga/reconcile/issues/325)). The encrypt-with-hash construction stays in the outside review's scope ([#132](https://github.com/Geoffe-Ga/reconcile/issues/132)).**
+
+### Context
+
+[#98](https://github.com/Geoffe-Ga/reconcile/issues/98) gives a group a new key whenever a membership ends. A `key-rotate` carries a commit and one wrap per remaining member, and the fold keeps the first valid one per epoch. The fold can't open a wrap, so "valid" means only what it can see. Any current member can therefore post a key change whose wraps are random bytes. Every device then moves to an epoch it can't read, and the group is locked out of everything after it. This is an insider denial of service, one of the threat model's "insiders abusing access" ([`12_Security_Privacy_Threat_Model.md`](../plan/12_Security_Privacy_Threat_Model.md)).
+
+### Options considered
+
+1. **An `unwrap-failed` that voids the key change.** A device that can't open its wrap says so in the old epoch's mailbox, and someone writes a new key change.
+   - **For:** it recovers from wraps that don't open, and needs no new cryptography.
+   - **Against:** nobody can check the claim. A member whose wrap opens can say it doesn't.
+   - **Against:** devices that already took the key up have stopped reading the old mailbox, so they never see the word. A device that reads it later refuses a key change the rest took up, and the group splits. That device could be one back from a few days away, or a newcomer.
+   - **Against:** when only some wraps don't open, the members whose wraps do open move on without the rest.
+2. **A proof, checked by the fold, that each wrap holds the committed secret.**
+   - **Against: it can't be done without revealing something.** It needs a zero-knowledge proof of correct encryption, such as one DLEQ proof per wrap. @noble ships none, and the client may not hand-roll cryptography (ADR-0060, §4 above).
+   - **Against: a per-wrap check value proves nothing.** A hash of each wrap's box key is one example. Nothing ties a check value to the member's public key without that same proof.
+   - **Against: the only proof that needs no new cryptography reveals a key.** The member would reveal their encryption secret key, so anyone can try the wrap. That is the key [#109](https://github.com/Geoffe-Ga/reconcile/issues/109)'s recovery shares are sealed to. Revealing it would hand those shares to everyone who reads the old epoch, the person who left included. The member would also need a new key at once, which races the next key change.
+3. **Chosen: a hybrid.** Wraps are made from the secret, so every holder of the secret can check them all. Each device checks every wrap before it takes a key up, and records what it found in the log. The fold refuses a key change on that record.
+   - **For:** no lockout, no split between honest devices, and nothing new revealed.
+   - **For:** an honest key change costs nothing extra.
+   - **Against:** two new event types.
+   - **Against:** the fold reads them ahead, as it reads a cleared Proposal's result ahead (#111).
+
+| | Recovers from wraps that don't open | A false claim | Some wraps open, some don't | Reveals | Honest key change costs |
+|---|---|---|---|---|---|
+| 1. `unwrap-failed` only | yes | voids it; devices split | the members whose wraps open move on alone | nothing | nothing |
+| 2. A proof per wrap | yes | impossible | caught | a ZK proof (hand-rolled) or the member's key (#109's shares) | nothing |
+| 3. Hybrid | yes | changes no key; costs one `key-taken` per device that read it first | caught by every device whose wrap opens | nothing | nothing |
+
+### Decision
+
+- **Wraps are made from the secret** (`client/src/crypto/epoch.ts`).
+  - Each wrap is still #98's box. Its ephemeral key and nonce are no longer drawn fresh. They are the 56 bytes of HKDF-SHA-256 with `ikm` = the secret, an empty salt, and `info` = UTF-8 `reconcile/v1/epoch-wrap-coins` ‖ `0x00` ‖ the member's 32-byte encryption key ‖ the wrap's associated data. The first 32 bytes are the ephemeral key and the last 24 the nonce.
+  - This is encrypt-with-hash. The secret is 32 random bytes, so these coins are as unguessable as fresh ones, and each wrap gets its own.
+  - Whoever holds the secret makes every wrap again, byte for byte. `wrapsHold` makes that check.
+- **A device checks every wrap before it takes a key up** (`client/src/store/epochs.ts`).
+  - It opens its own wrap, makes every other wrap again from the secret, and takes the key up only when all of them match.
+  - So an honest device never moves into a key change that leaves any member without the key.
+  - Honest devices with their own keys always agree. If every wrap is the secret's, every recipient's opens. If any isn't, every device whose own wrap opens sees that, and a device whose own wrap doesn't open can't take the key up.
+- **`unwrap-failed`, `{rotation}`, names the key change by its event id.**
+  - A device posts it to the old epoch's mailbox when its own wrap doesn't open, or opens but some wrap isn't the secret's.
+  - It posts only if the group holds this device's own encryption key for it. A device whose stored key differs can't judge. It says nothing and stays on #98's no-wrap line.
+  - The event names the key change by event id, not by commit: a commit can be copied into another key change.
+- **`key-taken`, `{rotation}`.** A device posts it to the new epoch's mailbox when it takes up a key change that an `unwrap-failed` names.
+- **The fold refuses a key change** (`client/src/engine/keyChecks.ts`) when both of these hold:
+  - an `unwrap-failed` from one of its recipients names it, read from the old epoch's mailbox;
+  - no `key-taken` from one of its recipients names it, read from its own epoch's mailbox.
+
+  The fold reads both ahead and decides at the key change's place, so records between them in the old mailbox fold as usual. A refused key change:
+  - moves nothing, and one stays due;
+  - spends its epoch number, so the next key change names the one after. No mailbox of a refused epoch ever reaches an honest device's log;
+  - bars its author from writing another key change in this group.
+- **A false `unwrap-failed` changes no key.**
+  - A device that checks the key change and takes it up posts a `key-taken` where only holders of the new secret can write.
+  - A device reads a new epoch's mailboxes only after checking every wrap. So a `key-taken` the attacker posts for a key change nobody honest took up never reaches an honest device.
+  - A device that takes up a key change the fold had refused posts its `key-taken` first.
+- **A suspension doesn't hold either event back.** A suspended member keeps their wrap.
+
+**The bound.** Each member can make the group refuse one of their key changes at most once. That costs one round of the duty: three sync passes in the fake-relay test. After it, their key changes are ignored. Members who collude cost at most one round each over the group's life. A false `unwrap-failed` costs one small `key-taken` per device that reads it before taking the key up.
+
+**#98's wrap AAD, recorded as #224 asks.** A wrap's associated data is UTF-8(group id) ‖ u32be(epoch) ‖ UTF-8(the member's key) ‖ UTF-8(the commit).
+- Each text is spelled as the `key-rotate` event spells it: the group id is the genesis id, and the member's key and the commit are unpadded base64url.
+- No separators or lengths come between the fields. Every text is 43 characters in practice.
+- [`client/src/crypto/vectors/epoch.json`](../../client/src/crypto/vectors/epoch.json) pins it, together with a #98 wrap and a wrap made from the secret. All of them were made outside @noble.
+
+### Accepted pilot risks added
+
+- **A device with no key it can judge by stays out.** This covers a device whose stored encryption key isn't the group's for it, or a member with no encryption key, such as one who joined before #98 and hasn't posted one. That device takes the log's word and stays on the no-wrap line until an invite, as #98 left it.
+- **A merged invite is trusted for its epochs.** A device that merges an invite's entries already trusts their seqs and epoch tags (spec §7). A malicious inviter can therefore bring a `key-taken` tagged with a refused epoch, and that device then keeps a refused key change. That is the existing trust in the inviter's log, now covering one more event.
+- **Every device must run this build before a group's next key change.** An older build makes wraps with fresh coins. This build refuses those wraps and bars their author. Key changes already taken up stay canonical, since no `unwrap-failed` names them. There is no pilot group yet.
+- **An `unwrap-failed` says a member's device couldn't open its wrap.** Whoever reads the old epoch sees that, the person who left included. It names no one new: they already know the membership.
+
+### Fix for later work
+
+- **Never reveal a member's encryption secret key in the log.** #109's recovery shares are sealed to it. Any later recovery for a key change that doesn't open has to keep it private.

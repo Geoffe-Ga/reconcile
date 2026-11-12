@@ -94,7 +94,15 @@ function backupOf(state: RelayBackupState | undefined) {
 
 /** A fresh relay backup state for `key`, as `backupOf` spells it. */
 function freshBackup(key: Uint8Array) {
-  return { key: local(key), digest: null, checkedDay: null, uploadedAt: null, tooLarge: false };
+  return {
+    key: local(key),
+    digest: null,
+    checkedDay: null,
+    uploadedAt: null,
+    tooLarge: false,
+    uploaded: [],
+    uploadedGroups: [],
+  };
 }
 
 /** A group's keys and name, in the test's realm, so `toEqual` can compare them. */
@@ -458,10 +466,10 @@ describe('every later write of key material, with a vault', () => {
         relayNow: 3,
         instance: 'r',
         lastSyncAt: 4,
+        sent: [record],
       },
       (bytes) => text(bytes),
     );
-    await store.markSent(ANA.groupId, record);
     await store.markBackup([ANA.groupId, BEN.groupId], 'saved');
     await store.writeDraft(ANA.groupId, 'atom-1', { title: 'T', why: 'W', text: 'X', link: '' });
     // A pull from a fresh relay instance starts every cursor over (#110), still writing no key.
@@ -514,13 +522,31 @@ describe('#97’s relay backup key under the vault', () => {
       'checkedDay',
       'digest',
       'tooLarge',
+      'uploaded',
       'uploadedAt',
+      'uploadedGroups',
     ]);
     expect(await vaultBackupKey()).toEqual(local(BACKUP_KEY));
     expect(backupOf(await store.getRelayBackup())).toEqual({
       ...freshBackup(BACKUP_KEY),
       digest: 'd1',
       checkedDay: 7,
+      uploadedAt: 9,
+    });
+  });
+
+  it('sets the day back when a group is purged (#327), leaving the key in the vault', async () => {
+    const store = await sealedDevice();
+    await store.adoptRelayBackupKey(BACKUP_KEY);
+    await store.updateRelayBackup(BACKUP_KEY, { digest: 'd1', checkedDay: 7, uploadedAt: 9 });
+
+    await store.purgeGroup(ANA.groupId);
+
+    expect(findCanaries(await rawDatabase(), [...secretsOf(ANA), ...backupCanaries])).toEqual([]);
+    expect(await vaultBackupKey()).toEqual(local(BACKUP_KEY));
+    expect(backupOf(await store.getRelayBackup())).toEqual({
+      ...freshBackup(BACKUP_KEY),
+      digest: 'd1',
       uploadedAt: 9,
     });
   });

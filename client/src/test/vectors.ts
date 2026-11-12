@@ -11,8 +11,11 @@
  *   whose bar `DEFAULT_RULES` holds, `"ordinary"` when missing (#94), and the outcome must equal
  *   `expect` with that bar added. `rank`, when present, lists the ids `rank()` gives, best
  *   first (#107).
- * - A fold vector is `{name, cleared?, records, relayNow, expect, unchangedWithout?}`. `cleared`
- *   lists the Proposals (by `@seq`) whose ballots the device has cleared (#111), passed to `fold`.
+ * - A fold vector is `{name, cleared?, alsoCleared?, records, relayNow, expect, unchangedWithout?}`.
+ *   `cleared` lists the Proposals (by `@seq`) whose ballots the device has cleared (#111), passed
+ *   to `fold`. `alsoCleared` lists Proposals whose ballots the records still hold: vectors.test.ts
+ *   also folds the log as a device that has cleared them would hold it ({@link clearedLog}), and
+ *   `expect` must hold there too, the two states agreeing on everything but the ballots (#289).
  *   - Each record is `{seq, received, event | raw}`. An `event` is serialized with
  *     `JSON.stringify` as written, so a vector pins exact bytes; `raw` gives the bytes as text.
  *   - A string `"@3"` stands for the id of the record at seq 3, so `"@1.0"` is genesis's first
@@ -30,7 +33,8 @@
  *     (#98); a record without one was read from epoch 0's.
  *   - `expect` is matched as a subset of the folded state.
  *   - `unchangedWithout` lists seqs whose removal must leave the state, apart from `ignored`,
- *     deep-equal.
+ *     deep-equal. `unchangedExcept` names any other fields left out of that comparison, as a
+ *     `recovery-share` (#109) is kept in `recoveryShares` and changes nothing else.
  * - A coalition file (#100), `{kind: "coalition", vectors}`, holds vectors with several logs:
  *   `{name, logs: {coalition: [...], A: [...]}, relayNow, expect: {coalition, A}, report?,
  *   mismatches?, unchangedWithout?}`. Seqs are global, as the relay's one counter is, so `@n`
@@ -41,8 +45,15 @@
  *   `ignored`, deep-equal. A coalition's references: `"^A"` is seat A's public key and `"!A"`
  *   its 32-byte secret in base64url, from SHA-256("reconcile/vector-seat/" + name); `"~name"` is
  *   32 bytes, SHA-256("reconcile/vector-secret/" + name), in base64url, for a coalition secret or
- *   `inner`; and `{"$seatProof": ["A", "@1", "%kim"]}` is seat A's proof for kim's key in the
- *   coalition whose genesis is seq 1 (`crypto/seat.ts`).
+ *   `inner`; `"&^A"` is seat A's X25519 key, `seatKxOf` of `"!A"` (#313, `crypto/room.ts`); and
+ *   `{"$seatProof": ["A", "@1", "%kim"]}` is seat A's proof for kim's key in the coalition whose
+ *   genesis is seq 1 (`crypto/seat.ts`).
+ * - A room file (#125), `{kind: "room", vectors}`, holds vectors with a coalition's log and its
+ *   room's: `{name, logs: {coalition: [...], room: [...]}, relayNow, expect}`, built as a
+ *   coalition file's are, so `@n` names a record of either. room.test.ts folds the coalition log,
+ *   then `foldRoom` the room's, and matches `expect`, a list of messages, against what it gives.
+ * - room-keys.json (#125), `{kind: "room-keys", ...}`, pins a room's derivations and one sealed
+ *   message, computed outside @noble; crypto/room.test.ts runs it.
  * - A nested file (#122), `{kind: "nested", vectors}`, holds vectors with several coalitions and
  *   groups: `{name, logs: {D: [...], C: [...], A: [...]}, relayNow, expect, report?,
  *   unchangedWithout?}`. vectors.test.ts folds every log together as a device that holds them all
@@ -62,10 +73,12 @@
 import { kxPublicKeyOf } from '../crypto/box';
 import { sealSeatSecrets } from '../crypto/innerSeal';
 import { sha256 } from '../crypto/hash';
+import { seatKxOf } from '../crypto/room';
 import { signSeatProof } from '../crypto/seat';
 import { EVENT_CONTEXT, publicKeyOf, sign } from '../crypto/sign';
-import { base64url, eventId, fromBase64url } from '../engine/event';
-import type { LogRecord } from '../engine/fold';
+import { base64url, eventId, fromBase64url, parseRecord } from '../engine/event';
+import { expiringProposal } from '../engine/expiry';
+import type { GroupState, LogRecord } from '../engine/fold';
 import type { ProposalClass } from '../engine/rules';
 import type { TallyInput, TallyOutcome } from '../engine/tally';
 import { concat, fromHex } from './bytes';
@@ -104,10 +117,12 @@ type VectorRecord = RecordOptions &
 export interface FoldVector {
   readonly name: string;
   readonly cleared?: readonly string[];
+  readonly alsoCleared?: readonly string[];
   readonly records: readonly VectorRecord[];
   readonly relayNow: number | null;
   readonly expect: object;
   readonly unchangedWithout?: readonly number[];
+  readonly unchangedExcept?: readonly string[];
 }
 
 /** One vector with several logs (#100): a coalition's and its member groups', by name. */
@@ -134,12 +149,22 @@ export interface NestedVector extends Omit<LogsVector, 'report' | 'mismatches'> 
   readonly promote?: Owed;
 }
 
+/** One room vector (#125): a coalition's log and its room's, and the messages they must show. */
+export interface RoomVector {
+  readonly name: string;
+  readonly logs: Readonly<Record<'coalition' | 'room', readonly VectorRecord[]>>;
+  readonly relayNow: number | null;
+  readonly expect: readonly object[];
+}
+
 /** One vector file, by its `kind`. */
 export type VectorFile =
   | { readonly kind: 'tally'; readonly vectors: readonly TallyVector[] }
   | { readonly kind: 'fold'; readonly vectors: readonly FoldVector[] }
   | { readonly kind: 'coalition'; readonly vectors: readonly LogsVector[] }
   | { readonly kind: 'nested'; readonly vectors: readonly NestedVector[] }
+  | { readonly kind: 'room'; readonly vectors: readonly RoomVector[] }
+  | { readonly kind: 'room-keys'; readonly vectors: readonly { readonly name: string }[] }
   | { readonly kind: 'atom-text'; readonly vectors: readonly { readonly name: string }[] }
   | { readonly kind: 'keys'; readonly seeds: Readonly<Record<string, string>> };
 
@@ -190,6 +215,11 @@ export function seatSecretNamed(name: string): Uint8Array {
   return sha256(encoder.encode(`reconcile/vector-seat/${name}`));
 }
 
+/** The base64url X25519 key the vectors call `&^name`: seat name's, from its seat secret (#313). */
+export function seatKxNamed(name: string): string {
+  return seatKxOf(seatSecretNamed(name));
+}
+
 /** The 32 bytes the vectors call `~name`: a coalition secret or `inner` (#100). */
 function secretNamed(name: string): Uint8Array {
   return sha256(encoder.encode(`reconcile/vector-secret/${name}`));
@@ -207,14 +237,16 @@ function seatRef(text: string): string | null {
 
 /**
  * Replaces `@n` (and `@n.i`) with the id of the record at seq n, `%name` with
- * name's key, `&name` with name's encryption key, and a seat or secret
- * reference with its bytes (#100).
+ * name's key, `&name` with name's encryption key, `&^name` with seat name's
+ * encryption key (#313), and a seat or secret reference with its bytes (#100).
  */
 function resolveRef(text: string, ids: ReadonlyMap<number, string>): string {
   const key = /^%(\w+)$/.exec(text);
   if (key !== null) return publicKeyNamed(String(key[1]));
   const kx = /^&(\w+)$/.exec(text);
   if (kx !== null) return kxNamed(String(kx[1]));
+  const seatKx = /^&\^(\w+)$/.exec(text);
+  if (seatKx !== null) return seatKxNamed(String(seatKx[1]));
   const seat = seatRef(text);
   if (seat !== null) return seat;
   const match = /^@(\d+)(.*)$/.exec(text);
@@ -322,12 +354,16 @@ function relayBytes(record: VectorRecord, event: Uint8Array): Uint8Array {
   return concat(at.key, at.signature, at.event);
 }
 
-/** A fold vector's relay records, the id of each record by seq, its relay `now` and its `cleared`. */
+/**
+ * A fold vector's relay records, the id of each record by seq, its relay
+ * `now`, its `cleared`, and the Proposals it also folds cleared.
+ */
 export interface VectorLog {
   readonly records: LogRecord[];
   readonly ids: ReadonlyMap<number, string>;
   readonly relayNow: number | null;
   readonly cleared: readonly string[];
+  readonly alsoCleared: readonly string[];
 }
 
 /**
@@ -349,7 +385,35 @@ export function buildRecords(vector: FoldVector): VectorLog {
   const ids = new Map<number, string>();
   const records = vector.records.flatMap((record) => buildRecord(record, ids));
   const cleared = (vector.cleared ?? []).map((ref) => resolveRef(ref, ids));
-  return { records, ids, relayNow: vector.relayNow, cleared };
+  const alsoCleared = (vector.alsoCleared ?? []).map((ref) => resolveRef(ref, ids));
+  return { records, ids, relayNow: vector.relayNow, cleared, alsoCleared };
+}
+
+/**
+ * The log as a device holds it once it has cleared `log.alsoCleared` (#111):
+ * without the records that expire with each one's ballots, apart from the
+ * result `held`, the fold of the full log, accepted for it, and with those
+ * Proposals added to `cleared`. Every record left keeps its seq and receipt,
+ * as clearing leaves them. Throws for a Proposal with no accepted result,
+ * which no device would clear.
+ */
+export function clearedLog(
+  log: VectorLog,
+  held: GroupState,
+): { records: LogRecord[]; cleared: string[] } {
+  const kept = new Set(
+    log.alsoCleared.map((id) => {
+      const result = held.proposals.find((p) => p.id === id)?.result ?? null;
+      if (result === null) throw new Error(`a vector clears ${id}, which has no result`);
+      return result.id;
+    }),
+  );
+  const records = log.records.filter((record) => {
+    const parsed = parseRecord(record.bytes);
+    const proposal = parsed === null ? null : expiringProposal(parsed.event);
+    return proposal === null || !log.alsoCleared.includes(proposal) || kept.has(parsed?.id ?? '');
+  });
+  return { records, cleared: [...log.cleared, ...log.alsoCleared] };
 }
 
 /** A vector's logs as relay records by name, and the id of each record by its global seq (#100). */
@@ -393,6 +457,11 @@ export const COALITION_VECTORS: readonly LogsVector[] = Object.values(VECTOR_FIL
 /** Every vector with nested coalitions, file by file (#122). */
 export const NESTED_VECTORS: readonly NestedVector[] = Object.values(VECTOR_FILES).flatMap(
   (file) => (file.kind === 'nested' ? file.vectors : []),
+);
+
+/** Every room vector, file by file (#125). */
+export const ROOM_VECTORS: readonly RoomVector[] = Object.values(VECTOR_FILES).flatMap((file) =>
+  file.kind === 'room' ? file.vectors : [],
 );
 
 /**

@@ -142,7 +142,9 @@ test('the relay keeps none of the group’s words, names or keys, nor the tester
     await page.getByRole('textbox', { name: 'Your name' }).fill(words.ben);
     await page.getByRole('button', { name: 'Join group' }).click();
     const people = page.getByRole('region', { name: 'People' }).getByRole('listitem');
-    await expect(people).toHaveText([
+    // Each row also holds what Ben may do about that person, such as Propose removing (#115).
+    await expect(people).toHaveCount(2);
+    await expect(people).toContainText([
       `${words.ana}, Co-Creator, Steward`,
       `${words.ben}, invited by ${words.ana}, Collaborator`,
     ]);
@@ -150,7 +152,7 @@ test('the relay keeps none of the group’s words, names or keys, nor the tester
 
   await test.step('A proposes, and both vote, B with a note', async () => {
     const { page } = ana;
-    await page.getByRole('link', { name: words.title }).click();
+    await page.getByRole('link', { name: words.title, exact: true }).click();
     await page.getByRole('button', { name: 'Propose a change to section 1' }).click();
     await page.getByRole('textbox', { name: 'Title' }).fill(words.proposal);
     await page.getByRole('textbox', { name: 'Why' }).fill(words.why);

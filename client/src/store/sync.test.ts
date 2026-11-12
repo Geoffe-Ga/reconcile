@@ -28,8 +28,8 @@ import { freshIndexedDBPerTest } from '../test/idb';
 import { authorOf, signedAs, testKeys, testKx } from '../test/keys';
 import { manualTimers } from '../test/timers';
 import type { ChatBot } from './chatBot';
-import { openStore } from './db';
-import type { Group, Pull, Store } from './db';
+import { openStore, sameBytes } from './db';
+import { type BackedUpGroup, type Group, HISTORY_GAP_MS, type Pull, type Store } from './db';
 import { eventIdOf } from './eventId';
 import { keyChangeOf } from './epochs';
 import type { PushUpkeep } from './push';
@@ -91,8 +91,7 @@ function genesis(): SignedEvent {
     body: {
       name: 'Riverside Tenants',
       founder: 'Ana',
-      title: 'House rules',
-      atoms: ['Quiet after 10pm.', 'Bins out on Sunday.'],
+      documents: [{ title: 'House rules', atoms: ['Quiet after 10pm.', 'Bins out on Sunday.'] }],
       kx: testKx(ANA).kx,
     },
   });
@@ -329,7 +328,7 @@ describe('a sync pass', () => {
     expect(ok).toBe(false);
     expect((await after.store.listGroups()).map((group) => group.groupId)).toEqual([GROUP]);
     const document = await after.state();
-    expect(document.title).toBe('House rules');
+    expect(document.documents[0]?.title).toBe('House rules');
     expect(document.atoms.map((atom) => atom.text)).toEqual([
       'Quiet after 10pm.',
       'Bins out on Sunday.',
@@ -361,6 +360,79 @@ describe('a sync pass', () => {
     expect((await ana.group()).outbox).toEqual([]);
   });
 
+  it('holds what it posts in the outbox or the log before every request, never in neither (#349)', async () => {
+    const fake = createFakeRelay();
+    const keys = newKeys();
+    const founding = genesis();
+    let store: Store | null = null;
+    /** How many copies of the genesis the group holds now: queued, or in its log. */
+    const copies = async (): Promise<number> => {
+      const group = await store?.getGroup(GROUP);
+      const held = [...(group?.outbox ?? []), ...(group?.log ?? []).map(({ bytes }) => bytes)];
+      return held.filter((bytes) => sameBytes(bytes, founding.record)).length;
+    };
+    // Before each request goes out, the group is read as the store holds it then.
+    const seen: { method: string; url: string; copies: number }[] = [];
+    const watched: Fetch = async (input, init) => {
+      const listed = store === null ? null : await copies();
+      const response = await fake.fetch(input, init);
+      const request = fake.requests.at(-1);
+      if (listed !== null && request !== undefined) {
+        seen.push({ method: request.method, url: request.url, copies: listed });
+      }
+      return response;
+    };
+    const ana = await device('ana', createRelay({ fetch: watched }), keys);
+    store = ana.store;
+    await ana.store.enqueue(GROUP, founding.record);
+
+    expect(await ana.sync.syncOnce()).toBe(true);
+
+    // The relay took it, and the pull that reads it back went out after: the gap a screen once showed.
+    const put = seen.findIndex((r) => r.method === 'PUT' && r.url.includes(keys.mailbox));
+    expect(put).toBeGreaterThanOrEqual(0);
+    const after = seen.slice(put + 1);
+    expect(after.some((r) => r.method === 'GET' && r.url.includes(keys.mailbox))).toBe(true);
+    expect([...seen.map((r) => r.copies), await copies()]).toEqual([...seen.map(() => 1), 1]);
+    const group = await ana.group();
+    expect(group.outbox).toEqual([]);
+    expect(labels(group.log)).toEqual(['genesis:Riverside Tenants']);
+  });
+
+  it('keeps an event the relay took queued while the pull that reads it back fails, then holds it once (#349)', async () => {
+    const fake = createFakeRelay();
+    const keys = newKeys();
+    // The relay takes the event, then the next request fails, once, as when the network drops.
+    let armed = true;
+    let dropNext = false;
+    const flaky: Fetch = async (input, init) => {
+      if (dropNext) {
+        dropNext = false;
+        throw new TypeError('Failed to fetch');
+      }
+      const response = await fake.fetch(input, init);
+      dropNext = armed && fake.requests.at(-1)?.method === 'PUT';
+      armed = !dropNext && armed;
+      return response;
+    };
+    const ana = await device('ana', createRelay({ fetch: flaky }), keys);
+    const founding = genesis();
+    await ana.store.enqueue(GROUP, founding.record);
+
+    expect(await ana.sync.syncOnce()).toBe(false);
+    expect(fake.blobs(keys.mailbox)).toHaveLength(1);
+    // Still pending, from the outbox, though the relay has it: no screen sees it vanish.
+    expect((await ana.group()).outbox.map(local)).toEqual([founding.record]);
+
+    expect(await ana.sync.syncOnce()).toBe(true);
+    // Posted again, as after a reply that never came: the log keeps one, by its event id.
+    expect(fake.blobs(keys.mailbox)).toHaveLength(2);
+    const group = await ana.group();
+    expect(group.outbox).toEqual([]);
+    expect(group.log.map(({ bytes }) => local(bytes))).toEqual([founding.record]);
+    expect((await ana.state()).ignored).toEqual([]);
+  });
+
   it('skips a blob that will not open, and reads past it', async () => {
     const fake = createFakeRelay();
     const relay = createRelay({ fetch: fake.fetch });
@@ -374,7 +446,7 @@ describe('a sync pass', () => {
     const group = await ana.group();
     expect(group.log.map((record) => record.seq)).toEqual([2]);
     expect(group.cursors?.[keys.mailbox]).toBe(2);
-    expect((await ana.state()).title).toBe('House rules');
+    expect((await ana.state()).documents[0]?.title).toBe('House rules');
   });
 
   it('skips blobs that fail to open between good ones: the next good one folds, and the cursor moves past', async () => {
@@ -472,19 +544,7 @@ describe('a sync pass', () => {
     const ok = await ana.sync.syncOnce();
 
     expect(ok).toBe(false);
-    expect((await ana.state()).title).toBe('House rules');
-  });
-
-  it('shares one pass between callers that ask at the same time', async () => {
-    const fake = createFakeRelay();
-    const keys = newKeys();
-    const ana = await device('ana', createRelay({ fetch: fake.fetch }), keys);
-    await ana.store.enqueue(GROUP, genesis().record);
-
-    const results = await Promise.all([ana.sync.syncOnce(), ana.sync.syncOnce()]);
-
-    expect(results).toEqual([true, true]);
-    expect(posted(fake, keys)).toEqual(['genesis:Riverside Tenants']);
+    expect((await ana.state()).documents[0]?.title).toBe('House rules');
   });
 
   it('fails without throwing when the store itself fails', async () => {
@@ -493,6 +553,136 @@ describe('a sync pass', () => {
     vi.spyOn(ana.store, 'listGroups').mockRejectedValue(new Error('closed'));
 
     expect(await ana.sync.syncOnce()).toBe(false);
+  });
+});
+
+/**
+ * A relay that, once armed, holds every request after its next PUT until the
+ * test lets them go: a pass held just after it has posted its outbox. `held`
+ * counts the requests waiting now.
+ */
+function holdAfterPut(fake: FakeRelay) {
+  let armed = true;
+  let gate: Promise<void> | null = null;
+  let letGo = (): void => undefined;
+  let held = 0;
+  const fetch: Fetch = async (input, init) => {
+    if (gate !== null) {
+      held += 1;
+      await gate;
+      held -= 1;
+    }
+    const response = await fake.fetch(input, init);
+    if (armed && init?.method === 'PUT') {
+      armed = false;
+      gate = new Promise((resolve) => {
+        letGo = resolve;
+      });
+    }
+    return response;
+  };
+  return {
+    relay: createRelay({ fetch }),
+    held: () => held,
+    /** Lets every held request go, and holds none until armed again. */
+    release: () => {
+      gate = null;
+      letGo();
+    },
+    /** Holds the requests after the next PUT. */
+    arm: () => {
+      armed = true;
+    },
+  };
+}
+
+describe('calls made while a pass runs (#260)', () => {
+  /** Ana's device on a relay that holds her first pass once its outbox is posted, counting complete passes. */
+  async function heldAna() {
+    const fake = createFakeRelay();
+    const keys = newKeys();
+    const gate = holdAfterPut(fake);
+    const ana = await device('ana', gate.relay, keys);
+    const afterPass = vi.fn(() => Promise.resolve());
+    const sync = createSync({
+      store: ana.store,
+      relay: gate.relay,
+      seal: xchachaSeal,
+      clock: () => TS,
+      afterPass,
+    });
+    opened.push(sync);
+    const founding = genesis();
+    await ana.store.enqueue(GROUP, founding.record);
+    const first = sync.syncOnce();
+    await expect.poll(() => gate.held()).toBe(1);
+    return { fake, keys, gate, ana, sync, afterPass, founding, first };
+  }
+
+  it('sends an event queued after the running pass posted its outbox, before the call resolves', async () => {
+    const { fake, keys, gate, ana, sync, founding, first } = await heldAna();
+
+    await ana.store.enqueue(GROUP, proposal(founding, 'Quiet after 11pm.').record);
+    const second = sync.syncOnce();
+    gate.release();
+
+    expect(await second).toBe(true);
+    expect(posted(fake, keys)).toEqual(['genesis:Riverside Tenants', 'proposal:']);
+    expect((await ana.group()).outbox).toEqual([]);
+    expect(await first).toBe(true);
+  });
+
+  it('runs one trailing pass for every call made meanwhile, after the running one and never beside it', async () => {
+    const { gate, sync, afterPass, first } = await heldAna();
+
+    const during = [sync.syncOnce(), sync.syncOnce(), sync.syncOnce()];
+    // A pass started beside the held one would reach the relay and be held too.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(gate.held()).toBe(1);
+    expect(during[1]).toBe(during[0]);
+    expect(during[2]).toBe(during[0]);
+    gate.release();
+
+    expect(await Promise.all([first, ...during])).toEqual([true, true, true, true]);
+    expect(afterPass).toHaveBeenCalledTimes(2);
+    expect(await sync.syncOnce()).toBe(true);
+    expect(afterPass).toHaveBeenCalledTimes(3);
+  });
+
+  it('starts no trailing pass once halted, and its callers get false', async () => {
+    const { fake, gate, sync, afterPass, first } = await heldAna();
+
+    const trailing = sync.syncOnce();
+    const halting = sync.halt();
+    gate.release();
+    await halting;
+    const requests = fake.requests.length;
+
+    expect(await trailing).toBe(false);
+    expect(await first).toBe(true);
+    expect(fake.requests.length).toBe(requests);
+    expect(afterPass).not.toHaveBeenCalled();
+  });
+
+  it('waits, when halted, for a trailing pass already running', async () => {
+    const { fake, keys, gate, ana, sync, founding } = await heldAna();
+    const trailing = sync.syncOnce();
+    await ana.store.enqueue(GROUP, proposal(founding, 'Quiet after 11pm.').record);
+    gate.arm();
+    gate.release();
+    await expect.poll(() => gate.held()).toBe(1);
+
+    let halted = false;
+    const halting = sync.halt().then(() => {
+      halted = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(halted).toBe(false);
+    gate.release();
+    await halting;
+
+    expect(await trailing).toBe(true);
+    expect(posted(fake, keys)).toEqual(['genesis:Riverside Tenants', 'proposal:']);
   });
 });
 
@@ -834,8 +1024,7 @@ describe('a new group key when someone leaves (#98)', () => {
       body: {
         name: 'Riverside Tenants',
         founder: 'Ana',
-        title: 'House rules',
-        atoms: ['Quiet after 10pm.', 'Bins out on Sunday.'],
+        documents: [{ title: 'House rules', atoms: ['Quiet after 10pm.', 'Bins out on Sunday.'] }],
         kx: testKx(ANA).kx,
       },
     });
@@ -1421,8 +1610,7 @@ describe('weekly mailboxes (#110)', () => {
     const body = {
       name: 'Allotment',
       founder: 'Ana',
-      title: 'Plot rules',
-      atoms: ['Share tools.'],
+      documents: [{ title: 'Plot rules', atoms: ['Share tools.'] }],
       kx: testKx(ANA).kx,
     };
     const theirs = signedAs(ANA, { type: 'genesis', group: '', ts: TS, body });
@@ -1739,6 +1927,172 @@ describe('the result duty (#111)', () => {
     await ana.sync.syncOnce();
     expect(putTypes(fake, keys, from)).toEqual([]);
     expect((await ana.group()).outbox).toEqual([]);
+  });
+
+  /** One way the group goes from `holder`'s device (#270), whose member there is `name`. */
+  type Goes = (holder: Device, founding: SignedEvent, name: string) => Promise<void>;
+
+  const WAYS: [string, Goes][] = [
+    [
+      'leaves it',
+      async (holder, founding, name) => {
+        const leave = signedAs(name, { type: 'leave', group: founding.id, ts: TS, body: {} });
+        await holder.store.markLeaving(GROUP, leave.record);
+        // The pass that posts the leave purges the group (#77).
+        await holder.sync.syncOnce();
+        expect(await holder.store.getGroup(GROUP)).toBeUndefined();
+      },
+    ],
+    ['is removed', (holder) => holder.store.purgeGroup(GROUP)],
+    ['dissolves', (holder) => holder.store.markArchived(GROUP, 'dissolved')],
+  ];
+
+  /**
+   * The group goes from `holder`'s device in `goes`, a pass runs, and the
+   * device then holds it again under Ben's keys, as linking his phone would
+   * (#96), in the same relay minute: the event type each PUT carried from
+   * when it went until then, and the device's outbox after each of the next
+   * two passes.
+   */
+  async function goesAndComesBack(
+    { fake, keys, founding }: Awaited<ReturnType<typeof closedEarly>>,
+    holder: Device,
+    goes: Goes,
+    name: string,
+  ) {
+    const from = fake.requests.length;
+    await goes(holder, founding, name);
+    await holder.sync.syncOnce();
+    const whileGone = putTypes(fake, keys, from);
+    // Remove from this device (#108): a dissolved group's archive goes before it can come back.
+    await holder.store.purgeGroup(GROUP);
+    const me = { author: authorOf(BEN), name: 'Ben' };
+    const { secretKey: signingKey } = testKeys(BEN);
+    const { kxKey } = testKx(BEN);
+    await holder.store.addGroup({ groupId: GROUP, secret: keys.secret, signingKey, kxKey, me });
+    const outboxes: string[][] = [];
+    for (let pass = 0; pass < 2; pass += 1) {
+      await holder.sync.syncOnce();
+      outboxes.push(types((await holder.group()).outbox.map((bytes) => ({ bytes }))));
+    }
+    return { whileGone, outboxes };
+  }
+
+  it.each(WAYS)(
+    'forgets the result it found due once the group %s, so none comes due at once when it is back (#270)',
+    async (_label, goes) => {
+      const held = await closedEarly();
+      const { fake, ana } = held;
+      fake.minute += 1;
+      await ana.sync.syncOnce();
+      // Found due, to queue on the next pass if it still is.
+      expect((await ana.group()).outbox).toEqual([]);
+
+      const { whileGone, outboxes } = await goesAndComesBack(held, ana, goes, ANA);
+
+      expect(whileGone).not.toContain('result');
+      // Queued only once the device has synced once more since it found the result due as Ben.
+      expect(outboxes).toEqual([[], ['result']]);
+    },
+  );
+
+  it.each(WAYS)(
+    'forgets the minute it settled once the group %s, so the duty runs in that minute when it is back (#270)',
+    async (_label, goes) => {
+      const held = await closedEarly();
+      const { fake, keys } = held;
+      // Kim's key isn't a member, so Kim's device settles this minute owing nothing.
+      const kim = await device('kim', createRelay({ fetch: fake.fetch }), keys);
+      fake.minute += 1;
+      await kim.sync.syncOnce();
+      expect((await kim.group()).outbox).toEqual([]);
+
+      const { whileGone, outboxes } = await goesAndComesBack(held, kim, goes, 'kim');
+
+      expect(whileGone).not.toContain('result');
+      expect(outboxes).toEqual([[], ['result']]);
+    },
+  );
+
+  /**
+   * A backup's copy of the group on `holder`'s device: synced later than the
+   * device's own, but last hearing from the group a minute more than #73's 28
+   * days of relay time before it, so a restore takes it back read-only for
+   * now, and a pass that reads nothing new leaves it so (#231).
+   */
+  async function olderCopy(holder: Device): Promise<BackedUpGroup> {
+    const held = await holder.group();
+    const { groupId, secret, signingKey, me, log, cursor, instance } = held;
+    return {
+      groupId,
+      secret,
+      signingKey,
+      ...(held.kxKey === undefined ? {} : { kxKey: held.kxKey }),
+      me,
+      log,
+      cursor,
+      relayNow: (held.relayNow ?? 0) - HISTORY_GAP_MS / 60_000 - 1,
+      instance,
+      lastSyncAt: (held.lastSyncAt ?? 0) + 1,
+      missingHistory: false,
+    };
+  }
+
+  /** The group comes back on `holder`'s device read-only for now, from a backup's older copy (#231). */
+  const readOnlyForNow: Goes = async (holder) => {
+    await holder.store.restoreGroups([await olderCopy(holder)]);
+    expect((await holder.group()).archived?.reason).toBe('unconfirmed');
+  };
+
+  it('owes no result while a copy back from a backup reads only for now, so none comes due at once when the group goes on (#231)', async () => {
+    const held = await closedEarly();
+    const { fake, ana } = held;
+    fake.minute += 1;
+    await ana.sync.syncOnce();
+    expect((await ana.group()).outbox).toEqual([]);
+
+    const { whileGone, outboxes } = await goesAndComesBack(held, ana, readOnlyForNow, ANA);
+
+    expect(whileGone).not.toContain('result');
+    expect(outboxes).toEqual([[], ['result']]);
+  });
+
+  it('settles a copy back read-only for now again once the group goes on, in that same minute (#231)', async () => {
+    const held = await closedEarly();
+    const { fake, keys } = held;
+    const kim = await device('kim', createRelay({ fetch: fake.fetch }), keys);
+    fake.minute += 1;
+    await kim.sync.syncOnce();
+
+    const { whileGone, outboxes } = await goesAndComesBack(held, kim, readOnlyForNow, 'kim');
+
+    expect(whileGone).not.toContain('result');
+    expect(outboxes).toEqual([[], ['result']]);
+  });
+
+  it('settles a copy back read-only for now once a relay minute, as a live group, keeping its notes between passes (#231)', async () => {
+    const { fake, keys, founding } = await closedEarly();
+    // Kim's key isn't a member, so his device owes nothing and settles once a minute.
+    const kim = await device('kim', createRelay({ fetch: fake.fetch }), keys);
+    const reads = vi.spyOn(kim.store, 'getGroup');
+    /** How many more times the first pass in a new relay minute reads the group than the next pass does. */
+    async function settleReads(): Promise<number> {
+      fake.minute += 1;
+      reads.mockClear();
+      await kim.sync.syncOnce();
+      const first = reads.mock.calls.length;
+      reads.mockClear();
+      await kim.sync.syncOnce();
+      return first - reads.mock.calls.length;
+    }
+    const live = await settleReads();
+
+    await readOnlyForNow(kim, founding, 'kim');
+    const readOnly = await settleReads();
+
+    expect((await kim.group()).archived?.reason).toBe('unconfirmed');
+    // A refold on every pass would read it as often on the second pass as on the first.
+    expect(readOnly).toBe(live);
   });
 });
 

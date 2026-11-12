@@ -135,6 +135,21 @@ describe('ResultView', () => {
     expect(await axeViolations()).toEqual([]);
   });
 
+  it('leads an add’s pass with its sentence and the new section’s text, as an edit’s (#75)', () => {
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    const proposalId = log.addSection('ana', null, { text: 'Bins out on Thursdays.' });
+    for (const voter of ['ana', 'ben', 'cal']) {
+      log.minute += 10;
+      log.vote(voter, proposalId, 4);
+    }
+    const { result } = show({ state: log.state(), proposalId });
+
+    const [sentence, text, thanks] = within(outcomeBlock(result)).getAllByRole('paragraph');
+    expect(sentence).toHaveTextContent('This passed. The Document now reads:');
+    expect(text).toHaveTextContent('Bins out on Thursdays.');
+    expect(thanks).toHaveTextContent(/^Thank you, Ana\.$/);
+  });
+
   it('thanks the winning version’s author and the proposer, and names the version', () => {
     const { log, proposalId } = bensVersionPasses();
     const { result } = show({ state: log.state(), proposalId });
@@ -243,6 +258,38 @@ describe('ResultView', () => {
       'This section has an open Proposal now. You can propose this again once it closes.',
     );
     expect(again.getAttribute('aria-describedby')?.split(' ')).toContain(reason.id);
+  });
+
+  it('says a passed new Document reads as its winning text, naming the version when there were several (#92)', async () => {
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    const alone = log.newDocument('ana', 'Budget', { text: '# Budget\n\nWe share costs.\n' });
+    for (const name of ['ana', 'ben', 'cal']) log.vote(name, alone, 4);
+    const { result } = show({ state: log.state(), proposalId: alone });
+    const block = outcomeBlock(result);
+    expect(block.querySelector('.outcome-sentence')).toHaveTextContent(
+      /^This passed\. The new Document reads:$/,
+    );
+    expect(within(block).getByRole('heading', { name: 'Budget' })).toBeVisible();
+    expect(within(block).getByText('We share costs.')).toBeVisible();
+    expect(await axeViolations()).toEqual([]);
+    cleanup();
+    const shared = log.newDocument('ana', 'Chores', { text: 'Ana cooks.\n' });
+    const other = log.version('ben', shared, 'Ben cooks.\n');
+    for (const name of ['ana', 'ben', 'cal']) log.ballot(name, shared, { [shared]: 2, [other]: 4 });
+    const second = show({ state: log.state(), proposalId: shared });
+    expect(outcomeBlock(second.result).querySelector('.outcome-sentence')).toHaveTextContent(
+      /^Version 2 passed\. The new Document reads:$/,
+    );
+  });
+
+  it('offers Propose again on a lapsed new Document, as on a change (#92)', async () => {
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    const proposalId = log.newDocument('ana', 'Budget');
+    const { result, onProposeAgain, user } = show({ state: log.state(DEADLINE), proposalId });
+    const again = within(result).getByRole('button', { name: 'Propose again' });
+    expect(again).toBeEnabled();
+    await user.click(again);
+    expect(onProposeAgain).toHaveBeenCalledTimes(1);
   });
 
   it('offers no Propose again to someone who can’t propose', () => {
@@ -354,11 +401,10 @@ describe('ResultView', () => {
     const held = log.state();
     const closedAt = held.proposals[0]?.closedAt ?? 0;
     const body = resultFor(held.proposals[0] as Proposal);
-    const cleared = groupLog({ members: ['Ben', 'Cal'] });
-    cleared.propose('ana');
-    cleared.minute = closedAt + 1;
-    cleared.result('ben', body);
-    const state = cleared.state(closedAt + 43_200, [proposalId]);
+    log.minute = closedAt + 1;
+    log.result('ben', body);
+    // Clearing keeps every record's relay seq, which the result's closedSeq names (#289).
+    const state = log.state(closedAt + 43_200, [proposalId]);
     const { result } = show({ state, proposalId });
     const { clearedOn, clearedOnEnd, totalsLine } = messages.result;
     expect(result).toHaveTextContent(`${clearedOn} ${formatDay(closedAt + 43_200)}${clearedOnEnd}`);

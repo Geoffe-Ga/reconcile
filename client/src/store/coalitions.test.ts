@@ -8,12 +8,14 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { base64url, fromBase64url } from '../crypto/base64url';
 import { deriveCoalitionEntryId } from '../crypto/card';
+import { seatKxOf, unwrapInner } from '../crypto/room';
 import { verifySeatProof } from '../crypto/seat';
 import { parseRecord, type ParsedEvent } from '../engine/event';
 import { fold, type LogRecord } from '../engine/fold';
 import {
   COALITION_STATEMENT,
   Logs,
+  NESTED_STATEMENTS,
   NestedLogs,
   seatKey,
   seatSecret,
@@ -29,6 +31,7 @@ import {
   heldCoalitions,
   newEntry,
   outsideFor,
+  retireCoalitionsOf,
   settleCoalitions,
   stillSyncs,
 } from './coalitions';
@@ -70,12 +73,13 @@ async function keepGroup(
   await store.applyPull(groupId, pull, eventIdOf);
 }
 
-/** Keeps the coalition's log as its entry on `store`, as `who`'s key, with `plan`. */
+/** Keeps the coalition's log as its entry on `store`, as `who`'s key, with `plan`, pulled at `relayNow`. */
 async function keepEntry(
   store: Store,
   logs: Logs,
   who: string,
   plan: Partial<Pick<Group, 'joinAs' | 'admitting'>> & { name?: string } = {},
+  relayNow = R + 100,
 ) {
   const { name = who, ...rest } = plan;
   await store.addGroup({
@@ -88,7 +92,7 @@ async function keepEntry(
   });
   const records = logs.logs.coalition ?? [];
   if (records.length === 0) return;
-  const pull = { records: [...records], relayNow: R + 100, instance: 'i', lastSyncAt: 1 };
+  const pull = { records: [...records], relayNow, instance: 'i', lastSyncAt: 1 };
   await store.applyPull(ENTRY, pull, eventIdOf);
 }
 
@@ -355,7 +359,11 @@ describe('settleCoalitions admitting a group', () => {
       type: 'proposal',
       author: authorOf('hal'),
       body: {
-        target: { kind: 'admit', seat: { name: 'Elm Row', key: seatKey('C') } },
+        target: {
+          kind: 'admit',
+          seat: { name: 'Elm Row', key: seatKey('C') },
+          kx: seatKxOf(seatSecret('C')),
+        },
         title: 'Admit Elm Row',
         why: '',
       },
@@ -364,6 +372,103 @@ describe('settleCoalitions admitting a group', () => {
     expect(entry?.admitting).toBeUndefined();
     expect(entry?.joinAs).toBe(c);
     expect(logs.ids.coalition).toBeDefined();
+  });
+});
+
+/**
+ * A device in Riverside (A, with inner) whose coalition entry is kim's, bound
+ * to seat A, after Elm Row (C) was admitted into the coalition of A and B, with
+ * `more` added to the logs first, pulled at `at` minutes past C's seat, on the
+ * device `name`.
+ */
+async function seatedWith(
+  more: (logs: Logs, seated: number) => void = () => undefined,
+  at = 1,
+  name = 'device',
+) {
+  const store = await device(name);
+  const logs = new Logs();
+  const a = groupA(logs);
+  const formed = logs.formed(R + 10, ['A', 'B'], ['kim', 'zed']);
+  const seated = logs.admitted(formed, 'dee', 'C', 'Elm Row', [
+    ['kim', 'A'],
+    ['zed', 'B'],
+  ]);
+  more(logs, seated);
+  await keepGroup(store, a, 'ana', logs.logs.A ?? []);
+  await keepEntry(store, logs, 'kim', {}, seated + at);
+  return { store, logs, seated };
+}
+
+/** The inner a queued wrap for seat `seat` opens to with that seat's secret, or null. */
+function opened(event: ParsedEvent['event'] | undefined, coalitionId: string, seat: string) {
+  if (event?.type !== 'room-wrap') return null;
+  const place = { coalitionId, seat: event.body.seat, wrap: event.body.wrap };
+  return unwrapInner({ ...place, seatSecret: seatSecret(seat) });
+}
+
+describe('settleCoalitions wrapping the room’s inner for an admitted seat (#313)', () => {
+  it('wraps inner to the admitted seat’s kx from a participant whose group holds it, once', async () => {
+    const { store, logs } = await seatedWith();
+    expect(await settleCoalitions(store, clock)).toEqual([ENTRY]);
+
+    const [wrap, ...more] = await queued(store);
+    expect(more).toEqual([]);
+    expect(wrap?.event).toMatchObject({
+      type: 'room-wrap',
+      author: authorOf('kim'),
+      body: { seat: seatKey('C') },
+    });
+    const id = logs.ids.coalition ?? '';
+    expect(opened(wrap?.event, id, 'C')).toEqual(fromBase64url(testSecret('inner')));
+    expect(opened(wrap?.event, id, 'B')).toBeNull();
+    expect(await settleCoalitions(store, clock)).toEqual([]);
+    expect(await queued(store)).toHaveLength(1);
+  });
+
+  it('wraps nothing before the seat is taken, while the pass on it can still be contested', async () => {
+    const { store } = await seatedWith(undefined, -1);
+    expect(await settleCoalitions(store, clock)).toEqual([]);
+    expect(await queued(store)).toEqual([]);
+  });
+
+  it('wraps nothing once someone from its own seat has, and still wraps when only another seat has', async () => {
+    const own = await seatedWith((logs, seated) => {
+      logs.join(seated + 1, 'ben', 'A');
+      logs.wrap(seated + 2, 'ben', 'C');
+    }, 3);
+    expect(await settleCoalitions(own.store, clock)).toEqual([]);
+
+    const other = await seatedWith((logs, seated) => logs.wrap(seated + 1, 'zed', 'C'), 2, 'other');
+    expect(await settleCoalitions(other.store, clock)).toEqual([ENTRY]);
+    expect((await queued(other.store)).map(({ event }) => event.type)).toEqual(['room-wrap']);
+  });
+
+  it('wraps nothing from the admitted group’s own participant, before or after it holds inner', async () => {
+    const store = await device();
+    const logs = new Logs();
+    const formed = logs.formed(R, ['A', 'B'], ['kim', 'zed']);
+    const c = logs.group('C', formed, ['dee'], 'Elm Row');
+    const proposal = logs.reconcile('C', formed + 1, 'dee', 'C', { inner: false });
+    logs.vote('C', formed + 2, 'dee', proposal, 4);
+    const seated = logs.admitted(formed + 3, 'dee', 'C', 'Elm Row', [
+      ['kim', 'A'],
+      ['zed', 'B'],
+    ]);
+    logs.join(seated + 1, 'dee', 'C');
+    await keepGroup(store, c, 'dee', logs.logs.C ?? []);
+    await keepEntry(store, logs, 'dee', {}, seated + 2);
+
+    expect(await settleCoalitions(store, clock)).toEqual([]);
+    expect(await queued(store)).toEqual([]);
+
+    // Once kim's wrap gives Elm Row inner, its device still wraps nothing for its own seat.
+    logs.wrap(seated + 3, 'kim', 'C');
+    const pull = { records: [...(logs.logs.coalition ?? [])], relayNow: seated + 4 };
+    await store.applyPull(ENTRY, { ...pull, instance: 'i', lastSyncAt: 1 }, eventIdOf);
+    expect((await heldCoalitions(store))[0]?.state.coalition?.wraps).toHaveLength(1);
+    expect(await settleCoalitions(store, clock)).toEqual([]);
+    expect(await queued(store)).toEqual([]);
   });
 });
 
@@ -530,5 +635,179 @@ describe('coalitionKeys (#122)', () => {
     const keys = coalitionKeys([group], [entry]);
     expect(keys.has(deriveCoalitionEntryId(fromBase64url(testSecret('D'))))).toBe(false);
     expect(keys.has(entry.groupId)).toBe(true);
+  });
+
+  /** A log as a device keeps it: a group's, or a coalition's entry under the id its secret makes. */
+  function kept(records: readonly LogRecord[], relayNow: number, secret?: string): Group {
+    const coalition =
+      secret === undefined
+        ? { groupId: 'A' }
+        : { kind: 'coalition', groupId: deriveCoalitionEntryId(fromBase64url(secret)) };
+    return { ...coalition, log: records, outbox: [], relayNow } as unknown as Group;
+  }
+
+  it('gives a group admitted into a formed coalition its inner only from a wrap for its seat, and then reaches above it (#313)', () => {
+    const logs = new NestedLogs();
+    const formed = logs.formed(R, ['X', 'Y'], ['cal', 'dee']);
+    logs.group('A', formed, ['ana']);
+    logs.reconcile('A', formed + 1, 'ana', 'A', { inner: false });
+    const seated = logs.admitted(formed + 2, 'ana', 'A', 'Riverside', [
+      ['cal', 'X'],
+      ['dee', 'Y'],
+    ]);
+    const id = logs.ids.coalition ?? '';
+    const sealed = sealSeatSecrets(id, fromBase64url(testSecret('inner')), {
+      secret: fromBase64url(testSecret('D')),
+      inner: fromBase64url(testSecret('innerD')),
+      seat: seatSecret('coalition'),
+    });
+    const target = {
+      kind: 'reconcile',
+      sealed,
+      key: seatKey('coalition'),
+      ...STATEMENT_D,
+    } as const;
+    logs.add('coalition', seated + 1, 'cal', {
+      type: 'proposal',
+      body: { target, title: 'Into D', why: 'W' },
+    });
+    const d = deriveCoalitionEntryId(fromBase64url(testSecret('D')));
+    const keysAt = () =>
+      coalitionKeys(
+        [kept(logs.logs.A ?? [], seated + 10)],
+        [kept(logs.logs.coalition ?? [], seated + 10, testSecret('coalition'))],
+      );
+
+    const before = keysAt();
+    expect([...(before.get(ENTRY)?.seats.keys() ?? [])]).toEqual([seatKey('A')]);
+    expect(before.get(ENTRY)?.inner).toBeNull();
+    expect(before.has(d)).toBe(false);
+
+    logs.wrap(seated + 2, 'cal', 'A');
+    const after = keysAt();
+    expect(base64url(after.get(ENTRY)?.inner ?? new Uint8Array())).toBe(testSecret('inner'));
+    expect(base64url(after.get(d)?.inner ?? new Uint8Array())).toBe(testSecret('innerD'));
+  });
+
+  it('keeps a coalition above with no inner while its seat there, sealed without one, waits for a wrap (#313)', () => {
+    const logs = new NestedLogs();
+    logs.group('A', R, ['ana']);
+    logs.reconcileInto('A', R + 1, 'ana', 'C', 'A', COALITION_STATEMENT);
+    const c = logs.formedIn('C', R + 2, [['A'], ['B']], ['cal', 'dee']);
+    const sealed = sealSeatSecrets(logs.ids.C ?? '', fromBase64url(testSecret('innerC')), {
+      secret: SECRET,
+      seat: seatSecret('C'),
+    });
+    const target = {
+      kind: 'reconcile',
+      sealed,
+      key: seatKey('C'),
+      ...COALITION_STATEMENT,
+    } as const;
+    logs.add('C', c, 'cal', { type: 'proposal', body: { target, title: 'Into D', why: 'W' } });
+    const formed = logs.formed(c + 1, ['X', 'Y'], ['kim', 'zed']);
+    const seated = logs.admitted(formed, 'cal', 'C', 'Eastside', [
+      ['kim', 'X'],
+      ['zed', 'Y'],
+    ]);
+    const keysAt = () =>
+      coalitionKeys(
+        [kept(logs.logs.A ?? [], seated + 10)],
+        [
+          kept(logs.logs.C ?? [], seated + 10, testSecret('C')),
+          kept(logs.logs.coalition ?? [], seated + 10, testSecret('coalition')),
+        ],
+      );
+
+    const before = keysAt().get(ENTRY);
+    expect([...(before?.seats.keys() ?? [])]).toEqual([seatKey('C')]);
+    expect(before?.inner).toBeNull();
+
+    logs.wrap(seated + 1, 'kim', 'C');
+    const after = keysAt().get(ENTRY);
+    expect(base64url(after?.inner ?? new Uint8Array())).toBe(testSecret('inner'));
+  });
+});
+
+describe('retiring the coalitions a removed group alone held (#115, #122)', () => {
+  /** Keeps the coalition `name`'s entry on `store`, with `records` as its log. */
+  async function keepCoalition(store: Store, name: string, records: readonly LogRecord[]) {
+    const secret = fromBase64url(testSecret(name));
+    const groupId = deriveCoalitionEntryId(secret);
+    await store.addGroup({
+      kind: 'coalition',
+      groupId,
+      secret,
+      signingKey: testKeys('cal').secretKey,
+      me: { author: authorOf('cal'), name: 'cal' },
+    });
+    if (records.length > 0) {
+      const pull = { records: [...records], relayNow: R + 100, instance: 'i', lastSyncAt: 1 };
+      await store.applyPull(groupId, pull, eventIdOf);
+    }
+    return groupId;
+  }
+
+  /**
+   * Group A in Eastside Housing (C), C formed with its sealed seat in Metro
+   * Renters (D), and both coalitions' entries on `store`; and group B in C
+   * too, its target carrying C's inner or not, as `b` says. Returns the
+   * entries' ids.
+   */
+  async function nestedOn(store: Store, b: 'none' | 'inner' | 'no-inner') {
+    const logs = new NestedLogs();
+    logs.group('A', R, ['ana']);
+    logs.reconcileInto('A', R + 1, 'ana', 'C', 'A', NESTED_STATEMENTS.C);
+    await keepGroup(store, 'A', 'ana', logs.logs.A ?? []);
+    if (b !== 'none') {
+      logs.group('B', R, ['ana']);
+      const target = {
+        kind: 'reconcile',
+        secret: testSecret('C'),
+        seat: base64url(seatSecret('B')),
+        ...NESTED_STATEMENTS.C,
+        ...(b === 'inner' ? { inner: testSecret('innerC') } : {}),
+      } as const;
+      logs.add('B', R + 1, 'ana', { type: 'proposal', body: { target, title: 'In', why: 'W' } });
+      await keepGroup(store, 'B', 'ana', logs.logs.B ?? []);
+    }
+    const at = logs.formedIn('C', R + 2, [['A'], ['B']], ['cal', 'dee'], NESTED_STATEMENTS.C);
+    logs.sealedInto('C', at, 'cal', 'D', NESTED_STATEMENTS.D);
+    const c = await keepCoalition(store, 'C', logs.logs.C ?? []);
+    const d = await keepCoalition(store, 'D', []);
+    return { c, d };
+  }
+
+  /** Removes group A from `store`'s member, as `settleRemoval` does, and retires what it alone held. */
+  async function removeA(store: Store) {
+    const removed = await store.getGroup('A');
+    if (removed === undefined) throw new Error('Expected group A.');
+    await store.markArchived('A', 'removed');
+    await retireCoalitionsOf(store, removed);
+  }
+
+  it('retires the coalitions above that only its coalitions reached, as well as its own', async () => {
+    const store = await device();
+    const { c, d } = await nestedOn(store, 'none');
+    await removeA(store);
+    expect((await store.getGroup(c))?.archived).toEqual({ reason: 'removed' });
+    expect((await store.getGroup(d))?.archived).toEqual({ reason: 'removed' });
+  });
+
+  it('keeps every coalition another group on the device still reaches, above it included', async () => {
+    const store = await device();
+    const { c, d } = await nestedOn(store, 'inner');
+    await removeA(store);
+    expect((await store.getGroup(c))?.archived).toBeUndefined();
+    expect((await store.getGroup(d))?.archived).toBeUndefined();
+  });
+
+  it('keeps a coalition above one another group still holds, though it holds no inner there yet (#313)', async () => {
+    const store = await device();
+    const { c, d } = await nestedOn(store, 'no-inner');
+    await removeA(store);
+    // B reaches D again once a wrap gives it C's inner, so D's entry stays to sync then.
+    expect((await store.getGroup(c))?.archived).toBeUndefined();
+    expect((await store.getGroup(d))?.archived).toBeUndefined();
   });
 });

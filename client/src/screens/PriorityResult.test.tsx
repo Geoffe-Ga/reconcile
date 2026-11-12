@@ -52,7 +52,7 @@ function rankedVote(log = groupLog({ members: ['Ben', 'Cal'] })) {
   log.ballot('ana', id, { [o(0)]: 3, [o(1)]: 4, [o(2)]: 1, [o(3)]: 4 });
   log.ballot('ben', id, { [o(0)]: 3, [o(1)]: 4, [o(2)]: 2, [o(3)]: 0 }, 'Not yet.');
   log.ballot('cal', id, { [o(0)]: 2, [o(1)]: 3, [o(2)]: 2, [o(3)]: 4 });
-  return { state: log.state(), id };
+  return { log, state: log.state(), id };
 }
 
 describe('a priority vote’s result (#107)', () => {
@@ -191,12 +191,11 @@ describe('a priority vote’s result (#107)', () => {
   });
 
   it('ranks from its result once this device has cleared its ballots, and says when (#111)', async () => {
-    const { state: held, id } = rankedVote();
+    const { log, state: held, id } = rankedVote();
     const decided = held.proposals.find((candidate) => candidate.id === id);
     if (decided?.closedAt == null) throw new Error('Expected the closed priority vote.');
     const { closedAt } = decided;
-    const log = groupLog({ members: ['Ben', 'Cal'] });
-    expect(log.ask('ana', FOUR)).toBe(id);
+    // Clearing keeps every record's relay seq, which the result's closedSeq names (#289).
     log.minute = closedAt + 1;
     log.result('ben', resultFor(decided));
     const expires = closedAt + 43_200;

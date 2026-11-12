@@ -1,11 +1,14 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
-import { Button, Label, Text, TextArea, TextField } from 'react-aria-components';
+import { Button, Label, Link, Text, TextArea, TextField } from 'react-aria-components';
 
 import type { CoalitionStanding } from '../app/coalitionHome';
 import { TakePart } from '../app/CoalitionSection';
+import { documentNamed } from '../app/documentLines';
+import { groupHistory, type HistorySource } from '../app/historySource';
 import { ChangeInvolvement } from '../app/LevelPicker';
 import { messages } from '../app/messages';
 import { WaitingNote } from '../app/Newcomer';
+import { type Route, routeHref } from '../app/router';
 import { SuspendedNote } from '../app/stewards';
 import { AtomText } from '../app/text/AtomText';
 import { BackLink, PageHeader } from '../app/ui';
@@ -13,7 +16,10 @@ import { holdsRemoval } from '../app/versionViews';
 import { can, holdsRights, isSuspended } from '../engine/capabilities';
 import { composeOption, openProposalOn } from '../engine/composeOption';
 import { documentToMarkdown } from '../engine/documentMarkdown';
+import { atomsOf, type GroupDocument } from '../engine/documents';
 import type { Atom, GroupState } from '../engine/fold';
+import type { KeptTallies } from '../engine/history';
+import { HistorySheet } from './SectionHistory';
 
 /** Props for {@link DocumentView}. */
 export interface DocumentViewProps {
@@ -21,16 +27,28 @@ export interface DocumentViewProps {
   readonly state: GroupState;
   /** This device's author id in the group. */
   readonly me: string;
+  /** The Document to show, from the route (#92); the group's first when absent. */
+  readonly documentId?: string;
   /** Opens the composer for one section. */
   readonly onPropose: (atomId: string) => void;
-  /** Opens the composer for a new section after Atom `after`, or first for null (#75). */
-  readonly onAdd: (after: string | null) => void;
+  /** Opens the composer for a new section in `document` after Atom `after`, or first there for null (#75, #92). */
+  readonly onAdd: (place: AddPlace) => void;
   /** Opens the composer that proposes removing one section (#75). */
   readonly onRemove: (atomId: string) => void;
   /** Puts text on the clipboard; rejects when the browser blocks it. */
   readonly copyText: (text: string) => Promise<void>;
   /** Whether this device's leave waits for the relay (#77): then nobody proposes from here. */
   readonly leaving?: boolean;
+  /** Once a dissolved group's ballots are cleared (#108): the tallies its archive kept, which history's totals read. */
+  readonly kept?: KeptTallies;
+  /** Whether this copy came back from a backup and hasn't heard from its group (#231): the same. */
+  readonly unconfirmed?: boolean;
+}
+
+/** Where Add a section here puts a new section (#75): in the Document on screen (#92), after `after`. */
+export interface AddPlace {
+  readonly document: string;
+  readonly after: string | null;
 }
 
 /**
@@ -53,23 +71,52 @@ function LevelNote({ state, me }: { readonly state: GroupState; readonly me: str
   );
 }
 
+/** Props for {@link HistoryButton}. */
+interface HistoryButtonProps {
+  readonly source: HistorySource;
+  readonly atom: Atom;
+  /** The section's number in its Document. */
+  readonly section: number;
+}
+
+/** A quiet History, which opens the section's history in a side sheet (#104), for anyone who reads. */
+function HistoryButton({ source, atom, section }: HistoryButtonProps) {
+  const { history } = messages;
+  return (
+    <HistorySheet source={source} atomId={atom.id} section={section}>
+      <Button className="button button-quiet" aria-label={history.openLabel(section)}>
+        {history.open}
+      </Button>
+    </HistorySheet>
+  );
+}
+
 interface SectionActionProps {
   readonly state: GroupState;
   readonly atom: Atom;
   readonly section: number;
   readonly onPropose: DocumentViewProps['onPropose'];
   readonly onRemove: DocumentViewProps['onRemove'];
+  readonly source: HistorySource;
 }
 
 /**
  * Propose a change, or Add your version while the section's Proposal is open
  * (`composeOption`), and Propose removing this section until its ballot holds
- * a removal, or why its ballot takes no more. Each opens a composer.
+ * a removal, or why its ballot takes no more. Each opens a composer. History
+ * follows them (#104).
  */
-function SectionAction({ state, atom, section, onPropose, onRemove }: SectionActionProps) {
+function SectionAction(props: SectionActionProps) {
+  const { state, atom, section, onPropose, onRemove } = props;
+  const history = <HistoryButton source={props.source} atom={atom} section={section} />;
   const option = composeOption(state, atom.id);
   if (option === 'ballot-full') {
-    return <p className="caption atom-note">{messages.document.ballotFull}</p>;
+    return (
+      <>
+        <p className="caption atom-note">{messages.document.ballotFull}</p>
+        <div className="row atom-actions">{history}</div>
+      </>
+    );
   }
   const { document } = messages;
   const adding = option === 'add-version';
@@ -96,28 +143,31 @@ function SectionAction({ state, atom, section, onPropose, onRemove }: SectionAct
           {document.remove}
         </Button>
       )}
+      {history}
     </div>
   );
 }
 
 interface AddHereProps {
-  /** The Atom the new section would follow, or null for the start. */
-  readonly after: string | null;
-  /** That Atom's section number, for its label. */
+  /** Where the new section would go: the Document on screen, after an Atom or at its start. */
+  readonly place: AddPlace;
+  /** The section number of the Atom it would follow, for its label. */
   readonly section: number;
   readonly onAdd: DocumentViewProps['onAdd'];
 }
 
 /** A quiet "Add a section here" in a gap between sections, or at the start or end. */
-function AddHere({ after, section, onAdd }: AddHereProps) {
+function AddHere({ place, section, onAdd }: AddHereProps) {
   const { document } = messages;
   return (
     <div className="atom-gap">
       <Button
         className="button button-quiet button-gap"
-        aria-label={after === null ? document.addAtStartLabel : document.addAfterLabel(section)}
+        aria-label={
+          place.after === null ? document.addAtStartLabel : document.addAfterLabel(section)
+        }
         onPress={() => {
-          onAdd(after);
+          onAdd(place);
         }}
       >
         {document.addHere}
@@ -185,19 +235,26 @@ export function CopyMarkdown({ atoms, copyText }: CopyMarkdownProps) {
 
 interface SectionsProps {
   readonly state: GroupState;
+  /** The Document on screen (#92). */
+  readonly document: GroupDocument;
+  /** Its sections, in order. */
+  readonly atoms: readonly Atom[];
   readonly proposes: boolean;
   readonly handlers: Pick<DocumentViewProps, 'onPropose' | 'onAdd' | 'onRemove'>;
+  readonly source: HistorySource;
 }
 
 /**
- * The sections in order, each with its actions, and an "Add a section here"
- * before the first, between each two and after the last, for someone who may
- * propose. An empty Document offers only the first.
+ * The Document's sections in order, each with its actions, and an "Add a
+ * section here" before the first, between each two and after the last, for
+ * someone who may propose. An empty Document offers only the first. Every
+ * section offers History, to everyone who reads it (#104).
  */
-function Sections({ state, proposes, handlers }: SectionsProps) {
+function Sections({ state, document, atoms, proposes, handlers, source }: SectionsProps) {
   const { onPropose, onAdd, onRemove } = handlers;
-  const first = proposes ? <AddHere after={null} section={0} onAdd={onAdd} /> : null;
-  if (state.atoms.length === 0) {
+  const at = (after: string | null) => ({ document: document.id, after });
+  const first = proposes ? <AddHere place={at(null)} section={0} onAdd={onAdd} /> : null;
+  if (atoms.length === 0) {
     return (
       <>
         <p className="lede">{messages.document.empty}</p>
@@ -208,7 +265,7 @@ function Sections({ state, proposes, handlers }: SectionsProps) {
   return (
     <article className={proposes ? 'document document-editable' : 'document'}>
       {first}
-      {state.atoms.map((atom, index) => (
+      {atoms.map((atom, index) => (
         <Fragment key={atom.id}>
           <div className="atom">
             <AtomText text={atom.text} />
@@ -219,42 +276,94 @@ function Sections({ state, proposes, handlers }: SectionsProps) {
                 section={index + 1}
                 onPropose={onPropose}
                 onRemove={onRemove}
+                source={source}
               />
-            ) : null}
+            ) : (
+              <div className="row atom-actions">
+                <HistoryButton source={source} atom={atom} section={index + 1} />
+              </div>
+            )}
           </div>
-          {proposes ? <AddHere after={atom.id} section={index + 1} onAdd={onAdd} /> : null}
+          {proposes ? <AddHere place={at(atom.id)} section={index + 1} onAdd={onAdd} /> : null}
         </Fragment>
       ))}
     </article>
   );
 }
 
-/**
- * Document view (`#/g/{groupId}/doc`): the canonical Document, each section
- * (Atom) formatted through `<AtomText>` in the document style, with Propose a
- * change (or Add your version while the section's Proposal is open), Propose
- * removing this section, and Add a section here in each gap (#75). Nothing
- * here is ever read as HTML. Those show only when `can()` allows proposing;
- * anyone else reads why, and where to change their level (ADR-0021). While
- * this member is leaving, or once the group has dissolved (#108), the
- * Document only reads. Copy as Markdown is for everyone who can read it, an
- * archive's readers included.
- */
-export function DocumentView(props: DocumentViewProps) {
-  const { state, me, copyText, leaving = false } = props;
-  const readOnly = leaving || state.dissolved !== null;
-  const proposes = !readOnly && can(state, me, 'propose');
+/** "Change log →", under a Document's title, to every change that passed in it (#104). */
+export function ChangeLogLink({ to }: { readonly to: Route }) {
+  return (
+    <Link className="forward-link" href={routeHref(to)}>
+      {messages.changeLog.link}
+      <span aria-hidden="true">{messages.app.forward}</span>
+    </Link>
+  );
+}
+
+/** Shown in place of a Document the group doesn't have (#92): where to find its Documents. */
+export function MissingDocument({ state }: { readonly state: GroupState }) {
+  const { documents } = messages;
   return (
     <main className="shell">
       <BackLink to={{ name: 'group', groupId: state.group ?? '' }} label={state.name} />
+      <PageHeader title={documents.missingTitle} pageTitle={messages.document.pageTitle} />
+      <p className="lede">{documents.missing}</p>
+    </main>
+  );
+}
+
+/**
+ * Whether the Document only reads here: this member is leaving (#77), the
+ * group has dissolved (#108), or it's a copy back from a backup that hasn't
+ * heard from the group (#231).
+ */
+function readsOnly({ state, leaving = false, unconfirmed = false }: DocumentViewProps): boolean {
+  return leaving || unconfirmed || state.dissolved !== null;
+}
+
+/**
+ * Document view (`#/g/{groupId}/doc/{documentId}`, or `…/doc` for the
+ * group's first Document, #92): one canonical Document, each section (Atom)
+ * formatted through `<AtomText>` in the document style, with Propose a change
+ * (or Add your version while the section's Proposal is open), Propose
+ * removing this section, and Add a section here in each gap (#75). Nothing
+ * here is ever read as HTML. Those show only when `can()` allows proposing;
+ * anyone else reads why, and where to change their level (ADR-0021). While
+ * this member is leaving, once the group has dissolved (#108), or while a
+ * copy back from a backup hasn't heard from the group (#231), the Document
+ * only reads. Copy as Markdown copies the Document on screen, for everyone
+ * who can read it, an archive's readers included, and so are each section's
+ * History and the change log under the title (#104).
+ */
+export function DocumentView(props: DocumentViewProps) {
+  const { state, me, copyText } = props;
+  const document = documentNamed(state, props.documentId);
+  if (document === undefined) return <MissingDocument state={state} />;
+  const atoms = atomsOf(state, document.id);
+  const readOnly = readsOnly(props);
+  const proposes = !readOnly && can(state, me, 'propose');
+  const groupId = state.group ?? '';
+  return (
+    <main className="shell">
+      <BackLink to={{ name: 'group', groupId }} label={state.name} />
       <PageHeader
         eyebrow={messages.document.eyebrow}
-        title={state.title}
+        title={document.title}
         pageTitle={messages.document.pageTitle}
-      />
+      >
+        <ChangeLogLink to={{ name: 'documentLog', groupId, documentId: document.id }} />
+      </PageHeader>
       {proposes || readOnly ? null : <LevelNote state={state} me={me} />}
-      <Sections state={state} proposes={proposes} handlers={props} />
-      {state.atoms.length === 0 ? null : <CopyMarkdown atoms={state.atoms} copyText={copyText} />}
+      <Sections
+        state={state}
+        document={document}
+        atoms={atoms}
+        proposes={proposes}
+        handlers={props}
+        source={groupHistory(state, props.kept)}
+      />
+      {atoms.length === 0 ? null : <CopyMarkdown atoms={atoms} copyText={copyText} />}
     </main>
   );
 }
@@ -265,6 +374,8 @@ export interface CoalitionDocumentViewProps {
   readonly coalitionId: string;
   /** The coalition's name. */
   readonly name: string;
+  /** The Document's id, whose change log it links to (#104). */
+  readonly documentId: string;
   /** The Document's title. */
   readonly title: string;
   /** The Document's sections, in order. */
@@ -279,6 +390,8 @@ export interface CoalitionDocumentViewProps {
   readonly onTakePart: (name: string) => Promise<void>;
   /** Puts text on the clipboard; rejects when the browser blocks it. */
   readonly copyText: (text: string) => Promise<void>;
+  /** Each section's history, from the coalition's own log (#104). */
+  readonly history: HistorySource;
 }
 
 /** Why there's no Propose here, and Take part where it comes first; nothing for whoever proposes. */
@@ -304,28 +417,43 @@ function CoalitionStandingNote({
   }
 }
 
-/** One coalition section's action: Propose a change, or that a motion is open on it. */
+/**
+ * One coalition section's actions: Propose a change for whoever proposes, or
+ * that a motion is open on it, then History, for everyone (#104).
+ */
 function CoalitionSectionAction(props: {
   readonly atom: Atom;
   readonly section: number;
   readonly open: boolean;
   readonly proposes: boolean;
   readonly onPropose: (atomId: string) => void;
+  readonly history: HistorySource;
 }) {
   const { document, coalitions } = messages;
-  if (props.open) return <p className="caption atom-note">{coalitions.sectionOpen}</p>;
-  if (!props.proposes) return null;
+  const { atom, section } = props;
+  const history = <HistoryButton source={props.history} atom={atom} section={section} />;
+  if (props.open) {
+    return (
+      <>
+        <p className="caption atom-note">{coalitions.sectionOpen}</p>
+        <div className="row atom-actions">{history}</div>
+      </>
+    );
+  }
   return (
     <div className="row atom-actions">
-      <Button
-        className="button button-quiet"
-        aria-label={document.proposeLabel(props.section)}
-        onPress={() => {
-          props.onPropose(props.atom.id);
-        }}
-      >
-        {document.propose}
-      </Button>
+      {props.proposes ? (
+        <Button
+          className="button button-quiet"
+          aria-label={document.proposeLabel(section)}
+          onPress={() => {
+            props.onPropose(atom.id);
+          }}
+        >
+          {document.propose}
+        </Button>
+      ) : null}
+      {history}
     </div>
   );
 }
@@ -337,7 +465,8 @@ function CoalitionSectionAction(props: {
  * in that group, and, while a motion is open on a section, a line saying so.
  * A coalition motion only rewords a section (#100): there's no Add your
  * version, Add a section or removal here. Anyone else reads why there's no
- * Propose, or is offered Take part first. Copy as Markdown is for everyone.
+ * Propose, or is offered Take part first. Copy as Markdown, each section's
+ * History and the change log are for everyone (#104).
  */
 export function CoalitionDocumentView(props: CoalitionDocumentViewProps) {
   const { atoms, standing, open } = props;
@@ -349,7 +478,15 @@ export function CoalitionDocumentView(props: CoalitionDocumentViewProps) {
         eyebrow={messages.coalitions.documentEyebrow}
         title={props.title}
         pageTitle={messages.document.pageTitle}
-      />
+      >
+        <ChangeLogLink
+          to={{
+            name: 'coalitionLog',
+            coalitionId: props.coalitionId,
+            documentId: props.documentId,
+          }}
+        />
+      </PageHeader>
       <CoalitionStandingNote standing={standing} onTakePart={props.onTakePart} />
       {atoms.length === 0 ? (
         <p className="lede">{messages.document.empty}</p>
@@ -364,6 +501,7 @@ export function CoalitionDocumentView(props: CoalitionDocumentViewProps) {
                 open={open.has(atom.id)}
                 proposes={proposes}
                 onPropose={props.onPropose}
+                history={props.history}
               />
             </div>
           ))}

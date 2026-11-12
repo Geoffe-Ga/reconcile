@@ -159,6 +159,19 @@ describe('shareableTitle and chatDetails', () => {
     expect(chatDetails(add, true)).toEqual({ deadline: add.deadline, title: 'Guests' });
   });
 
+  it('offers the title of a new Document’s Proposal, as of an add (#92)', () => {
+    const log = groupLog();
+    log.newDocument('ana', 'Budget', { title: 'Start a budget' });
+    const [created] = log.state().proposals;
+    if (created === undefined) throw new Error('Expected the Proposal.');
+
+    expect(shareableTitle(created)).toBe('Start a budget');
+    expect(chatDetails(created, true)).toEqual({
+      deadline: created.deadline,
+      title: 'Start a budget',
+    });
+  });
+
   it('never offers a steward Proposal’s title, which names a member', () => {
     const log = groupLog({ members: ['Ben', 'Cal'] });
     log.steward('ana', 1, 'Ben', { title: 'Make Ben steward (seat 1)' });
@@ -168,6 +181,17 @@ describe('shareableTitle and chatDetails', () => {
     expect(shareableTitle(folded)).toBeNull();
     expect(chatDetails(folded, true)).toEqual({ deadline: folded.deadline });
     expect(chatMessage('open', chatDetails(folded, true))).not.toContain('Ben');
+  });
+
+  it('never offers a removal’s title, the most sensitive text a group holds (#115)', () => {
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    log.proposeRemoval('ana', 'Cal', { title: 'Remove Cal' });
+    const [folded] = log.state().proposals;
+    if (folded === undefined) throw new Error('Expected the removal.');
+
+    expect(shareableTitle(folded)).toBeNull();
+    expect(chatDetails(folded, true)).toEqual({ deadline: folded.deadline });
+    expect(chatMessage('open', chatDetails(folded, true))).not.toContain('Cal');
   });
 
   it('never offers a priority vote’s question, which isn’t a change to the Document (#107)', () => {

@@ -17,8 +17,7 @@
               "body": {
                 "name": "Riverside",
                 "founder": "ANA",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -134,8 +133,7 @@
               "body": {
                 "name": "Oak St",
                 "founder": "BEN",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -211,8 +209,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Eastside Housing",
-                "title": "Shared ground",
-                "atoms": ["Everyone has a safe home."],
+                "documents": [{ "title": "Shared ground", "atoms": ["Everyone has a safe home."] }],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -391,8 +388,7 @@
               "body": {
                 "name": "Elm Row",
                 "founder": "EVE",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -451,8 +447,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Metro Renters",
-                "title": "Shared ground",
-                "atoms": ["Rent stays fair."],
+                "documents": [{ "title": "Shared ground", "atoms": ["Rent stays fair."] }],
                 "seats": [
                   {
                     "name": "Eastside Housing",
@@ -563,8 +558,7 @@
               "body": {
                 "name": "Riverside",
                 "founder": "ANA",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -680,8 +674,7 @@
               "body": {
                 "name": "Oak St",
                 "founder": "BEN",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -757,8 +750,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Eastside Housing",
-                "title": "Shared ground",
-                "atoms": ["Everyone has a safe home."],
+                "documents": [{ "title": "Shared ground", "atoms": ["Everyone has a safe home."] }],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -937,8 +929,7 @@
               "body": {
                 "name": "Elm Row",
                 "founder": "EVE",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -997,8 +988,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Metro Renters",
-                "title": "Shared ground",
-                "atoms": ["Rent stays fair."],
+                "documents": [{ "title": "Shared ground", "atoms": ["Rent stays fair."] }],
                 "seats": [
                   {
                     "name": "Eastside Housing",
@@ -1109,8 +1099,7 @@
               "body": {
                 "name": "Riverside",
                 "founder": "ANA",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -1226,8 +1215,7 @@
               "body": {
                 "name": "Oak St",
                 "founder": "BEN",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -1303,8 +1291,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Eastside Housing",
-                "title": "Shared ground",
-                "atoms": ["Everyone has a safe home."],
+                "documents": [{ "title": "Shared ground", "atoms": ["Everyone has a safe home."] }],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -1509,8 +1496,7 @@
               "body": {
                 "name": "Elm Row",
                 "founder": "EVE",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -1569,8 +1555,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Metro Renters",
-                "title": "Shared ground",
-                "atoms": ["Rent stays fair."],
+                "documents": [{ "title": "Shared ground", "atoms": ["Rent stays fair."] }],
                 "seats": [
                   {
                     "name": "Eastside Housing",
@@ -1689,8 +1674,7 @@
               "body": {
                 "name": "Riverside",
                 "founder": "ANA",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -1806,8 +1790,7 @@
               "body": {
                 "name": "Oak St",
                 "founder": "BEN",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -1883,8 +1866,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Eastside Housing",
-                "title": "Shared ground",
-                "atoms": ["Everyone has a safe home."],
+                "documents": [{ "title": "Shared ground", "atoms": ["Everyone has a safe home."] }],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -2063,8 +2045,7 @@
               "body": {
                 "name": "Elm Row",
                 "founder": "EVE",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -2123,8 +2104,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Metro Renters",
-                "title": "Shared ground",
-                "atoms": ["Rent stays fair."],
+                "documents": [{ "title": "Shared ground", "atoms": ["Rent stays fair."] }],
                 "seats": [
                   {
                     "name": "Eastside Housing",
@@ -2235,8 +2215,7 @@
               "body": {
                 "name": "Riverside",
                 "founder": "ANA",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -2352,8 +2331,7 @@
               "body": {
                 "name": "Oak St",
                 "founder": "BEN",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -2446,8 +2424,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Eastside Housing",
-                "title": "Shared ground",
-                "atoms": ["Everyone has a safe home."],
+                "documents": [{ "title": "Shared ground", "atoms": ["Everyone has a safe home."] }],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -2658,8 +2635,7 @@
               "body": {
                 "name": "Elm Row",
                 "founder": "EVE",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -2718,8 +2694,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Metro Renters",
-                "title": "Shared ground",
-                "atoms": ["Rent stays fair."],
+                "documents": [{ "title": "Shared ground", "atoms": ["Rent stays fair."] }],
                 "seats": [
                   {
                     "name": "Eastside Housing",
@@ -2856,8 +2831,7 @@
               "body": {
                 "name": "Riverside",
                 "founder": "ANA",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -2973,8 +2947,7 @@
               "body": {
                 "name": "Oak St",
                 "founder": "BEN",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -3050,8 +3023,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Eastside Housing",
-                "title": "Shared ground",
-                "atoms": ["Everyone has a safe home."],
+                "documents": [{ "title": "Shared ground", "atoms": ["Everyone has a safe home."] }],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -3230,8 +3202,7 @@
               "body": {
                 "name": "Elm Row",
                 "founder": "EVE",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -3290,8 +3261,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Metro Renters",
-                "title": "Shared ground",
-                "atoms": ["Rent stays fair."],
+                "documents": [{ "title": "Shared ground", "atoms": ["Rent stays fair."] }],
                 "seats": [
                   {
                     "name": "Eastside Housing",
@@ -3402,8 +3372,7 @@
               "body": {
                 "name": "Riverside",
                 "founder": "ANA",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -3519,8 +3488,7 @@
               "body": {
                 "name": "Oak St",
                 "founder": "BEN",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -3596,8 +3564,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Eastside Housing",
-                "title": "Shared ground",
-                "atoms": ["Everyone has a safe home."],
+                "documents": [{ "title": "Shared ground", "atoms": ["Everyone has a safe home."] }],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -3776,8 +3743,7 @@
               "body": {
                 "name": "Elm Row",
                 "founder": "EVE",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -3836,8 +3802,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Metro Renters",
-                "title": "Shared ground",
-                "atoms": ["Rent stays fair."],
+                "documents": [{ "title": "Shared ground", "atoms": ["Rent stays fair."] }],
                 "seats": [
                   {
                     "name": "Eastside Housing",
@@ -3948,8 +3913,7 @@
               "body": {
                 "name": "Riverside",
                 "founder": "ANA",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -4065,8 +4029,7 @@
               "body": {
                 "name": "Oak St",
                 "founder": "BEN",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -4142,8 +4105,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Eastside Housing",
-                "title": "Shared ground",
-                "atoms": ["Everyone has a safe home."],
+                "documents": [{ "title": "Shared ground", "atoms": ["Everyone has a safe home."] }],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -4322,8 +4284,7 @@
               "body": {
                 "name": "Elm Row",
                 "founder": "EVE",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -4382,8 +4343,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Metro Renters",
-                "title": "Shared ground",
-                "atoms": ["Rent stays fair."],
+                "documents": [{ "title": "Shared ground", "atoms": ["Rent stays fair."] }],
                 "seats": [
                   {
                     "name": "Eastside Housing",
@@ -4494,8 +4454,7 @@
               "body": {
                 "name": "Riverside",
                 "founder": "ANA",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -4637,8 +4596,7 @@
               "body": {
                 "name": "Oak St",
                 "founder": "BEN",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -4714,8 +4672,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Eastside Housing",
-                "title": "Shared ground",
-                "atoms": ["Everyone has a safe home."],
+                "documents": [{ "title": "Shared ground", "atoms": ["Everyone has a safe home."] }],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -4868,8 +4825,7 @@
               "body": {
                 "name": "Elm Row",
                 "founder": "EVE",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -4928,8 +4884,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Metro Renters",
-                "title": "Shared ground",
-                "atoms": ["Rent stays fair."],
+                "documents": [{ "title": "Shared ground", "atoms": ["Rent stays fair."] }],
                 "seats": [
                   {
                     "name": "Eastside Housing",
@@ -5046,8 +5001,7 @@
               "body": {
                 "name": "Riverside",
                 "founder": "ANA",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -5105,8 +5059,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Eastside Housing",
-                "title": "Shared ground",
-                "atoms": ["Everyone has a safe home."],
+                "documents": [{ "title": "Shared ground", "atoms": ["Everyone has a safe home."] }],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -5195,8 +5148,7 @@
               "body": {
                 "name": "Riverside",
                 "founder": "ANA",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -5312,8 +5264,7 @@
               "body": {
                 "name": "Oak St",
                 "founder": "BEN",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -5406,8 +5357,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Eastside Housing",
-                "title": "Shared ground",
-                "atoms": ["Everyone has a safe home."],
+                "documents": [{ "title": "Shared ground", "atoms": ["Everyone has a safe home."] }],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -5618,8 +5568,7 @@
               "body": {
                 "name": "Elm Row",
                 "founder": "EVE",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -5678,8 +5627,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Metro Renters",
-                "title": "Shared ground",
-                "atoms": ["Rent stays fair."],
+                "documents": [{ "title": "Shared ground", "atoms": ["Rent stays fair."] }],
                 "seats": [
                   {
                     "name": "Eastside Housing",
@@ -5807,8 +5755,7 @@
               "body": {
                 "name": "Riverside",
                 "founder": "ANA",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -5924,8 +5871,7 @@
               "body": {
                 "name": "Oak St",
                 "founder": "BEN",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -6001,8 +5947,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Eastside Housing",
-                "title": "Shared ground",
-                "atoms": ["Everyone has a safe home."],
+                "documents": [{ "title": "Shared ground", "atoms": ["Everyone has a safe home."] }],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -6181,8 +6126,7 @@
               "body": {
                 "name": "Elm Row",
                 "founder": "EVE",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -6241,8 +6185,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Metro Renters",
-                "title": "Shared ground",
-                "atoms": ["Rent stays fair."],
+                "documents": [{ "title": "Shared ground", "atoms": ["Rent stays fair."] }],
                 "seats": [
                   {
                     "name": "Eastside Housing",
@@ -6357,8 +6300,7 @@
               "body": {
                 "name": "Riverside",
                 "founder": "ANA",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -6475,8 +6417,7 @@
               "body": {
                 "name": "Oak St",
                 "founder": "BEN",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -6552,8 +6493,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Eastside Housing",
-                "title": "Shared ground",
-                "atoms": ["Everyone has a safe home."],
+                "documents": [{ "title": "Shared ground", "atoms": ["Everyone has a safe home."] }],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -6758,8 +6698,7 @@
               "body": {
                 "name": "Elm Row",
                 "founder": "EVE",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -6818,8 +6757,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Metro Renters",
-                "title": "Shared ground",
-                "atoms": ["Rent stays fair."],
+                "documents": [{ "title": "Shared ground", "atoms": ["Rent stays fair."] }],
                 "seats": [
                   {
                     "name": "Eastside Housing",
@@ -6959,8 +6897,7 @@
               "body": {
                 "name": "Riverside",
                 "founder": "ANA",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -7166,8 +7103,7 @@
               "body": {
                 "name": "Oak St",
                 "founder": "BEN",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -7226,8 +7162,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Eastside Housing",
-                "title": "Shared ground",
-                "atoms": ["Everyone has a safe home."],
+                "documents": [{ "title": "Shared ground", "atoms": ["Everyone has a safe home."] }],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -7349,8 +7284,7 @@
               "body": {
                 "name": "Riverside",
                 "founder": "ANA",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -7556,8 +7490,7 @@
               "body": {
                 "name": "Oak St",
                 "founder": "BEN",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -7616,8 +7549,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Eastside Housing",
-                "title": "Shared ground",
-                "atoms": ["Everyone has a safe home."],
+                "documents": [{ "title": "Shared ground", "atoms": ["Everyone has a safe home."] }],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -7761,8 +7693,7 @@
               "body": {
                 "name": "Riverside",
                 "founder": "ANA",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -7878,8 +7809,7 @@
               "body": {
                 "name": "Oak St",
                 "founder": "BEN",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -7955,8 +7885,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Eastside Housing",
-                "title": "Shared ground",
-                "atoms": ["Everyone has a safe home."],
+                "documents": [{ "title": "Shared ground", "atoms": ["Everyone has a safe home."] }],
                 "seats": [
                   {
                     "name": "Riverside",
@@ -8109,8 +8038,7 @@
               "body": {
                 "name": "Elm Row",
                 "founder": "EVE",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -8169,8 +8097,7 @@
               "body": {
                 "kind": "coalition",
                 "name": "Metro Renters",
-                "title": "Shared ground",
-                "atoms": ["Rent stays fair."],
+                "documents": [{ "title": "Shared ground", "atoms": ["Rent stays fair."] }],
                 "seats": [
                   {
                     "name": "Eastside Housing",

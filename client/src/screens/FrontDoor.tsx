@@ -9,6 +9,7 @@ import {
 } from 'react';
 import { Button, Form, Link } from 'react-aria-components';
 
+import { holdPresses } from '../app/holdPresses';
 import { messages } from '../app/messages';
 import { routeHref } from '../app/router';
 import { Field, PageHeader } from '../app/ui';
@@ -157,7 +158,7 @@ function ApplyForm({ onSend }: ApplyFormProps) {
           {door.failed}
         </p>
       ) : null}
-      <div className="row form-actions">
+      <div className="row form-actions" onPointerDownCapture={holdPresses(running)}>
         <Button type="submit" className="button button-primary" isDisabled={running}>
           {door.send}
         </Button>

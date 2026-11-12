@@ -24,8 +24,13 @@
  *   `promotionsOwed`): one per Dispatch the group passed whose ceiling
  *   leaves that level, carrying the Dispatch's words and nothing else;
  * - a device that brought a formed coalition's card to a group proposes
- *   admitting it once that group's reconcile Proposal has passed, and plans
- *   to join under its seat; if it didn't pass, the plan goes.
+ *   admitting it once that group's reconcile Proposal has passed, with its
+ *   seat's X25519 key, and plans to join under its seat; if it didn't pass,
+ *   the plan goes;
+ * - a device whose key is bound to a seat whose group here holds the room's
+ *   `inner` wraps it to each seat admitted since that no one from its own
+ *   seat has wrapped for yet (#313), so the admitted group can read the room
+ *   only once it's seated ({@link innerOf}).
  *
  * A group's own fold takes the motions its seats decide (`motionsFor`), so
  * its members vote on them as on any Proposal ({@link foldWithCoalitions}). Nothing
@@ -43,9 +48,10 @@
 import { base64url, fromBase64url } from '../crypto/base64url';
 import { deriveCoalitionEntryId } from '../crypto/card';
 import { openSeatSecrets } from '../crypto/innerSeal';
+import { seatKxOf, unwrapInner, wrapInner } from '../crypto/room';
 import { seatKeyOf, signSeatProof } from '../crypto/seat';
 import { newSigningKeys, publicKeyOf } from '../crypto/sign';
-import { MAX_LEVEL, type Motion } from '../engine/coalition';
+import { type Coalition, MAX_LEVEL, type Motion, type ReconcileChange } from '../engine/coalition';
 import { foldTogether, motionsFor, promotionsOwed, resultsToReport } from '../engine/crossing';
 import {
   type GroupResultBody,
@@ -116,11 +122,13 @@ export function queuedSecrets(group: Pick<Group, 'outbox'>): string[] {
  * What this device holds of one coalition (#122): its secret and `inner`,
  * each log on it whose reconcile Proposal or motion carries them (a group's
  * id, or a coalition's entry id, with that Proposal's id), and the seat
- * secrets it holds there, by public seat key.
+ * secrets it holds there, by public seat key. `inner` is null for a seat
+ * admitted into a formed coalition until a seated participant's wrap for it
+ * arrives (#313).
  */
 export interface CoalitionKeys {
   readonly secret: Uint8Array;
-  readonly inner: Uint8Array;
+  readonly inner: Uint8Array | null;
   readonly from: readonly { readonly holder: string; readonly proposal: string }[];
   readonly seats: ReadonlyMap<string, Uint8Array>;
 }
@@ -128,27 +136,34 @@ export interface CoalitionKeys {
 /** A {@link CoalitionKeys} as {@link coalitionKeys} builds it up. */
 interface KeysDraft {
   readonly secret: Uint8Array;
-  readonly inner: Uint8Array;
+  inner: Uint8Array | null;
   readonly from: { readonly holder: string; readonly proposal: string }[];
   readonly seats: Map<string, Uint8Array>;
 }
 
-/** One coalition's keys, read from the log `holder`'s Proposal `proposal`. */
+/**
+ * One coalition's keys, read from the log `holder`'s Proposal `proposal`:
+ * `inner` is null where it carries none, as one asking into a formed
+ * coalition doesn't (#313).
+ */
 interface Found {
   readonly secret: Uint8Array;
-  readonly inner: Uint8Array;
+  readonly inner: Uint8Array | null;
   readonly seat: Uint8Array;
   readonly holder: string;
   readonly proposal: string;
 }
 
-/** Adds what `found` holds to `keys`; returns whether it was a coalition `keys` lacked. */
+/**
+ * Adds what `found` holds to `keys`; returns whether it was a coalition `keys`
+ * lacked, or gave one its `inner`.
+ */
 function remember(keys: Map<string, KeysDraft>, found: Found): boolean {
   const id = deriveCoalitionEntryId(found.secret);
   const known = keys.get(id);
   const draft: KeysDraft = known ?? {
     secret: found.secret,
-    inner: found.inner,
+    inner: null,
     from: [],
     seats: new Map(),
   };
@@ -158,7 +173,9 @@ function remember(keys: Map<string, KeysDraft>, found: Found): boolean {
   }
   draft.seats.set(base64url(seatKeyOf(found.seat)), found.seat);
   keys.set(id, draft);
-  return known === undefined;
+  const inner = draft.inner === null ? found.inner : null;
+  if (inner !== null) draft.inner = inner;
+  return known === undefined || inner !== null;
 }
 
 /** The coalitions a group's readable reconcile targets carry, in its log and its outbox. */
@@ -166,7 +183,7 @@ function fromGroup(group: Group): Found[] {
   const held = [...targetsOf(foldGroup(group)), ...targetsIn(group.outbox)];
   return plain(held).map(({ proposal, target }) => ({
     secret: fromBase64url(target.secret),
-    inner: fromBase64url(target.inner),
+    inner: target.inner === undefined ? null : fromBase64url(target.inner),
     seat: fromBase64url(target.seat),
     holder: group.groupId,
     proposal,
@@ -174,54 +191,106 @@ function fromGroup(group: Group): Found[] {
 }
 
 /**
- * The coalitions above `entry` its sealed reconcile targets carry, in its log
- * and its outbox, that open under its `inner` (#122). A field whose seat
- * secret doesn't make the public key the motion states is no seat to act for,
- * so it is left out.
+ * The coalitions above `entry`, folded as `state`, its sealed reconcile
+ * targets carry, in its log and its outbox, that open under its `inner`
+ * (#122). A field whose seat secret doesn't make the public key the motion
+ * states is no seat to act for, so it is left out.
  */
-function fromCoalition(entry: Group, inner: Uint8Array): Found[] {
-  const state = foldGroup(entry);
+function fromCoalition(entry: Group, state: GroupState, inner: Uint8Array): Found[] {
   const id = state.group;
   if (id === null) return [];
   const held = sealedOf([...targetsOf(state), ...targetsIn(entry.outbox)]);
   return held.flatMap(({ proposal, target }) => {
     const opened = openSeatSecrets(id, inner, target.sealed);
     if (opened === null || base64url(seatKeyOf(opened.seat)) !== target.key) return [];
-    return [{ ...opened, holder: entry.groupId, proposal }];
+    return [{ ...opened, inner: opened.inner ?? null, holder: entry.groupId, proposal }];
   });
+}
+
+/**
+ * The first wrap of `coalition`'s room `inner` for the seat `seatKey` that its
+ * seat secret opens (#313), or null.
+ */
+function unwrapFor(
+  coalition: Pick<Coalition, 'wraps'>,
+  coalitionId: string,
+  seatKey: string,
+  seatSecret: Uint8Array,
+): Uint8Array | null {
+  for (const { seat, wrap } of coalition.wraps) {
+    if (seat !== seatKey) continue;
+    const inner = unwrapInner({ coalitionId, seat, wrap, seatSecret });
+    if (inner !== null) return inner;
+  }
+  return null;
+}
+
+/** The `inner` a wrap in `state`'s log gives one of `seats`, by public key, or null (#313). */
+function wrappedInner(state: GroupState, seats: ReadonlyMap<string, Uint8Array>) {
+  const { coalition, group } = state;
+  if (coalition === null || group === null) return null;
+  for (const [key, secret] of seats) {
+    const inner = unwrapFor(coalition, group, key, secret);
+    if (inner !== null) return inner;
+  }
+  return null;
+}
+
+/**
+ * Gives each coalition in `keys` without an `inner` the one a wrap for one of
+ * its seats here opens, in its entry's log as `states` folds it (#313).
+ * Returns whether it gave any.
+ */
+function unwrapInners(keys: Map<string, KeysDraft>, states: ReadonlyMap<string, GroupState>) {
+  let gave = false;
+  for (const [id, draft] of keys) {
+    const state = draft.inner === null ? states.get(id) : undefined;
+    const inner = state === undefined ? null : wrappedInner(state, draft.seats);
+    if (inner === null) continue;
+    draft.inner = inner;
+    gave = true;
+  }
+  return gave;
 }
 
 /**
  * Every coalition this device holds keys to (#114, #122), by entry id: each
  * one a group's readable reconcile target carries, then, up to
  * {@link MAX_LEVEL} levels, each one above that a coalition's sealed target
- * carries, opened under that coalition's `inner`. A coalition this device
- * holds no `inner` of, as a follower, opens nothing.
+ * carries, opened under that coalition's `inner`. A seat admitted into a
+ * formed coalition gets its `inner` from a wrap in that coalition's log
+ * (#313). A coalition this device holds no `inner` of, as a follower, or as
+ * a seat no one has wrapped for yet, opens nothing.
  */
 export function coalitionKeys(
   groups: readonly Group[],
   coalitions: readonly Group[],
 ): ReadonlyMap<string, CoalitionKeys> {
   const keys = new Map<string, KeysDraft>();
+  const states = new Map(coalitions.map((entry) => [entry.groupId, foldGroup(entry)]));
   for (const group of groups) for (const found of fromGroup(group)) remember(keys, found);
+  unwrapInners(keys, states);
   for (let level = 1; level < MAX_LEVEL; level += 1) {
     const found = coalitions.flatMap((entry) => {
-      const inner = keys.get(entry.groupId)?.inner;
-      return inner === undefined ? [] : fromCoalition(entry, inner);
+      const inner = keys.get(entry.groupId)?.inner ?? null;
+      const state = states.get(entry.groupId);
+      return inner === null || state === undefined ? [] : fromCoalition(entry, state, inner);
     });
     const added = found.map((f) => remember(keys, f)).some(Boolean);
-    if (!added) break;
+    const unwrapped = unwrapInners(keys, states);
+    if (!added && !unwrapped) break;
   }
   return keys;
 }
 
 /**
  * A new entry for the coalition whose secret is `secret` (#114): a fresh
- * signing key for this coalition alone, no name yet, and `plan`.
+ * signing key for this coalition alone, no name yet, and `plan`, or, for a
+ * coalition only followed (#124), `following`, whose key signs nothing.
  */
 export function newEntry(
   secret: Uint8Array,
-  plan: Pick<NewGroup, 'joinAs' | 'admitting'> & { readonly name?: string } = {},
+  plan: Pick<NewGroup, 'joinAs' | 'admitting' | 'following'> & { readonly name?: string } = {},
 ): NewGroup {
   const { secretKey, publicKey } = newSigningKeys();
   const { name = '', ...rest } = plan;
@@ -265,7 +334,8 @@ export async function ensureEntries(
   read: Map<string, string> = new Map(),
 ): Promise<void> {
   const held = new Set((await store.listCoalitions()).map((entry) => entry.groupId));
-  const groups = await store.listGroups();
+  // A removed member's copy reads nothing new, a coalition's log included (#115).
+  const groups = (await store.listGroups()).filter((group) => group.archived?.reason !== 'removed');
   for (const group of groups) {
     const mark = readMark(group);
     if (read.get(group.groupId) === mark) continue;
@@ -279,6 +349,41 @@ export async function ensureEntries(
     held,
     [...keys.values()].map((k) => k.secret),
   );
+}
+
+/**
+ * Whether the coalition `id` stays reached on this device without the
+ * removed group: another group holds it, or a coalition below it that one
+ * holds, whose `inner` may still arrive in a wrap (#313), carries its seat.
+ */
+function stillReached(
+  id: string,
+  own: ReadonlyMap<string, CoalitionKeys>,
+  kept: ReadonlyMap<string, CoalitionKeys>,
+): boolean {
+  return kept.has(id) || (own.get(id)?.from ?? []).some(({ holder }) => kept.has(holder));
+}
+
+/**
+ * Archives the coalition entries that `removed`, a group a vote removed this
+ * device's member from, alone held here (#115): their copy reads nothing new,
+ * the coalition's log included, so no request names its mailboxes again. So
+ * are the coalitions above them that only they reached (#122). An entry
+ * another of their groups on this device still holds, or reaches through a
+ * coalition it holds, keeps syncing.
+ */
+export async function retireCoalitionsOf(store: Store, removed: Group): Promise<void> {
+  const entries = await store.listCoalitions();
+  const own = coalitionKeys([removed], entries);
+  if (own.size === 0) return;
+  const others = (await store.listGroups()).filter(
+    (group) => group.groupId !== removed.groupId && group.archived?.reason !== 'removed',
+  );
+  const kept = coalitionKeys(others, entries);
+  for (const id of own.keys()) {
+    if (stillReached(id, own, kept) || (await store.getGroup(id)) === undefined) continue;
+    await store.markArchived(id, 'removed');
+  }
 }
 
 /**
@@ -365,7 +470,7 @@ function holderOf(logs: readonly FoldedLog[], seatKey: string): FoldedLog | null
 /** Signs `draft`'s body as this entry's participant and queues it. */
 async function queue(
   { store, entry, id, ts }: Settling,
-  event: { type: 'join' | 'group-result' | 'proposal'; body: object },
+  event: { type: 'join' | 'group-result' | 'proposal' | 'room-wrap'; body: object },
 ): Promise<void> {
   const draft = { ...event, group: id, ts } as Parameters<typeof signEvent>[1];
   await store.enqueue(entry.groupId, signEvent(entry.signingKey, draft).record);
@@ -475,9 +580,9 @@ function admitSeatOf(brought: GroupState, key: string) {
 /**
  * Once the group or coalition (#122) this device brought a formed
  * coalition's card to has passed its reconcile Proposal, proposes admitting
- * it (#114), with its seat's proof for this entry's key, and plans to join
- * under its seat; once it didn't pass, drops the plan. Returns whether it
- * queued the motion.
+ * it (#114), with its seat's proof for this entry's key and its seat's
+ * X25519 key (#313), and plans to join under its seat; once it didn't pass,
+ * drops the plan. Returns whether it queued the motion.
  */
 async function proposeAdmission(settling: Settling): Promise<boolean> {
   const { entry, logs, store } = settling;
@@ -492,11 +597,71 @@ async function proposeAdmission(settling: Settling): Promise<boolean> {
     return false;
   }
   const proof = base64url(signSeatProof(secret, settling.id, publicKeyOf(entry.signingKey)));
-  const target = { kind: 'admit', ...admitSeatOf(brought.state, held.key), proof };
+  const seat = admitSeatOf(brought.state, held.key);
+  const target = { kind: 'admit', ...seat, proof, kx: seatKxOf(secret) };
   const { title, why } = admitting;
   await queue(settling, { type: 'proposal', body: { target, title, why } });
   await store.planCoalition(entry.groupId, { admitting: null, joinAs: admitting.group });
   return true;
+}
+
+/**
+ * The room `inner` a reconcile target that holds one of a coalition's seats
+ * gives this device (#313): its own, for a founding group's, or else the
+ * first wrap for its seat in the coalition's log that its seat secret opens,
+ * or null.
+ */
+export function innerOf(
+  target: ReconcileChange,
+  coalition: Pick<Coalition, 'wraps'>,
+  coalitionId: string,
+): Uint8Array | null {
+  if (target.inner !== undefined) return fromBase64url(target.inner);
+  return unwrapFor(coalition, coalitionId, target.key, fromBase64url(target.seat));
+}
+
+/** Whether a wrap for `seat` already waits in the outbox. */
+function wrapWaits(pending: readonly ParsedEvent[], seat: string): boolean {
+  return pending.some(({ event }) => event.type === 'room-wrap' && event.body.seat === seat);
+}
+
+/**
+ * The room `inner` this device holds of the coalition, while a log here holds
+ * this entry's bound seat (a group's, or a coalition entry's, #122), with that
+ * seat, or null. The device holds `inner` from a founding seat's reconcile
+ * Proposal or motion, or from a wrap for one of its admitted seats
+ * ({@link coalitionKeys}).
+ */
+function boundInner(settling: Settling): { seat: string; inner: Uint8Array } | null {
+  const seat = boundSeat(settling);
+  if (seat === null || holderOf(settling.logs, seat) === null) return null;
+  const inner = settling.keys.get(settling.entry.groupId)?.inner ?? null;
+  return inner === null ? null : { seat, inner };
+}
+
+/**
+ * Wraps the room's `inner` to each seat admitted since the genesis (#313)
+ * that no participant from this entry's seat has wrapped for, in the log or
+ * the outbox, when this entry's participant is bound to another seat whose
+ * group, or coalition (#122), here holds `inner`. Returns whether it queued
+ * any.
+ */
+async function wrapForAdmitted(settling: Settling): Promise<boolean> {
+  const held = boundInner(settling);
+  const info = settling.coalition.coalition;
+  if (held === null || info === null) return false;
+  const { seat, inner } = held;
+  const owed = info.admitted.filter(
+    (a) =>
+      a.key !== seat &&
+      !info.wraps.some((w) => w.seat === a.key && w.from === seat) &&
+      !wrapWaits(settling.pending, a.key),
+  );
+  for (const { key, kx } of owed) {
+    const wrap = wrapInner({ coalitionId: settling.id, seat: key, kx, inner });
+    await queue(settling, { type: 'room-wrap', body: { seat: key, wrap } });
+  }
+  return owed.length > 0;
 }
 
 /** The events a record list carries, skipping any that doesn't verify. */
@@ -546,8 +711,9 @@ export async function holdings(store: Pick<Store, 'listCoalitions' | 'listGroups
 /**
  * After a pass (#114): for each coalition entry whose genesis has arrived,
  * and that hasn't been declined, joins as planned, queues its group's or its
- * coalition's results (#122) and promotion records (#126), and proposes a
- * planned admission. Returns the ids of the entries that queued anything,
+ * coalition's results (#122) and promotion records (#126), proposes a
+ * planned admission, and wraps the room's `inner` for each seat admitted
+ * since (#313). Returns the ids of the entries that queued anything,
  * for the loop to send at once. `clock` is the device clock in ms, for each
  * event's display-only `ts`. `held` is what {@link holdings} read, when the
  * loop has read it already.
@@ -566,7 +732,13 @@ export async function settleCoalitions(
     if (id === null || coalition.coalition?.status === 'declined') continue;
     const pending = parsedOf(entry.outbox);
     const settling = { store, entry, coalition, id, logs, keys, pending, ts: clock() };
-    const steps = [joinIfPlanned, reportResults, promoteDispatches, proposeAdmission];
+    const steps = [
+      joinIfPlanned,
+      reportResults,
+      promoteDispatches,
+      proposeAdmission,
+      wrapForAdmitted,
+    ];
     let any = false;
     for (const step of steps) any = (await step(settling)) || any;
     if (any) queued.push(entry.groupId);

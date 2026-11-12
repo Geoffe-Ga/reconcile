@@ -20,7 +20,9 @@ interface Handlers {
   /** Whether this device's leave waits for the relay (#77). */
   readonly leaving?: boolean;
   readonly onPropose?: (atomId: string) => void;
-  readonly onAdd?: (after: string | null) => void;
+  readonly onAdd?: (place: { readonly document: string; readonly after: string | null }) => void;
+  /** The Document on screen (#92); the group's first when absent. */
+  readonly documentId?: string;
   readonly onRemove?: (atomId: string) => void;
   readonly copyText?: (text: string) => Promise<void>;
 }
@@ -41,6 +43,7 @@ function view(
       onRemove={handlers.onRemove ?? vi.fn()}
       copyText={handlers.copyText ?? vi.fn(() => Promise.resolve())}
       leaving={handlers.leaving ?? false}
+      {...(handlers.documentId === undefined ? {} : { documentId: handlers.documentId })}
     />,
   );
 }
@@ -217,7 +220,7 @@ describe('DocumentView', () => {
     expect(await axeViolations()).toEqual([]);
   });
 
-  it('says a section’s ballot is full once it holds three versions, with no button', async () => {
+  it('says a section’s ballot is full once it holds three versions, with no button but History', async () => {
     const log = groupLog();
     const proposal = log.propose('ana');
     log.version('ben', proposal, 'Quiet after midnight.');
@@ -229,9 +232,11 @@ describe('DocumentView', () => {
         .getAllByRole('button', { name: /section [12]$/ })
         .map((button) => button.getAttribute('aria-label')),
     ).toEqual([
+      'History of section 1',
       'Add a section here, after section 1',
       'Propose a change to section 2',
       'Propose removing this section, section 2',
+      'History of section 2',
       'Add a section here, after section 2',
     ]);
     expect(await axeViolations()).toEqual([]);
@@ -239,7 +244,12 @@ describe('DocumentView', () => {
 
   it('says so when the Document has no sections, and offers a first one', async () => {
     const user = userEvent.setup();
-    const { state } = testGroup({ atoms: [] });
+    // Genesis founds no empty Document (#92), so its one section is removed by vote.
+    const log = groupLog({ atoms: ['Only this.\n'] });
+    const removal = log.propose('Ana', { text: '' });
+    log.vote('Ana', removal, 4);
+    log.vote('Ben', removal, 4);
+    const state = log.state();
     const onAdd = vi.fn();
     view(state, authorOf('ana'), vi.fn(), { onAdd });
     expect(screen.getByText('This Document has no sections yet.')).toBeVisible();
@@ -248,7 +258,7 @@ describe('DocumentView', () => {
     ).toEqual(['Add a section here, at the start']);
     expect(screen.queryByRole('button', { name: 'Copy as Markdown' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Add a section here, at the start' }));
-    expect(onAdd).toHaveBeenCalledWith(null);
+    expect(onAdd).toHaveBeenCalledWith({ document: state.group, after: null });
     expect(await axeViolations()).toEqual([]);
   });
 
@@ -270,7 +280,11 @@ describe('DocumentView', () => {
     expect(order).toEqual(['atom-gap', 'atom', 'atom-gap', 'atom', 'atom-gap']);
     await user.click(gaps[0] ?? document.body);
     await user.click(gaps[2] ?? document.body);
-    expect(onAdd.mock.calls).toEqual([[null], [`${state.group ?? ''}.1`]]);
+    const first = state.group ?? '';
+    expect(onAdd.mock.calls).toEqual([
+      [{ document: first, after: null }],
+      [{ document: first, after: `${first}.1` }],
+    ]);
     expect(await axeViolations()).toEqual([]);
   });
 
@@ -279,7 +293,7 @@ describe('DocumentView', () => {
     log.propose('ana');
     view(log.state());
     const buttons = screen.getAllByRole('button');
-    expect(buttons).toHaveLength(8);
+    expect(buttons).toHaveLength(10);
     for (const button of buttons) {
       const name = button.getAttribute('aria-label') ?? button.textContent;
       expect(name.startsWith(button.textContent)).toBe(true);
@@ -375,13 +389,100 @@ describe('DocumentView', () => {
     log.propose('ana', { atom: 1 });
     view(log.state(), authorOf('ana'), vi.fn(), { leaving: true });
     expect(screen.getByText('Quiet hours start at ten.')).toBeVisible();
-    // Copying is reading, and how someone who leaves carries the Document into a fresh group (#75).
+    // Copying is reading, and how someone who leaves carries the Document into a fresh group
+    // (#75); so is each section's History (#104).
     expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual([
+      'History',
+      'History',
       'Copy as Markdown',
     ]);
     expect(screen.queryByText(/Choose Co-Creator|Choose Collaborator/)).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Change your involvement' })).not.toBeInTheDocument();
     expect(await axeViolations()).toEqual([]);
+  });
+});
+
+describe('DocumentView: several Documents (#92)', () => {
+  const DOCUMENTS = [
+    { title: 'Mission statement', atoms: ['We share.\n', 'We meet weekly.\n'] },
+    { title: 'House rules', atoms: ['# Quiet\n', 'Quiet after 11pm.\n'] },
+  ];
+
+  it('links to the Document’s own change log, under its title (#104)', () => {
+    const log = groupLog({ documents: DOCUMENTS });
+    const second = `${log.group}:1`;
+    view(log.state(), authorOf('ana'), vi.fn(), { documentId: second });
+    const link = screen.getByRole('link', { name: messages.changeLog.link });
+    expect(link).toHaveAttribute('href', `#/g/${log.group}/doc/${second}/log`);
+    expect(link.closest('header')).not.toBeNull();
+  });
+
+  it('opens the Document its id names, its title and its sections alone, numbered from 1', async () => {
+    const log = groupLog({ documents: DOCUMENTS });
+    const second = `${log.group}:1`;
+    const { container } = view(log.state(), authorOf('ana'), vi.fn(), { documentId: second });
+    expect(screen.getByRole('heading', { level: 1, name: 'House rules' })).toBeVisible();
+    const texts = Array.from(container.querySelectorAll('.atom-text'));
+    expect(texts.map((node) => node.textContent)).toEqual(['Quiet', 'Quiet after 11pm.']);
+    expect(
+      screen.getAllByRole('button', { name: /^Propose a change/ }).map((b) => b.ariaLabel),
+    ).toEqual(['Propose a change to section 1', 'Propose a change to section 2']);
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('opens the group’s first Document when the route names none', () => {
+    const log = groupLog({ documents: DOCUMENTS });
+    view(log.state());
+    expect(screen.getByRole('heading', { level: 1, name: 'Mission statement' })).toBeVisible();
+    expect(screen.queryByText('Quiet after 11pm.')).not.toBeInTheDocument();
+  });
+
+  it('says a Document isn’t in this group for an id it doesn’t have, with nothing to propose', async () => {
+    const log = groupLog({ documents: DOCUMENTS });
+    view(log.state(), authorOf('ana'), vi.fn(), { documentId: `${log.group}:2` });
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'This Document isn’t in this group' }),
+    ).toBeVisible();
+    expect(screen.getByText('Go back to your group to see its Documents.')).toBeVisible();
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('adds, proposes and removes in the Document on screen, and copies it alone', async () => {
+    const user = userEvent.setup();
+    const log = groupLog({ documents: DOCUMENTS });
+    const second = `${log.group}:1`;
+    const onAdd = vi.fn();
+    const onPropose = vi.fn();
+    const onRemove = vi.fn();
+    const copyText = vi.fn(() => Promise.resolve());
+    const handlers = { documentId: second, onAdd, onRemove, copyText };
+    view(log.state(), authorOf('ana'), onPropose, handlers);
+    await user.click(screen.getByRole('button', { name: 'Add a section here, at the start' }));
+    await user.click(screen.getByRole('button', { name: 'Add a section here, after section 2' }));
+    expect(onAdd.mock.calls).toEqual([
+      [{ document: second, after: null }],
+      [{ document: second, after: `${second}.1` }],
+    ]);
+    await user.click(screen.getByRole('button', { name: 'Propose a change to section 1' }));
+    expect(onPropose).toHaveBeenCalledWith(`${second}.0`);
+    await user.click(
+      screen.getByRole('button', { name: 'Propose removing this section, section 2' }),
+    );
+    expect(onRemove).toHaveBeenCalledWith(`${second}.1`);
+    await user.click(screen.getByRole('button', { name: 'Copy as Markdown' }));
+    expect(copyText).toHaveBeenCalledWith('# Quiet\n\nQuiet after 11pm.\n');
+  });
+
+  it('shows a new Document once its Proposal passes, under its own title', () => {
+    const log = groupLog({ documents: DOCUMENTS });
+    const created = log.newDocument('Ana', 'Budget', { text: '# Budget\n\nWe share costs.\n' });
+    log.vote('Ana', created, 4);
+    log.vote('Ben', created, 4);
+    const { container } = view(log.state(), authorOf('ana'), vi.fn(), { documentId: created });
+    expect(screen.getByRole('heading', { level: 1, name: 'Budget' })).toBeVisible();
+    const texts = Array.from(container.querySelectorAll('.atom-text'));
+    expect(texts.map((node) => node.textContent)).toEqual(['Budget', 'We share costs.']);
   });
 });
 
@@ -415,6 +516,7 @@ describe('CoalitionDocumentView (#120)', () => {
       <CoalitionDocumentView
         coalitionId="c"
         name="Eastside Housing"
+        documentId="c"
         title="Mission statement"
         atoms={atoms}
         standing={standing}
@@ -422,10 +524,31 @@ describe('CoalitionDocumentView (#120)', () => {
         onPropose={onPropose}
         onTakePart={onTakePart}
         copyText={vi.fn(() => Promise.resolve())}
+        history={{
+          historyOf: () => ({ passed: [], notPassed: [] }),
+          names: { members: [], former: [] },
+          resultHref: () => null,
+        }}
       />,
     );
     return { onPropose, onTakePart };
   }
+
+  it('offers each section’s History and the change log to everyone who reads it (#104)', () => {
+    for (const standing of [
+      { kind: 'proposes', groupId: 'g' },
+      { kind: 'reads' },
+    ] as const satisfies readonly CoalitionStanding[]) {
+      coalitionView(standing, new Set(['c.0']));
+      expect(screen.getByRole('button', { name: messages.history.openLabel(1) })).toBeVisible();
+      expect(screen.getByRole('button', { name: messages.history.openLabel(2) })).toBeVisible();
+      expect(screen.getByRole('link', { name: messages.changeLog.link })).toHaveAttribute(
+        'href',
+        '#/c/c/doc/c/log',
+      );
+      cleanup();
+    }
+  });
 
   it('offers Propose a change on each section to whoever proposes, and only that', async () => {
     const user = userEvent.setup();

@@ -23,6 +23,7 @@ import {
 } from 'react-aria-components';
 
 import { documentTitle } from '../app/dispatchLines';
+import { holdPresses } from '../app/holdPresses';
 import { messages } from '../app/messages';
 import { checkDispatchText, checkDispatchTitle } from '../app/proposalFields';
 import type { DispatchValues, RisingValues } from '../app/proposals';
@@ -199,7 +200,7 @@ function DispatchForm(props: Pick<SendDispatchProps, 'state' | 'onSend' | 'onPro
           {sendDispatch.failed}
         </p>
       ) : null}
-      <div className="row form-actions">
+      <div className="row form-actions" onPointerDownCapture={holdPresses(running)}>
         <Button type="submit" className="button button-primary" isDisabled={running}>
           {voted ? sendDispatch.submitVote : sendDispatch.submit}
         </Button>

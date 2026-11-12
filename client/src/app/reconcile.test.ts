@@ -71,6 +71,22 @@ describe('lookupCard', () => {
     fake.offline = true;
     expect(await lookupCard(ben.services, newCardSeed())).toEqual({ kind: 'offline' });
   });
+
+  it('reads a card that would found a coalition without inner as damaged (#313)', async () => {
+    const fake = createFakeRelay();
+    const ana = await open(fake, 'ana');
+    const ben = await open(fake, 'ben');
+    const riverside = await found(ana, 'Riverside Tenants', 'Ana');
+    const made = await makeCard(ana.services, riverside, VALUES);
+    if (made.outcome !== 'queued') throw new Error('Expected a card.');
+    const { secret, seat, name, title, atoms, entries } = made.card;
+    const bare = { secret, seat, name, title, atoms, entries };
+
+    const seed = parseCardLink(await postCard(ana.services, bare, ana.services.origin));
+    expect(await lookupCard(ben.services, seed ?? new Uint8Array())).toEqual({ kind: 'missing' });
+    const whole = parseCardLink(await postCard(ana.services, made.card, ana.services.origin));
+    expect((await lookupCard(ben.services, whole ?? new Uint8Array())).kind).toBe('found');
+  });
 });
 
 describe('bringCard', () => {

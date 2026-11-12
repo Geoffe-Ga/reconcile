@@ -14,11 +14,23 @@
  * turns on for one Document: its {@link ShareState} sits on that Document's
  * record, so a backup carries it, and `src/share/shareLink.ts` posts the
  * Document's latest version, signed and sealed, to a mailbox of the share's
- * own. Only `updateShare` sets or drops it; the editor's saves keep it.
+ * own. Only `updateShare` sets or drops it; the editor's saves keep it. On a
+ * device whose keys are locked with a passkey, its seed, signing key and
+ * public key live in the vault instead, and the record keeps only the
+ * share's mark ({@link shareSealing}, #255), so the editor's saves write no
+ * key, and Personal and the editor still read whether it's shared while the
+ * vault is locked.
+ *
+ * A share a restore brings back starts paused (#328): the backup may predate
+ * Stop sharing, and once the relay's tombstone has lapsed nothing there would
+ * say so. So nothing posts to a paused share's link until the person keeps
+ * it on that Document (`keepSharing`), or stops it.
  */
 import { base64url, fromBase64url } from '../crypto/base64url';
 import { publicKeyOf } from '../crypto/sign';
 import { nfcLength } from '../engine/text';
+import type { Sealing } from './sealing';
+import type { Secrets } from './vault';
 
 /**
  * A personal Document's share by link (#105). Every key in it is the share's
@@ -34,10 +46,16 @@ export interface ShareState {
   readonly publicKey: Uint8Array;
   /** The `n` of the last copy this device posted, or 0 before the first. */
   readonly n: number;
-  /** When this device last posted a copy, in device milliseconds, or null before the first. */
+  /** When this device last posted a copy or the person kept sharing (#339), in device ms, or null if never. */
   readonly lastPostedAt: number | null;
   /** Whether the link may show less than the Document holds: an edit not posted yet, or a post that failed. */
   readonly pending: boolean;
+  /**
+   * Present only while a share a restore brought back waits for the person
+   * to keep it or stop it (#328): nothing posts to its link meanwhile. A
+   * backup never carries it, since every restore pauses each share it brings.
+   */
+  readonly paused?: true;
 }
 
 /** One personal Document, as the device keeps it and a backup file carries it. */
@@ -59,6 +77,31 @@ export interface PersonalDocument {
 /** What the editor saves: a personal Document's words and times, never its share. */
 export type PersonalText = Omit<PersonalDocument, 'share'>;
 
+/** A share's keys: its seed, signing key and public key, everything that ties it to its link (#255). */
+export type ShareKeys = Pick<ShareState, 'seed' | 'secretKey' | 'publicKey'>;
+
+/** What a share says without its keys: what a vault leaves on its Document's record (#255). */
+export type ShareMark = Omit<ShareState, keyof ShareKeys>;
+
+/**
+ * A personal Document as IndexedDB keeps it: its share whole on a device
+ * with no vault, and only its mark under a vault, which holds its keys
+ * (#255). A share kept before #255 holds its keys until the device seals or
+ * unlocks.
+ */
+export interface StoredDocument extends PersonalText {
+  readonly share?: ShareMark & Partial<ShareKeys>;
+}
+
+/**
+ * A personal Document as Personal lists it and its editor opens it: its
+ * words and times, and its share's mark while it's shared, with no key, so a
+ * device whose keys are locked shows it too (#255).
+ */
+export interface PersonalEntry extends PersonalText {
+  readonly share?: ShareMark;
+}
+
 /** How many random bytes a personal Document's id holds: 128 bits, so two never meet. */
 export const PERSONAL_ID_BYTES = 16;
 
@@ -71,6 +114,12 @@ export interface PersonalStore {
   listPersonal(): Promise<PersonalDocument[]>;
   /** One personal Document, or `undefined` when the device holds none under `id`. */
   getPersonal(id: string): Promise<PersonalDocument | undefined>;
+  /**
+   * Every personal Document as Personal and the editor show it, oldest first:
+   * no key, so it never opens the vault and reads the same while it's locked
+   * (#255).
+   */
+  listPersonalEntries(): Promise<PersonalEntry[]>;
   /**
    * Keeps `document`, replacing any copy under its id, in one change. A
    * share the device holds under that id stays, marked `pending` when the
@@ -143,15 +192,25 @@ function isKeypair(secretKey: Uint8Array, publicKey: Uint8Array): boolean {
 }
 
 /**
+ * Whether `share`'s flags are ones the device keeps: pending true or false,
+ * and paused either absent or true, while a restored share waits for the
+ * person (#328).
+ */
+function isFlagged({ pending, paused }: Record<string, unknown>): boolean {
+  return typeof pending === 'boolean' && (paused === undefined || paused === true);
+}
+
+/**
  * Whether `value` is a share the device can keep (#105): a 32-byte seed, a
  * keypair whose public key is its secret key's own, a whole `n` from 0 up,
- * a whole post time or null, and a pending flag.
+ * a whole post time or null, and its flags (`isFlagged`).
  */
 export function isShareState(value: unknown): value is ShareState {
   if (typeof value !== 'object' || value === null) return false;
-  const { seed, secretKey, publicKey, n, lastPostedAt, pending } = value as Record<string, unknown>;
+  const share = value as Record<string, unknown>;
+  const { seed, secretKey, publicKey, n, lastPostedAt } = share;
   const counted = isTime(n) && (lastPostedAt === null || isTime(lastPostedAt));
-  if (!counted || typeof pending !== 'boolean') return false;
+  if (!counted || !isFlagged(share)) return false;
   return isKey(seed) && isKey(secretKey) && isKey(publicKey) && isKeypair(secretKey, publicKey);
 }
 
@@ -177,13 +236,15 @@ export function textOf(document: PersonalText): PersonalText {
 
 /**
  * The share to keep when the editor saves `saved` over `held` (#105): the
- * held share, marked pending once the title or text changed, so the link
- * catches up; none when the device held none.
+ * held share, as its record holds it, marked pending once the title or text
+ * changed, so the link catches up; none when the device held none. Under a
+ * vault the record holds only the share's mark, so a save writes no key
+ * (#255).
  */
-export function keptShare(
-  held: PersonalDocument | undefined,
+export function keptShare<Share extends ShareMark>(
+  held: (PersonalText & { readonly share?: Share }) | undefined,
   saved: PersonalText,
-): ShareState | undefined {
+): Share | undefined {
   const share = held?.share;
   if (share === undefined) return undefined;
   const changed = held?.title !== saved.title || held.text !== saved.text;
@@ -207,16 +268,84 @@ export function keepsHeldCopy(
  * device's `held` one: the file's copy, but with the device's share when the
  * file's copy holds none, marked pending so its link catches up (#105). A
  * live link is never lost to a restore, so the person can still stop it.
+ *
+ * A share the backup brings starts paused (#328), since the person may have
+ * stopped it after the backup was made, and its tombstone may have lapsed
+ * at the relay. Only the device's own share, unpaused, is left as it was,
+ * even when the backup holds the same one: no restore brought it.
  */
 export function restoredCopy(
   held: PersonalDocument | undefined,
   restored: PersonalDocument,
 ): PersonalDocument {
-  if (restored.share !== undefined || held?.share === undefined) return restored;
-  return { ...restored, share: { ...held.share, pending: true } };
+  const own = held?.share;
+  const brought = restored.share;
+  if (own !== undefined && (brought === undefined || ownsLive(own, brought))) {
+    return { ...restored, share: { ...own, pending: true } };
+  }
+  return brought === undefined ? restored : { ...restored, share: { ...brought, paused: true } };
+}
+
+/** Whether `own` is the device's live, unpaused share `brought` names: the same seed. */
+function ownsLive(own: ShareState, brought: ShareState): boolean {
+  return own.paused !== true && base64url(own.seed) === base64url(brought.seed);
+}
+
+/**
+ * `share` as Keep sharing leaves it (#328): no longer paused, and pending, so
+ * its next post sends the Document's latest version.
+ */
+export function resumedShare(share: ShareState): ShareState {
+  const resumed: { -readonly [K in keyof ShareState]: ShareState[K] } = { ...share, pending: true };
+  delete resumed.paused;
+  return resumed;
 }
 
 /** Oldest first, then by id, so the order never depends on how the store returned them. */
-export function byCreation(a: PersonalDocument, b: PersonalDocument): number {
+export function byCreation(a: PersonalText, b: PersonalText): number {
   return a.createdAt - b.createdAt || (a.id < b.id ? -1 : 1);
 }
+
+/**
+ * A share's mark: everything it says but its keys, its pause included, so a
+ * share a restore brought back stays paused under a vault too (#328).
+ */
+function markOf(share: ShareMark): ShareMark {
+  const { n, lastPostedAt, pending } = share;
+  return { n, lastPostedAt, pending, ...(share.paused === true && { paused: true }) };
+}
+
+/** `document` as Personal and the editor show it: its words and times, and its share's mark. */
+export function entryOf(document: StoredDocument): PersonalEntry {
+  const { share } = document;
+  return { ...textOf(document), ...(share === undefined ? {} : { share: markOf(share) }) };
+}
+
+/**
+ * A personal Document's sealing (#255): its share's seed, signing key and
+ * public key go into the vault, and its record keeps the share's mark, so a
+ * Document's words, and whether it's shared, still read while the vault is
+ * locked.
+ */
+export const shareSealing: Sealing<PersonalDocument, StoredDocument> = {
+  hasSecrets: (document) => document.share !== undefined,
+  split(document) {
+    const { share } = document;
+    const { seed, secretKey, publicKey } = share ?? {};
+    if (share === undefined || !seed || !secretKey || !publicKey) {
+      return { kept: document, secrets: null };
+    }
+    return {
+      kept: { ...textOf(document), share: markOf(share) },
+      secrets: { seed, secretKey, publicKey },
+    };
+  },
+  join(document, secrets) {
+    const { share } = document;
+    if (share === undefined) return textOf(document);
+    const held: Secrets = secrets ?? {};
+    const { seed, secretKey, publicKey } = held;
+    if (!seed || !secretKey || !publicKey) return null;
+    return { ...textOf(document), share: { ...markOf(share), seed, secretKey, publicKey } };
+  },
+};
