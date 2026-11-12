@@ -92,6 +92,17 @@ async function heldSplit(person: Person, author: string): Promise<string | null>
   );
 }
 
+/**
+ * The latest share `person` holds from `author`, once a sync pass of their own
+ * device has brought it. Ana's save posts the shares, but each contact's
+ * device only holds one after its own poller has pulled it, every few seconds
+ * and later on a loaded runner, so reading it straight away races that (#379).
+ */
+async function syncedShare(person: Person, author: string): Promise<RecoveryShare> {
+  await expect.poll(() => heldSplit(person, author), SYNCED).not.toBeNull();
+  return shareOf(person, author);
+}
+
 /** Ana picks `names` at `t` of their number in the picker, and saves. */
 async function pick(ana: Person, t: number, names: readonly string[]): Promise<void> {
   const { page } = ana;
@@ -216,8 +227,9 @@ test('contacts each hold a sealed share of the backup key, and nothing leaves in
   const author = anaGroup.author;
   const oldKey = Uint8Array.from(await backupKeyOn(ana.page));
   const oldId = backupIdFor(oldKey);
-  const shares = { ben: await shareOf(ben, author), cal: await shareOf(cal, author) };
-  const deesOld = await shareOf(dee, author);
+  // Ben's device was waited on above; Cal's and Dee's may not have synced yet (#379).
+  const shares = { ben: await shareOf(ben, author), cal: await syncedShare(cal, author) };
+  const deesOld = await syncedShare(dee, author);
   /** The shares of the second choice, once made. */
   const later: RecoveryShare[] = [];
   const contactKeys = await Promise.all(
