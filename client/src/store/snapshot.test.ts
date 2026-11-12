@@ -38,6 +38,8 @@ import {
   MAX_BACKUP_BYTES,
   replaceWithBackup,
   restorable,
+  type Restored,
+  type RestoredFile,
   SNAPSHOT_FORMAT,
   takeSnapshot,
   withoutShares,
@@ -168,7 +170,7 @@ describe('exportGroups and importGroups', () => {
     const second = await openStore('ana-again');
     const restored = await importGroups(second, file, PASSPHRASE);
 
-    expect(restored).toEqual({ groups: 1, skipped: 0 });
+    expect(restored).toEqual({ groups: 1, skipped: 0, older: false });
     expect(groupIds).toEqual([group.groupId]);
     const [held] = await second.listGroups();
     expect(held?.me).toEqual({ author: group.author, name: CANARY.founder });
@@ -253,7 +255,11 @@ describe('exportGroups and importGroups', () => {
     const second = await openStore('second');
 
     expect(groupIds).toEqual([kept.groupId]);
-    expect(await importGroups(second, file, PASSPHRASE)).toEqual({ groups: 1, skipped: 0 });
+    expect(await importGroups(second, file, PASSPHRASE)).toEqual({
+      groups: 1,
+      skipped: 0,
+      older: false,
+    });
     expect((await second.listGroups()).map((group) => group.groupId)).toEqual([kept.groupId]);
   });
 
@@ -266,6 +272,7 @@ describe('exportGroups and importGroups', () => {
     expect(await importGroups(await openStore('second'), file, PASSPHRASE)).toEqual({
       groups: 0,
       skipped: 0,
+      older: false,
     });
   });
 });
@@ -574,7 +581,12 @@ describe('encryption keys and epochs in a backup (#98)', () => {
     const file = await sealBackup(utf8(JSON.stringify(old)), PASSPHRASE, CHEAP);
     const second = await openStore('ana-again');
 
-    expect(await importGroups(second, file, PASSPHRASE)).toEqual({ groups: 1, skipped: 0 });
+    // It says it is an older file, which holds no encryption key (#225).
+    expect(await importGroups(second, file, PASSPHRASE)).toEqual({
+      groups: 1,
+      skipped: 0,
+      older: true,
+    });
 
     const [held] = await second.listGroups();
     expect(held?.kxKey).toBeUndefined();
@@ -610,7 +622,10 @@ describe('personal Documents in a backup (#93)', () => {
     const fresh = await openStore('fresh');
     const restored = await importGroups(fresh, file, PASSPHRASE);
 
-    expect([restored, groupIds]).toEqual([{ groups: 1, skipped: 0 }, [group.groupId]]);
+    expect([restored, groupIds]).toEqual([
+      { groups: 1, skipped: 0, older: false },
+      [group.groupId],
+    ]);
     expect((await fresh.listGroups()).map((held) => held.groupId)).toEqual([group.groupId]);
     expect(await fresh.listPersonal()).toEqual([canaryStatement(), READING]);
   });
@@ -635,7 +650,11 @@ describe('personal Documents in a backup (#93)', () => {
     const second = await openStore('second');
     await second.savePersonal({ ...canaryStatement(1_762_000_450_000), text: 'Older.' });
 
-    expect(await importGroups(second, file, PASSPHRASE)).toEqual({ groups: 0, skipped: 0 });
+    expect(await importGroups(second, file, PASSPHRASE)).toEqual({
+      groups: 0,
+      skipped: 0,
+      older: false,
+    });
 
     expect(await second.listPersonal()).toEqual([canaryStatement(1_762_000_500_000)]);
   });
@@ -650,7 +669,11 @@ describe('personal Documents in a backup (#93)', () => {
     await second.savePersonal(READING);
 
     expect(Object.keys(older)).toEqual(['format', 'groups']);
-    expect(await importGroups(second, file, PASSPHRASE)).toEqual({ groups: 1, skipped: 0 });
+    expect(await importGroups(second, file, PASSPHRASE)).toEqual({
+      groups: 1,
+      skipped: 0,
+      older: false,
+    });
     expect((await second.listGroups()).map((held) => held.groupId)).toEqual([group.groupId]);
     expect(await second.listPersonal()).toEqual([READING]);
   });
@@ -1050,7 +1073,11 @@ describe('a dissolved group and personal Documents in one backup (#108, #93)', (
     const file = await fileOf([dissolved], [canaryStatement(), READING]);
     const fresh = await openStore('fresh');
 
-    expect(await importGroups(fresh, file, PASSPHRASE)).toEqual({ groups: 1, skipped: 0 });
+    expect(await importGroups(fresh, file, PASSPHRASE)).toEqual({
+      groups: 1,
+      skipped: 0,
+      older: false,
+    });
 
     const held = await fresh.getGroup(groupId);
     expect(held?.archived).toEqual({ reason: 'dissolved' });
@@ -1075,7 +1102,11 @@ describe('a dissolved group and personal Documents in one backup (#108, #93)', (
 
     expect(groupIds).toEqual([]);
     expect(text(plaintext)).not.toContain(groupId);
-    expect(await importGroups(second, file, PASSPHRASE)).toEqual({ groups: 0, skipped: 0 });
+    expect(await importGroups(second, file, PASSPHRASE)).toEqual({
+      groups: 0,
+      skipped: 0,
+      older: false,
+    });
     expect(await second.listGroups()).toEqual([]);
     expect(await second.listPersonal()).toEqual([canaryStatement(), READING]);
   });
@@ -1090,7 +1121,11 @@ describe('a dissolved group and personal Documents in one backup (#108, #93)', (
     const before = await dump(device);
 
     const file = await fileOf([live], [canaryStatement(1_762_000_500_000), READING]);
-    expect(await importGroups(device, file, PASSPHRASE)).toEqual({ groups: 1, skipped: 0 });
+    expect(await importGroups(device, file, PASSPHRASE)).toEqual({
+      groups: 1,
+      skipped: 0,
+      older: false,
+    });
 
     expect(await dump(device)).toEqual(before);
     const kept = await device.getGroup(groupId);
@@ -1173,7 +1208,11 @@ describe('keys, epochs, personal Documents and a read-only copy in one backup (#
     const { file, groupIds } = await exportGroups(device, PASSPHRASE, CHEAP);
     const fresh = await openStore('fresh');
 
-    expect(await importGroups(fresh, file, PASSPHRASE)).toEqual({ groups: 1, skipped: 0 });
+    expect(await importGroups(fresh, file, PASSPHRASE)).toEqual({
+      groups: 1,
+      skipped: 0,
+      older: false,
+    });
 
     expect(groupIds).toEqual([group.groupId]);
     const [held] = await fresh.listGroups();
@@ -1222,7 +1261,7 @@ describe('keys, epochs, personal Documents and a read-only copy in one backup (#
         await sealBackup(utf8(JSON.stringify(v1)), PASSPHRASE, CHEAP),
         PASSPHRASE,
       ),
-    ).toEqual({ groups: 2, skipped: 0 });
+    ).toEqual({ groups: 2, skipped: 0, older: true });
 
     const live = await fresh.getGroup(group.groupId);
     expect([live?.kxKey, live?.epoch ?? 0, live?.archived]).toEqual([
@@ -1252,7 +1291,11 @@ describe('keys, epochs, personal Documents and a read-only copy in one backup (#
     const file = await sealBackup(utf8(JSON.stringify(forged)), PASSPHRASE, CHEAP);
     const fresh = await openStore('fresh');
 
-    expect(await importGroups(fresh, file, PASSPHRASE)).toEqual({ groups: 0, skipped: 1 });
+    expect(await importGroups(fresh, file, PASSPHRASE)).toEqual({
+      groups: 0,
+      skipped: 1,
+      older: false,
+    });
     expect([await fresh.listGroups(), await fresh.listPersonal()]).toEqual([[], [READING]]);
   });
 });
@@ -1345,7 +1388,11 @@ describe('replaceWithBackup: Restore when the passkey no longer unlocks the vaul
     locked.close();
     const reopened = await openStore('locked');
 
-    expect(await replaceWithBackup(reopened, file, PASSPHRASE)).toEqual({ groups: 1, skipped: 0 });
+    expect(await replaceWithBackup(reopened, file, PASSPHRASE)).toEqual({
+      groups: 1,
+      skipped: 0,
+      older: false,
+    });
 
     expect(await reopened.readVault()).toBeNull();
     const groups = await reopened.listGroups();
@@ -1668,7 +1715,11 @@ describe('a backup that opens but doesn’t check out, whole or one group entry 
       );
       const second = await openStore('second');
 
-      expect(await importGroups(second, file, PASSPHRASE)).toEqual({ groups: 1, skipped: 1 });
+      expect(await importGroups(second, file, PASSPHRASE)).toEqual({
+        groups: 1,
+        skipped: 1,
+        older: false,
+      });
 
       const held = await second.listGroups();
       expect(held.map((group) => group.me.name)).toEqual(['Ana']);
@@ -1685,6 +1736,7 @@ describe('a backup that opens but doesn’t check out, whole or one group entry 
     expect(await importGroups(await openStore('second'), file, PASSPHRASE)).toEqual({
       groups: 2,
       skipped: 2,
+      older: false,
     });
   });
 
@@ -1696,7 +1748,11 @@ describe('a backup that opens but doesn’t check out, whole or one group entry 
     const file = await sealBackup(utf8(JSON.stringify(twice)), PASSPHRASE, CHEAP);
     const second = await openStore('second');
 
-    expect(await importGroups(second, file, PASSPHRASE)).toEqual({ groups: 1, skipped: 1 });
+    expect(await importGroups(second, file, PASSPHRASE)).toEqual({
+      groups: 1,
+      skipped: 1,
+      older: false,
+    });
     expect((await second.listGroups()).map((group) => group.me.name)).toEqual([CANARY.founder]);
   });
 
@@ -1711,7 +1767,11 @@ describe('a backup that opens but doesn’t check out, whole or one group entry 
     );
     const second = await openStore('second');
 
-    expect(await importGroups(second, file, PASSPHRASE)).toEqual({ groups: 1, skipped: 1 });
+    expect(await importGroups(second, file, PASSPHRASE)).toEqual({
+      groups: 1,
+      skipped: 1,
+      older: false,
+    });
     expect((await second.listGroups()).map((group) => group.me.name)).toEqual([CANARY.founder]);
   });
 
@@ -1723,7 +1783,11 @@ describe('a backup that opens but doesn’t check out, whole or one group entry 
     );
     const second = await openStore('second');
 
-    expect(await replaceWithBackup(second, file, PASSPHRASE)).toEqual({ groups: 1, skipped: 1 });
+    expect(await replaceWithBackup(second, file, PASSPHRASE)).toEqual({
+      groups: 1,
+      skipped: 1,
+      older: false,
+    });
     expect(await second.listPersonal()).toEqual([canaryStatement(), READING]);
   });
 
@@ -1745,7 +1809,11 @@ describe('a backup that opens but doesn’t check out, whole or one group entry 
     const second = await otherDevice();
 
     expect(snapshot.personal).toHaveLength(2);
-    expect(await importGroups(second, file, PASSPHRASE)).toEqual({ groups: 1, skipped: 0 });
+    expect(await importGroups(second, file, PASSPHRASE)).toEqual({
+      groups: 1,
+      skipped: 0,
+      older: false,
+    });
     expect(await second.listPersonal()).toEqual([canaryStatement(), READING]);
   });
 
@@ -1759,6 +1827,7 @@ describe('a backup that opens but doesn’t check out, whole or one group entry 
     expect(await importGroups(await openStore('second'), file, PASSPHRASE)).toEqual({
       groups: 2,
       skipped: 0,
+      older: false,
     });
   });
 
@@ -1773,7 +1842,11 @@ describe('a backup that opens but doesn’t check out, whole or one group entry 
     const file = await sealBackup(utf8(JSON.stringify(unsynced(snapshot))), PASSPHRASE, CHEAP);
     const second = await otherDevice();
 
-    expect(await importGroups(second, file, PASSPHRASE)).toEqual({ groups: 1, skipped: 0 });
+    expect(await importGroups(second, file, PASSPHRASE)).toEqual({
+      groups: 1,
+      skipped: 0,
+      older: false,
+    });
     const restored: Group | undefined = (await second.listGroups()).find(
       (group) => group.groupId !== 'unrelated-group',
     );
@@ -1871,7 +1944,11 @@ describe('the relay backup key in a backup file (#97, ADR-0075 §4)', () => {
     const second = await openStore('second');
     await second.setRelayBackupKey(OTHER_KEY);
 
-    expect(await importGroups(second, file, PASSPHRASE)).toEqual({ groups: 1, skipped: 0 });
+    expect(await importGroups(second, file, PASSPHRASE)).toEqual({
+      groups: 1,
+      skipped: 0,
+      older: false,
+    });
 
     expect(await keyOn(second)).toEqual(local(OTHER_KEY));
   });
@@ -2046,6 +2123,12 @@ describe('a coalition’s entry in a backup (#114)', () => {
     return { groups, coalitions };
   }
 
+  /** What a file's restore says, once it says the file isn't an older one (#225). */
+  const current = ({ older, ...restored }: RestoredFile): Restored => {
+    expect(older).toBe(false);
+    return restored;
+  };
+
   /** Every way a device restores a snapshot, each into a fresh store (#336). */
   const restorePaths: readonly (readonly [
     string,
@@ -2054,12 +2137,20 @@ describe('a coalition’s entry in a backup (#114)', () => {
     [
       'a backup file',
       async (store, plaintext) =>
-        importGroups(store, await sealBackup(plaintext, PASSPHRASE, CHEAP), PASSPHRASE),
+        current(
+          await importGroups(store, await sealBackup(plaintext, PASSPHRASE, CHEAP), PASSPHRASE),
+        ),
     ],
     [
       'the unlock screen’s Restore',
       async (store, plaintext) =>
-        replaceWithBackup(store, await sealBackup(plaintext, PASSPHRASE, CHEAP), PASSPHRASE),
+        current(
+          await replaceWithBackup(
+            store,
+            await sealBackup(plaintext, PASSPHRASE, CHEAP),
+            PASSPHRASE,
+          ),
+        ),
     ],
     ['a link bundle', (store, plaintext) => importSnapshot(store, plaintext, 'link')],
     ['the relay copy', (store, plaintext) => importSnapshot(store, plaintext, 'relay')],

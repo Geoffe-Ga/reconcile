@@ -84,6 +84,7 @@ describe('vector files', () => {
       'epoch-race.json',
       'epoch-recovers.json',
       'epoch-refused.json',
+      'epoch-stranded.json',
       'fold.json',
       'follow-dispatch.json',
       'follow-join.json',
@@ -224,6 +225,7 @@ describe('vector files', () => {
       'fold',
       'fold',
       'coalition',
+      'fold',
       'fold',
       'fold',
       'fold',
@@ -609,6 +611,14 @@ describe('vector files', () => {
     'dissolve-window-max: a dissolve window of 29 days, over the entrenched maximum, is ignored, and 28 opens it with a deadline of received + 40,320',
     'dissolve-unfinished: an edit and a steward election still open when the group dissolves never close, apply or seat, even once later records and relay time pass their deadlines, and a Proposal decided before keeps its outcome and its text',
   ])('include the fold vector "%s"', (name) => {
+    expect(FOLD_VECTORS.map((vector) => vector.name)).toContain(name);
+  });
+
+  it.each([
+    "a leave read from epoch 0's mailbox after the key change out of it ends no membership there, and the fold names it stranded",
+    "its copy in epoch 1's mailbox ends the membership there and makes the next key change due, and a device that never read the old copy folds the same",
+    'the next key change must leave the leaver out: one that still wraps to them is ignored, and one to the rest moves the group to epoch 2',
+  ])('include the stranded leave vector "%s" (#225)', (name) => {
     expect(FOLD_VECTORS.map((vector) => vector.name)).toContain(name);
   });
 

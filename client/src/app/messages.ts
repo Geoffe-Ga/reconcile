@@ -1523,6 +1523,13 @@ export const messages = {
           : `${count(groups)} groups are back on this device.`;
       return left === null ? back : `${back} ${left}`;
     },
+    /**
+     * After a restore from a file saved before #98, which holds no encryption
+     * key: once another device of the person's has given a group theirs, only
+     * that one counts, so this device misses each new key (#225).
+     */
+    older:
+      'This backup is from an older version of Reconcile. If you’ve used Reconcile on another device since you saved it, this device won’t get a group’s new key when someone leaves. Ask someone in that group for a new invite link then, or restore a newer backup saved on that device.',
     failed: 'That passphrase doesn’t open this backup, or the file is damaged.',
   },
   erase: {
