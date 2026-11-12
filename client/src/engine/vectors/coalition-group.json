@@ -17,8 +17,7 @@
               "body": {
                 "name": "Riverside Tenants",
                 "founder": "Ana",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -144,8 +143,12 @@
               "body": {
                 "kind": "coalition",
                 "name": "Rivers United",
-                "title": "Shared ground",
-                "atoms": ["We keep the river clean.", "We meet on the first Sunday."],
+                "documents": [
+                  {
+                    "title": "Shared ground",
+                    "atoms": ["We keep the river clean.", "We meet on the first Sunday."]
+                  }
+                ],
                 "seats": [
                   { "name": "Riverside", "key": "^A" },
                   { "name": "Hillside", "key": "^B" }
@@ -273,8 +276,7 @@
               "body": {
                 "name": "Riverside Tenants",
                 "founder": "Ana",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -364,8 +366,12 @@
               "body": {
                 "kind": "coalition",
                 "name": "Rivers United",
-                "title": "Shared ground",
-                "atoms": ["We keep the river clean.", "We meet on the first Sunday."],
+                "documents": [
+                  {
+                    "title": "Shared ground",
+                    "atoms": ["We keep the river clean.", "We meet on the first Sunday."]
+                  }
+                ],
                 "seats": [
                   { "name": "Riverside", "key": "^A" },
                   { "name": "Hillside", "key": "^B" }
@@ -469,8 +475,7 @@
               "body": {
                 "name": "Riverside Tenants",
                 "founder": "Ana",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -572,8 +577,12 @@
               "body": {
                 "kind": "coalition",
                 "name": "Rivers United",
-                "title": "Shared ground",
-                "atoms": ["We keep the river clean.", "We meet on the first Sunday."],
+                "documents": [
+                  {
+                    "title": "Shared ground",
+                    "atoms": ["We keep the river clean.", "We meet on the first Sunday."]
+                  }
+                ],
                 "seats": [
                   { "name": "Riverside", "key": "^A" },
                   { "name": "Hillside", "key": "^B" }
@@ -685,8 +694,7 @@
               "body": {
                 "name": "Riverside Tenants",
                 "founder": "Ana",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -764,8 +772,12 @@
               "body": {
                 "kind": "coalition",
                 "name": "Rivers United",
-                "title": "Shared ground",
-                "atoms": ["We keep the river clean.", "We meet on the first Sunday."],
+                "documents": [
+                  {
+                    "title": "Shared ground",
+                    "atoms": ["We keep the river clean.", "We meet on the first Sunday."]
+                  }
+                ],
                 "seats": [
                   { "name": "Riverside", "key": "^A" },
                   { "name": "Hillside", "key": "^B" }
@@ -880,8 +892,7 @@
               "body": {
                 "name": "Riverside Tenants",
                 "founder": "Ana",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -971,8 +982,12 @@
               "body": {
                 "kind": "coalition",
                 "name": "Rivers United",
-                "title": "Shared ground",
-                "atoms": ["We keep the river clean.", "We meet on the first Sunday."],
+                "documents": [
+                  {
+                    "title": "Shared ground",
+                    "atoms": ["We keep the river clean.", "We meet on the first Sunday."]
+                  }
+                ],
                 "seats": [
                   { "name": "Riverside", "key": "^A" },
                   { "name": "Hillside", "key": "^B" }
@@ -1075,8 +1090,7 @@
               "body": {
                 "name": "Riverside Tenants",
                 "founder": "Ana",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -1178,8 +1192,12 @@
               "body": {
                 "kind": "coalition",
                 "name": "Rivers United",
-                "title": "Shared ground",
-                "atoms": ["We keep the river clean.", "We meet on the first Sunday."],
+                "documents": [
+                  {
+                    "title": "Shared ground",
+                    "atoms": ["We keep the river clean.", "We meet on the first Sunday."]
+                  }
+                ],
                 "seats": [
                   { "name": "Riverside", "key": "^A" },
                   { "name": "Hillside", "key": "^B" }
@@ -1296,8 +1314,7 @@
               "body": {
                 "name": "Riverside Tenants",
                 "founder": "Ana",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -1399,8 +1416,12 @@
               "body": {
                 "kind": "coalition",
                 "name": "Rivers United",
-                "title": "Shared ground",
-                "atoms": ["We keep the river clean.", "We meet on the first Sunday."],
+                "documents": [
+                  {
+                    "title": "Shared ground",
+                    "atoms": ["We keep the river clean.", "We meet on the first Sunday."]
+                  }
+                ],
                 "seats": [
                   { "name": "Riverside", "key": "^A" },
                   { "name": "Hillside", "key": "^B" }
@@ -1545,8 +1566,7 @@
               "body": {
                 "name": "Riverside Tenants",
                 "founder": "Ana",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -1648,8 +1668,12 @@
               "body": {
                 "kind": "coalition",
                 "name": "Rivers United",
-                "title": "Shared ground",
-                "atoms": ["We keep the river clean.", "We meet on the first Sunday."],
+                "documents": [
+                  {
+                    "title": "Shared ground",
+                    "atoms": ["We keep the river clean.", "We meet on the first Sunday."]
+                  }
+                ],
                 "seats": [
                   { "name": "Riverside", "key": "^A" },
                   { "name": "Hillside", "key": "^B" }
@@ -1752,8 +1776,7 @@
               "body": {
                 "name": "Riverside Tenants",
                 "founder": "Ana",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -1855,8 +1878,12 @@
               "body": {
                 "kind": "coalition",
                 "name": "Rivers United",
-                "title": "Shared ground",
-                "atoms": ["We keep the river clean.", "We meet on the first Sunday."],
+                "documents": [
+                  {
+                    "title": "Shared ground",
+                    "atoms": ["We keep the river clean.", "We meet on the first Sunday."]
+                  }
+                ],
                 "seats": [
                   { "name": "Riverside", "key": "^A" },
                   { "name": "Hillside", "key": "^B" }
@@ -1972,8 +1999,7 @@
               "body": {
                 "name": "Riverside Tenants",
                 "founder": "Ana",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -2103,8 +2129,12 @@
               "body": {
                 "kind": "coalition",
                 "name": "Rivers United",
-                "title": "Shared ground",
-                "atoms": ["We keep the river clean.", "We meet on the first Sunday."],
+                "documents": [
+                  {
+                    "title": "Shared ground",
+                    "atoms": ["We keep the river clean.", "We meet on the first Sunday."]
+                  }
+                ],
                 "seats": [
                   { "name": "Riverside", "key": "^A" },
                   { "name": "Hillside", "key": "^B" }
@@ -2212,8 +2242,9 @@
               "body": {
                 "name": "Riverside Tenants",
                 "founder": "Ana",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+                "documents": [
+                  { "title": "House rules", "atoms": ["Quiet after 11pm.", "Bins out on Sunday."] }
+                ]
               }
             }
           },
@@ -2325,8 +2356,12 @@
               "body": {
                 "kind": "coalition",
                 "name": "Rivers United",
-                "title": "Shared ground",
-                "atoms": ["We keep the river clean.", "We meet on the first Sunday."],
+                "documents": [
+                  {
+                    "title": "Shared ground",
+                    "atoms": ["We keep the river clean.", "We meet on the first Sunday."]
+                  }
+                ],
                 "seats": [
                   { "name": "Riverside", "key": "^A" },
                   { "name": "Hillside", "key": "^B" }
@@ -2439,8 +2474,9 @@
               "body": {
                 "name": "Riverside Tenants",
                 "founder": "Ana",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm.", "Bins out on Sunday."]
+                "documents": [
+                  { "title": "House rules", "atoms": ["Quiet after 11pm.", "Bins out on Sunday."] }
+                ]
               }
             }
           },
@@ -2671,8 +2707,12 @@
               "body": {
                 "kind": "coalition",
                 "name": "Rivers United",
-                "title": "Shared ground",
-                "atoms": ["We keep the river clean.", "We meet on the first Sunday."],
+                "documents": [
+                  {
+                    "title": "Shared ground",
+                    "atoms": ["We keep the river clean.", "We meet on the first Sunday."]
+                  }
+                ],
                 "seats": [
                   { "name": "Riverside", "key": "^A" },
                   { "name": "Hillside", "key": "^B" }
@@ -2808,8 +2848,7 @@
               "body": {
                 "name": "Riverside Tenants",
                 "founder": "Ana",
-                "title": "House rules",
-                "atoms": ["Quiet after 11pm."]
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
               }
             }
           },
@@ -2915,8 +2954,12 @@
               "body": {
                 "kind": "coalition",
                 "name": "Rivers United",
-                "title": "Shared ground",
-                "atoms": ["We keep the river clean.", "We meet on the first Sunday."],
+                "documents": [
+                  {
+                    "title": "Shared ground",
+                    "atoms": ["We keep the river clean.", "We meet on the first Sunday."]
+                  }
+                ],
                 "seats": [
                   { "name": "Riverside", "key": "^A" },
                   { "name": "Hillside", "key": "^B" }

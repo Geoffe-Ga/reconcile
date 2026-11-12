@@ -55,7 +55,7 @@ describe('GroupHome', () => {
 
     const card = screen.getByText('The backup card');
     const open = screen.getByRole('region', { name: 'Open Proposals' });
-    const documentSection = screen.getByRole('region', { name: 'Document' });
+    const documentSection = screen.getByRole('region', { name: 'Documents' });
     expect(open.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(
       card.compareDocumentPosition(documentSection) & Node.DOCUMENT_POSITION_FOLLOWING,
@@ -107,7 +107,7 @@ describe('GroupHome', () => {
 
     const backup = screen.getByText('The backup card');
     const recovery = screen.getByText('The recovery card');
-    const documentSection = screen.getByRole('region', { name: 'Document' });
+    const documentSection = screen.getByRole('region', { name: 'Documents' });
     expect(
       backup.compareDocumentPosition(recovery) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();

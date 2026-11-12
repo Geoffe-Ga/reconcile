@@ -136,8 +136,7 @@ describe('wakeFor: which of this device’s events wake the group’s phones (#9
     const genesis = {
       name: 'Riverside Tenants',
       founder: 'Cal',
-      title: 'House rules',
-      atoms: ['Quiet.'],
+      documents: [{ title: 'House rules', atoms: ['Quiet.'] }],
     };
     const others: EventDraft[] = [
       { type: 'genesis', group: '', ts: 0, body: genesis },

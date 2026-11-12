@@ -260,6 +260,7 @@ export interface OptInProposalState extends Closing {
         readonly kind:
           | 'edit'
           | 'add'
+          | 'new-document'
           | 'steward'
           | 'dissolve'
           | 'remove'

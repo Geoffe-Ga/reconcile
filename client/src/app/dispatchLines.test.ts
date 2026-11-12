@@ -39,6 +39,18 @@ describe('documentTitle', () => {
     expect(documentTitle(state, null)).toBeNull();
     expect(documentTitle(state, `${log.group}.0`)).toBeNull();
   });
+
+  it('gives any of the group’s Documents’ titles by its id (#92)', () => {
+    const documents = [
+      { title: 'Mission statement', atoms: ['We share.\n'] },
+      { title: 'Budget', atoms: ['We keep receipts.\n'] },
+    ];
+    const log = groupLog({ documents });
+    const state = log.state();
+    expect(documentTitle(state, log.group)).toBe('Mission statement');
+    expect(documentTitle(state, `${log.group}:1`)).toBe('Budget');
+    expect(documentTitle(state, `${log.group}:2`)).toBeNull();
+  });
 });
 
 describe('waitingDispatches', () => {

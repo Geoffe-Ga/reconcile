@@ -27,7 +27,7 @@ import { LEVELS } from './capabilities';
 import { coalitionOutcome, RESULT_GRACE_MINUTES } from './coalition';
 import { resultsToReport } from './crossing';
 import { VERSIONS_MAX } from './composeOption';
-import { type EventDraft, parseRecord, type Score } from './event';
+import { type EventDraft, type FoundingDocument, parseRecord, type Score } from './event';
 import { expiringProposal, resultFor } from './expiry';
 import { fold, type GroupState, heldRecord, type LogRecord } from './fold';
 import { OPTIONS_MAX, OPTIONS_MIN } from './priority';
@@ -71,10 +71,14 @@ class Log {
    * minutes before R, and members 0 and 1 vouch for each joiner after the
    * bootstrap's first two, so everyone holds voting rights by R (#101).
    */
-  static founded(count: number, atoms: readonly string[] = ['A0', 'A1']): Log {
+  static founded(
+    count: number,
+    atoms: readonly string[] = ['A0', 'A1'],
+    more: readonly FoundingDocument[] = [],
+  ): Log {
     const log = new Log();
     const start = R - SETTLED;
-    const body = { name: 'G', founder: 'Founder', title: 'Doc', atoms };
+    const body = { name: 'G', founder: 'Founder', documents: [{ title: 'Doc', atoms }, ...more] };
     log.group = log.add(start, member(0), { type: 'genesis', body });
     for (let i = 1; i < count; i += 1) {
       log.add(start + i, member(i), { type: 'join', body: { name: member(i) } });
@@ -93,10 +97,19 @@ class Log {
     return this.add(received, member(0), { type: 'proposal', body });
   }
 
-  /** An add of a new section after `after`, or first for null (#75). */
-  addSection(received: number, after: string | null, text: string): string {
-    const body = { target: { kind: 'add', after } as const, title: 'T', why: 'W', text };
+  /** An add of a new section after `after`, or first for null (#75), in `document`, the first by default (#92). */
+  addSection(received: number, after: string | null, text: string, document = this.group): string {
+    const body = { target: { kind: 'add', document, after } as const, title: 'T', why: 'W', text };
     return this.add(received, member(0), { type: 'proposal', body });
+  }
+
+  /** A new Document titled `title`, whose text is its first sections (#92). */
+  newDocument(received: number, title: string, text: string): string {
+    const target = { kind: 'new-document', title } as const;
+    return this.add(received, member(0), {
+      type: 'proposal',
+      body: { target, title: 'T', why: 'W', text },
+    });
   }
 
   leave(received: number, who: number): string {
@@ -318,19 +331,29 @@ describe('properties of the fold', { timeout: 60_000 }, () => {
     );
   });
 
-  it('only adds or takes out whole Atoms: each id at most once, founded or a passed add’s, in founded order', () => {
+  it('only adds or takes out whole Atoms: each id at most once, founded, a passed add’s or a passed new Document’s, in founded order and Document by Document', () => {
     fc.assert(
       fc.property(arbitraryLog, ({ records, relayNow }) => {
         const state = fold(records, relayNow);
         const ids = state.atoms.map((atom) => atom.id);
         expect(new Set(ids).size).toBe(ids.length);
-        const founded = [0, 1, 2].map((i) => `${state.group ?? ''}.${String(i)}`);
-        const added = state.proposals
-          .filter((p) => p.target.kind === 'add' && p.final && p.outcome.kind === 'pass')
-          .map((p) => p.id);
-        for (const id of ids) expect([...founded, ...added]).toContain(id);
+        const group = state.group ?? '';
+        const founded = [...FIRST_SECTIONS.map((_, i) => `${group}.${String(i)}`)];
+        founded.push(...SECOND_SECTIONS.map((_, i) => `${group}:1.${String(i)}`));
+        const passed = state.proposals.filter((p) => p.final && p.outcome.kind === 'pass');
+        const added = passed.filter((p) => p.target.kind === 'add').map((p) => p.id);
+        const created = passed.filter((p) => p.target.kind === 'new-document').map((p) => p.id);
+        for (const id of ids) {
+          const fromNew = created.some((document) => id.startsWith(`${document}.`));
+          expect(fromNew || [...founded, ...added].includes(id), id).toBe(true);
+        }
         const kept = ids.filter((id) => founded.includes(id));
         expect(kept).toEqual(founded.filter((id) => kept.includes(id)));
+        const order = state.documents.map((document) => document.id);
+        const places = state.atoms.map((atom) => order.indexOf(atom.documentId));
+        expect(places.every((place, i) => place >= Math.max(0, places[i - 1] ?? 0))).toBe(true);
+        expect(order.slice(0, 2)).toEqual([group, `${group}:1`]);
+        expect([...order.slice(2)].sort()).toEqual([...created].sort());
       }),
     );
   });
@@ -768,7 +791,67 @@ describe('properties of the fold', { timeout: 60_000 }, () => {
       }),
     );
   });
+
+  it('leaves every other Document’s Atoms byte-identical on a final pass in one Document (#92)', () => {
+    const words = fc.string({ unit: 'grapheme', minLength: 1, maxLength: 12 });
+    const scenario = fc.record({
+      documents: fc.array(fc.array(words, { minLength: 1, maxLength: 3 }), {
+        minLength: 2,
+        maxLength: 3,
+      }),
+      kind: fc.constantFrom('edit', 'remove', 'add', 'new-document'),
+      document: fc.nat(),
+      section: fc.nat(),
+      first: fc.boolean(),
+      text: words,
+      electorate,
+      minutes: minutesAfterR,
+    });
+    fc.assert(
+      fc.property(scenario, (s) => {
+        const [first = [], ...rest] = s.documents;
+        const more = rest.map((atoms, k) => ({ title: `Doc ${String(k + 1)}`, atoms }));
+        const log = Log.founded(s.electorate.count, first, more);
+        const before = fold(log.records, R);
+        const target = before.documents[s.document % before.documents.length]?.id ?? '';
+        const sections = before.atoms.filter((atom) => atom.documentId === target);
+        const section = sections[s.section % sections.length]?.id ?? '';
+        const proposal = proposeIn(log, { ...s, target, section });
+        s.electorate.ballots.forEach(({ voter, value }, i) => {
+          log.vote(R + 30 + i, voter, proposal, value);
+        });
+        const after = fold(log.records, R + s.minutes);
+        const changed = s.kind === 'new-document' ? null : target;
+        for (const { id } of before.documents.filter((document) => document.id !== changed)) {
+          const was = before.atoms.filter((atom) => atom.documentId === id);
+          const now = after.atoms.filter((atom) => atom.documentId === id);
+          expect(now.map((atom) => encoder.encode(atom.text))).toEqual(
+            was.map((atom) => encoder.encode(atom.text)),
+          );
+          expect(now).toEqual(was);
+        }
+        expect(after.documents.slice(0, before.documents.length)).toEqual(before.documents);
+      }),
+    );
+  });
 });
+
+/** What {@link proposeIn} proposes: its kind, its Document, a section of it, and its text. */
+interface InDocument {
+  readonly kind: 'edit' | 'remove' | 'add' | 'new-document';
+  readonly target: string;
+  readonly section: string;
+  readonly first: boolean;
+  readonly text: string;
+}
+
+/** One Proposal at R + 20 in the Document `target` (#92), or a new Document beside it. */
+function proposeIn(log: Log, { kind, target, section, first, text }: InDocument): string {
+  if (kind === 'edit') return log.propose(R + 20, section, text);
+  if (kind === 'remove') return log.propose(R + 20, section, '');
+  if (kind === 'add') return log.addSection(R + 20, first ? null : section, text, target);
+  return log.newDocument(R + 20, 'New', text);
+}
 
 /**
  * One step of a random log, after a wait: a join, a level change (to a known level or not), a
@@ -782,6 +865,7 @@ const step = fc.record({
     'propose',
     'remove',
     'add',
+    'new-document',
     'version',
     'vote',
     'repeat',
@@ -824,16 +908,24 @@ const STEP_WRITERS: Readonly<Record<Step['kind'], StepWriter>> = {
     log.level(received, s.who, s.level);
   },
   propose: (log, proposals, s, received) => {
-    proposals.push(log.propose(received, `${log.group}.${String(s.target)}`, 'X'));
+    proposals.push(log.propose(received, sectionOf(log, s), 'X'));
   },
   remove: (log, proposals, s, received) => {
-    proposals.push(log.propose(received, `${log.group}.${String(s.target)}`, ''));
+    proposals.push(log.propose(received, sectionOf(log, s), ''));
   },
-  // Anchored on a genesis Atom, an earlier add's Atom (once it may have passed), or the start.
+  // In a founded Document or a new one (once it may have passed, #92), anchored on a founded
+  // Atom of either, an earlier add's Atom (once it may have passed), or the start.
   add: (log, proposals, s, received) => {
-    const anchors = [null, `${log.group}.${String(s.target)}`, ...proposals];
+    const documents = [log.group, `${log.group}:1`, ...proposals];
+    const document = documents[s.score % documents.length] ?? log.group;
+    const anchors = [null, sectionOf(log, s), ...proposals];
     const after = anchors[s.who % anchors.length] ?? null;
-    proposals.push(log.addSection(received, after, s.score === 0 ? '' : `Add ${String(s.score)}`));
+    const text = s.score === 0 ? '' : `Add ${String(s.score)}`;
+    proposals.push(log.addSection(received, after, text, document));
+  },
+  'new-document': (log, proposals, s, received) => {
+    const text = s.score === 0 ? ' \n\n' : `N${String(s.score)}\n\nM${String(s.who)}\n`;
+    proposals.push(log.newDocument(received, s.target === 3 ? '' : `Doc ${String(s.who)}`, text));
   },
   version: (log, proposals, s, received) => {
     log.version(received, s.who, proposals[s.target] ?? 'unknown', `V${String(s.score)}`);
@@ -845,6 +937,17 @@ const STEP_WRITERS: Readonly<Record<Step['kind'], StepWriter>> = {
   forge: rawRecord(copyOf),
   garbage: rawRecord(() => encoder.encode('{')),
 };
+
+/** The founded Document sections the random log starts with (#92). */
+const FIRST_SECTIONS = ['A0', 'A1', 'A2'];
+const SECOND_SECTIONS = ['B0', 'B1'];
+
+/** A founded section a step names: one of the first Document's, or the second's for an odd `who`. */
+function sectionOf(log: Log, s: Step): string {
+  return s.who % 2 === 0
+    ? `${log.group}.${String(s.target)}`
+    : `${log.group}:1.${String(s.target % SECOND_SECTIONS.length)}`;
+}
 
 /** Appends one random step to the log at relay minute `received`. */
 function applyStep(log: Log, proposals: string[], s: Step, received: number): void {
@@ -858,7 +961,7 @@ const arbitraryLog = fc
     after: fc.option(fc.integer({ min: 0, max: 20_000 }), { nil: null }),
   })
   .map(({ steps, after }) => {
-    const log = Log.founded(2, ['A0', 'A1', 'A2']);
+    const log = Log.founded(2, FIRST_SECTIONS, [{ title: 'Second', atoms: SECOND_SECTIONS }]);
     const proposals: string[] = [];
     let received = R + 10;
     for (const s of steps) {
@@ -1395,8 +1498,7 @@ describe('properties of coalitions (#100)', { timeout: 120_000 }, () => {
         const genesis = {
           name: `Group ${mark}`,
           founder: `Ana ${mark}`,
-          title: `Rules ${mark}`,
-          atoms: [mark],
+          documents: [{ title: `Rules ${mark}`, atoms: [mark] }],
         };
         logs.add('A', R, 'ana', { type: 'genesis', body: genesis });
         for (const voter of voters.slice(1)) {

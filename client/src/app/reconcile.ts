@@ -26,6 +26,7 @@ import { seatKeyOf, signSeatProof } from '../crypto/seat';
 import { newSigningKeys, publicKeyOf } from '../crypto/sign';
 import { genesisAtoms } from '../engine/atomText';
 import { can } from '../engine/capabilities';
+import { atomsOf } from '../engine/documents';
 import { signEvent } from '../engine/event';
 import { fold, type GroupState, TITLE_MAX } from '../engine/fold';
 import { DEFAULT_RULES } from '../engine/rules';
@@ -268,8 +269,8 @@ function genesisRecord(entry: Group, card: Card, seat: { name: string; key: stri
   const body = {
     kind: 'coalition',
     name: card.name,
-    title: card.title,
-    atoms: card.atoms,
+    // A coalition founds exactly one Document, its statement (#92).
+    documents: [{ title: card.title, atoms: card.atoms }],
     rules: DEFAULT_RULES,
     seats: [card.seat, seat],
   } as const;
@@ -395,13 +396,17 @@ export async function admitCard(
   const target = state.proposals
     .map((p) => p.target)
     .find((t) => t.kind === 'reconcile' && seats.has(t.key));
-  if (target?.kind !== 'reconcile') throw new Error('This group holds no seat here.');
+  // A coalition's statement is its one Document (#92).
+  const [statement] = coalition.documents;
+  if (target?.kind !== 'reconcile' || statement === undefined) {
+    throw new Error('This group holds no seat here.');
+  }
   return {
     secret: entry.secret,
     seat: { name: clip(state.name, NAME_MAX), key: target.key },
     name: coalition.name,
-    title: coalition.title,
-    atoms: coalition.atoms.map((atom) => atom.text),
+    title: statement.title,
+    atoms: atomsOf(coalition, statement.id).map((atom) => atom.text),
     entries: entry.log,
   };
 }
