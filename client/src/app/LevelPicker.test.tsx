@@ -9,7 +9,7 @@ import type { TestDevice } from '../test/appServices';
 import { axeViolations } from '../test/axe';
 import { createFakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
-import { go, members, type MountedApp, mountApp } from '../test/members';
+import { go, members, mountApp, type MountedApp, personRows } from '../test/members';
 import { LevelPicker } from './LevelPicker';
 
 freshIndexedDBPerTest();
@@ -116,11 +116,10 @@ describe('choosing a level in the app', () => {
     mounted.push(app);
     const b = within(app.container);
     const people = await b.findByRole('region', { name: 'People' });
-    expect(
-      within(people)
-        .getAllByRole('listitem')
-        .map((item) => item.textContent),
-    ).toEqual(['Ana, Co-Creator, Steward', 'Ben, invited by Ana, Collaborator']);
+    expect(personRows(people)).toEqual([
+      'Ana, Co-Creator, Steward',
+      'Ben, invited by Ana, Collaborator',
+    ]);
 
     // Ben chooses Co-Creator, offline, so the change waits in the outbox.
     fake.offline = true;
@@ -142,11 +141,10 @@ describe('choosing a level in the app', () => {
     fake.offline = false;
     await act(() => ben.services.sync.syncOnce());
     await waitFor(() => {
-      expect(
-        within(people)
-          .getAllByRole('listitem')
-          .map((item) => item.textContent),
-      ).toEqual(['Ana, Co-Creator, Steward', 'Ben, invited by Ana, Co-Creator']);
+      expect(personRows(people)).toEqual([
+        'Ana, Co-Creator, Steward',
+        'Ben, invited by Ana, Co-Creator',
+      ]);
     });
     expect(within(people).getByRole('status')).toHaveTextContent('Sent');
 

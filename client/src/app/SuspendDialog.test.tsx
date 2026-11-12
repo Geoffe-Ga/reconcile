@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import { axeViolations } from '../test/axe';
+import { held, pastPressFallback } from '../test/press';
 import { SuspendDialog } from './SuspendDialog';
 
 type OnSuspend = (reason: string) => Promise<void>;
@@ -92,5 +93,20 @@ describe('SuspendDialog', () => {
       'The suspension couldn’t be saved on this device. Try again.',
     );
     expect(dialog).toBeInTheDocument();
+  });
+
+  it('suspends once when Suspend is tapped again while it saves and saving fails (#193)', async () => {
+    const saving = held<undefined>();
+    const { user, onSuspend } = setup(vi.fn<OnSuspend>(() => saving.promise));
+    await open(user);
+    const suspend = screen.getByRole('button', { name: 'Suspend' });
+    await user.click(suspend);
+    expect(suspend).toBeDisabled();
+    await user.click(suspend);
+    saving.reject();
+    expect(await screen.findByRole('alert')).toBeVisible();
+    await pastPressFallback();
+    expect(suspend).toBeEnabled();
+    expect(onSuspend).toHaveBeenCalledTimes(1);
   });
 });

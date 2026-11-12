@@ -17,7 +17,7 @@
  *
  * Nothing here reaches the network: sync.ts posts what `signResults` signs.
  */
-import { can } from '../engine/capabilities';
+import { can, isOusted, isSuspended } from '../engine/capabilities';
 import { parseRecord, signEvent } from '../engine/event';
 import { ballotsExpired, needsResult, resultFor } from '../engine/expiry';
 import { fold, type GroupState, type Proposal } from '../engine/fold';
@@ -31,7 +31,8 @@ export function foldGroup(group: Pick<Group, 'log' | 'relayNow' | 'cleared'>): G
 /**
  * The closed Proposals this device's member should post a result for now:
  * none once they've left or are leaving (#77), since nothing is queued after
- * a leave; none once the group has dissolved (#108), since the fold takes no
+ * a leave; none while they're suspended (#102), or once a removal of them has
+ * passed (#115), since the fold ignores their result then; none once the group has dissolved (#108), since the fold takes no
  * event after its dissolve; and none in a coalition's own log (#100), which
  * takes no result: its motions are decided by the groups' results, and each
  * group's own log carries the result of its vote on one. A Proposal whose
@@ -42,7 +43,9 @@ export function resultsDue(
   group: Pick<Group, 'me' | 'relayNow' | 'leaving'> & Partial<Pick<Group, 'outbox'>>,
 ): readonly Proposal[] {
   if (state.dissolved !== null || state.coalition !== null) return [];
-  if (group.leaving !== undefined || !can(state, group.me.author, 'read')) return [];
+  const me = group.me.author;
+  if (group.leaving !== undefined || !can(state, me, 'read')) return [];
+  if (isSuspended(state, me) || isOusted(state, me)) return [];
   const queued = queuedResults(group.outbox ?? []);
   return state.proposals.filter(
     (proposal) => needsResult(proposal, group.relayNow) && !queued.has(proposal.id),

@@ -4,9 +4,9 @@
  * in plain text under their coalition names.
  *
  * The room is a log of its own, apart from the coalition's: its mailboxes and
- * seal key derive from the coalition's `inner` (spec §3), which only member
- * groups' sealed logs hold, so neither a coalition's followers (#124) nor the
- * relay can read it. A message is a signed record, `{v: 1, type: 'message',
+ * seal key derive from the coalition's `inner` (spec §3), which only seated
+ * groups hold, so neither a coalition's followers (#124), nor a group asking
+ * in before it's seated (#313), nor the relay can read it. A message is a signed record, `{v: 1, type: 'message',
  * group: coalitionId, author, ts, body: {text}}`, and {@link foldRoom} reads
  * the room's log against the coalition's folded state: a message shows only
  * from a participant bound to one of the coalition's seats, never from a key

@@ -5,8 +5,8 @@
  * No server holds a door's keys, so the members' devices keep its page and
  * read its inbox, acting only on the door's effective value
  * (`effectiveOptIn`): a steward's narrowing closes it at once. After each
- * sync of a group, while this device is a member and the group isn't
- * leaving:
+ * sync of a group, while this device is a member, no removal of it has
+ * passed (#115), and the group isn't leaving:
  *
  * 1. **The page.** While the door is open in effect, the device posts its
  *    page when what it says (the name, the excerpt, the shown count) differs
@@ -25,7 +25,7 @@
  * page mailbox once a launch, again only when the page changes or its copy
  * comes due. Nothing the keeper does, or fails to do, fails a sync pass.
  */
-import { can } from '../engine/capabilities';
+import { can, isOusted } from '../engine/capabilities';
 import type { GroupState } from '../engine/fold';
 import { type FrontDoor, isFrontDoor, rulesChangeOf } from '../engine/optIns';
 import type { Relay } from '../net/relay';
@@ -124,7 +124,8 @@ export function createDoorKeeper(options: DoorKeeperOptions): DoorKeeper {
       // Expired ballots stay expired (#111): the door reads the group as every screen does.
       const state = foldGroup(group);
       const me = group.me.author;
-      if (state.group === null || !can(state, me, 'read')) return;
+      // From a removal's final pass its member only reads, so their device keeps no door (#115).
+      if (state.group === null || !can(state, me, 'read') || isOusted(state, me)) return;
       for (const [door, page] of pagesDue(state, plainText)) await keep(door, page, state.at);
       const open = openDoor(state);
       if (open !== null && can(state, me, 'invite'))

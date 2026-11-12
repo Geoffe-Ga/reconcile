@@ -77,7 +77,10 @@
  * mailbox again, and its chat bot posts nothing. After a pass that brought
  * new records or a new relay minute, `settleDissolve` (./archive.ts)
  * archives the group, or posts this member's `dissolve` when a dissolve
- * Proposal's pass has become final.
+ * Proposal's pass has become final. `settleRemoval` (./removal.ts) does the
+ * same for a removal (#115): it archives the group once a `remove` naming
+ * this member folds, forgetting its push registration first, or posts this
+ * member's `remove` when a removal's pass has become final.
  *
  * Erase halts the loop for good before it closes the store (#78): no new pass
  * starts, a pass already running stops before its next group, and `halt`
@@ -93,10 +96,10 @@
  * over. Folded state comes from the log alone, so an event still in the
  * outbox is pending and never folded.
  *
- * A group's key changes when someone leaves (#98, `epochs.ts`). Each record
- * read is tagged with the epoch of the mailboxes it came from. While a key
- * change is due, the outbox sends only `key-rotate` and `leave`. After a pass
- * in which every group synced, a device that sees a key change due syncs that
+ * A group's key changes when someone leaves or is removed (#98, #115,
+ * `epochs.ts`). Each record read is tagged with the epoch of the mailboxes it
+ * came from. While a key change is due, the outbox sends only `key-rotate`
+ * and `leave`. After a pass in which every group synced, a device that sees a key change due syncs that
  * group once more and, if none has landed, posts one to the outgoing epoch's
  * mailbox for this week. A pull that brings a canonical key change this
  * member's wrap opens moves the group to the new epoch's mailboxes, in the
@@ -130,6 +133,7 @@ import type { Relay, RelayRecord } from '../net/relay';
 import type { GroupState, LogRecord } from '../engine/fold';
 import { wakeForRecord } from '../engine/wake';
 import { settleDissolve } from './archive';
+import { settleRemoval } from './removal';
 import type { ChatBot } from './chatBot';
 import { ensureEntries, settleCoalitions, stillSyncs } from './coalitions';
 import { type EventIdOf, type Group, isRoomEntry, type Pull, sameBytes, type Store } from './db';
@@ -456,14 +460,16 @@ export function createSync(options: SyncOptions): Sync {
   }
 
   /**
-   * Once a pull is saved, settles a dissolve (#108) when it brought something
-   * that could finish a dissolve vote or bring a dissolve: a record, or a
-   * later minute.
+   * Once a pull is saved, settles a dissolve (#108) and a removal (#115) when
+   * it brought something that could finish a vote or bring its event: a
+   * record, or a later minute. A removal of this member forgets the group's
+   * push registration before it archives the group (#99).
    */
   async function settleAfter(group: Group, pull: Pull): Promise<void> {
     if (group.kind !== undefined) return;
     if (pull.records.length > 0 || pull.relayNow !== group.relayNow) {
       await settleDissolve(store, group.groupId, clock);
+      await settleRemoval(store, group.groupId, clock, (removed) => push?.forget(removed));
     }
   }
 
