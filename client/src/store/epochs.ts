@@ -52,6 +52,7 @@ import {
   wrapEpochSecret,
   wrapsHold,
 } from '../crypto/epoch';
+import { isOusted } from '../engine/capabilities';
 import { parseRecord, signEvent } from '../engine/event';
 import { type GroupState, keyHolders, type LogRecord, type Rotation } from '../engine/fold';
 import { type EpochAdvance, type Group, sameBytes } from './db';
@@ -104,13 +105,15 @@ function wasRefused(state: GroupState, author: string): boolean {
 /**
  * Whether this device should write the key change `state` has due now: not
  * while it is leaving, nor for a read-only archive, which sends nothing
- * (#108), nor once a key change its member wrote was refused (#224).
+ * (#108), nor once a key change its member wrote was refused (#224), nor once
+ * a removal of its member has passed, since the fold ignores their key change
+ * (#115; #372).
  */
 export function hasDuty(group: Group, state: GroupState): boolean {
   if (!state.rotationDue || state.group === null || state.epoch !== epochOf(group)) return false;
   if (group.leaving !== undefined || group.archived !== undefined) return false;
   const { author } = group.me;
-  return isMember(state, author) && !wasRefused(state, author);
+  return isMember(state, author) && !isOusted(state, author) && !wasRefused(state, author);
 }
 
 /**
