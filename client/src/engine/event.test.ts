@@ -1225,6 +1225,28 @@ describe('encryption keys and key changes (#98)', () => {
     });
   });
 
+  it('reads a recovery-share as its box alone, dropping a recipient or any other key (#109)', () => {
+    const parsed = parseEvent(json(envelope('recovery-share', { box: WRAP, to: BEN, t: 3 })));
+    expect(parsed?.event).toEqual({
+      v: 1,
+      type: 'recovery-share',
+      group: 'g1',
+      author: ANA,
+      ts: 1,
+      body: { box: WRAP },
+    });
+  });
+
+  it.each([
+    ['no box', {}],
+    ['a numeric box', { box: 7 }],
+    ['a box outside base64url', { box: 'a box' }],
+    ['a padded box', { box: `${WRAP}=` }],
+    ['a one-character box', { box: 'A' }],
+  ])('returns null for a recovery-share with %s (#109)', (_label, body) => {
+    expect(parseEvent(json(envelope('recovery-share', body)))).toBeNull();
+  });
+
   it('reads a key-rotate as its epoch, commit and wraps, dropping unknown keys', () => {
     const body = { epoch: 1, commit: COMMIT, wraps: { [ANA]: WRAP, [BEN]: WRAP }, secret: 'no' };
     const parsed = parseEvent(json(envelope('key-rotate', body)));

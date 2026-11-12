@@ -66,7 +66,7 @@
  * `importSnapshot` from one.
  */
 import { BACKUP_LOG2_N, BackupUnreadable, openBackup, sealBackup } from '../crypto/backup';
-import { base64url, fromBase64url } from '../crypto/base64url';
+import { base64url, canonicalBytes } from '../crypto/base64url';
 import { MAX_RECORD_BYTES } from '../crypto/record';
 import { publicKeyOf } from '../crypto/sign';
 import type { LogRecord } from '../engine/fold';
@@ -467,20 +467,9 @@ function isCountOrNull(value: unknown): value is number | null {
   return value === null || isCount(value);
 }
 
-/** The bytes `value` spells in canonical unpadded base64url, or null. */
-function bytesIn(value: unknown): Uint8Array<ArrayBuffer> | null {
-  if (typeof value !== 'string') return null;
-  try {
-    const bytes = fromBase64url(value);
-    return base64url(bytes) === value ? bytes : null;
-  } catch {
-    return null;
-  }
-}
-
 /** A 32-byte key in `value`, or null. */
 function keyIn(value: unknown): Uint8Array<ArrayBuffer> | null {
-  const bytes = bytesIn(value);
+  const bytes = canonicalBytes(value);
   return bytes?.length === KEY_BYTES ? bytes : null;
 }
 
@@ -495,7 +484,7 @@ function isLaterEpoch(value: unknown): value is number {
  */
 function recordIn(value: unknown): LogRecord | null {
   if (!isObject(value) || !isCount(value.seq) || !isCount(value.received)) return null;
-  const bytes = bytesIn(value.bytes);
+  const bytes = canonicalBytes(value.bytes);
   if (bytes === null || bytes.length > MAX_RECORD_BYTES || eventIdOf(bytes) === null) return null;
   const { epoch } = value;
   if (epoch !== undefined && !isLaterEpoch(epoch)) return null;
