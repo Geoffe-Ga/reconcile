@@ -12,10 +12,11 @@
  * kept before #255 does until the device seals or unlocks, or else the
  * vault's, which a locked device refuses to open.
  *
- * A shared personal Document's share keys (`shareSealing`, `./personal.ts`)
- * and a sent front-door application's reply keys (`replySealing`,
- * `./applications.ts`) work this way. #303's recovery request can join them
- * with a sealing of its own and its store's name, and no new vault format.
+ * A shared personal Document's share keys (`shareSealing`, `./personal.ts`),
+ * a sent front-door application's reply keys (`replySealing`,
+ * `./applications.ts`) and a recovering device's request keys
+ * (`requestSealing`, `./recoverRequest.ts`, #118, in the device store) work
+ * this way, with no new vault format.
  */
 import type { Secrets } from './vault';
 

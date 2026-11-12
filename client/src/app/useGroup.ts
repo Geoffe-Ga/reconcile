@@ -98,17 +98,17 @@ export interface GroupView {
   /** Once this device has cleared a dissolved group's ballots (#108): when, and the tallies it kept. */
   cleared: Pick<ClearedArchive, 'at' | 'tallies'> | null;
   /**
+   * The recovery shares this device holds in the group that its home hasn't
+   * shown yet (#109): its quiet card shows each once, until the person puts it away.
+   */
+  newShares: readonly HeldShare[];
+  /**
    * The front door's applications this device read from its inbox (#121),
    * dismissed ones included, oldest first: none until it has read one.
    */
   applications: readonly ReceivedApplication[];
   /** Every coalition on this device, each with its log folded (#114). */
   coalitions: readonly HeldCoalition[];
-  /**
-   * The recovery shares this device holds in the group that its home hasn't
-   * shown yet (#109): its quiet card shows each once, until the person puts it away.
-   */
-  newShares: readonly HeldShare[];
 }
 
 /** No shares: one shared empty list, so it never looks changed. */
