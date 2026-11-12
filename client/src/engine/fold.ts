@@ -1393,9 +1393,19 @@ function applyProposal(
   if (isStewardProposal(body)) return applySteward(draft, body, author, at);
   if (isRulesProposal(body)) return applyRules(draft, body, author, at);
   if (isDissolveProposal(body)) return applyDissolveProposal(draft, body, author, at);
-  if (isNewDocumentProposal(body)) return applyNewDocument(draft, body, author, at);
   // Admitting a group is a coalition's motion (#114): a group's own log takes none.
   if (isAdmitProposal(body)) return false;
+  return applyDocumentChange(draft, body, author, at);
+}
+
+/** Opens a group's Proposal that changes its Documents: a new Document (#92), an add (#75) or an edit. */
+function applyDocumentChange(
+  draft: Draft,
+  body: ProposalBody | AddProposalBody | NewDocumentProposalBody,
+  author: string,
+  at: Receipt,
+): boolean {
+  if (isNewDocumentProposal(body)) return applyNewDocument(draft, body, author, at);
   return isAddProposal(body)
     ? applyAdd(draft, body, author, at)
     : openEdit(draft, body, author, at) !== null;
