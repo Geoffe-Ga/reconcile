@@ -20,6 +20,9 @@ import {
   type AddTarget,
   base64url,
   type EventDraft,
+  type NewDocumentTarget,
+  type ProposalBody,
+  type ProposalEventBody,
   type Score,
   type SignedEvent,
   signEvent,
@@ -32,9 +35,13 @@ export type ProposalServices = Pick<Services, 'store' | 'sync' | 'now'>;
 
 /**
  * Where a Proposal goes (#75): the Atom whose text it would replace, where
- * blank text proposes removing the Atom, or where a new section goes.
+ * blank text proposes removing the Atom, where a new section goes, or a new
+ * Document (#92).
  */
-export type ProposalPlace = { readonly atom: string } | { readonly target: AddTarget };
+export type ProposalPlace =
+  | { readonly atom: string }
+  | { readonly target: AddTarget }
+  | { readonly target: NewDocumentTarget };
 
 /** A Proposal's entries: title and why trimmed, the link null when blank. */
 export type ProposalValues = ProposalPlace & {
@@ -73,20 +80,40 @@ export function removalDraft(atom: string): string {
   return `remove:${atom}`;
 }
 
-/** The draft key of a new section after Atom `after`, or first for null (#75). */
-export function addDraft(after: string | null): string {
-  return `add:${after ?? ''}`;
+/**
+ * The draft key of a new section (#75): after Atom `after`, or, for null,
+ * first in the Document `document` (#92), so each Document's start keeps its
+ * own draft.
+ */
+export function addDraft({ document, after }: Pick<AddTarget, 'document' | 'after'>): string {
+  return after === null ? `add-first:${document}` : `add:${after}`;
 }
+
+/** The draft key of a new Document's Proposal (#92): one per group, as the issue names it. */
+export const NEW_DOCUMENT_DRAFT = 'new-document';
 
 /**
  * The private draft a Proposal is written in (spec §8): the lapsed
  * Proposal's when proposing again, else its Atom's for a change, the
- * removal's when its text is blank, or the add's for its spot.
+ * removal's when its text is blank, the add's for its spot, or the new
+ * Document's (#92).
  */
 function draftOf(values: ProposalValues, text: string): string {
   if (values.again !== undefined) return againDraft(values.again);
-  if ('target' in values) return addDraft(values.target.after);
-  return text === '' ? removalDraft(values.atom) : values.atom;
+  if (!('target' in values)) return text === '' ? removalDraft(values.atom) : values.atom;
+  const { target } = values;
+  return target.kind === 'add' ? addDraft(target) : NEW_DOCUMENT_DRAFT;
+}
+
+/**
+ * A Proposal's body: where it goes first, its Atom or its target (#75, #92),
+ * then its words, in the order every device has signed them.
+ */
+function bodyAt(place: ProposalPlace, fields: Omit<ProposalBody, 'atom'>): ProposalEventBody {
+  if (!('target' in place)) return { atom: place.atom, ...fields };
+  const { target } = place;
+  // The branches match on purpose: the check narrows `target`, so each body types as one member of the union.
+  return target.kind === 'add' ? { target, ...fields } : { target, ...fields };
 }
 
 /** A queued Proposal's id, or why it wasn't queued. */
@@ -150,8 +177,8 @@ function allFit(events: readonly SignedEvent[]): boolean {
 }
 
 /**
- * Proposes new text for one Atom, its removal (blank text), or a new section
- * (#75), as this device's member of `groupId`, for the voting window the
+ * Proposes new text for one Atom, its removal (blank text), a new section
+ * (#75), or a new Document (#92), as this device's member of `groupId`, for the voting window the
  * proposer chose, if any (#106). Every string is NFC-normalized before the
  * event is signed, and the text goes through `normalizeAtomText` (spec §4).
  * Queuing the Proposal clears the private draft it was written in in the same
@@ -174,9 +201,7 @@ export async function propose(
 ): Promise<ProposeResult> {
   const { title, why, link, window, versions = [], dispatch } = values;
   const text = normalizeAtomText(values.text);
-  const place = 'target' in values ? { target: values.target } : { atom: values.atom };
-  const body = {
-    ...place,
+  const fields = {
     title: nfc(title),
     why: nfc(why),
     text,
@@ -189,7 +214,7 @@ export async function propose(
     type: 'proposal',
     group: log,
     ts: services.now(),
-    body,
+    body: bodyAt(values, fields),
   });
   const others = await Promise.all(
     versions.map((version) =>

@@ -150,8 +150,7 @@ async function decidedTogether(quiet = false): Promise<Decided> {
     body: {
       name: 'Riverside Tenants',
       founder: 'Ana',
-      title: 'House rules',
-      atoms: ['Quiet after 10pm.', 'Bins out on Sunday.'],
+      documents: [{ title: 'House rules', atoms: ['Quiet after 10pm.', 'Bins out on Sunday.'] }],
       kx: testKx('ana').kx,
     },
   });

@@ -61,15 +61,15 @@ function SenderLine({ state, dispatch, place }: PartProps) {
   );
 }
 
-/** Where Open goes: the group's Document, or the coalition's Document `doc` (#124). */
+/** Where Open goes: the group's Document `doc` (#92), or the coalition's (#124). */
 function documentHref(state: GroupState, doc: string, place: DispatchPlace): string {
   const id = state.group ?? '';
   return place === 'group'
-    ? routeHref({ name: 'document', groupId: id })
+    ? routeHref({ name: 'document', groupId: id, documentId: doc })
     : routeHref({ name: 'coalitionDocument', coalitionId: id, documentId: doc });
 }
 
-/** "Open <Document title> →", when the Dispatch points to a Document. */
+/** "Open <Document title> →", when the Dispatch points to one of its log's Documents (#92). */
 function OpenDocument({
   state,
   doc,

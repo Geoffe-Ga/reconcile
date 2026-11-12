@@ -88,7 +88,7 @@ async function vote(person: Person): Promise<void> {
 
 /** The Document's sections as a profile reads them, from its Document view. */
 async function documentText(page: Page): Promise<string[]> {
-  await page.getByRole('link', { name: TITLE }).click();
+  await page.getByRole('link', { name: TITLE, exact: true }).click();
   await expect(heading(page, TITLE)).toBeVisible();
   await expect(page.getByRole('button', { name: /Propose a change/ })).toHaveCount(0);
   return page.locator('article.document .atom').allInnerTexts();

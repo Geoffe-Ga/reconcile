@@ -67,6 +67,13 @@ describe('vector files', () => {
       'dissolve-terminal.json',
       'dissolve-unfinished.json',
       'dissolve-window.json',
+      'documents-add.json',
+      'documents-chat-thread.json',
+      'documents-cleared.json',
+      'documents-coalition.json',
+      'documents-dispatch.json',
+      'documents-genesis.json',
+      'documents-new.json',
       'door-class.json',
       'door-invited.json',
       'fold.json',
@@ -189,6 +196,13 @@ describe('vector files', () => {
       'fold',
       'fold',
       'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'coalition',
       'fold',
       'fold',
       'fold',
@@ -677,6 +691,41 @@ describe('vector files', () => {
   ])('include the sections Dispatch vector "%s" (#75, #112)', (name) => {
     expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
   });
+
+  it.each([
+    'documents-genesis-two',
+    'documents-genesis-none',
+    'documents-genesis-blank-title',
+    'documents-genesis-title-length',
+    'documents-genesis-no-atoms',
+    'documents-genesis-edit-second',
+    'documents-new-passes',
+    'documents-new-close-order',
+    'documents-new-versions',
+    'documents-new-ignored',
+    'documents-new-sections',
+    'documents-new-dissolve',
+    'documents-add-other-document',
+    'documents-add-start',
+    'documents-add-anchor-removed',
+    'documents-add-unknown-document',
+    'documents-add-emptied',
+    'documents-dispatch-new',
+    'documents-dispatch-second',
+    'documents-dispatch-sent',
+    'documents-chat-thread',
+    'documents-cleared-new',
+    'documents-cleared-add',
+  ])('include the Documents vector "%s" (#92)', (name) => {
+    expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
+  });
+
+  it.each(['documents-coalition-genesis', 'documents-coalition-motion'])(
+    'include the coalition Documents vector "%s" (#92, #100)',
+    (name) => {
+      expect(COALITION_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
+    },
+  );
 
   it('include the sections vector "sections-coalition" (#75, #100)', () => {
     expect(COALITION_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(

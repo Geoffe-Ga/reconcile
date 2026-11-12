@@ -28,8 +28,7 @@ const VALUES = {
   groupName: 'Riverside Tenants',
   yourName: 'Ana',
   chat: null,
-  title: 'House rules',
-  text: 'Quiet hours start at ten.',
+  documents: [{ title: 'House rules', text: 'Quiet hours start at ten.' }],
 };
 
 /** A group created on `owner` and sent to the relay. */
@@ -81,6 +80,8 @@ describe('App', () => {
       ['Document text', 'Quiet hours start at ten.'],
     ];
     for (const [label, value] of entries) {
+      // The first Document starts titled Mission statement (#92), so each field is cleared.
+      await user.clear(screen.getByRole('textbox', { name: label }));
       await user.click(screen.getByRole('textbox', { name: label }));
       await user.paste(value);
     }
