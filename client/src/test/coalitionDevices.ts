@@ -6,7 +6,7 @@
 import { createGroup, joinGroup, lookupInvite, makeInvite } from '../app/actions';
 import { parseInviteLink } from '../app/invite';
 import { castBallot } from '../app/proposals';
-import { lookupCard, makeCard, postCard } from '../app/reconcile';
+import { bringCard, lookupCard, makeCard, postCard } from '../app/reconcile';
 import { parseCardLink } from '../coalition/card';
 import type { Score } from '../engine/event';
 import { LEVELS } from '../engine/capabilities';
@@ -108,6 +108,22 @@ export async function anaMakesCard(
   const lookup = await lookupCard(opener.services, seed);
   if (lookup.kind !== 'found') throw new Error(`Expected the card to open, not ${lookup.kind}.`);
   return { proposal: made.proposalId, found: lookup.found, seed, link, card: made.card };
+}
+
+/**
+ * Riverside and Oak St, reconciled into the coalition `values` names: Ana
+ * makes the card, Cy brings it to Oak St, and both groups pass, all synced.
+ */
+export async function formedCoalition(fake: FakeRelay, values = CARD_VALUES) {
+  const groups = await twoGroups(fake);
+  const { ana, ben, cy, riverside, oak } = groups;
+  const { proposal, found: card, card: made } = await anaMakesCard(ana, cy, riverside, values);
+  const brought = await bringCard(cy.services, card, oak, 'Cy');
+  await syncAll(1);
+  await vote(riverside, proposal, [ana, cy]);
+  await vote(oak, brought, [ben, cy]);
+  await syncAll();
+  return { ...groups, card: made };
 }
 
 /** Each device scores the Proposal `score` in `groupId`, with a reason for a 0. */
