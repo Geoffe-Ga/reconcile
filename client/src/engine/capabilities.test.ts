@@ -4,6 +4,8 @@ import {
   type Capability,
   can,
   DEFAULT_JOIN_LEVEL,
+  FOLLOWER_LEVEL,
+  followerCan,
   FOUNDER_LEVEL,
   isLevel,
   isSuspended,
@@ -133,6 +135,20 @@ describe('LEVEL_CAPABILITIES', () => {
   it('lets every level read the roster until the hidden roster returns (ADR-0074)', () => {
     for (const level of LEVELS) expect(LEVEL_CAPABILITIES[level]).toContain('see-roster');
   });
+});
+
+describe('a coalition’s followers (#124; ADR-0003, ADR-0021)', () => {
+  it('follow at the Member level: they read and see the participants, and nothing more', () => {
+    expect(FOLLOWER_LEVEL).toBe('member');
+    expect(ALL.filter(followerCan)).toEqual(['read', 'see-roster']);
+  });
+
+  it.each(['vote', 'vouch', 'invite', 'propose', 'dispatch', 'suspend', 'narrow'] as const)(
+    'never %s',
+    (capability) => {
+      expect(followerCan(capability)).toBe(false);
+    },
+  );
 });
 
 describe('can', () => {

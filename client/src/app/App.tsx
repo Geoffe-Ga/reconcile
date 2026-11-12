@@ -45,9 +45,10 @@ import { SharedPage } from '../screens/SharedPage';
 import type { SeatNumber } from '../engine/stewards';
 import type { GuideRecord } from '../platform/guide';
 import type { Persistence } from '../platform/persist';
-import { Start, type StartRequest } from '../screens/Start';
+import { Start, type StartFollowing, type StartRequest } from '../screens/Start';
 import { StewardComposer, type StewardOutcome } from '../screens/StewardComposer';
 import { dismissed } from '../store/applications';
+import type { HeldCoalition } from '../store/coalitions';
 import type { Group, Me } from '../store/db';
 import { type GroupDrafts, groupDrafts } from '../store/drafts';
 import { foldGroup } from '../store/expiry';
@@ -105,7 +106,7 @@ import {
   type VersionValues,
   vouch,
 } from './proposals';
-import { CoalitionRouteScreen } from './CoalitionScreens';
+import { CoalitionRouteScreen, FollowScreen } from './CoalitionScreens';
 import {
   type CoalitionRoute,
   type GroupRoute,
@@ -118,7 +119,7 @@ import type { AppServices } from './services';
 import type { ChatDetails, ChatMoment } from './chatMessages';
 import { chatPayload, shareOrCopy } from './share';
 import { relayMinuteNow } from './time';
-import { GroupServicesContext, type GroupView, useGroup } from './useGroup';
+import { GroupServicesContext, type GroupView, useCoalitionList, useGroup } from './useGroup';
 import { useGroupList, useGroups } from './useGroupList';
 import { useNow } from './useNow';
 import { usePersonalList } from './usePersonalList';
@@ -141,7 +142,17 @@ interface StartScreenProps {
   readonly services: AppServices;
   readonly onOpenInvite: (seed: Uint8Array) => void;
   readonly onOpenCard: (seed: Uint8Array) => void;
+  readonly onOpenFollow: (seed: Uint8Array) => void;
   readonly persistence: Persistence | null;
+}
+
+/** The coalitions this device follows (#124), once each has its genesis, as Start lists them. */
+function followingOf(coalitions: readonly HeldCoalition[]): StartFollowing[] {
+  return coalitions.flatMap(({ entry, state }) => {
+    if (entry.following !== true || state.group === null || state.coalition === null) return [];
+    const groups = state.coalition.seats.map((seat) => seat.name);
+    return [{ coalitionId: state.group, name: state.name, groups }];
+  });
 }
 
 /** Opens a front door link pasted into Start (#121). */
@@ -150,8 +161,10 @@ function openDoor(payload: string): void {
 }
 
 function StartScreen(props: StartScreenProps) {
-  const { services, onOpenInvite, onOpenCard, persistence } = props;
+  const { services, onOpenInvite, onOpenCard, onOpenFollow, persistence } = props;
   const groups = useGroupList(services.store);
+  const coalitions = useCoalitionList(services.store);
+  const following = useMemo(() => followingOf(coalitions ?? []), [coalitions]);
   const sent = useSentApplications(services.store);
   const requests = useMemo(
     () =>
@@ -174,6 +187,8 @@ function StartScreen(props: StartScreenProps) {
       onOpenInvite={onOpenInvite}
       onOpenDoor={openDoor}
       onOpenCard={onOpenCard}
+      onOpenFollow={onOpenFollow}
+      following={following}
       persistence={persistence}
       onRestore={onRestore}
     />
@@ -275,6 +290,16 @@ function SettingsScreen({ services }: { readonly services: AppServices }) {
 }
 
 /**
+ * Whether the device keeps a relay backup key (#97), kept current as the
+ * store changes, or null until the store answers: what Personal and each
+ * personal Document's line on where they go depends on (#248).
+ */
+function useKeepsRelayBackup(store: AppServices['store']): boolean | null {
+  const status = useRelayBackupStatus(store);
+  return status === null ? null : status.kind !== 'off';
+}
+
+/**
  * Choose recovery contacts (#109): the picker, from the people in this
  * device's groups. Saving chooses them, then goes back to Settings, where
  * their status shows.
@@ -296,9 +321,12 @@ function RecoveryScreen({ services }: { readonly services: AppServices }) {
 /** Personal (#93): this device's personal Documents, and the id a new one opens at. */
 function PersonalScreen({ services }: { readonly services: AppServices }) {
   const documents = usePersonalList(services.store);
+  const relayBackup = useKeepsRelayBackup(services.store);
   // One id per visit: nothing is stored under it until that Document's first save.
   const [newId] = useState(newPersonalId);
-  return documents === null ? null : <Personal documents={documents} newId={newId} />;
+  return documents === null ? null : (
+    <Personal documents={documents} newId={newId} relayBackup={relayBackup} />
+  );
 }
 
 interface PersonalDocumentScreenProps {
@@ -312,6 +340,7 @@ function PersonalDocumentScreen({ services, id }: PersonalDocumentScreenProps) {
     replaceRoute({ name: 'personal' });
   }, []);
   const sharing = useMemo(() => personalSharing(services), [services]);
+  const relayBackup = useKeepsRelayBackup(services.store);
   return (
     <PersonalDocument
       id={id}
@@ -319,6 +348,7 @@ function PersonalDocumentScreen({ services, id }: PersonalDocumentScreenProps) {
       now={services.now}
       onDeleted={onDeleted}
       sharing={sharing}
+      relayBackup={relayBackup}
     />
   );
 }
@@ -1128,6 +1158,8 @@ interface PlainScreenProps extends Omit<ScreenProps, 'route' | 'heldSeed' | 'hol
   readonly openInvite: (seed: Uint8Array) => void;
   /** Opens a reconcile card pasted into Start (#114), its seed held in memory. */
   readonly openCard: (seed: Uint8Array) => void;
+  /** Opens a follow link pasted into Start (#124), its seed held in memory. */
+  readonly openFollow: (seed: Uint8Array) => void;
 }
 
 /**
@@ -1135,7 +1167,7 @@ interface PlainScreenProps extends Omit<ScreenProps, 'route' | 'heldSeed' | 'hol
  * and Choose recovery contacts (#109).
  */
 function PlainScreen(props: PlainScreenProps) {
-  const { route, services, persistence, guide, openInvite, openCard } = props;
+  const { route, services, persistence, guide, openInvite, openCard, openFollow } = props;
   switch (route.name) {
     case 'start':
       return (
@@ -1143,6 +1175,7 @@ function PlainScreen(props: PlainScreenProps) {
           services={services}
           onOpenInvite={openInvite}
           onOpenCard={openCard}
+          onOpenFollow={openFollow}
           persistence={persistence}
         />
       );
@@ -1169,9 +1202,18 @@ interface LinkScreenProps extends Omit<ScreenProps, 'route' | 'holdSeed' | 'pers
   readonly releaseSeed: () => void;
 }
 
-/** Join, a shared page, a front door and a card: each reads what follows its link's `#`. */
+/** Join, a shared page, a front door, a card and a follow link: each reads what follows its link's `#`. */
 function LinkScreen({ route, services, heldSeed, releaseSeed, guide }: LinkScreenProps) {
   switch (route.name) {
+    case 'follow':
+      return (
+        <FollowScreen
+          services={services}
+          payload={route.payload}
+          heldSeed={heldSeed}
+          releaseSeed={releaseSeed}
+        />
+      );
     case 'card':
       return (
         <BringScreen
@@ -1217,6 +1259,13 @@ function Screen({ route, services, heldSeed, holdSeed, persistence, guide }: Scr
     },
     [holdSeed],
   );
+  const openFollow = useCallback(
+    (seed: Uint8Array) => {
+      holdSeed(seed);
+      navigate({ name: 'follow', payload: null });
+    },
+    [holdSeed],
+  );
   if ('groupId' in route) {
     return (
       <>
@@ -1246,6 +1295,7 @@ function Screen({ route, services, heldSeed, holdSeed, persistence, guide }: Scr
       guide={guide}
       openInvite={openInvite}
       openCard={openCard}
+      openFollow={openFollow}
     />
   );
 }

@@ -77,8 +77,8 @@ async function openRoom(person: Person, group: string, coalition: string): Promi
 
 /**
  * Writes `text` in the room's box and sends it, then waits for the relay to
- * have it and for the room to list the relay's copy: a sent message leaves the
- * outbox a moment before the pull that brings it back is saved.
+ * have it. The room lists the relay's copy in the render that drops the queued
+ * one (#343), so the message is listed throughout.
  */
 async function write(person: Person, text: string): Promise<void> {
   const { page } = person;
@@ -88,7 +88,6 @@ async function write(person: Person, text: string): Promise<void> {
   const list = page.getByRole('list', { name: 'Messages' });
   await expect(list.getByText(text, { exact: true })).toBeVisible();
   await expect(list.getByText('Sending…')).toHaveCount(0, { timeout: 45_000 });
-  await expect(list.getByText(text, { exact: true })).toBeVisible({ timeout: 45_000 });
 }
 
 /** The room's messages on `page`, each as "name: text". */

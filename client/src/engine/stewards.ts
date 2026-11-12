@@ -33,6 +33,7 @@ import {
   type RulesChange,
   rulesChangeOf,
 } from './optIns';
+import { type Closing, isOpenAt } from './open';
 import { DAY_MINUTES, type Rules } from './rules';
 import { codePointLength } from './text';
 
@@ -137,11 +138,12 @@ export interface Suspension {
   readonly removal: string | null;
 }
 
-/** What the steward rules read of a Proposal: its target, and when it closes. */
-export interface StewardProposalState {
+/**
+ * What the steward rules read of a Proposal: its target, and when it closes,
+ * which they read as every rule does ({@link isOpenAt}, #289).
+ */
+export interface StewardProposalState extends Closing {
   readonly target: ProposalTarget;
-  readonly deadline: number;
-  readonly closedAt: number | null;
 }
 
 /** What the steward rules read of a group, at relay minute `at`. */
@@ -176,16 +178,11 @@ export function stewardChangeOf(proposal: StewardProposalState): StewardChange |
   return target.kind === 'steward' ? target : null;
 }
 
-/** True while a Proposal takes ballots at relay minute `at`: before its deadline and any early close. */
-function isOpen(proposal: StewardProposalState, at: number): boolean {
-  return proposal.closedAt === null && at < proposal.deadline;
-}
-
 /** The steward Proposals open at `state.at`, with what each would change. */
 function openChanges(state: StewardState): StewardChange[] {
   return state.proposals.flatMap((p) => {
     const change = stewardChangeOf(p);
-    return change !== null && isOpen(p, state.at) ? [change] : [];
+    return change !== null && isOpenAt(p, state.at) ? [change] : [];
   });
 }
 
@@ -444,7 +441,7 @@ export function mayNarrow(
     proposal !== undefined &&
     proposal.author === author &&
     isOffProposal(proposal, optIn) &&
-    isOpen(proposal, state.at)
+    isOpenAt(proposal, state.at)
   );
 }
 

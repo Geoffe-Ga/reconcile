@@ -11,6 +11,7 @@ import { type FoldedLog, folded, foldLogs, seatOf } from '../test/coalitions';
 import {
   buildLogs,
   buildRecords,
+  clearedLog,
   COALITION_VECTORS,
   FOLD_VECTORS,
   publicKeyNamed,
@@ -20,7 +21,7 @@ import {
   VECTOR_FILES,
 } from '../test/vectors';
 import { resultMismatches, resultsToReport } from './crossing';
-import { fold } from './fold';
+import { fold, type GroupState } from './fold';
 import { DEFAULT_RULES } from './rules';
 import { rank, tally } from './tally';
 
@@ -59,6 +60,7 @@ describe('vector files', () => {
       'dispatch-limits.json',
       'dispatch-sent.json',
       'dissolve-bar.json',
+      'dissolve-cleared.json',
       'dissolve-ignored.json',
       'dissolve-proposal.json',
       'dissolve-rotate.json',
@@ -75,6 +77,8 @@ describe('vector files', () => {
       'door-class.json',
       'door-invited.json',
       'fold.json',
+      'follow-dispatch.json',
+      'follow-join.json',
       'home-two-open-proposals.json',
       'invite.json',
       'keys.json',
@@ -87,6 +91,7 @@ describe('vector files', () => {
       'levels-step-down.json',
       'levels-step-up-after-open.json',
       'optin-class.json',
+      'optin-cleared.json',
       'optin-ignored.json',
       'optin-narrow.json',
       'priority-admission.json',
@@ -112,6 +117,7 @@ describe('vector files', () => {
       'removal-target-ineligible.json',
       'result-checks.json',
       'result-cleared.json',
+      'result-closing-minute.json',
       'result-forged-early.json',
       'result-mismatch.json',
       'result-no-votes.json',
@@ -138,6 +144,7 @@ describe('vector files', () => {
       'sections-remove.json',
       'sections-rotate.json',
       'signatures.json',
+      'steward-cleared.json',
       'steward-recall.json',
       'steward-seats.json',
       'steward-step-down.json',
@@ -191,6 +198,7 @@ describe('vector files', () => {
       'fold',
       'fold',
       'fold',
+      'fold',
       'coalition',
       'fold',
       'fold',
@@ -198,9 +206,12 @@ describe('vector files', () => {
       'fold',
       'fold',
       'fold',
+      'coalition',
+      'coalition',
       'fold',
       'fold',
       'keys',
+      'fold',
       'fold',
       'fold',
       'fold',
@@ -238,6 +249,7 @@ describe('vector files', () => {
       'fold',
       'fold',
       'fold',
+      'fold',
       'room',
       'fold',
       'room-keys',
@@ -255,6 +267,7 @@ describe('vector files', () => {
       'fold',
       'fold',
       'coalition',
+      'fold',
       'fold',
       'fold',
       'fold',
@@ -736,6 +749,14 @@ describe('vector files', () => {
       'priority-coalition',
     );
   });
+
+  it.each(['steward-cleared', 'optin-cleared', 'dissolve-cleared', 'closing-minute'])(
+    'include the vector "%s", folded both with the ballots held and cleared (#289)',
+    (name) => {
+      const found = FOLD_VECTORS.find((vector) => vector.name.split(':')[0] === name);
+      expect(found?.alsoCleared ?? []).not.toEqual([]);
+    },
+  );
 });
 
 describe('coalition vector files (#100)', () => {
@@ -755,7 +776,6 @@ describe('coalition vector files (#100)', () => {
     'forgery-repeat',
     'forgery-extra-key',
     'forgery-vote',
-    'forgery-motion-dispatch',
     'contest-pass-then-fail',
     'contest-fail-then-pass',
     'group-join-after',
@@ -777,6 +797,18 @@ describe('coalition vector files (#100)', () => {
     'forgery-admit-in-group',
     'forgery-admit-genesis-result',
     'forgery-admit-forming',
+    'follow-motion-dispatch',
+    'follow-motion-dispatch-not-yet',
+    'follow-motion-dispatch-fail',
+    'follow-motion-dispatch-contested',
+    'follow-motion-dispatch-lapse',
+    'follow-motion-dispatch-order',
+    'follow-motion-dispatch-limits',
+    'follow-motion-dispatch-admit',
+    'follow-motion-dispatch-group',
+    'follow-dispatch-participant',
+    'follow-join-no-seat',
+    'follow-join-no-seat-then-seat',
   ])('include "%s"', (name) => {
     expect(COALITION_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
   });
@@ -831,11 +863,27 @@ describe('coalition vectors (#100)', () => {
   );
 });
 
+/**
+ * What a device that holds the ballots and one that has cleared them must
+ * agree on (#289): the whole state but the ballots, whether each Proposal is
+ * cleared, whom it flagged for a result its ballots don't match, and the
+ * ignored records the cleared log no longer has.
+ */
+function agreed(state: GroupState, seqs: ReadonlySet<number>) {
+  return {
+    ...state,
+    proposals: state.proposals.map((p) => ({ ...p, ballots: [], cleared: false, mismatched: [] })),
+    ignored: state.ignored.filter((record) => seqs.has(record.seq)),
+  };
+}
+
 describe('fold vectors', () => {
   it.each(FOLD_VECTORS.map((vector) => [vector.name, vector] as const))('%s', (_name, vector) => {
-    const { records, ids, cleared } = buildRecords(vector);
+    const log = buildRecords(vector);
+    const { records, ids, cleared } = log;
     const state = fold(records, vector.relayNow, [], cleared);
-    expect(state).toMatchObject(resolve(vector.expect, ids) as object);
+    const expected = resolve(vector.expect, ids) as object;
+    expect(state).toMatchObject(expected);
     const without = vector.unchangedWithout ?? [];
     const kept = records.filter((record) => !without.includes(record.seq));
     // `ignored` always differs, and so may whatever `unchangedExcept` names (#109's recoveryShares).
@@ -846,5 +894,11 @@ describe('fold vectors', () => {
         ),
       );
     expect(apart(fold(kept, vector.relayNow, [], cleared))).toEqual(apart(state));
+    if (log.alsoCleared.length === 0) return;
+    const after = clearedLog(log, state);
+    const clearedState = fold(after.records, vector.relayNow, [], after.cleared);
+    expect(clearedState, 'cleared').toMatchObject(expected);
+    const seqs = new Set(after.records.map((record) => record.seq));
+    expect(agreed(clearedState, seqs)).toEqual(agreed(state, seqs));
   });
 });
