@@ -48,7 +48,7 @@ Every other rule change still needs a `rules-change` Proposal at its class's bar
 | **2. Restored copies read only until they hear from the group** | None | Nothing new: the device sends what any restore already sends | Any copy, of any age | A quiet live group restored from an old copy waits for news, or an invite link |
 | 3. Accept the gap | None | Nothing | Nothing | Any member's old file can partly undo a dissolve, and the app calls the group live |
 
-**Decision: option 2,** confirmed by the founder on 2026-11-11, who accepted it as built (#332). It adds no relay state and no request, so it fits ADR-0001 best.
+**Decision: option 2,** confirmed by the founder on 2026-11-12, who accepted it as built (#332). It adds no relay state and no request, so it fits ADR-0001 best.
 
 - **Every group a restore takes** (a backup file, a second device's link or the relay backup) comes back **read-only for now**, noting the relay minute its copy last synced. A copy whose log holds a `dissolve` comes back dissolved, as before.
 - **While read-only for now,** the sync loop reads the group's mailboxes and sends nothing for it: no event, push, nudge, chat post or front-door page. A backup, link or relay backup leaves it out, as it leaves out an archive, since a copy of it would look current.
