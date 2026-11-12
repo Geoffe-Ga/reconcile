@@ -21,7 +21,9 @@
  * - A card for a coalition still to form carries no log. A card from a
  *   formed coalition (admitting a group) carries the coalition's log, packed
  *   as an invite packs a group's (`invite/envelope.ts`), so the device that
- *   brings it reads the coalition whatever the relay has dropped since.
+ *   brings it reads the coalition whatever the relay has dropped since. No
+ *   entry is marked kept (#269): a coalition's own log takes no result, so
+ *   it keeps none.
  *
  * Opening is all or nothing, as an invite's is: anything wrong reads as one
  * expired or damaged card. Everything here is pure: the caller does the
@@ -34,7 +36,7 @@ import { MAX_PLAINTEXT_BYTES, type Seal } from '../crypto/seal';
 import type { SeatEntry } from '../engine/event';
 import type { LogRecord } from '../engine/fold';
 import { codePointLength } from '../engine/text';
-import { NAME_MAX, openChunked, packEntries, sealChunked } from '../invite/envelope';
+import { NAME_MAX, openChunked, packEntries, sealChunked, unmarked } from '../invite/envelope';
 
 /** What a card carries. */
 export interface Card {
@@ -201,7 +203,7 @@ export function sealCard(
 /**
  * The card in `blobs`, its mailbox's records in relay order, or null unless
  * every blob opens, the first is a header, and exactly its chunk count of
- * chunks follow, each holding whole entries.
+ * chunks follow, each holding whole entries, none marked kept (#269).
  */
 export function openCard(
   seal: Seal,
@@ -210,8 +212,10 @@ export function openCard(
 ): Card | null {
   const opened = openChunked(seal, channel, blobs, decodeHeader);
   if (opened === null) return null;
+  const entries = unmarked(opened.entries);
+  if (entries === null) return null;
   const { secret, inner, seat, name, title, atoms } = opened.header;
-  const card = { secret, seat, name, title, atoms, entries: opened.entries };
+  const card = { secret, seat, name, title, atoms, entries };
   return inner === undefined ? card : { ...card, inner };
 }
 
