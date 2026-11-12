@@ -4,9 +4,14 @@
  * the same loop as a group (`sync.ts`).
  *
  * A room's mailboxes and seal key derive from the coalition's `inner`, which
- * each member group's reconcile Proposal carries and followers never get
- * (#124). So a device keeps a room exactly while a group it goes on in (not
- * leaving, not read-only) holds one of the coalition's seats: the room's
+ * each founding group's reconcile Proposal carries and followers never get
+ * (#124). A group admitted later holds no `inner` while it is decided on: its
+ * card carried none, and once it is seated, a participant from a seated group
+ * wraps `inner` to its seat in the coalition's log, which its devices open
+ * with the seat secret in the group's own reconcile Proposal (#313,
+ * `crypto/room.ts`). So a device keeps a room exactly while a group it goes
+ * on in (not leaving, not read-only) holds one of the coalition's seats and
+ * its `inner`: the room's
  * entry (`kind: 'room'`, under `deriveRoomEntryId(inner)`) holds that
  * `inner` as its secret, and the coalition entry's signing key and author, so
  * its person writes there under their coalition name, never a group's
@@ -21,10 +26,9 @@
  * carries a room (`snapshot.ts` lists groups and coalitions only): a device
  * reads its rooms again from the relay.
  */
-import { fromBase64url } from '../crypto/base64url';
 import { deriveRoomEntryId } from '../crypto/room';
 import type { GroupState } from '../engine/fold';
-import { heldCoalitions, type HeldCoalition } from './coalitions';
+import { heldCoalitions, type HeldCoalition, innerOf } from './coalitions';
 import { type Group, type NewGroup, type Store } from './db';
 import { foldGroup } from './expiry';
 
@@ -39,17 +43,22 @@ export interface RoomHolder {
 /**
  * The `inner` of `coalition`'s room on this device, from the first live
  * group in `groups` whose reconcile Proposal holds one of the coalition's
- * seats, or null: before the genesis, once it was declined, and on a device
- * with no such group, as a follower's.
+ * seats and its `inner` (`coalitions.ts`'s `innerOf`), or null: before the genesis, once
+ * it was declined, on a device with no such group, as a follower's, and for a
+ * group admitted later until a seated group's participant wraps `inner` to
+ * its seat (#313).
  */
 export function innerFor(coalition: GroupState, groups: readonly RoomHolder[]): Uint8Array | null {
   const info = coalition.coalition;
-  if (coalition.group === null || info === null || info.status === 'declined') return null;
+  const id = coalition.group;
+  if (id === null || info === null || info.status === 'declined') return null;
   const seats = new Set(info.seats.map((seat) => seat.key));
   for (const { state, live } of groups) {
     if (!live) continue;
     for (const { target } of state.proposals) {
-      if (target.kind === 'reconcile' && seats.has(target.key)) return fromBase64url(target.inner);
+      if (target.kind !== 'reconcile' || !seats.has(target.key)) continue;
+      const inner = innerOf(target, info, id);
+      if (inner !== null) return inner;
     }
   }
   return null;

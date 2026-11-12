@@ -86,8 +86,9 @@ export interface CoalitionHomeView {
   readonly standing: CoalitionStanding;
   /**
    * Whether this device may read the coalition's room (#125): a group it goes
-   * on in holds one of its seats, so it holds `inner`. Never on a device in
-   * none of its member groups, as a follower's (#124).
+   * on in holds one of its seats and `inner`, which a group admitted later
+   * holds only once a seated group's participant wraps it to its seat (#313).
+   * Never on a device in none of its member groups, as a follower's (#124).
    */
   readonly room: boolean;
 }
