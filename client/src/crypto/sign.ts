@@ -11,12 +11,22 @@
  * "signatures" that hold for every message, and devices that disagreed on
  * encodings would fold different groups.
  *
+ * A verdict is kept once it passes (#362): a sync pass folds each group
+ * about ten times, and every fold reads every record's signature, every
+ * join's invite token and every coalition join's seat proof again. The check
+ * is pure, so the same key, signature, tag and message always get the same
+ * answer; {@link verify} keeps the SHA-256 of all four for each that passed,
+ * in this page's memory only, never on disk, and a repeat costs that hash,
+ * not an Ed25519 verification. A failure is never kept: it runs again each
+ * time, and junk a mailbox holds can't grow the set.
+ *
  * Each group membership has its own keys (ADR-0009, as ADR-0073 cut it):
  * independent random keypairs, with no root identity behind them. The secret
  * key never leaves the device; the public key travels only in the group's log.
  */
 import { ed25519 } from '@noble/curves/ed25519.js';
-import { concatBytes, utf8ToBytes } from '@noble/hashes/utils.js';
+import { sha256 } from '@noble/hashes/sha2.js';
+import { bytesToHex, concatBytes, utf8ToBytes } from '@noble/hashes/utils.js';
 
 /** The tag on an event's signature. */
 export const EVENT_CONTEXT = 'reconcile/v1/event';
@@ -86,9 +96,19 @@ export function sign(ctx: SignContext, secretKey: Uint8Array, msg: Uint8Array): 
 }
 
 /**
+ * The SHA-256 hex of the key, signature and tagged message of every check
+ * that has passed in this page's life (#362). The key and signature have
+ * fixed lengths, and the tag ends at its 0x00 byte, so no two checks share
+ * an entry. Only passes are kept, one entry per valid signature the device
+ * has read, a small fraction of the logs it already holds in memory.
+ */
+const passed = new Set<string>();
+
+/**
  * Whether `sig` is `publicKey`'s signature over `msg` for the purpose `ctx`,
  * under strict RFC 8032 rules. A key or signature of the wrong length is
- * refused, not thrown on.
+ * refused, not thrown on. A check that passed before, with these exact
+ * bytes under this tag, passes again without verifying (#362).
  */
 export function verify(
   ctx: SignContext,
@@ -97,5 +117,10 @@ export function verify(
   msg: Uint8Array,
 ): boolean {
   if (publicKey.length !== PUBLIC_KEY_BYTES || sig.length !== SIGNATURE_BYTES) return false;
-  return ed25519.verify(sig, tagged(ctx, msg), publicKey, { zip215: false });
+  const message = tagged(ctx, msg);
+  const check = bytesToHex(sha256(concatBytes(publicKey, sig, message)));
+  if (passed.has(check)) return true;
+  if (!ed25519.verify(sig, message, publicKey, { zip215: false })) return false;
+  passed.add(check);
+  return true;
 }

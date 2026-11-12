@@ -6,8 +6,7 @@
  * context tag (`sign.ts`). Nothing reads an event until its record verifies,
  * so bytes a member didn't sign never reach the parser or claim an event id.
  */
-import { sha256 } from '@noble/hashes/sha2.js';
-import { bytesToHex, concatBytes } from '@noble/hashes/utils.js';
+import { concatBytes } from '@noble/hashes/utils.js';
 
 import {
   EVENT_CONTEXT,
@@ -51,18 +50,6 @@ export interface VerifiedRecord {
   /** The event's exact bytes, as signed. */
   readonly eventBytes: Uint8Array;
 }
-
-/**
- * The SHA-256 hex of every record that has verified in this page's life.
- *
- * A re-fold reads the same records again, and Ed25519 verification costs a
- * millisecond or more each, so a verdict is kept per record. Keying by a
- * collision-resistant hash of the whole record means only identical bytes
- * share a verdict. Only passes are kept, and the set holds one entry per
- * valid record the device has folded, a small fraction of the logs it
- * already holds in memory.
- */
-const verified = new Set<string>();
 
 /**
  * The record for `eventBytes`, signed with `keys`: public key ‖ signature ‖
@@ -110,16 +97,14 @@ export function openTagged(
 /**
  * The key and event bytes of a record whose signature verifies, or `null` for
  * bytes too short to hold a key and a signature, or any signature that fails.
+ * A re-fold reads the same records again, and {@link verify} keeps each
+ * verdict that passed (#362), so only identical bytes skip the Ed25519 work.
  */
 export function verifyRecord(record: Uint8Array): VerifiedRecord | null {
   if (record.length < RECORD_HEADER_BYTES) return null;
   const publicKey = record.subarray(0, PUBLIC_KEY_BYTES);
   const signature = record.subarray(PUBLIC_KEY_BYTES, RECORD_HEADER_BYTES);
   const eventBytes = record.subarray(RECORD_HEADER_BYTES);
-  const digest = bytesToHex(sha256(record));
-  if (!verified.has(digest)) {
-    if (!verify(EVENT_CONTEXT, publicKey, signature, eventBytes)) return null;
-    verified.add(digest);
-  }
+  if (!verify(EVENT_CONTEXT, publicKey, signature, eventBytes)) return null;
   return { publicKey, eventBytes };
 }
