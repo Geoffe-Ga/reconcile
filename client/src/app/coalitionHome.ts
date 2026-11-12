@@ -11,11 +11,11 @@
 import { can, followerCan } from '../engine/capabilities';
 import { MAX_LEVEL, seatLevel } from '../engine/coalition';
 import { coalitionProgress, type CoalitionProgress } from '../engine/coalitionProgress';
-import { type Dispatch, newestFirst } from '../engine/dispatches';
 import { openProposalOn } from '../engine/composeOption';
+import { type Dispatch, newestFirst } from '../engine/dispatches';
 import { atomsOf } from '../engine/documents';
 import { type ParsedEvent, parseRecord } from '../engine/event';
-import type { Atom, GroupState } from '../engine/fold';
+import type { Atom, GroupState, Proposal } from '../engine/fold';
 import type { HeldCoalition } from '../store/coalitions';
 import { roomEntryFor } from '../store/rooms';
 
@@ -96,7 +96,11 @@ export interface CoalitionHomeView {
   /** Motions this device proposed that the relay hasn't ordered yet, oldest first. */
   readonly pending: readonly { readonly id: string; readonly title: string }[];
   readonly standing: CoalitionStanding;
-  /** The coalition's Dispatches, newest first (#124), which everyone who opens it reads. */
+  /**
+   * The coalition's Dispatches, newest first, which everyone who opens it
+   * reads: those its motions carried (#124), and those it passed as they rose
+   * from a level below (#126).
+   */
   readonly dispatches: readonly Dispatch[];
   /**
    * True when this device only follows the coalition (#124): it kept the
@@ -203,13 +207,23 @@ function deciderOf(
   return undefined;
 }
 
+/**
+ * The seats beneath which `proposal` opens as a vote: its snapshot, but for a
+ * promotion motion (#126) the seat it came from, which passed it already and
+ * opens no new vote.
+ */
+function votingSeats(state: GroupState, proposal: Proposal): readonly string[] {
+  const snapshot = state.coalition?.motions.find((m) => m.id === proposal.id)?.seats ?? [];
+  const { target } = proposal;
+  return target.kind === 'promote' ? snapshot.filter((seat) => seat !== target.from) : snapshot;
+}
+
 /** Each motion of the coalition with its progress, and a group on this device that decides it. */
 function motionItems(state: GroupState, groups: readonly DeviceGroup[]): MotionItem[] {
   return state.proposals.flatMap((proposal) => {
     const progress = coalitionProgress(state, proposal.id);
-    const snapshot = state.coalition?.motions.find((m) => m.id === proposal.id)?.seats ?? [];
     if (progress === null) return [];
-    const decider = deciderOf(snapshot, groups);
+    const decider = deciderOf(votingSeats(state, proposal), groups);
     return [
       {
         id: proposal.id,
@@ -289,7 +303,10 @@ export function coalitionHome(
   };
 }
 
-/** A group on this device as the room reads it (#125): its fold, and whether it goes on here. */
+/**
+ * A group on this device as the room reads it (#125), or a coalition, which
+ * may hold a seat in one above it (#344): its fold, and whether it goes on here.
+ */
 export function holderOf({ state, leaving, archived }: DeviceGroup) {
   return { state, live: !leaving && !archived };
 }

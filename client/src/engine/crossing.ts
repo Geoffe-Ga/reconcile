@@ -17,17 +17,40 @@
  * down every line, each with the chain it came through, and results travel
  * up one line at a time: a higher coalition sees only its own seats' pass or
  * fail. {@link foldTogether} folds a device's logs in that order.
+ *
+ * Dispatches rise the same way (#126; ADR-0037). A level that passes a
+ * Dispatch whose ceiling leaves levels above it owes the coalition directly
+ * above one promotion record ({@link promotionsOwed}), which opens there as a
+ * motion and in every group beneath it, but the seat it came from: that
+ * seat already passed it, so its result comes from its own fold, `pass` only
+ * when it holds exactly the Dispatch the record names, passed. No ballot,
+ * score or note goes with it; a voter's own device carries their score
+ * (`store/carry.ts`).
  */
 import {
   foundingSeats,
   type GroupResult,
   MAX_LEVEL,
   type Motion,
+  RESULT_GRACE_MINUTES,
   resultsCount,
   seatLevel,
+  withinCeiling,
 } from './coalition';
-import type { GroupResultBody, GroupResultValue } from './event';
-import { fold, type GroupState, type HeldSeat, type LogRecord, type Proposal } from './fold';
+import type {
+  GroupResultBody,
+  GroupResultValue,
+  PromoteProposalBody,
+  PromoteTarget,
+} from './event';
+import {
+  closeTime,
+  fold,
+  type GroupState,
+  type HeldSeat,
+  type LogRecord,
+  type Proposal,
+} from './fold';
 
 /** The seat key `group` holds in `coalition`: one of its reconcile Proposals' keys that the genesis names, or null. */
 export function seatIn(
@@ -52,14 +75,16 @@ function chainOf(proposal: Pick<Proposal, 'target'>): readonly string[] {
  * Proposal. A coalition passes on the motions it decides for its own seats
  * above as well (#122), each with the chain of coalitions it came through, so
  * a motion opens in every group beneath the coalition whose motion it is,
- * with that coalition's deadline and bar.
+ * with that coalition's deadline and bar. A promotion record (#126) opens no
+ * new vote beneath the seat it came from, which already passed its
+ * Dispatch: that seat's result comes from its own fold ({@link resultsToReport}).
  */
 export function motionsFor(coalition: GroupState, seatKey: string): Motion[] {
   const { group, coalition: info } = coalition;
   if (group === null || info === null) return [];
   const mine = new Set(info.motions.filter((m) => m.seats.includes(seatKey)).map((m) => m.id));
   return coalition.proposals
-    .filter((p) => mine.has(p.id))
+    .filter((p) => mine.has(p.id) && !promotedFrom(p, seatKey))
     .map((p) => ({
       id: p.id,
       coalition: group,
@@ -110,6 +135,11 @@ export function foldTogether(logs: readonly LogToFold[]): GroupState[] {
     return state;
   };
   return logs.map((_, index) => visit(index, []));
+}
+
+/** Whether `proposal` is a promotion record that came from the seat `seatKey` (#126). */
+function promotedFrom(proposal: Pick<Proposal, 'target'>, seatKey: string): boolean {
+  return proposal.target.kind === 'promote' && proposal.target.from === seatKey;
 }
 
 /** Whether a genesis says what the group passed: the same name, title and Atoms, in order. */
@@ -168,6 +198,85 @@ function motionResult(group: GroupState, coalitionId: string, motion: string) {
   return pass ? 'pass' : 'fail';
 }
 
+/**
+ * Where a Dispatch that may rise stands in a log below (#126): the Proposal
+ * that carries it there, a group's own Dispatch put to a vote, under the
+ * Dispatch's id, or a coalition's promotion motion for it; the level a
+ * record from it states above, one more than the lines it had crossed; and
+ * whether it has passed: a group's once its pass is final, a coalition's
+ * once its seats' pass is certain, as its results cross (#122).
+ */
+interface Rising {
+  readonly proposal: Proposal;
+  readonly dispatch: PromoteTarget['dispatch'];
+  readonly ceiling: PromoteTarget['ceiling'];
+  readonly level: number;
+  readonly passed: boolean;
+  /** The relay minute from which a record no longer goes up: its results' horizon. */
+  readonly until: number;
+}
+
+/** A group's own Dispatch put to a vote (#126), as {@link Rising}: level 1 above it, passed once final. */
+function groupRising(proposal: Proposal): Rising | null {
+  const { id, target, dispatch, outcome, final } = proposal;
+  if (target.kind !== 'dispatch' || dispatch === null) return null;
+  const until = closeTime(proposal) + RESULT_GRACE_MINUTES;
+  const passed = outcome.kind === 'pass' && final;
+  return {
+    proposal,
+    dispatch: { id, ...dispatch },
+    ceiling: target.ceiling,
+    level: 1,
+    passed,
+    until,
+  };
+}
+
+/** A coalition's promotion motion (#126), as {@link Rising}: one level higher, passed once certain. */
+function coalitionRising(proposal: Proposal): Rising | null {
+  const { target, outcome, deadline } = proposal;
+  if (target.kind !== 'promote') return null;
+  const { dispatch, ceiling, level } = target;
+  const until = deadline + RESULT_GRACE_MINUTES;
+  return { proposal, dispatch, ceiling, level: level + 1, passed: outcome.kind === 'pass', until };
+}
+
+/** The Dispatches `log` holds that may rise, each as {@link Rising} (#126). */
+function risingIn(log: GroupState): Rising[] {
+  const read = log.coalition === null ? groupRising : coalitionRising;
+  return log.proposals.flatMap((proposal) => {
+    const rising = read(proposal);
+    return rising === null ? [] : [rising];
+  });
+}
+
+/** Whether a promotion record says exactly what `rising` holds: id, title, text, ceiling and level. */
+function sameRecord(rising: Rising, target: PromoteTarget): boolean {
+  const { dispatch, ceiling, level } = rising;
+  const same = dispatch.id === target.dispatch.id && dispatch.title === target.dispatch.title;
+  return (
+    same &&
+    dispatch.text === target.dispatch.text &&
+    ceiling === target.ceiling &&
+    level === target.level
+  );
+}
+
+/**
+ * The seat's own result on a promotion record that came from it (#126;
+ * ADR-0075 §1): `pass` only when its own fold holds the Dispatch the record
+ * names, with that id, title, text, ceiling and level, passed; `fail` for a
+ * record its fold doesn't hold, one that says anything else, or one whose
+ * Dispatch didn't pass; null while that is still being decided. So a forged
+ * or altered record fails.
+ */
+function promoteResult(lower: GroupState, target: PromoteTarget): GroupResultValue | null {
+  const held = risingIn(lower).find((r) => r.dispatch.id === target.dispatch.id);
+  if (held === undefined || !sameRecord(held, target)) return 'fail';
+  if (held.passed) return 'pass';
+  return held.proposal.final ? 'fail' : null;
+}
+
 /** The group's own result on the genesis or a motion, or null while it doesn't have one. */
 function ownResult(
   group: GroupState,
@@ -176,9 +285,40 @@ function ownResult(
   motion: string,
 ): GroupResultValue | null {
   if (coalition.group === null) return null;
-  return motion === coalition.group
-    ? genesisResult(group, coalition, seatKey)
-    : motionResult(group, coalition.group, motion);
+  if (motion === coalition.group) return genesisResult(group, coalition, seatKey);
+  const { target } = coalition.proposals.find((p) => p.id === motion) ?? {};
+  if (target?.kind === 'promote' && target.from === seatKey) return promoteResult(group, target);
+  return motionResult(group, coalition.group, motion);
+}
+
+/**
+ * The promotion records `lower` owes `coalition` for its seat `seatKey`
+ * (#126; ADR-0037), as `proposal` bodies to post from a participant bound to
+ * that seat: one for each Dispatch `lower` has passed whose ceiling leaves
+ * this level, never past {@link MAX_LEVEL}, that `coalition`, formed, holds
+ * no record of yet, while its results still count there. Each carries the
+ * Dispatch's id, title and text, its ceiling, the level it reaches here and
+ * the seat, and nothing else: no Document, ballot, score, count, note or
+ * name of the level below.
+ */
+export function promotionsOwed(
+  lower: GroupState,
+  coalition: GroupState,
+  seatKey: string,
+): PromoteProposalBody[] {
+  const info = coalition.coalition;
+  if (info?.status !== 'formed' || !info.seats.some((seat) => seat.key === seatKey)) return [];
+  const held = new Set(
+    coalition.proposals.flatMap((p) => (p.target.kind === 'promote' ? [p.target.dispatch.id] : [])),
+  );
+  return risingIn(lower)
+    .filter((r) => r.passed && r.level <= MAX_LEVEL && withinCeiling(r.level, r.ceiling))
+    .filter((r) => coalition.at < r.until && !held.has(r.dispatch.id))
+    .map(({ dispatch, ceiling, level }) => ({
+      target: { kind: 'promote', dispatch, ceiling, level, from: seatKey },
+      title: dispatch.title,
+      why: '',
+    }));
 }
 
 /**

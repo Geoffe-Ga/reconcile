@@ -31,6 +31,7 @@ import { cardChannelOf, deriveCoalitionEntryId, newCardSeed } from '../crypto/ca
 import { newGroupSecret } from '../crypto/groupKeys';
 import { sealSeatSecrets } from '../crypto/innerSeal';
 import { MAX_RECORD_BYTES } from '../crypto/record';
+import { roomCommit } from '../crypto/room';
 import { seatKeyOf, signSeatProof } from '../crypto/seat';
 import { newSigningKeys, publicKeyOf } from '../crypto/sign';
 import { genesisAtoms } from '../engine/atomText';
@@ -392,7 +393,12 @@ export async function lookupCard(services: Services, seed: Uint8Array): Promise<
   }
 }
 
-/** The coalition's genesis, by the bringer's coalition key, naming the card's seat and the group's. */
+/**
+ * The coalition's genesis, by the bringer's coalition key, naming the card's
+ * seat and the group's, and committing to the card's `inner` (#371), so a
+ * group admitted later takes only a wrap of the room both founding groups
+ * hold. A founding card always carries `inner` (`modeOf`).
+ */
 function genesisRecord(entry: Group, card: Card, seat: SeatEntry, ts: number) {
   const body = {
     kind: 'coalition',
@@ -401,6 +407,7 @@ function genesisRecord(entry: Group, card: Card, seat: SeatEntry, ts: number) {
     documents: [{ title: card.title, atoms: card.atoms }],
     rules: DEFAULT_RULES,
     seats: [card.seat, seat],
+    ...(card.inner === undefined ? {} : { commit: roomCommit(card.inner) }),
   } as const;
   return signEvent(entry.signingKey, { type: 'genesis', group: '', ts, body });
 }

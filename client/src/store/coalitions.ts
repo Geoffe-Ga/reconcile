@@ -20,14 +20,18 @@
  *   secret read from the group's own reconcile Proposal;
  * - a device whose key is bound to a seat queues what its group owes there
  *   (`resultsToReport`): only a pass or fail per motion and seat crosses;
+ * - it also queues the promotion records its group owes there (#126,
+ *   `promotionsOwed`): one per Dispatch the group passed whose ceiling
+ *   leaves that level, carrying the Dispatch's words and nothing else;
  * - a device that brought a formed coalition's card to a group proposes
  *   admitting it once that group's reconcile Proposal has passed, with its
  *   seat's X25519 key, and plans to join under its seat; if it didn't pass,
  *   the plan goes;
  * - a device whose key is bound to a seat whose group here holds the room's
- *   `inner` wraps it to each seat admitted since that no one from its own
- *   seat has wrapped for yet (#313), so the admitted group can read the room
- *   only once it's seated ({@link innerOf}).
+ *   `inner`, the one the coalition's genesis commits to, wraps it to each
+ *   seat admitted since that its participant hasn't wrapped for yet (#313,
+ *   #371), so the admitted group can read the room only once it's seated
+ *   ({@link innerOf}), and takes only a wrap of that `inner`.
  *
  * A group's own fold takes the motions its seats decide (`motionsFor`), so
  * its members vote on them as on any Proposal ({@link foldWithCoalitions}). Nothing
@@ -45,11 +49,11 @@
 import { base64url, fromBase64url } from '../crypto/base64url';
 import { deriveCoalitionEntryId } from '../crypto/card';
 import { openSeatSecrets } from '../crypto/innerSeal';
-import { seatKxOf, unwrapInner, wrapInner } from '../crypto/room';
+import { roomCommit, seatKxOf, unwrapInner, wrapInner } from '../crypto/room';
 import { seatKeyOf, signSeatProof } from '../crypto/seat';
 import { newSigningKeys, publicKeyOf } from '../crypto/sign';
 import { type Coalition, MAX_LEVEL, type Motion, type ReconcileChange } from '../engine/coalition';
-import { foldTogether, motionsFor, resultsToReport } from '../engine/crossing';
+import { foldTogether, motionsFor, promotionsOwed, resultsToReport } from '../engine/crossing';
 import {
   type GroupResultBody,
   type ParsedEvent,
@@ -188,35 +192,76 @@ function fromGroup(group: Group): Found[] {
 }
 
 /**
+ * A seat a coalition holds in a coalition above it (#122), opened from its
+ * sealed reconcile motion: the coalition above's secret, its `inner` where
+ * the motion carried one, as a founding seat's does, the seat secret and its
+ * public key, and the motion's id.
+ */
+export interface SeatAbove {
+  readonly secret: Uint8Array;
+  readonly inner: Uint8Array | null;
+  readonly seat: Uint8Array;
+  readonly key: string;
+  readonly proposal: string;
+}
+
+/**
+ * The seats above the coalition `id` that `held`, its sealed reconcile
+ * targets, hold, each opened under its `inner` (#122). A field whose seat
+ * secret doesn't make the public key the motion states is no seat to act
+ * for, so it is left out.
+ */
+function openedAbove(
+  id: string,
+  inner: Uint8Array,
+  held: readonly Held<SealedReconcileTarget>[],
+): SeatAbove[] {
+  return held.flatMap(({ proposal, target }) => {
+    const opened = openSeatSecrets(id, inner, target.sealed);
+    if (opened === null || base64url(seatKeyOf(opened.seat)) !== target.key) return [];
+    return [{ ...opened, inner: opened.inner ?? null, key: target.key, proposal }];
+  });
+}
+
+/**
+ * The seats above the coalition folded as `state` that its log's sealed
+ * reconcile motions hold, opened under its `inner` (#122): what lets a
+ * device in its groups read a room above it once seated (#344).
+ */
+export function seatsAbove(state: GroupState, inner: Uint8Array): SeatAbove[] {
+  return state.group === null ? [] : openedAbove(state.group, inner, sealedOf(targetsOf(state)));
+}
+
+/**
  * The coalitions above `entry`, folded as `state`, its sealed reconcile
  * targets carry, in its log and its outbox, that open under its `inner`
- * (#122). A field whose seat secret doesn't make the public key the motion
- * states is no seat to act for, so it is left out.
+ * (#122), as {@link openedAbove} opens them.
  */
 function fromCoalition(entry: Group, state: GroupState, inner: Uint8Array): Found[] {
   const id = state.group;
   if (id === null) return [];
   const held = sealedOf([...targetsOf(state), ...targetsIn(entry.outbox)]);
-  return held.flatMap(({ proposal, target }) => {
-    const opened = openSeatSecrets(id, inner, target.sealed);
-    if (opened === null || base64url(seatKeyOf(opened.seat)) !== target.key) return [];
-    return [{ ...opened, inner: opened.inner ?? null, holder: entry.groupId, proposal }];
-  });
+  return openedAbove(id, inner, held).map((above) => ({ ...above, holder: entry.groupId }));
 }
 
 /**
  * The first wrap of `coalition`'s room `inner` for the seat `seatKey` that its
- * seat secret opens (#313), or null.
+ * seat secret opens to the `inner` the genesis commits to (#313, #371), or
+ * null: a wrap of another `inner`, which a seated participant could make of
+ * their own, is passed over, and a coalition whose genesis commits to none
+ * gives no wrap at all.
  */
 function unwrapFor(
-  coalition: Pick<Coalition, 'wraps'>,
+  coalition: Pick<Coalition, 'wraps' | 'commit'>,
   coalitionId: string,
   seatKey: string,
   seatSecret: Uint8Array,
 ): Uint8Array | null {
+  const { commit } = coalition;
+  if (commit === null) return null;
   for (const { seat, wrap } of coalition.wraps) {
     if (seat !== seatKey) continue;
-    const inner = unwrapInner({ coalitionId, seat, wrap, seatSecret });
+    const inner = unwrapInner({ coalitionId, seat, wrap, seatSecret, commit });
     if (inner !== null) return inner;
   }
   return null;
@@ -437,7 +482,7 @@ export function foldWithCoalitions(
  * {@link settleCoalitions} reads it: a group's, or a coalition entry's
  * (#122), folded with the motions it decides from above.
  */
-interface FoldedLog {
+export interface FoldedLog {
   readonly group: Group;
   readonly state: GroupState;
 }
@@ -534,6 +579,33 @@ async function reportResults(settling: Settling) {
   return owed.length > 0;
 }
 
+/** Whether a promotion record for the Dispatch `id` already waits in the outbox (#126). */
+function promotionWaits(pending: readonly ParsedEvent[], id: string): boolean {
+  return pending.some(({ event }) => {
+    if (event.type !== 'proposal' || !('target' in event.body)) return false;
+    const { target } = event.body;
+    return target.kind === 'promote' && target.dispatch.id === id;
+  });
+}
+
+/**
+ * Posts the promotion records the log whose seat this entry's participant is
+ * bound to owes the coalition (#126; ADR-0037): one for each Dispatch it
+ * passed whose ceiling leaves this level, leaving out what already waits.
+ * Each carries the Dispatch's id, title and text, its ceiling, the level and
+ * the seat, and nothing else. Returns whether it queued anything.
+ */
+async function promoteDispatches(settling: Settling): Promise<boolean> {
+  const seat = boundSeat(settling);
+  const holder = seat === null ? null : holderOf(settling.logs, seat);
+  if (seat === null || holder === null) return false;
+  const owed = promotionsOwed(holder.state, settling.coalition, seat).filter(
+    (body) => !promotionWaits(settling.pending, body.target.dispatch.id),
+  );
+  for (const body of owed) await queue(settling, { type: 'proposal', body });
+  return owed.length > 0;
+}
+
 /**
  * The seat an admit motion names for `brought`: its name, its public key and,
  * for a coalition (#122), its level and member groups' names, which the
@@ -576,18 +648,32 @@ async function proposeAdmission(settling: Settling): Promise<boolean> {
 }
 
 /**
- * The room `inner` a reconcile target that holds one of a coalition's seats
- * gives this device (#313): its own, for a founding group's, or else the
- * first wrap for its seat in the coalition's log that its seat secret opens,
- * or null.
+ * The room `inner` one of a coalition's seats gives this device (#313): the
+ * one its reconcile target or motion carried, for a founding seat's, or else
+ * the first wrap for it in the coalition's log that its seat secret `seat`
+ * opens to the `inner` the genesis commits to (#371), or null. A group's
+ * seat and a coalition's seat above (#344) take it alike.
  */
-export function innerOf(
-  target: ReconcileChange,
-  coalition: Pick<Coalition, 'wraps'>,
+export function seatInner(
+  held: { readonly key: string; readonly seat: Uint8Array; readonly inner: Uint8Array | null },
+  coalition: Pick<Coalition, 'wraps' | 'commit'>,
   coalitionId: string,
 ): Uint8Array | null {
-  if (target.inner !== undefined) return fromBase64url(target.inner);
-  return unwrapFor(coalition, coalitionId, target.key, fromBase64url(target.seat));
+  return held.inner ?? unwrapFor(coalition, coalitionId, held.key, held.seat);
+}
+
+/** {@link seatInner} for a group's reconcile target that holds one of a coalition's seats (#313). */
+export function innerOf(
+  target: ReconcileChange,
+  coalition: Pick<Coalition, 'wraps' | 'commit'>,
+  coalitionId: string,
+): Uint8Array | null {
+  const inner = target.inner === undefined ? null : fromBase64url(target.inner);
+  return seatInner(
+    { key: target.key, seat: fromBase64url(target.seat), inner },
+    coalition,
+    coalitionId,
+  );
 }
 
 /** Whether a wrap for `seat` already waits in the outbox. */
@@ -611,20 +697,25 @@ function boundInner(settling: Settling): { seat: string; inner: Uint8Array } | n
 
 /**
  * Wraps the room's `inner` to each seat admitted since the genesis (#313)
- * that no participant from this entry's seat has wrapped for, in the log or
- * the outbox, when this entry's participant is bound to another seat whose
- * group, or coalition (#122), here holds `inner`. Returns whether it queued
- * any.
+ * that this entry's participant hasn't wrapped for, in the log or the
+ * outbox, when they are bound to another seat whose group, or coalition
+ * (#122), here holds `inner`, and it is the one the genesis commits to
+ * (#371). Each participant wraps for themselves, whoever else from their
+ * seat has: no device can open another's wrap to see whether it holds the
+ * room or one its maker made of their own, and an admitted group takes the
+ * first that holds the room, so one honest wrap repairs a wrong one. Returns
+ * whether it queued any.
  */
 async function wrapForAdmitted(settling: Settling): Promise<boolean> {
   const held = boundInner(settling);
   const info = settling.coalition.coalition;
-  if (held === null || info === null) return false;
+  if (held === null || info === null || info.commit !== roomCommit(held.inner)) return false;
   const { seat, inner } = held;
+  const me = settling.entry.me.author;
   const owed = info.admitted.filter(
     (a) =>
       a.key !== seat &&
-      !info.wraps.some((w) => w.seat === a.key && w.from === seat) &&
+      !info.wraps.some((w) => w.seat === a.key && w.by === me) &&
       !wrapWaits(settling.pending, a.key),
   );
   for (const { key, kx } of owed) {
@@ -655,21 +746,53 @@ function foldedLogs(groups: readonly Group[], coalitions: readonly HeldCoalition
 }
 
 /**
- * After a pass (#114): for each coalition entry whose genesis has arrived,
- * and that hasn't been declined, joins as planned, queues its group's or its
- * coalition's results (#122), proposes a planned admission, and wraps the
- * room's `inner` for each seat admitted since (#313). Returns the ids of the
- * entries that queued anything, for the loop to send at once. `clock` is the
- * device clock in ms, for each event's display-only `ts`.
+ * Every log on the device that may hold a seat, folded once for a pass's
+ * settling: the coalition entries, each folded with the motions it decides
+ * above, the groups that go on, and each of those, a group's or a
+ * coalition's, folded with what it decides from above (#114, #122). The
+ * coalitions' settling and the carried scores (#126, `carry.ts`) both read it.
  */
-export async function settleCoalitions(store: Store, clock: () => number): Promise<string[]> {
+export interface Holdings {
+  readonly entries: readonly Group[];
+  readonly coalitions: readonly HeldCoalition[];
+  readonly groups: readonly Group[];
+  readonly logs: readonly FoldedLog[];
+}
+
+/**
+ * This device's {@link Holdings}, as the store holds them now. With no
+ * coalition on the device there is nothing to settle or carry, so it reads
+ * and folds no group, as a pass did before #126.
+ */
+export async function holdings(
+  store: Pick<Store, 'listCoalitions' | 'listGroups'>,
+): Promise<Holdings> {
   const entries = await store.listCoalitions();
-  if (entries.length === 0) return [];
+  if (entries.length === 0) return { entries, coalitions: [], groups: [], logs: [] };
   const coalitions = foldCoalitions(entries);
   const groups = (await store.listGroups()).filter(
     (group) => group.archived === undefined && group.leaving === undefined,
   );
-  const logs = foldedLogs(groups, coalitions);
+  return { entries, coalitions, groups, logs: foldedLogs(groups, coalitions) };
+}
+
+/**
+ * After a pass (#114): for each coalition entry whose genesis has arrived,
+ * and that hasn't been declined, joins as planned, queues its group's or its
+ * coalition's results (#122) and promotion records (#126), proposes a
+ * planned admission, and wraps the room's `inner` for each seat admitted
+ * since (#313). Returns the ids of the entries that queued anything,
+ * for the loop to send at once. `clock` is the device clock in ms, for each
+ * event's display-only `ts`. `held` is what {@link holdings} read, when the
+ * loop has read it already.
+ */
+export async function settleCoalitions(
+  store: Store,
+  clock: () => number,
+  held?: Holdings,
+): Promise<string[]> {
+  const { entries, coalitions, groups, logs } = held ?? (await holdings(store));
+  if (entries.length === 0) return [];
   const keys = coalitionKeys(groups, entries);
   const queued: string[] = [];
   for (const { entry, state: coalition } of coalitions) {
@@ -677,11 +800,16 @@ export async function settleCoalitions(store: Store, clock: () => number): Promi
     if (id === null || coalition.coalition?.status === 'declined') continue;
     const pending = parsedOf(entry.outbox);
     const settling = { store, entry, coalition, id, logs, keys, pending, ts: clock() };
-    const joined = await joinIfPlanned(settling);
-    const reported = await reportResults(settling);
-    const admitted = await proposeAdmission(settling);
-    const wrapped = await wrapForAdmitted(settling);
-    if (joined || reported || admitted || wrapped) queued.push(entry.groupId);
+    const steps = [
+      joinIfPlanned,
+      reportResults,
+      promoteDispatches,
+      proposeAdmission,
+      wrapForAdmitted,
+    ];
+    let any = false;
+    for (const step of steps) any = (await step(settling)) || any;
+    if (any) queued.push(entry.groupId);
   }
   return queued;
 }

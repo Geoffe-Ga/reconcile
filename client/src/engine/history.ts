@@ -136,7 +136,11 @@ interface Step {
   readonly sections: readonly SectionChange[];
 }
 
-/** A Proposal that changes no Document: a steward, rules, dissolve, reconcile, priority, admit or member removal one (#115), or a coalition motion in a group. */
+/**
+ * A Proposal that changes no Document: a steward, rules, dissolve, reconcile,
+ * priority, admit or member removal one (#115), a Dispatch put to a vote so
+ * it can rise or its promotion record (#126), or a coalition motion in a group.
+ */
 const NO_CHANGE = (): null => null;
 
 /** What {@link DESCRIBED} reads of a final pass. */
@@ -176,6 +180,8 @@ const DESCRIBED: {
   priority: NO_CHANGE,
   admit: NO_CHANGE,
   remove: NO_CHANGE,
+  dispatch: NO_CHANGE,
+  promote: NO_CHANGE,
 };
 
 /**

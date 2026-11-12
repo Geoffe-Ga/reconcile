@@ -301,7 +301,8 @@ function FollowerHome(props: CoalitionHomeProps) {
 
 /**
  * The coalition home (#120): Take part first for whoever may, then its open
- * Proposals, its Dispatches (#124), its Documents, its Decided list, its
+ * Proposals, its Dispatches (#124), those risen from below among them (#126),
+ * its Documents, its Decided list, its
  * member groups and, for a participant, Share a follow link (#124). Someone
  * who only follows it reads {@link FollowerHome} instead.
  */

@@ -11,7 +11,7 @@ import { newestFirst } from '../engine/dispatches';
 import { fold } from '../engine/fold';
 import { DAY_MINUTES } from '../engine/rules';
 import { axeViolations } from '../test/axe';
-import { Logs } from '../test/coalitions';
+import { Logs, seatKey } from '../test/coalitions';
 import { CoalitionHome, type CoalitionHomeProps } from './CoalitionHome';
 
 const NOW = 29_400_000;
@@ -110,6 +110,54 @@ describe('CoalitionHome, with a coalition among its members (#122)', () => {
     expect(hill).toHaveTextContent(`Hill Coalition${messages.coalitions.coalitionSeat}`);
     expect(elm).toHaveTextContent(/^Elm Row$/);
     expect(await axeViolations()).toEqual([]);
+  });
+});
+
+/**
+ * A formed coalition of Riverside Tenants and Oak St Co-op that passed
+ * Riverside's Dispatch as it rose (#126), its pass final, as the coalition's
+ * fold sends it out.
+ */
+function coalitionWithRisen() {
+  const logs = new Logs();
+  const at = logs.formed(29_375_010, ['Riverside Tenants', 'Oak St Co-op'], ['kim', 'zed']);
+  const words = { title: 'Rally Saturday', text: 'Meet at the river at ten.\nBring water.' };
+  const target = {
+    kind: 'promote',
+    dispatch: { id: 'riverside-dispatch', ...words },
+    ceiling: 'coalitions',
+    level: 1,
+    from: seatKey('Riverside Tenants'),
+  } as const;
+  const risen = logs.promoteIn('coalition', at, 'kim', { target, title: words.title, why: '' });
+  logs.result(at + 1, 'kim', risen, 'Riverside Tenants', 'pass');
+  logs.result(at + 2, 'zed', risen, 'Oak St Co-op', 'pass');
+  const state = fold(logs.logs.coalition ?? [], at + 7 * DAY_MINUTES + RESULT_GRACE_MINUTES);
+  return { state, dispatches: newestFirst(state) };
+}
+
+describe('CoalitionHome’s Dispatches (#126)', () => {
+  it('lists a Dispatch the coalition passed as it rose, from the seat that passed it below', async () => {
+    const { state, dispatches } = coalitionWithRisen();
+    render(<CoalitionHome {...props({ view: { ...VIEW, dispatches }, state })} />);
+    const list = region(messages.dispatches.title);
+    const [card, ...more] = within(list).getAllByRole('article');
+    if (card === undefined) throw new Error('Expected the risen Dispatch’s card.');
+    expect(more).toEqual([]);
+    expect(within(card).getByRole('heading', { level: 3 })).toHaveTextContent('Rally Saturday');
+    const received = dispatches[0]?.received ?? 0;
+    expect(card).toHaveTextContent(`From Riverside Tenants,·${formatDay(received)}`);
+    expect(within(card).getByText(/Meet at the river/).textContent).toBe(
+      'Meet at the river at ten.\nBring water.',
+    );
+    // It points to no Document: a Document link stays in the group it started in.
+    expect(within(card).queryByRole('link')).toBeNull();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('says there are none yet', () => {
+    render(<CoalitionHome {...props()} />);
+    expect(region(messages.dispatches.title)).toHaveTextContent(messages.dispatches.empty);
   });
 });
 

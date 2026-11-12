@@ -163,6 +163,8 @@ None. The founder answered both on 2026-11-09 (§3 and §6).
   - an `unwrap-failed` from one of its recipients names it, read from the old epoch's mailbox;
   - no `key-taken` from one of its recipients names it, read from its own epoch's mailbox.
 
+  Since #372 (2026-11-12), neither counts from a recipient a removal had passed against by the key change's place: once a removal passes, nothing else of theirs counts (#115), though a key change still wraps to them until a `remove` lands. Every other recipient's device checks their wrap anyway.
+
   The fold reads both ahead and decides at the key change's place, so records between them in the old mailbox fold as usual. A refused key change:
   - moves nothing, and one stays due;
   - spends its epoch number, so the next key change names the one after. No mailbox of a refused epoch ever reaches an honest device's log;
@@ -183,13 +185,44 @@ None. The founder answered both on 2026-11-09 (§3 and §6).
 ### Accepted pilot risks added
 
 - **A device with no key it can judge by stays out.** This covers a device whose stored encryption key isn't the group's for it, or a member with no encryption key, such as one who joined before #98 and hasn't posted one. That device takes the log's word and stays on the no-wrap line until an invite, as #98 left it.
-- **A merged invite is trusted for its epochs.** A device that merges an invite's entries already trusts their seqs and epoch tags (spec §7). A malicious inviter can therefore bring a `key-taken` tagged with a refused epoch, and that device then keeps a refused key change. That is the existing trust in the inviter's log, now covering one more event.
+- **A merged invite is trusted for its epochs.** A device that merges an invite's entries already trusts their seqs and epoch tags (spec §7). A malicious inviter can therefore bring a `key-taken` tagged with a refused epoch, and that device then keeps a refused key change. That is the existing trust in the inviter's log, now covering one more event. It doesn't cover the key: since #372 (2026-11-12), a newcomer, like a member's device merging an invite, takes the invite's secret only when every wrap of the key change into its epoch is that secret's (`keyFits`), so an invite to a key change the group's devices refuse reads as a damaged link. That also refuses an invite to a key change an older build made, which no pilot group has.
 - **Every device must run this build before a group's next key change.** An older build makes wraps with fresh coins. This build refuses those wraps and bars their author. Key changes already taken up stay canonical, since no `unwrap-failed` names them. There is no pilot group yet.
 - **An `unwrap-failed` says a member's device couldn't open its wrap.** Whoever reads the old epoch sees that, the person who left included. It names no one new: they already know the membership.
 
 ### Fix for later work
 
 - **Never reveal a member's encryption secret key in the log.** #109's recovery shares are sealed to it. Any later recovery for a key change that doesn't open has to keep it private.
+
+## Amendment (2026-11-12): A Room Wrap Must Hold the Committed `inner` (#371)
+
+**Decided by an agent under the founder's standing "go with your recommendations" instruction. The founder hasn't reviewed it yet.**
+
+### Context
+
+A group admitted into a formed coalition gets the room's `inner` through a `room-wrap` that a seated participant seals to its seat (#313). Nothing said which `inner` a wrap should hold, and the admitted group's devices took the first wrap that opened. So any seated participant could wrap a room of their own, and if it landed first, the admitted group would read that room, cut off from the real one: a confidentiality and integrity gap for exactly the people a coalition just let in. #122's coalition seats take `inner` the same way (#344).
+
+### Options considered
+
+1. **Chosen: commit to `inner`.** The coalition's genesis carries a hash commitment to it, and a device takes only a wrap whose `inner` matches.
+2. **Wraps made from `inner`**, as #224 makes a key change's. Holders of `inner` could then check each other's wraps byte for byte, but the admitted group holds no `inner` to check with: a wrong wrap, made the same way from a wrong `inner`, checks out against itself. It still needs a commitment, and a way for holders to say a wrap is wrong.
+3. **Take the wrap from the admitting pass**, say from the participant whose result crossed first. That narrows who can wrap but proves nothing about what they wrap.
+
+**Genesis, not each admission.** An admit motion is written by someone from the group asking in, who holds no `inner`, so it can't commit to it, and a wrap that committed to its own `inner` would prove nothing. The genesis is written by the device that brings the founding card, which holds `inner`. `inner` never changes, so one commitment serves the coalition's whole life, and every device's fold reads the same one from the first valid genesis.
+
+### Decision
+
+- **The commitment** (`client/src/crypto/room.ts`, `roomCommit`) is the SHA-256 of UTF-8 `reconcile/v1/room-commit` ‖ `0x00` ‖ the 32 bytes of `inner`, in unpadded base64url, as the genesis's `commit`. [`client/src/crypto/vectors/room-commit.json`](../../client/src/crypto/vectors/room-commit.json) pins it, computed with Python's hashlib.
+- **The fold** keeps it as `coalition.commit`, or null for a genesis with none, and makes a genesis whose `commit` isn't 32 bytes in canonical base64url a bad shape. It can't check a wrap, since it holds no `inner`.
+- **A device** takes a wrap's `inner` only when it matches the commitment (`unwrapInner`), for a group's seat and a coalition's seat above alike, and takes none in a coalition whose genesis has no commitment.
+- **Each participant wraps for themselves.** No one but the admitted group can open a wrap, so a participant can't tell whether a seat-mate's wrap holds the room. Each participant whose device holds the committed `inner` wraps it once to each admitted seat, whoever else has, and any one honest wrap repairs a wrong one. A device whose `inner` isn't the committed one wraps nothing.
+
+**Privacy.** The commitment travels only inside the coalition's sealed records, so the relay sees nothing new. It is a hash of 32 random bytes under a tag of its own: it names no room mailbox, seal key or entry id that `inner` derives, no one can test guesses of `inner` against it, and it is the same for every seat, so it links nothing across seats.
+
+### Accepted pilot risks added
+
+- **The genesis author is trusted for the commitment**, as it is already trusted to carry the card's `inner` into its own group's reconcile Proposal (#313). A wrong commitment leaves later-admitted groups without the room, since no honest wrap matches it.
+- **A coalition founded before this build has no commitment**, so a group admitted into it takes no wrap and gets no room. There is no pilot coalition yet.
+- **More wraps.** An admission now brings one small `room-wrap` per seated participant, not one per seat.
 
 ## Amendment (2026-11-12): One Person's Latest Choice of Contacts Wins on Every Device (#272)
 

@@ -70,7 +70,10 @@ export interface SeatEntry {
  * founder, since its author isn't a participant, plus the seats of the groups
  * that reconcile. Carries `group: ""` like a group's genesis. The fold checks
  * that the seats hold two or more distinct keys, and that it founds exactly
- * one Document (#92): a coalition's statement.
+ * one Document (#92): a coalition's statement. `commit` is the commitment to
+ * the room's `inner` (`crypto/room.ts`'s `roomCommit`, #371), 32 bytes in
+ * canonical base64url, which a group admitted later checks each wrap of
+ * `inner` against; a genesis from before #371 has none.
  */
 export interface CoalitionGenesisBody {
   readonly kind: 'coalition';
@@ -79,6 +82,7 @@ export interface CoalitionGenesisBody {
   readonly documents: readonly FoundingDocument[];
   readonly rules?: Readonly<Record<string, unknown>>;
   readonly seats: readonly SeatEntry[];
+  readonly commit?: string;
 }
 
 /** True when a genesis founds a coalition rather than a group (#100). */
@@ -482,12 +486,89 @@ export interface AdmitProposalBody {
 }
 
 /**
+ * How far a Dispatch may rise above the group it starts in (#126; ADR-0037,
+ * ADR-0071): one level up, two, or as far as the coalitions go. This group
+ * only is a plain `dispatch`, so no target carries 0, and there is no
+ * Reconcile-wide broadcast.
+ */
+export type Ceiling = 1 | 2 | 'coalitions';
+
+/** Every ceiling a target may carry, lowest first (#126). */
+export const CEILINGS: readonly Ceiling[] = [1, 2, 'coalitions'];
+
+/**
+ * A Dispatch put to the group's vote so it can rise (#126): how far it may
+ * go, fixed once it opens, and the Document in this group it points to, if
+ * any, which no level above sees.
+ */
+export interface DispatchTarget {
+  readonly kind: 'dispatch';
+  readonly ceiling: Ceiling;
+  readonly doc?: string;
+}
+
+/**
+ * Proposes sending a Dispatch that may rise (#126): an ordinary Proposal with
+ * a title, a justification, an optional discussion link and an optional
+ * voting window in whole days, whose target is its ceiling, and the
+ * Dispatch it sends when it passes. It changes no Document, and its ballot
+ * has one version, under its own id, which is the Dispatch's id at every
+ * level it reaches.
+ */
+export interface DispatchProposalBody {
+  readonly target: DispatchTarget;
+  readonly title: string;
+  readonly why: string;
+  readonly link?: string;
+  readonly window?: number;
+  readonly dispatch: CarriedDispatch;
+}
+
+/**
+ * The Dispatch a promotion record carries up (#126): its stable id, the id
+ * of the group Proposal that first passed it, and its title and text.
+ */
+export interface PromotedDispatch {
+  readonly id: string;
+  readonly title: string;
+  readonly text: string;
+}
+
+/**
+ * A promotion record (#126; ADR-0037): a level below passed `dispatch`, so a
+ * participant bound to its seat, `from`, posts it in the coalition directly
+ * above. `level` counts the lines it has crossed, 1 in the coalition above
+ * the group it started in, and `ceiling` is the one its author set there.
+ */
+export interface PromoteTarget {
+  readonly kind: 'promote';
+  readonly dispatch: PromotedDispatch;
+  readonly ceiling: Ceiling;
+  readonly level: number;
+  readonly from: string;
+}
+
+/**
+ * A coalition's motion to send on a Dispatch a level below passed (#126):
+ * the promotion record, with the Dispatch's title as its own title and an
+ * empty why. It carries nothing else: no link, window or Dispatch of its own.
+ */
+export interface PromoteProposalBody {
+  readonly target: PromoteTarget;
+  readonly title: string;
+  readonly why: string;
+  readonly link?: never;
+  readonly window?: never;
+  readonly dispatch?: never;
+}
+
+/**
  * What a `proposal` event carries: new text for an Atom, a new section (#75),
  * a new Document (#92), a section's new place (#103) or class (#116), a
  * steward seat (#102), an opt-in (#117), dissolving the group (#108),
  * removing a member (#115), reconciling into a coalition (#100), a priority
- * vote's question and options (#107), or, in a coalition, admitting a group
- * (#114).
+ * vote's question and options (#107), a Dispatch that may rise (#126), or, in
+ * a coalition, admitting a group (#114) or a promotion record (#126).
  */
 export type ProposalEventBody =
   | ProposalBody
@@ -502,7 +583,9 @@ export type ProposalEventBody =
   | ReconcileProposalBody
   | SealedReconcileProposalBody
   | PriorityProposalBody
-  | AdmitProposalBody;
+  | AdmitProposalBody
+  | DispatchProposalBody
+  | PromoteProposalBody;
 
 /** True when a Proposal's body targets a steward seat rather than an Atom or an opt-in. */
 export function isStewardProposal(body: ProposalEventBody): body is StewardProposalBody {
@@ -564,6 +647,16 @@ export function isSealedReconcileProposal(
 /** True when a Proposal's body proposes admitting a group into a coalition (#114). */
 export function isAdmitProposal(body: ProposalEventBody): body is AdmitProposalBody {
   return 'target' in body && body.target.kind === 'admit';
+}
+
+/** True when a Proposal's body puts a Dispatch that may rise to the group's vote (#126). */
+export function isDispatchProposal(body: ProposalEventBody): body is DispatchProposalBody {
+  return 'target' in body && body.target.kind === 'dispatch';
+}
+
+/** True when a Proposal's body is a promotion record (#126). */
+export function isPromoteProposal(body: ProposalEventBody): body is PromoteProposalBody {
+  return 'target' in body && body.target.kind === 'promote';
 }
 
 /**
@@ -1043,20 +1136,30 @@ function parseDocuments(value: unknown): FoundingDocument[] | null {
 }
 
 /** A coalition genesis: a group genesis body without its founder, plus its seats (#100). */
-function parseCoalitionGenesis(body: Json): CoalitionGenesisBody | null {
-  const { kind, name, chat, rules } = body;
-  const documents = parseDocuments(body.documents);
-  const seats = parseSeats(body.seats);
-  if (kind !== 'coalition' || !isString(name) || documents === null) return null;
-  if (!isOptionalString(chat) || !isOptionalObject(rules) || seats === null) return null;
+/**
+ * A coalition genesis's optional fields, each as given: its chat link, its
+ * rules, and its commitment to the room's `inner` (#371); or null when any is
+ * a bad shape.
+ */
+function coalitionExtras(
+  body: Json,
+): Pick<CoalitionGenesisBody, 'chat' | 'rules' | 'commit'> | null {
+  const { chat, rules, commit } = body;
+  if (!isOptionalString(chat) || !isOptionalObject(rules) || !isOptionalKey32(commit)) return null;
   return {
-    kind,
-    name,
-    documents,
-    seats,
     ...(chat === undefined ? {} : { chat }),
     ...(rules === undefined ? {} : { rules }),
+    ...(commit === undefined ? {} : { commit }),
   };
+}
+
+function parseCoalitionGenesis(body: Json): CoalitionGenesisBody | null {
+  const { kind, name } = body;
+  const documents = parseDocuments(body.documents);
+  const seats = parseSeats(body.seats);
+  const extras = coalitionExtras(body);
+  if (kind !== 'coalition' || !isString(name) || documents === null) return null;
+  return seats === null || extras === null ? null : { kind, name, documents, seats, ...extras };
 }
 
 function parseGenesis(body: Json): GenesisBody | CoalitionGenesisBody | null {
@@ -1336,19 +1439,84 @@ function parsePriority(body: Json): PriorityProposalBody | null {
   return extra === null ? null : { target: { kind: 'priority' }, title, why, options, ...extra };
 }
 
+/** A ceiling a target may carry (#126). */
+function isCeiling(value: unknown): value is Ceiling {
+  return CEILINGS.some((ceiling) => ceiling === value);
+}
+
+/** A rising Dispatch's target: its ceiling and any Document, or null for any other shape (#126). */
+function parseDispatchTarget(value: Json): DispatchTarget | null {
+  const { ceiling, doc } = value;
+  if (value.kind !== 'dispatch' || !isCeiling(ceiling) || !isOptionalString(doc)) return null;
+  return { kind: 'dispatch', ceiling, ...(doc === undefined ? {} : { doc }) };
+}
+
+/** A promoted Dispatch's id, title and text, any other key dropped, or null (#126). */
+function parsePromoted(value: unknown): PromotedDispatch | null {
+  if (!isObject(value)) return null;
+  const { id, title, text } = value;
+  return isString(id) && isString(title) && isString(text) ? { id, title, text } : null;
+}
+
+/** A promotion record's target, or null for any other shape (#126). */
+function parsePromoteTarget(value: Json): PromoteTarget | null {
+  const dispatch = parsePromoted(value.dispatch);
+  const { ceiling, level, from } = value;
+  if (value.kind !== 'promote' || dispatch === null || !isCeiling(ceiling)) return null;
+  if (!isKey32(from) || !isWholeNumber(level) || level < 1) return null;
+  return { kind: 'promote', dispatch, ceiling, level, from };
+}
+
+/**
+ * A promotion record (#126): its target, title and why, and nothing else. A
+ * link, a window or a Dispatch of its own makes it a bad shape, so only the
+ * record crosses.
+ */
+function parsePromoteProposal(body: Json, target: Json): PromoteProposalBody | null {
+  const fields = parseTargetedFields(body);
+  const parsed = parsePromoteTarget(target);
+  if (fields === null || parsed === null || body.window !== undefined) return null;
+  if (fields.link !== undefined || fields.dispatch !== undefined) return null;
+  return { target: parsed, title: fields.title, why: fields.why };
+}
+
+/**
+ * A Dispatch put to a vote (#126): its target, the Dispatch it carries,
+ * which it must, and the fields every targeted Proposal carries, with any
+ * window, or null for any other shape.
+ */
+function parseDispatchProposal(body: Json, target: Json): DispatchProposalBody | null {
+  const fields = parseTargetedFields(body);
+  const parsed = parseDispatchTarget(target);
+  const { window } = body;
+  if (fields === null || parsed === null || !isOptionalNumber(window)) return null;
+  const { dispatch } = fields;
+  if (dispatch === undefined) return null;
+  return { ...fields, target: parsed, dispatch, ...(window === undefined ? {} : { window }) };
+}
+
 /**
  * A Proposal with a `target` in place of an Atom: an add (#75), a new
- * Document (#92), a priority vote (#107), a steward seat (#102), an opt-in
- * (#117), dissolving the group (#108) or reconciling into a coalition (#100).
+ * Document (#92), a priority vote (#107), a rising Dispatch or a promotion
+ * record (#126), a steward seat (#102), an opt-in (#117), dissolving the
+ * group (#108) or reconciling into a coalition (#100).
  */
 function parseTargeted(body: Json): ProposalEventBody | null {
-  const { target } = body;
-  if (!isObject(target)) return parseTargetedProposal(body);
-  if (target.kind === 'add') return parseTextProposal(body, parseAddTarget(target));
-  if (target.kind === 'new-document') {
-    return parseTextProposal(body, parseNewDocumentTarget(target));
+  const target = isObject(body.target) ? body.target : {};
+  switch (target.kind) {
+    case 'add':
+      return parseTextProposal(body, parseAddTarget(target));
+    case 'new-document':
+      return parseTextProposal(body, parseNewDocumentTarget(target));
+    case 'priority':
+      return parsePriority(body);
+    case 'dispatch':
+      return parseDispatchProposal(body, target);
+    case 'promote':
+      return parsePromoteProposal(body, target);
+    default:
+      return parseTargetedProposal(body);
   }
-  return target.kind === 'priority' ? parsePriority(body) : parseTargetedProposal(body);
 }
 
 /** An edit names an `atom`; every other Proposal carries `target` (#75, #100, #102, #107, #108, #117). */

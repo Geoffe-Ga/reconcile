@@ -3,9 +3,10 @@
  * from any component.
  *
  * Everything comes from folded logs on this device: the coalition entry's,
- * for its participants and their coalition names; this device's own groups',
- * for whether one it goes on in holds a seat, which is what lets it read the
- * room at all (`store/rooms.ts`); and the room's own log and outbox. Nothing
+ * for its participants and their coalition names; this device's own groups'
+ * and its other coalitions', for whether one it goes on in holds a seat,
+ * itself or through a coalition it is in (#344), which is what lets it read
+ * the room at all (`store/rooms.ts`); and the room's own log and outbox. Nothing
  * here reads a person's key in one log to find them in another: a message
  * goes under the coalition entry's key, and shows under its author's
  * coalition name.
@@ -91,10 +92,11 @@ function pendingIn(outbox: readonly Uint8Array[], coalitionId: string): PendingM
 
 /**
  * The room for `held` (#125), with `room` its entry on this device, which a
- * pass makes once a group here holds one of the coalition's seats. Null when
- * this device may read no room of the coalition's: before its genesis, once
- * it was declined, and on a device in none of its member groups, as a
- * follower's (#124).
+ * pass makes once a group here holds one of the coalition's seats, itself or
+ * through a coalition in `groups` (#344). Null when this device may read no
+ * room of the coalition's: before its genesis, once it was declined, on a
+ * device in none of its member groups or coalitions, as a follower's (#124),
+ * and for a coalition asking in until it is seated and a wrap reaches it.
  */
 export function roomView(
   held: HeldCoalition,

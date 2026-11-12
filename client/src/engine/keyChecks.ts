@@ -24,6 +24,17 @@
  * can write there. A device reads a new epoch's mailboxes only once it has
  * checked every wrap, so a `key-taken` the attacker posts to a key change
  * nobody honest took up never reaches an honest device's log.
+ *
+ * Neither counts from a recipient a removal had passed against by the key
+ * change's place (#372): once a removal passes, nothing else of theirs counts
+ * (#115), and a key change can still wrap to them until a `remove` lands.
+ * Ignoring them costs nothing, since every other recipient's device checks
+ * their wrap as well. Devices can't split over it: who is ousted there is
+ * what the fold already reads at that place for whether each record counts,
+ * the same on every device that holds the same log. A removal that passes
+ * after the key change doesn't reach back to it; its member's check counts as
+ * any recipient's does, and a false one costs the honest recipients a
+ * `key-taken`, as above.
  */
 import type { GroupEvent, ParsedEvent } from './event';
 import { EVENT_VERSION } from './event';
@@ -90,9 +101,18 @@ export interface CheckedRotation {
   readonly to: number;
   /** Its wraps, by recipient. */
   readonly wraps: Readonly<Record<string, string>>;
+  /**
+   * The members a removal had passed against by its place (#115; #372). A
+   * check from one of them doesn't count, as nothing else of theirs does.
+   */
+  readonly ousted: readonly string[];
 }
 
-/** Whether any of `checks` comes after `rotation`, from one of its recipients, in its group, read from `epoch`'s mailbox. */
+/**
+ * Whether any of `checks` comes after `rotation`, from one of its recipients
+ * no removal had passed against by its place, in its group, read from
+ * `epoch`'s mailbox.
+ */
 function anyFrom(
   checks: readonly KeyCheck[] | undefined,
   rotation: CheckedRotation,
@@ -103,7 +123,8 @@ function anyFrom(
       check.seq > rotation.seq &&
       check.epoch === epoch &&
       check.group === rotation.group &&
-      Object.hasOwn(rotation.wraps, check.author),
+      Object.hasOwn(rotation.wraps, check.author) &&
+      !rotation.ousted.includes(check.author),
   );
 }
 
