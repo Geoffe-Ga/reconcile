@@ -29,11 +29,13 @@ export interface DispatchesProps {
   readonly reachable: boolean;
   /** Whether this device's leave waits for the relay (#77): then nothing new is sent. */
   readonly leaving?: boolean;
+  /** Whether this copy came back from a backup and hasn't heard from its group (#231): the same. */
+  readonly unconfirmed?: boolean;
 }
 
 /** Whether `me` may send a Dispatch from this screen now. */
-function sends({ state, me, leaving = false }: DispatchesProps): boolean {
-  return !leaving && state.dissolved === null && can(state, me, 'dispatch');
+function sends({ state, me, leaving = false, unconfirmed = false }: DispatchesProps): boolean {
+  return !leaving && !unconfirmed && state.dissolved === null && can(state, me, 'dispatch');
 }
 
 /** Send a Dispatch, the one primary action here, for someone who may send one. */
