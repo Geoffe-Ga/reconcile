@@ -22,6 +22,7 @@ import {
   RadioGroup,
 } from 'react-aria-components';
 
+import { holdPresses } from '../app/holdPresses';
 import { messages } from '../app/messages';
 import { routeHref } from '../app/router';
 import { formatMinute } from '../app/time';
@@ -206,7 +207,7 @@ function ConfirmStep({
         </p>
       )}
       <div className="field-status">
-        <div className="row form-actions">
+        <div className="row form-actions" onPointerDownCapture={holdPresses(busy)}>
           <Button type="submit" className="button button-primary" isDisabled={busy}>
             {words.approve}
           </Button>

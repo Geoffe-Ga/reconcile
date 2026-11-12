@@ -6,6 +6,7 @@ import { messages } from '../app/messages';
 import { formatMinute, MINUTE_MS } from '../app/time';
 import { CheckMismatch, type HoldView } from '../recovery/holder';
 import { axeViolations } from '../test/axe';
+import { held, pastPressFallback } from '../test/press';
 import { HelpRecover, type HelpRecoverProps } from './HelpRecover';
 
 const CODE = `RR1.${'B'.repeat(64)}`;
@@ -103,6 +104,28 @@ describe('HelpRecover', () => {
     await user.click(screen.getByRole('button', { name: messages.helpRecover.approve }));
     expect(await screen.findByText(messages.helpRecover.failed)).toBeVisible();
     expect(screen.getByRole('button', { name: messages.helpRecover.approve })).toBeEnabled();
+  });
+
+  it('approves once when Approve is tapped again while it approves and that fails (#193)', async () => {
+    const approving = held<undefined>();
+    const onApprove = vi.fn<HelpRecoverProps['onApprove']>(() => approving.promise);
+    renderHelp({ onApprove });
+    const user = userEvent.setup();
+    await enterCode(user);
+    await user.type(
+      screen.getByRole('textbox', { name: messages.helpRecover.numberLabel }),
+      '304118',
+    );
+    await user.click(screen.getByRole('button', { name: messages.helpRecover.approve }));
+    expect(screen.getByRole('button', { name: messages.helpRecover.approve })).toBeDisabled();
+
+    await user.click(screen.getByRole('button', { name: messages.helpRecover.approve }));
+    approving.reject();
+    expect(await screen.findByText(messages.helpRecover.failed)).toBeVisible();
+    await pastPressFallback();
+
+    expect(screen.getByRole('button', { name: messages.helpRecover.approve })).toBeEnabled();
+    expect(onApprove).toHaveBeenCalledTimes(1);
   });
 
   it('goes back to the code from the person and the number', async () => {
