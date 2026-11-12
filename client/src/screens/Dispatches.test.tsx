@@ -89,8 +89,22 @@ describe('Dispatches', () => {
     log.dispatch('Ana', { title: 'Read the rules', text: '', doc: log.group });
     renderDispatches(log.state(), 'kim');
     const open = screen.getByRole('link', { name: 'Open House rules' });
-    expect(open).toHaveAttribute('href', `#/g/${log.group}/doc`);
+    expect(open).toHaveAttribute('href', `#/g/${log.group}/doc/${log.group}`);
     expect(await axeViolations()).toEqual([]);
+  });
+
+  it('links a Dispatch that points to another of the group’s Documents to that one (#92)', () => {
+    const documents = [
+      { title: 'Mission statement', atoms: ['We share.\n'] },
+      { title: 'House rules', atoms: ['Quiet after 11pm.\n'] },
+    ];
+    const log = groupLog({ documents });
+    log.dispatch('Ana', { title: 'Read the rules', text: '', doc: `${log.group}:1` });
+    renderDispatches(log.state(), 'ana');
+    expect(screen.getByRole('link', { name: 'Open House rules' })).toHaveAttribute(
+      'href',
+      `#/g/${log.group}/doc/${log.group}:1`,
+    );
   });
 
   it('still names someone who has left, on a Dispatch they sent before', () => {

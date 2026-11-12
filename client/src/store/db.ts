@@ -885,7 +885,8 @@ export interface Store
    * id the same way: the file's replaces the device's only when it was
    * edited later (`keepsHeldCopy`), keeping the device's share when the
    * file's copy holds none (`restoredCopy`, #105), as a link bundle's never
-   * does. Nothing is stamped with the time now. A restored copy keeps the
+   * does, and pausing any share the file brings until the person keeps it
+   * (#328). Nothing is stamped with the time now. A restored copy keeps the
    * Proposals either copy has cleared, and none of what expired with them
    * (#111), so a restore never brings a cleared ballot back.
    */
@@ -1802,10 +1803,14 @@ async function restoreInto(
 /**
  * What Restore on the unlock screen does before it restores (#95, #255,
  * #265): the vault and every key in it are gone, so a shared Document whose
- * keys it held takes the file's share of it, marked pending, or none, and a
- * sent application whose reply keys it held is forgotten, since its reply
- * can't open. A record that still holds its own keys keeps them. Returns
- * whether any sent application went.
+ * keys it held takes the file's share of it, marked pending and paused, or
+ * none, and a sent application whose reply keys it held is forgotten, since
+ * its reply can't open. A record that still holds its own keys keeps them.
+ * Returns whether any sent application went.
+ *
+ * The file's share is one the restore brought: with the vault gone, nothing
+ * says it's the one the device held, and the person may have stopped it
+ * since the file was saved. So it waits, paused, until they keep it (#328).
  */
 async function forgetSealed(
   tx: KeyTransaction,
@@ -1818,7 +1823,7 @@ async function forgetSealed(
     const share = shares.get(document.id);
     await documents.put({
       ...textOf(document),
-      ...(share && { share: { ...share, pending: true } }),
+      ...(share && { share: { ...share, pending: true, paused: true } }),
     });
   }
   const sent = tx.objectStore(SENT);

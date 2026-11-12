@@ -123,7 +123,7 @@ Re-fetch the comments to read the full body (the webhook payload may be truncate
 A CI failure event for `head.sha` may mean the reviewer action itself failed (timeout, rate limit, permissions) — in which case **the verdict comment will never arrive** and waiting is futile. Inspect the failed check:
 
 1. `mcp__github__pull_request_read` with `method: "get_check_runs"` for `head.sha`.
-2. If the failed run is the **review action** (`Claude Code Review`): re-run it for this PR with `gh workflow run code-review.yml -f pr_number=<N>` (a dispatch reviews the current head without manufacturing a push, which would invalidate any verdict), then stay subscribed. If the failure says the reviewer read a different PR number, that is a reviewer error, not a defect in the PR — just re-run.
+2. If the failed run is the **review action** (`Claude Code Review`): re-run it for this PR with `gh workflow run code-review.yml -f pr_number=<N>` (a dispatch reviews the current head without manufacturing a push, which would invalidate any verdict), then stay subscribed. If the failure says the reviewer read a different PR number, or that its output is not a review (a placeholder, #197), that is a reviewer error, not a defect in the PR — just re-run.
 3. If the failed run is **other CI** (lint, tests, build): surface the failure to the user and recommend handing off to `ci-debugging`. Stay subscribed — the reviewer action may still post.
 
 ### Step 6: Cleanup

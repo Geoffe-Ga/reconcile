@@ -46,8 +46,7 @@ export async function found(
     groupName,
     yourName,
     chat: null,
-    title: 'House rules',
-    text: 'Quiet hours start at ten.',
+    documents: [{ title: 'House rules', text: 'Quiet hours start at ten.' }],
   });
   if (created.outcome !== 'created') throw new Error('Expected a group.');
   await device.services.sync.syncOnce();

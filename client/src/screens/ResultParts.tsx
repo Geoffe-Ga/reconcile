@@ -90,9 +90,11 @@ interface Again {
 
 /**
  * Whether `props`' Proposal can be proposed again here, and if so whether it
- * waits: a change, a section's removal or an add (#75) while another Proposal
- * is open on its section, and a priority vote (#107) while another priority
- * vote is open. A member's removal (#115) isn't proposed again from here. A steward or rules vote isn't proposed again from here: Group home
+ * waits: a change, a section's removal, an add (#75) or a new Document (#92)
+ * while another Proposal is open on its section or its own id, and a priority
+ * vote (#107) while another priority vote is open. A member's removal (#115)
+ * isn't proposed again from here. A steward or rules vote isn't proposed
+ * again from here: Group home
  * says when an election is due (#102), and the Rules page offers each opt-in
  * (#117). Nothing is, while this member leaves or for someone who can't
  * propose.
@@ -101,7 +103,7 @@ function againOf(props: ResultViewProps): Again | null {
   const { state, me, proposal, leaving = false } = props;
   const priority = isPriority(proposal);
   const { kind } = proposal.target;
-  const again = priority || kind === 'edit' || kind === 'add';
+  const again = priority || kind === 'edit' || kind === 'add' || kind === 'new-document';
   if (leaving || !again || !can(state, me, 'propose')) return null;
   const { result } = messages;
   return priority

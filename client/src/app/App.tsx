@@ -19,7 +19,7 @@ import { Composer, type ComposeOutcome } from '../screens/Composer';
 import { CreateGroup, type CreateOutcome } from '../screens/CreateGroup';
 import { Dispatches } from '../screens/Dispatches';
 import { DissolveComposer } from '../screens/DissolveComposer';
-import { DocumentView } from '../screens/DocumentView';
+import { type AddPlace, DocumentView } from '../screens/DocumentView';
 import { FrontDoor } from '../screens/FrontDoor';
 import { GroupHome } from '../screens/GroupHome';
 import { RecoveryContacts } from '../screens/RecoveryContacts';
@@ -35,6 +35,7 @@ import { Join } from '../screens/Join';
 import { type CardStep, ReconcileCard } from '../screens/ReconcileCard';
 import { LinkNewDevice } from '../screens/LinkNewDevice';
 import { LinkThisDevice } from '../screens/LinkThisDevice';
+import { NewDocumentComposer } from '../screens/NewDocumentComposer';
 import type { OptIn } from '../engine/optIns';
 import { OptInComposer, type OptInOutcome } from '../screens/OptInComposer';
 import { Personal } from '../screens/Personal';
@@ -794,12 +795,18 @@ function BringScreen({ services, payload, heldSeed, releaseSeed }: BringScreenPr
   );
 }
 
-function DocumentScreen({ services, groupId }: GroupScreenProps) {
+/** One of the group's Documents (#92), by its id from the route, or its first. */
+function DocumentScreen({
+  services,
+  groupId,
+  documentId,
+}: GroupScreenProps & { readonly documentId?: string }) {
   const openComposer = (atomId: string) => {
     navigate({ name: 'propose', groupId, atomId });
   };
-  const openAdd = (after: string | null) => {
-    navigate({ name: 'add', groupId, after });
+  // After an Atom, its Document is the Atom's; at the start, the route names the Document (#92).
+  const openAdd = ({ document, after }: AddPlace) => {
+    navigate({ name: 'add', groupId, after, ...(after === null ? { document } : {}) });
   };
   const openRemove = (atomId: string) => {
     navigate({ name: 'remove', groupId, atomId });
@@ -810,6 +817,7 @@ function DocumentScreen({ services, groupId }: GroupScreenProps) {
         <DocumentView
           state={state}
           me={me.author}
+          {...(documentId === undefined ? {} : { documentId })}
           onPropose={openComposer}
           onAdd={openAdd}
           onRemove={openRemove}
@@ -907,15 +915,19 @@ function Ask({ again, ...props }: ComposeProps & { readonly again?: Proposal }) 
 /**
  * Propose again (#74): the composer for what the lapsed Proposal targets,
  * starting from it. A change opens the composer on its section, a removal the
- * removal composer, an add Add a section at its spot (#75), and a priority
- * vote Ask what to focus on (#107).
+ * removal composer, an add Add a section at its spot in its Document (#75,
+ * #92), a new Document the new-Document composer (#92), and a priority vote
+ * Ask what to focus on (#107).
  */
 function ProposeAgain({ againId, ...props }: ComposeProps & { readonly againId: string }) {
   const again = props.state.proposals.find((proposal) => proposal.id === againId);
   if (again === undefined) return <Composer {...props} atomId="" />;
   if (isPriority(again)) return <Ask {...props} again={again} />;
   const { target } = again;
-  if (target.kind === 'add') return <AddSection {...props} after={target.after} again={again} />;
+  if (target.kind === 'new-document') return <NewDocumentComposer {...props} again={again} />;
+  if (target.kind === 'add') {
+    return <AddSection {...props} after={target.after} document={target.document} again={again} />;
+  }
   if (again.text === '') return <RemoveSection {...props} atomId={again.atom} again={again} />;
   return <Composer {...props} atomId={again.atom} again={again} />;
 }
@@ -966,7 +978,7 @@ function ProposalScreen({ services, groupId, proposalId }: ProposalScreenProps) 
 /** A route that opens a composer. */
 type ComposeRoute = Extract<
   Route,
-  { readonly name: 'propose' | 'add' | 'remove' | 'again' | 'priority' }
+  { readonly name: 'propose' | 'add' | 'remove' | 'again' | 'newDocument' | 'priority' }
 >;
 
 /** The composer a route opens, given what every composer is handed. */
@@ -975,7 +987,15 @@ function composerFor(route: ComposeRoute): (props: ComposeProps) => ReactNode {
     case 'propose':
       return (props) => <Composer {...props} atomId={route.atomId} />;
     case 'add':
-      return (props) => <AddSection {...props} after={route.after} />;
+      return (props) => (
+        <AddSection
+          {...props}
+          after={route.after}
+          {...(route.document === undefined ? {} : { document: route.document })}
+        />
+      );
+    case 'newDocument':
+      return (props) => <NewDocumentComposer {...props} />;
     case 'remove':
       return (props) => <RemoveSection {...props} atomId={route.atomId} />;
     case 'again':
@@ -1154,7 +1174,14 @@ function GroupRouteScreen({ route, services }: { route: GroupRoute; services: Ap
     case 'group':
       return <GroupScreen services={services} groupId={groupId} />;
     case 'document':
-      return <DocumentScreen services={services} groupId={groupId} />;
+      return (
+        <DocumentScreen
+          key={route.documentId ?? ''}
+          services={services}
+          groupId={groupId}
+          {...(route.documentId === undefined ? {} : { documentId: route.documentId })}
+        />
+      );
     case 'proposal':
       return <ProposalScreen services={services} groupId={groupId} proposalId={route.proposalId} />;
     case 'rules':
@@ -1178,9 +1205,9 @@ type FormRoute =
  * The screen for a route inside one group that opens a form of its own: the
  * steward (#102), opt-in (#117), dissolve (#108) and removal (#115)
  * composers, Reconcile with another group (#114), Send a Dispatch (#112), and
- * the composers that propose a change,
- * add or remove a section (#75), ask what to focus on (#107), or propose a
- * lapsed Proposal again (#74).
+ * the composers that propose a change, add or remove a section (#75), propose
+ * a new Document (#92), ask what to focus on (#107), or propose a lapsed
+ * Proposal again (#74).
  */
 function FormRouteScreen({ route, services }: { route: FormRoute; services: AppServices }) {
   const { groupId } = route;

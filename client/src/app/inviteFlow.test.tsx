@@ -42,8 +42,9 @@ async function founded(device: TestDevice): Promise<string> {
     groupName: 'Riverside Tenants',
     yourName: 'Ana',
     chat: null,
-    title: 'House rules',
-    text: 'Quiet hours start at ten.\n\nBins go out on Tuesday.',
+    documents: [
+      { title: 'House rules', text: 'Quiet hours start at ten.\n\nBins go out on Tuesday.' },
+    ],
   });
   if (result.outcome !== 'created') throw new Error('Expected a group.');
   await device.services.sync.syncOnce();

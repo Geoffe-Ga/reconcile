@@ -3,6 +3,7 @@ import { Button, Label, Text, TextArea, TextField } from 'react-aria-components'
 
 import type { CoalitionStanding } from '../app/coalitionHome';
 import { TakePart } from '../app/CoalitionSection';
+import { documentNamed } from '../app/documentLines';
 import { ChangeInvolvement } from '../app/LevelPicker';
 import { messages } from '../app/messages';
 import { WaitingNote } from '../app/Newcomer';
@@ -13,6 +14,7 @@ import { holdsRemoval } from '../app/versionViews';
 import { can, holdsRights, isSuspended } from '../engine/capabilities';
 import { composeOption, openProposalOn } from '../engine/composeOption';
 import { documentToMarkdown } from '../engine/documentMarkdown';
+import { atomsOf, type GroupDocument } from '../engine/documents';
 import type { Atom, GroupState } from '../engine/fold';
 
 /** Props for {@link DocumentView}. */
@@ -21,10 +23,12 @@ export interface DocumentViewProps {
   readonly state: GroupState;
   /** This device's author id in the group. */
   readonly me: string;
+  /** The Document to show, from the route (#92); the group's first when absent. */
+  readonly documentId?: string;
   /** Opens the composer for one section. */
   readonly onPropose: (atomId: string) => void;
-  /** Opens the composer for a new section after Atom `after`, or first for null (#75). */
-  readonly onAdd: (after: string | null) => void;
+  /** Opens the composer for a new section in `document` after Atom `after`, or first there for null (#75, #92). */
+  readonly onAdd: (place: AddPlace) => void;
   /** Opens the composer that proposes removing one section (#75). */
   readonly onRemove: (atomId: string) => void;
   /** Puts text on the clipboard; rejects when the browser blocks it. */
@@ -33,6 +37,12 @@ export interface DocumentViewProps {
   readonly leaving?: boolean;
   /** Whether this copy came back from a backup and hasn't heard from its group (#231): the same. */
   readonly unconfirmed?: boolean;
+}
+
+/** Where Add a section here puts a new section (#75): in the Document on screen (#92), after `after`. */
+export interface AddPlace {
+  readonly document: string;
+  readonly after: string | null;
 }
 
 /**
@@ -103,23 +113,25 @@ function SectionAction({ state, atom, section, onPropose, onRemove }: SectionAct
 }
 
 interface AddHereProps {
-  /** The Atom the new section would follow, or null for the start. */
-  readonly after: string | null;
-  /** That Atom's section number, for its label. */
+  /** Where the new section would go: the Document on screen, after an Atom or at its start. */
+  readonly place: AddPlace;
+  /** The section number of the Atom it would follow, for its label. */
   readonly section: number;
   readonly onAdd: DocumentViewProps['onAdd'];
 }
 
 /** A quiet "Add a section here" in a gap between sections, or at the start or end. */
-function AddHere({ after, section, onAdd }: AddHereProps) {
+function AddHere({ place, section, onAdd }: AddHereProps) {
   const { document } = messages;
   return (
     <div className="atom-gap">
       <Button
         className="button button-quiet button-gap"
-        aria-label={after === null ? document.addAtStartLabel : document.addAfterLabel(section)}
+        aria-label={
+          place.after === null ? document.addAtStartLabel : document.addAfterLabel(section)
+        }
         onPress={() => {
-          onAdd(after);
+          onAdd(place);
         }}
       >
         {document.addHere}
@@ -187,19 +199,24 @@ export function CopyMarkdown({ atoms, copyText }: CopyMarkdownProps) {
 
 interface SectionsProps {
   readonly state: GroupState;
+  /** The Document on screen (#92). */
+  readonly document: GroupDocument;
+  /** Its sections, in order. */
+  readonly atoms: readonly Atom[];
   readonly proposes: boolean;
   readonly handlers: Pick<DocumentViewProps, 'onPropose' | 'onAdd' | 'onRemove'>;
 }
 
 /**
- * The sections in order, each with its actions, and an "Add a section here"
- * before the first, between each two and after the last, for someone who may
- * propose. An empty Document offers only the first.
+ * The Document's sections in order, each with its actions, and an "Add a
+ * section here" before the first, between each two and after the last, for
+ * someone who may propose. An empty Document offers only the first.
  */
-function Sections({ state, proposes, handlers }: SectionsProps) {
+function Sections({ state, document, atoms, proposes, handlers }: SectionsProps) {
   const { onPropose, onAdd, onRemove } = handlers;
-  const first = proposes ? <AddHere after={null} section={0} onAdd={onAdd} /> : null;
-  if (state.atoms.length === 0) {
+  const at = (after: string | null) => ({ document: document.id, after });
+  const first = proposes ? <AddHere place={at(null)} section={0} onAdd={onAdd} /> : null;
+  if (atoms.length === 0) {
     return (
       <>
         <p className="lede">{messages.document.empty}</p>
@@ -210,7 +227,7 @@ function Sections({ state, proposes, handlers }: SectionsProps) {
   return (
     <article className={proposes ? 'document document-editable' : 'document'}>
       {first}
-      {state.atoms.map((atom, index) => (
+      {atoms.map((atom, index) => (
         <Fragment key={atom.id}>
           <div className="atom">
             <AtomText text={atom.text} />
@@ -224,40 +241,71 @@ function Sections({ state, proposes, handlers }: SectionsProps) {
               />
             ) : null}
           </div>
-          {proposes ? <AddHere after={atom.id} section={index + 1} onAdd={onAdd} /> : null}
+          {proposes ? <AddHere place={at(atom.id)} section={index + 1} onAdd={onAdd} /> : null}
         </Fragment>
       ))}
     </article>
   );
 }
 
+/** Shown in place of a Document the group doesn't have (#92): where to find its Documents. */
+function MissingDocument({ state }: { readonly state: GroupState }) {
+  const { documents } = messages;
+  return (
+    <main className="shell">
+      <BackLink to={{ name: 'group', groupId: state.group ?? '' }} label={state.name} />
+      <PageHeader title={documents.missingTitle} pageTitle={messages.document.pageTitle} />
+      <p className="lede">{documents.missing}</p>
+    </main>
+  );
+}
+
 /**
- * Document view (`#/g/{groupId}/doc`): the canonical Document, each section
- * (Atom) formatted through `<AtomText>` in the document style, with Propose a
- * change (or Add your version while the section's Proposal is open), Propose
+ * Whether the Document only reads here: this member is leaving (#77), the
+ * group has dissolved (#108), or it's a copy back from a backup that hasn't
+ * heard from the group (#231).
+ */
+function readsOnly({ state, leaving = false, unconfirmed = false }: DocumentViewProps): boolean {
+  return leaving || unconfirmed || state.dissolved !== null;
+}
+
+/**
+ * Document view (`#/g/{groupId}/doc/{documentId}`, or `…/doc` for the
+ * group's first Document, #92): one canonical Document, each section (Atom)
+ * formatted through `<AtomText>` in the document style, with Propose a change
+ * (or Add your version while the section's Proposal is open), Propose
  * removing this section, and Add a section here in each gap (#75). Nothing
  * here is ever read as HTML. Those show only when `can()` allows proposing;
  * anyone else reads why, and where to change their level (ADR-0021). While
  * this member is leaving, once the group has dissolved (#108), or while a
  * copy back from a backup hasn't heard from the group (#231), the Document
- * only reads. Copy as Markdown is for everyone who can read it, an
- * archive's readers included.
+ * only reads. Copy as Markdown copies the Document on screen, for everyone
+ * who can read it, an archive's readers included.
  */
 export function DocumentView(props: DocumentViewProps) {
-  const { state, me, copyText, leaving = false, unconfirmed = false } = props;
-  const readOnly = leaving || unconfirmed || state.dissolved !== null;
+  const { state, me, copyText } = props;
+  const document = documentNamed(state, props.documentId);
+  if (document === undefined) return <MissingDocument state={state} />;
+  const atoms = atomsOf(state, document.id);
+  const readOnly = readsOnly(props);
   const proposes = !readOnly && can(state, me, 'propose');
   return (
     <main className="shell">
       <BackLink to={{ name: 'group', groupId: state.group ?? '' }} label={state.name} />
       <PageHeader
         eyebrow={messages.document.eyebrow}
-        title={state.title}
+        title={document.title}
         pageTitle={messages.document.pageTitle}
       />
       {proposes || readOnly ? null : <LevelNote state={state} me={me} />}
-      <Sections state={state} proposes={proposes} handlers={props} />
-      {state.atoms.length === 0 ? null : <CopyMarkdown atoms={state.atoms} copyText={copyText} />}
+      <Sections
+        state={state}
+        document={document}
+        atoms={atoms}
+        proposes={proposes}
+        handlers={props}
+      />
+      {atoms.length === 0 ? null : <CopyMarkdown atoms={atoms} copyText={copyText} />}
     </main>
   );
 }

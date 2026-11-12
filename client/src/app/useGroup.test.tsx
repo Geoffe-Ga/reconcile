@@ -38,8 +38,7 @@ function genesis(title = 'House rules'): SignedEvent {
     body: {
       name: 'Riverside Tenants',
       founder: 'Ana',
-      title,
-      atoms: ['Quiet after 10pm.'],
+      documents: [{ title: title, atoms: ['Quiet after 10pm.'] }],
       kx: testKx('ana').kx,
     },
   });
@@ -85,7 +84,7 @@ describe('useGroup', () => {
     const { result } = renderHook(() => useGroup(GROUP), { wrapper: wrapperFor({ store, sync }) });
 
     await waitFor(() => {
-      expect(result.current.state?.title).toBe('House rules');
+      expect(result.current.state?.documents[0]?.title).toBe('House rules');
     });
     expect(result.current.state?.members.map((member) => member.name)).toEqual(['Ana']);
     expect(result.current.pending.map((parsed) => parsed.id)).toEqual([benJoins.id]);
@@ -277,7 +276,7 @@ describe('useGroup', () => {
     await waitFor(() => {
       expect(result.current.suggestBackup).toBe(false);
     });
-    expect(result.current.state?.title).toBe('House rules');
+    expect(result.current.state?.documents[0]?.title).toBe('House rules');
   });
 
   it('says this device missed the group’s new key, and nothing of it once the group is a read-only archive (#98, #108)', async () => {
@@ -377,7 +376,7 @@ describe('useGroup', () => {
       wrapper: wrapperFor({ store, sync }),
     });
     await waitFor(() => {
-      expect(result.current.state?.title).toBe('House rules');
+      expect(result.current.state?.documents[0]?.title).toBe('House rules');
     });
 
     rerender({ id: 'other' });
@@ -385,7 +384,7 @@ describe('useGroup', () => {
 
     expect(whileLoading).toMatchObject({ state: null, me: null, loaded: false });
     await waitFor(() => {
-      expect(result.current.state?.title).toBe('');
+      expect(result.current.state?.documents).toEqual([]);
     });
   });
 
@@ -419,7 +418,7 @@ describe('useGroup', () => {
       await Promise.resolve();
     });
 
-    expect(result.current.state?.title).toBe('Newer');
+    expect(result.current.state?.documents[0]?.title).toBe('Newer');
   });
 
   it('keeps its last state when a read fails, and stops reading once unmounted', async () => {
@@ -445,7 +444,7 @@ describe('useGroup', () => {
       wrapper: wrapperFor({ store, sync }),
     });
     await waitFor(() => {
-      expect(result.current.state?.title).toBe('House rules');
+      expect(result.current.state?.documents[0]?.title).toBe('House rules');
     });
 
     fail = true;
@@ -453,7 +452,7 @@ describe('useGroup', () => {
       notify(GROUP);
       await Promise.resolve();
     });
-    const afterFailure = result.current.state?.title;
+    const afterFailure = result.current.state?.documents[0]?.title;
     fail = false;
     notify(GROUP);
     unmount();

@@ -60,9 +60,18 @@ const VALUES: CreateGroupValues = {
   groupName: 'Riverside Tenants',
   yourName: 'Ana',
   chat: 'https://chat.example.org/riverside',
-  title: 'House rules',
-  text: 'Quiet hours start at ten.\n\nBins go out on Tuesday.\n',
+  documents: [
+    { title: 'House rules', text: 'Quiet hours start at ten.\n\nBins go out on Tuesday.\n' },
+  ],
 };
+
+/** {@link VALUES} with its one Document's text replaced by `text`. */
+function withText(text: string, values: CreateGroupValues = VALUES): CreateGroupValues {
+  return { ...values, documents: [{ title: 'House rules', text }] };
+}
+
+/** A second founding Document (#92). */
+const BUDGET = { title: 'Budget', text: 'We share costs.\n\nWe keep receipts.' };
 
 /** One device: its own store, on the shared fake relay. */
 async function device(fake: FakeRelay, name: string): Promise<Services & { sync: Sync }> {
@@ -154,8 +163,12 @@ describe('createGroup', () => {
         name: 'Riverside Tenants',
         founder: 'Ana',
         chat: 'https://chat.example.org/riverside',
-        title: 'House rules',
-        atoms: ['Quiet hours start at ten.\n', 'Bins go out on Tuesday.\n'],
+        documents: [
+          {
+            title: 'House rules',
+            atoms: ['Quiet hours start at ten.\n', 'Bins go out on Tuesday.\n'],
+          },
+        ],
         rules: DEFAULT_RULES,
         kx,
       },
@@ -174,12 +187,44 @@ describe('createGroup', () => {
   it('normalizes each section as Atom text before signing the genesis', async () => {
     const ana = await device(createFakeRelay(), 'ana');
     const text = 'Cafe\u0301 rules  \r\nstay.\t\r\n\r\n\r\n- Be kind\r- Ask first';
-    const group = await stored(ana, await created(ana, { ...VALUES, text }));
+    const group = await stored(ana, await created(ana, withText(text)));
     const genesis = queued(group)?.event;
-    expect(genesis?.type === 'genesis' ? genesis.body.atoms : null).toEqual([
-      'Caf\u00e9 rules\nstay.\n',
-      '- Be kind\n- Ask first\n',
+    expect(genesis?.type === 'genesis' ? genesis.body.documents : null).toEqual([
+      { title: 'House rules', atoms: ['Caf\u00e9 rules\nstay.\n', '- Be kind\n- Ask first\n'] },
     ]);
+  });
+
+  it('queues one genesis that carries every Document, in order, each split and normalized (#92)', async () => {
+    const ana = await device(createFakeRelay(), 'ana');
+    const values = { ...VALUES, documents: [...VALUES.documents, BUDGET] };
+    const group = await stored(ana, await created(ana, values));
+    expect(group.outbox).toHaveLength(1);
+    const genesis = queued(group)?.event;
+    expect(genesis?.type === 'genesis' ? genesis.body.documents : null).toEqual([
+      { title: 'House rules', atoms: ['Quiet hours start at ten.\n', 'Bins go out on Tuesday.\n'] },
+      { title: 'Budget', atoms: ['We share costs.\n', 'We keep receipts.\n'] },
+    ]);
+    const state = fold(
+      [{ seq: 1, received: 29_000_000, bytes: group.outbox[0] ?? new Uint8Array() }],
+      null,
+    );
+    expect(state.documents).toEqual([
+      { id: group.groupId, title: 'House rules' },
+      { id: `${group.groupId}:1`, title: 'Budget' },
+    ]);
+  });
+
+  it('counts every Document toward the 64,000-byte genesis, refusing two that only fit apart (#92)', async () => {
+    const fake = createFakeRelay();
+    const ana = await device(fake, 'ana');
+    const half = { title: 'Half', text: 'x'.repeat(33_000) };
+    expect((await createGroup(ana, { ...VALUES, documents: [half] })).outcome).toBe('created');
+    const both = await createGroup(ana, {
+      ...VALUES,
+      documents: [half, { ...half, title: 'Other' }],
+    });
+    expect(both).toEqual({ outcome: 'too-large' });
+    expect(await ana.store.listGroups()).toHaveLength(1);
   });
 
   it('leaves the chat out of genesis when there is none', async () => {
@@ -197,13 +242,15 @@ describe('createGroup', () => {
     const group = await stored(ana, groupId);
     expect(fake.blobs(mailboxAt(group, fake.minute))).toHaveLength(1);
     expect(group.outbox).toEqual([]);
-    expect(fold(group.log, group.relayNow).title).toBe('House rules');
+    expect(fold(group.log, group.relayNow).documents).toEqual([
+      { id: groupId, title: 'House rules' },
+    ]);
   });
 
   it('refuses a Document too large for one record, before anything is stored or sent', async () => {
     const fake = createFakeRelay();
     const ana = await device(fake, 'ana');
-    const result = await createGroup(ana, { ...VALUES, text: 'x'.repeat(66_000) });
+    const result = await createGroup(ana, withText('x'.repeat(66_000)));
     expect(result).toEqual({ outcome: 'too-large' });
     expect(await ana.store.listGroups()).toEqual([]);
     expect(fake.requests).toEqual([]);
@@ -211,15 +258,15 @@ describe('createGroup', () => {
 
   it('takes a genesis record of exactly 64,000 bytes, key and signature included, and refuses one more', async () => {
     const ana = await device(createFakeRelay(), 'ana');
-    const base = { ...VALUES, chat: null, text: 'x' };
+    const base = withText('x', { ...VALUES, chat: null });
     const result = await createGroup(ana, base);
     if (result.outcome !== 'created') throw new Error('Expected a group.');
     const record = (await stored(ana, result.groupId)).outbox[0] ?? new Uint8Array();
     const room = MAX_RECORD_BYTES - record.length;
-    const fits = await createGroup(ana, { ...base, text: 'x'.repeat(1 + room) });
+    const fits = await createGroup(ana, withText('x'.repeat(1 + room), base));
     if (fits.outcome !== 'created') throw new Error('Expected a group.');
     expect((await stored(ana, fits.groupId)).outbox[0]).toHaveLength(64_000);
-    expect(await createGroup(ana, { ...base, text: 'x'.repeat(1 + room + 1) })).toEqual({
+    expect(await createGroup(ana, withText('x'.repeat(1 + room + 1), base))).toEqual({
       outcome: 'too-large',
     });
   });
@@ -228,7 +275,7 @@ describe('createGroup', () => {
     const fake = createFakeRelay();
     const ana = await device(fake, 'ana');
     // 32,000 characters, each two bytes in UTF-8: far under 64,000 characters, over 64,000 bytes.
-    const result = await createGroup(ana, { ...VALUES, text: 'é'.repeat(32_000) });
+    const result = await createGroup(ana, withText('é'.repeat(32_000)));
     expect(result).toEqual({ outcome: 'too-large' });
     expect(await ana.store.listGroups()).toEqual([]);
   });
@@ -267,7 +314,7 @@ describe('createGroup', () => {
   it('makes different keys for every group', async () => {
     const ana = await device(createFakeRelay(), 'ana');
     const one = await stored(ana, await created(ana));
-    const two = await stored(ana, await created(ana, { ...VALUES, title: 'Other' }));
+    const two = await stored(ana, await created(ana, { ...VALUES, groupName: 'Other' }));
     expect(base64url(one.secret)).not.toBe(base64url(two.secret));
     expect(base64url(one.signingKey)).not.toBe(base64url(two.signingKey));
     expect(one.me.author).not.toBe(two.me.author);
@@ -382,6 +429,19 @@ describe('makeInvite', () => {
     expect(verifyInviteToken(publicKeyOf(group.signingKey), sig, groupId)).toBe(true);
   });
 
+  it('previews the first Document alone, its title and first section, when there are several (#92)', async () => {
+    const fake = createFakeRelay();
+    const values = { ...VALUES, documents: [BUDGET, ...VALUES.documents] };
+    const { ana, groupId } = await anaWithGroup(fake, values);
+    const preview = envelopeAt(fake, await linkTo(ana, groupId))?.preview;
+    expect(preview).toEqual({
+      groupName: 'Riverside Tenants',
+      inviterName: 'Ana',
+      documentTitle: 'Budget',
+      excerpt: 'We share costs.',
+    });
+  });
+
   it('carries the log in seq order, never what still waits in the outbox', async () => {
     const fake = createFakeRelay();
     const { ana, groupId } = await anaWithGroup(fake);
@@ -399,7 +459,7 @@ describe('makeInvite', () => {
   it('shows the first section as plain text, cut to 280 code points and “…”', async () => {
     const fake = createFakeRelay();
     const long = `**Quiet** ${'hours '.repeat(80)}`;
-    const { ana, groupId } = await anaWithGroup(fake, { ...VALUES, text: `${long}\n\nBins.` });
+    const { ana, groupId } = await anaWithGroup(fake, withText(`${long}\n\nBins.`));
 
     const excerpt = envelopeAt(fake, await linkTo(ana, groupId))?.preview.excerpt ?? '';
 
@@ -700,7 +760,7 @@ describe('joinGroup', () => {
     expect(before.cursor).toBe(lookup.group.page.cursor);
     expect(before.instance).toBe(fake.instance);
     expect(before.relayNow).toBe(fake.minute);
-    expect(fold(before.log, before.relayNow).title).toBe('House rules');
+    expect(fold(before.log, before.relayNow).documents[0]?.title).toBe('House rules');
     expect(before.kxKey).toHaveLength(32);
     expect(before.epoch ?? 0).toBe(0);
     const kx = base64url(kxPublicKeyOf(before.kxKey ?? new Uint8Array()));
@@ -741,7 +801,7 @@ describe('joinGroup', () => {
       expect(await folded(services, groupId)).toEqual(['Ana', 'Ben', 'Cal']);
     }
     const state = fold((await stored(cal, groupId)).log, null);
-    expect(state.title).toBe('House rules');
+    expect(state.documents[0]?.title).toBe('House rules');
     expect(state.members.map((member) => member.invitedBy)).toEqual([
       null,
       (await stored(ana, groupId)).me.author,

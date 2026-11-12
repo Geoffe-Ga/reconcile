@@ -29,17 +29,25 @@ export const SCORE_MIN = 0;
 export const SCORE_MAX = 4;
 
 /**
- * Founds a group with its first Document and its founding rules. Carries
- * `group: ""`, as it can't contain its own hash. `rules` is kept as written:
- * the fold checks it against `DEFAULT_RULES` (rules.ts), and a genesis without
- * it takes every default.
+ * One Document a genesis founds (#92): its title and its first sections, each
+ * as written. The fold checks the title and that it has a section.
+ */
+export interface FoundingDocument {
+  readonly title: string;
+  readonly atoms: readonly string[];
+}
+
+/**
+ * Founds a group with its Documents, in order, and its founding rules (#92).
+ * Carries `group: ""`, as it can't contain its own hash. `rules` is kept as
+ * written: the fold checks it against `DEFAULT_RULES` (rules.ts), and a
+ * genesis without it takes every default.
  */
 export interface GenesisBody {
   readonly name: string;
   readonly chat?: string;
   readonly founder: string;
-  readonly title: string;
-  readonly atoms: readonly string[];
+  readonly documents: readonly FoundingDocument[];
   readonly rules?: Readonly<Record<string, unknown>>;
   /** The founder's X25519 public key in base64url (#98), when the genesis carries a well-shaped one. */
   readonly kx?: string;
@@ -55,14 +63,14 @@ export interface SeatEntry {
  * Founds a coalition (#100): a group genesis body, rules included, with no
  * founder, since its author isn't a participant, plus the seats of the groups
  * that reconcile. Carries `group: ""` like a group's genesis. The fold checks
- * that the seats hold two or more distinct keys.
+ * that the seats hold two or more distinct keys, and that it founds exactly
+ * one Document (#92): a coalition's statement.
  */
 export interface CoalitionGenesisBody {
   readonly kind: 'coalition';
   readonly name: string;
   readonly chat?: string;
-  readonly title: string;
-  readonly atoms: readonly string[];
+  readonly documents: readonly FoundingDocument[];
   readonly rules?: Readonly<Record<string, unknown>>;
   readonly seats: readonly SeatEntry[];
 }
@@ -139,11 +147,13 @@ export interface ProposalBody {
 }
 
 /**
- * Where an add puts its new section (#75): right after the Atom `after`, or
- * first when it's null. The new Atom's id is the Proposal's own id.
+ * Where an add puts its new section (#75): in the Document `document` (#92),
+ * right after the Atom `after`, or first in it when that's null. The new
+ * Atom's id is the Proposal's own id.
  */
 export interface AddTarget {
   readonly kind: 'add';
+  readonly document: string;
   readonly after: string | null;
 }
 
@@ -154,6 +164,30 @@ export interface AddTarget {
  */
 export interface AddProposalBody {
   readonly target: AddTarget;
+  readonly title: string;
+  readonly why: string;
+  readonly text: string;
+  readonly link?: string;
+  readonly window?: number;
+  readonly dispatch?: CarriedDispatch;
+}
+
+/**
+ * A new Document (#92), titled `title`, whose first sections are the
+ * Proposal's text, split at blank lines. Its id is the Proposal's own id.
+ */
+export interface NewDocumentTarget {
+  readonly kind: 'new-document';
+  readonly title: string;
+}
+
+/**
+ * Proposes a new Document (#92): it carries `target` in place of an Atom, its
+ * first sections as its text, and, like an add, an optional voting window in
+ * whole days (#106) and an optional Dispatch to send if it passes (#112).
+ */
+export interface NewDocumentProposalBody {
+  readonly target: NewDocumentTarget;
   readonly title: string;
   readonly why: string;
   readonly text: string;
@@ -360,14 +394,15 @@ export interface AdmitProposalBody {
 
 /**
  * What a `proposal` event carries: new text for an Atom, a new section (#75),
- * a steward seat (#102), an opt-in (#117), dissolving the group (#108),
- * removing a member (#115), reconciling into a coalition (#100), a priority
- * vote's question and options (#107), or, in a coalition, admitting a group
- * (#114).
+ * a new Document (#92), a steward seat (#102), an opt-in (#117), dissolving
+ * the group (#108), removing a member (#115), reconciling into a coalition
+ * (#100), a priority vote's question and options (#107), or, in a coalition,
+ * admitting a group (#114).
  */
 export type ProposalEventBody =
   | ProposalBody
   | AddProposalBody
+  | NewDocumentProposalBody
   | StewardProposalBody
   | RulesProposalBody
   | DissolveProposalBody
@@ -384,6 +419,11 @@ export function isStewardProposal(body: ProposalEventBody): body is StewardPropo
 /** True when a Proposal's body adds a new section (#75). */
 export function isAddProposal(body: ProposalEventBody): body is AddProposalBody {
   return 'target' in body && body.target.kind === 'add';
+}
+
+/** True when a Proposal's body proposes a new Document (#92). */
+export function isNewDocumentProposal(body: ProposalEventBody): body is NewDocumentProposalBody {
+  return 'target' in body && body.target.kind === 'new-document';
 }
 
 /** True when a Proposal's body is a priority vote (#107). */
@@ -860,19 +900,34 @@ function parseSeats(value: unknown): SeatEntry[] | null {
   return parsed.every((seat) => seat !== null) ? parsed : null;
 }
 
+/** A founding Document's title and Atoms, any other key dropped, or null for any other shape (#92). */
+function parseFoundingDocument(value: unknown): FoundingDocument | null {
+  if (!isObject(value)) return null;
+  const { title, atoms } = value;
+  return isString(title) && isStringList(atoms) ? { title, atoms } : null;
+}
+
+/**
+ * A genesis's Documents (#92), or null when they aren't a list or any of them
+ * is badly shaped. How many there are, and their titles, the fold checks.
+ */
+function parseDocuments(value: unknown): FoundingDocument[] | null {
+  if (!Array.isArray(value)) return null;
+  const parsed = value.map(parseFoundingDocument);
+  return parsed.every((document) => document !== null) ? parsed : null;
+}
+
 /** A coalition genesis: a group genesis body without its founder, plus its seats (#100). */
 function parseCoalitionGenesis(body: Json): CoalitionGenesisBody | null {
-  const { kind, name, chat, title, atoms, rules } = body;
+  const { kind, name, chat, rules } = body;
+  const documents = parseDocuments(body.documents);
   const seats = parseSeats(body.seats);
-  if (kind !== 'coalition' || !isString(name) || !isString(title) || !isStringList(atoms)) {
-    return null;
-  }
+  if (kind !== 'coalition' || !isString(name) || documents === null) return null;
   if (!isOptionalString(chat) || !isOptionalObject(rules) || seats === null) return null;
   return {
     kind,
     name,
-    title,
-    atoms,
+    documents,
     seats,
     ...(chat === undefined ? {} : { chat }),
     ...(rules === undefined ? {} : { rules }),
@@ -881,14 +936,14 @@ function parseCoalitionGenesis(body: Json): CoalitionGenesisBody | null {
 
 function parseGenesis(body: Json): GenesisBody | CoalitionGenesisBody | null {
   if (body.kind !== undefined) return parseCoalitionGenesis(body);
-  const { name, chat, founder, title, atoms, rules } = body;
-  if (!isString(name) || !isString(founder) || !isString(title)) return null;
-  if (!isStringList(atoms) || !isOptionalString(chat) || !isOptionalObject(rules)) return null;
+  const { name, chat, founder, rules } = body;
+  const documents = parseDocuments(body.documents);
+  if (!isString(name) || !isString(founder) || documents === null) return null;
+  if (!isOptionalString(chat) || !isOptionalObject(rules)) return null;
   return {
     name,
     founder,
-    title,
-    atoms,
+    documents,
     ...(chat === undefined ? {} : { chat }),
     ...(rules === undefined ? {} : { rules }),
     ...kxField(body.kx),
@@ -928,21 +983,28 @@ function parseLevel(body: Json): LevelBody | null {
   return isString(body.level) ? { level: body.level } : null;
 }
 
-/** An add's target, keeping only its kind and anchor, or null for any other shape (#75). */
-function parseAddTarget(value: unknown): AddTarget | null {
-  if (!isObject(value) || value.kind !== 'add') return null;
-  const { after } = value;
-  return after === null || isString(after) ? { kind: 'add', after } : null;
+/** An add's target, keeping only its kind, Document and anchor, or null for any other shape (#75, #92). */
+function parseAddTarget(value: Json): AddTarget | null {
+  const { document, after } = value;
+  if (!isString(document)) return null;
+  return after === null || isString(after) ? { kind: 'add', document, after } : null;
 }
 
-/** An add carries `target` in place of `atom`, never both, its text, and any window (#75, #106). */
-function parseAddProposal(body: Json): AddProposalBody | null {
-  const { atom, target, title, why, text } = body;
-  const parsed = parseAddTarget(target);
-  if (parsed === null || atom !== undefined || !isString(text)) return null;
+/** A new Document's target, keeping only its kind and title, or null for any other shape (#92). */
+function parseNewDocumentTarget(value: Json): NewDocumentTarget | null {
+  return isString(value.title) ? { kind: 'new-document', title: value.title } : null;
+}
+
+/**
+ * An add (#75) or a new Document (#92) carries `target` in place of `atom`,
+ * never both, its text, and any window (#106).
+ */
+function parseTextProposal<T>(body: Json, target: T | null) {
+  const { atom, title, why, text } = body;
+  if (target === null || atom !== undefined || !isString(text)) return null;
   if (!isString(title) || !isString(why)) return null;
   const options = editOptions(body);
-  return options === null ? null : { target: parsed, title, why, text, ...options };
+  return options === null ? null : { target, title, why, text, ...options };
 }
 
 /** A steward target's kind, seat and member, or null for any other shape (#102). */
@@ -1095,14 +1157,18 @@ function parsePriority(body: Json): PriorityProposalBody | null {
 }
 
 /**
- * A Proposal with a `target` in place of an Atom: an add (#75), a priority
- * vote (#107), a steward seat (#102), an opt-in (#117), dissolving the group
- * (#108) or reconciling into a coalition (#100).
+ * A Proposal with a `target` in place of an Atom: an add (#75), a new
+ * Document (#92), a priority vote (#107), a steward seat (#102), an opt-in
+ * (#117), dissolving the group (#108) or reconciling into a coalition (#100).
  */
 function parseTargeted(body: Json): ProposalEventBody | null {
-  const kind = isObject(body.target) ? body.target.kind : undefined;
-  if (kind === 'add') return parseAddProposal(body);
-  return kind === 'priority' ? parsePriority(body) : parseTargetedProposal(body);
+  const { target } = body;
+  if (!isObject(target)) return parseTargetedProposal(body);
+  if (target.kind === 'add') return parseTextProposal(body, parseAddTarget(target));
+  if (target.kind === 'new-document') {
+    return parseTextProposal(body, parseNewDocumentTarget(target));
+  }
+  return target.kind === 'priority' ? parsePriority(body) : parseTargetedProposal(body);
 }
 
 /** An edit names an `atom`; every other Proposal carries `target` (#75, #100, #102, #107, #108, #117). */

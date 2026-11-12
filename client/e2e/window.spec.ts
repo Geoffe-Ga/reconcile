@@ -64,7 +64,7 @@ test('A proposes with a 10-day window, and both profiles fold its 10-day deadlin
   await test.step('the composer offers 7 days, and refuses 20 with a tied message', async () => {
     const { page } = ana;
     await expect(page.getByRole('region', { name: 'People', exact: true })).toContainText('Ben');
-    await page.getByRole('link', { name: TITLE }).click();
+    await page.getByRole('link', { name: TITLE, exact: true }).click();
     await page.getByRole('button', { name: 'Propose a change to section 1' }).click();
     const days = page.getByRole('textbox', { name: 'Voting time (days)' });
     await expect(days).toHaveValue('7');
