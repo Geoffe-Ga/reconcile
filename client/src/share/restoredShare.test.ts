@@ -136,7 +136,7 @@ const backupFile: RestorePath = async (owner) => {
   return (onto) => importGroups(onto.store, file, PASSPHRASE);
 };
 
-/** The relay copy (#97), as recovery (#118) restores it: `fetchRelayBackup`, then `importSnapshot`. */
+/** The relay copy (#97), as recovery (#118) restores it: `fetchRelayBackup`, then `importSnapshot` from `'relay'`. */
 const relayCopy: RestorePath = async (owner) => {
   const { store, services } = owner;
   await startRelayBackup({ store, relay: services.relay, now: services.now });
@@ -146,7 +146,7 @@ const relayCopy: RestorePath = async (owner) => {
   return async (onto) => {
     const plaintext = await fetchRelayBackup(onto.services.relay, key);
     if (plaintext === null) throw new Error('Expected the relay copy.');
-    await importSnapshot(onto.store, plaintext);
+    await importSnapshot(onto.store, plaintext, 'relay');
   };
 };
 
