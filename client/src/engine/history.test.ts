@@ -406,6 +406,7 @@ describe('describeChange', () => {
     webhook: 'https://discord.com/api/webhooks/1/abcdWXYZ',
   });
   const dissolve = log.proposeDissolve('Ana', false);
+  const removeBen = log.proposeRemoval('Ana', 'Ben');
   const state = log.state();
 
   /** What `describeChange` says of the Proposal `id`, as though `version` won. */
@@ -428,7 +429,7 @@ describe('describeChange', () => {
   });
 
   it('describes no change for a Proposal that changes no section', () => {
-    for (const id of [focus, steward, rules, dissolve]) {
+    for (const id of [focus, steward, rules, dissolve, removeBen]) {
       expect(described(id, proposalIn(state, id).versions[0]?.id)).toBeNull();
     }
   });

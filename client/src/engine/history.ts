@@ -120,15 +120,15 @@ interface Step {
   readonly sections: readonly SectionChange[];
 }
 
-/** A Proposal that changes no Document: a steward, rules, dissolve, reconcile, priority or admit one, or a coalition motion in a group. */
+/** A Proposal that changes no Document: a steward, rules, dissolve, reconcile, priority, admit or member removal one (#115), or a coalition motion in a group. */
 const NO_CHANGE = (): null => null;
 
 /**
  * What a pass of each target kind did, given whether its winning text is
  * `""` and its section's text before. Keyed by every kind in the target
  * union, so a kind added later fails `tsc` here until it has an entry of its
- * own: the exhaustive check, without a `switch` whose ten cases would pass
- * the complexity limit.
+ * own: the exhaustive check, without a `switch` whose eleven cases would
+ * pass the complexity limit.
  */
 const DESCRIBED: {
   readonly [K in ProposalTarget['kind']]: (
@@ -146,6 +146,7 @@ const DESCRIBED: {
   motion: NO_CHANGE,
   priority: NO_CHANGE,
   admit: NO_CHANGE,
+  remove: NO_CHANGE,
 };
 
 /**
