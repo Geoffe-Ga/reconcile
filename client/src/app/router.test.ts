@@ -85,6 +85,11 @@ describe('parseRoute', () => {
       { name: 'optIn', groupId: GROUP, optIn: 'chatBot', narrow: true },
     ],
     [`#/g/${GROUP}/dissolve`, { name: 'dissolve', groupId: GROUP }],
+    // A member's removal (#115) has its own page: an added section's id is a Proposal's (#75).
+    [
+      `#/g/${GROUP}/remove-member/${PROPOSAL}`,
+      { name: 'removal', groupId: GROUP, member: PROPOSAL },
+    ],
     [`#/g/${GROUP}/dispatches`, { name: 'dispatches', groupId: GROUP }],
     [`#/g/${GROUP}/dispatch/new`, { name: 'sendDispatch', groupId: GROUP }],
   ])('reads %j', (hash, route) => {
@@ -155,6 +160,11 @@ describe('parseRoute', () => {
     `#/g/${GROUP}/narrow/toString`,
     `#/g/${GROUP}/dissolve/${PROPOSAL}`,
     `#/g/${GROUP}/dissolve/extra/more`,
+    `#/g/${GROUP}/remove-member`,
+    `#/g/${GROUP}/remove-member/`,
+    `#/g/${GROUP}/remove-member/has space`,
+    `#/g/${GROUP}/remove-member/${ATOM}`,
+    `#/g/${GROUP}/remove-member/${PROPOSAL}/extra`,
     `#/g/${GROUP}/dispatch`,
     `#/g/${GROUP}/dispatch/`,
     `#/g/${GROUP}/dispatch/old`,
@@ -310,6 +320,10 @@ describe('routeHref', () => {
       `#/g/${GROUP}/narrow/chatBot`,
     ],
     [{ name: 'dissolve', groupId: GROUP }, `#/g/${GROUP}/dissolve`],
+    [
+      { name: 'removal', groupId: GROUP, member: PROPOSAL },
+      `#/g/${GROUP}/remove-member/${PROPOSAL}`,
+    ],
     [{ name: 'dispatches', groupId: GROUP }, `#/g/${GROUP}/dispatches`],
     [{ name: 'sendDispatch', groupId: GROUP }, `#/g/${GROUP}/dispatch/new`],
     [{ name: 'reconcile', groupId: GROUP }, `#/g/${GROUP}/reconcile`],

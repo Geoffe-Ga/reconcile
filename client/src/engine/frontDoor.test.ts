@@ -134,6 +134,22 @@ describe('door-invited in the fold (#121)', () => {
   });
 });
 
+describe('door-invited beside a removal (#115)', () => {
+  it('refuses the person a passed removal names, and keeps the invite they recorded before it', () => {
+    const log = opened(DOOR, { levels: { Cal: VOTING } });
+    const before = log.doorInvited('Cal', A1);
+    const removal = log.proposeRemoval('Ana', 'Cal');
+    for (const name of ['Ana', 'Ben']) log.vote(name, removal, 4);
+    log.minute += 1;
+    expect(mayRecordInvite(log.state(), authorOf('cal'), A2)).toBe(false);
+    const after = log.doorInvited('Cal', A2);
+    const state = log.state();
+    expect(state.doorInvites.map((invite) => invite.id)).toEqual([before]);
+    expect(state.ignored.map((record) => record.id)).toContain(after);
+    expect(mayRecordInvite(state, authorOf('ben'), A2)).toBe(true);
+  });
+});
+
 describe('a cleared “open a front door” Proposal (#111)', () => {
   /** 30 days in relay minutes: how long ballots outlive a decision. */
   const THIRTY_DAYS = 43_200;

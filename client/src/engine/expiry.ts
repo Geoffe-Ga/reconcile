@@ -29,13 +29,14 @@ type ProposalBound = {
 
 /**
  * Event types, beyond `vote` and `result`, that expire with a Proposal's
- * ballots. #115 registers its removal response here. A Proposal's versions
- * are its wording, not its ballots, and never expire.
+ * ballots: a removal's response (#115), the person's own words on it, like a
+ * note. A Proposal's versions are its wording, not its ballots, and never
+ * expire, and neither does a `remove`, which keeps the person it names out.
  */
 export const EXPIRES_WITH_BALLOTS: readonly Exclude<
   ProposalBound,
-  'version' | 'vote' | 'result'
->[] = [];
+  'version' | 'vote' | 'result' | 'remove'
+>[] = ['removal-response'];
 
 const EXPIRING: ReadonlySet<EventType> = new Set<EventType>([
   'vote',

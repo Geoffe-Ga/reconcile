@@ -196,3 +196,16 @@ export async function score(where: AppQueries, user: Typist, pill: string): Prom
   await user.click(await where.findByRole('radio', { name: pill }));
   await user.click(where.getByRole('button', { name: /your vote$/ }));
 }
+
+/**
+ * What each row of the People list says about its person, in order: its
+ * text without the row's actions, Suspend (#102) and Propose removing (#115),
+ * which belong to whoever is looking.
+ */
+export function personRows(people: HTMLElement): (string | null)[] {
+  return Array.from(people.querySelectorAll('li.person'), (item) => {
+    const copy = item.cloneNode(true) as HTMLElement;
+    for (const action of copy.querySelectorAll('button, .person-action')) action.remove();
+    return copy.textContent;
+  });
+}

@@ -103,6 +103,8 @@ export async function ensureEntries(
 ): Promise<void> {
   const held = new Set((await store.listCoalitions()).map((entry) => entry.groupId));
   for (const group of await store.listGroups()) {
+    // A removed member's copy reads nothing new, a coalition's log included (#115).
+    if (group.archived?.reason === 'removed') continue;
     const mark = readMark(group);
     if (read.get(group.groupId) === mark) continue;
     const secrets = [...heldSecrets(foldGroup(group)), ...queuedSecrets(group)];
@@ -113,6 +115,30 @@ export async function ensureEntries(
       await store.addGroup(entry).catch(() => undefined);
     }
     read.set(group.groupId, mark);
+  }
+}
+
+/** The store id of the coalition entry for `secret`, in base64url. */
+function entryIdOf(secret: string): string {
+  return deriveCoalitionEntryId(fromBase64url(secret));
+}
+
+/**
+ * Archives the coalition entries that `removed`, a group a vote removed this
+ * device's member from, alone held here (#115): their copy reads nothing new,
+ * the coalition's log included, so no request names its mailboxes again. An
+ * entry another of their groups on this device still holds keeps syncing.
+ */
+export async function retireCoalitionsOf(store: Store, removed: Group): Promise<void> {
+  const own = heldSecrets(foldGroup(removed)).map(entryIdOf);
+  if (own.length === 0) return;
+  const others = (await store.listGroups()).filter(
+    (group) => group.groupId !== removed.groupId && group.archived?.reason !== 'removed',
+  );
+  const kept = new Set(others.flatMap((group) => heldSecrets(foldGroup(group)).map(entryIdOf)));
+  for (const id of own) {
+    if (kept.has(id) || (await store.getGroup(id)) === undefined) continue;
+    await store.markArchived(id, 'removed');
   }
 }
 
