@@ -1,0 +1,194 @@
+{
+  "kind": "tally",
+  "vectors": [
+    {
+      "name": "removal pass at an average of exactly 3.0 with one 0",
+      "eligible": 4,
+      "bar": "removal",
+      "versions": [
+        {
+          "id": "v1",
+          "scores": [0, 4, 4, 4]
+        }
+      ],
+      "expect": {
+        "kind": "pass",
+        "version": "v1"
+      }
+    },
+    {
+      "name": "removal fail just under an average of 3.0 with one 0",
+      "eligible": 4,
+      "bar": "removal",
+      "versions": [
+        {
+          "id": "v1",
+          "scores": [0, 3, 4, 4]
+        }
+      ],
+      "expect": {
+        "kind": "fail"
+      }
+    },
+    {
+      "name": "removal pass at an average of exactly 3.0 among 100 scorers",
+      "eligible": 100,
+      "bar": "removal",
+      "versions": [
+        {
+          "id": "v1",
+          "scores": [
+            3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
+            3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
+            3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
+            3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3
+          ]
+        }
+      ],
+      "expect": {
+        "kind": "pass",
+        "version": "v1"
+      }
+    },
+    {
+      "name": "removal fail at an average of 2.99",
+      "eligible": 100,
+      "bar": "removal",
+      "versions": [
+        {
+          "id": "v1",
+          "scores": [
+            2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
+            3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
+            3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
+            3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3
+          ]
+        }
+      ],
+      "expect": {
+        "kind": "fail"
+      }
+    },
+    {
+      "name": "removal pass with one 0 among 10 scorers",
+      "eligible": 10,
+      "bar": "removal",
+      "versions": [
+        {
+          "id": "v1",
+          "scores": [0, 4, 4, 4, 4, 4, 4, 4, 4, 4]
+        }
+      ],
+      "expect": {
+        "kind": "pass",
+        "version": "v1"
+      }
+    },
+    {
+      "name": "removal fail with two 0s among 10 scorers",
+      "eligible": 10,
+      "bar": "removal",
+      "versions": [
+        {
+          "id": "v1",
+          "scores": [0, 0, 4, 4, 4, 4, 4, 4, 4, 4]
+        }
+      ],
+      "expect": {
+        "kind": "fail"
+      }
+    },
+    {
+      "name": "removal pass with 20 scorers and one 0",
+      "eligible": 20,
+      "bar": "removal",
+      "versions": [
+        {
+          "id": "v1",
+          "scores": [0, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4]
+        }
+      ],
+      "expect": {
+        "kind": "pass",
+        "version": "v1"
+      }
+    },
+    {
+      "name": "a dissolve’s entrenched bar still fails 20 scorers with one 0",
+      "eligible": 20,
+      "bar": "entrenched",
+      "versions": [
+        {
+          "id": "v1",
+          "scores": [0, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4]
+        }
+      ],
+      "expect": {
+        "kind": "fail"
+      }
+    },
+    {
+      "name": "removal fail with two 0s among 40 scorers, exactly 5%",
+      "eligible": 40,
+      "bar": "removal",
+      "versions": [
+        {
+          "id": "v1",
+          "scores": [
+            0, 0, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+            4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4
+          ]
+        }
+      ],
+      "expect": {
+        "kind": "fail"
+      }
+    },
+    {
+      "name": "removal pass with 41 scorers and two 0s",
+      "eligible": 41,
+      "bar": "removal",
+      "versions": [
+        {
+          "id": "v1",
+          "scores": [
+            0, 0, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+            4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4
+          ]
+        }
+      ],
+      "expect": {
+        "kind": "pass",
+        "version": "v1"
+      }
+    },
+    {
+      "name": "an average of exactly 2.5 with no zeros fails the removal bar",
+      "eligible": 4,
+      "bar": "removal",
+      "versions": [
+        {
+          "id": "v1",
+          "scores": [2, 3, 2, 3]
+        }
+      ],
+      "expect": {
+        "kind": "fail"
+      }
+    },
+    {
+      "name": "removal lapse below quorum",
+      "eligible": 10,
+      "bar": "removal",
+      "versions": [
+        {
+          "id": "v1",
+          "scores": [4, 4]
+        }
+      ],
+      "expect": {
+        "kind": "lapse"
+      }
+    }
+  ]
+}

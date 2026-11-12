@@ -29,7 +29,7 @@
  * posts for the Proposal go into the thread. The link sits only in the sealed
  * log, and points into the group's own Discord server.
  */
-import { can, isSuspended, type Roster } from './capabilities';
+import { can, isOusted, isSuspended, type Roster } from './capabilities';
 import { effectiveOptIn, type OptInState } from './optIns';
 import { DAY_MINUTES } from './rules';
 
@@ -165,16 +165,20 @@ export function claimFor(
   return state.chatPosts.find((post) => post.proposal === proposal && post.moment === moment);
 }
 
-/** True when `author`'s events count now: a member, not suspended (ADR-0016). */
+/**
+ * True when `author`'s events count now: a member, not suspended (ADR-0016),
+ * and not named by a removal whose pass is final, whose events the fold
+ * ignores from then on (#115).
+ */
 function mayAct(state: Roster, author: string): boolean {
-  return can(state, author, 'read') && !isSuspended(state, author);
+  return can(state, author, 'read') && !isSuspended(state, author) && !isOusted(state, author);
 }
 
 /**
  * Whether `author` may claim `moment` on `proposal` at `state.at`: they are a
- * member who isn't suspended, the bot is on in effect (not off, nor narrowed
- * by a steward), the Proposal is the group's own and `moment` is the one due,
- * and nobody has claimed it yet. A coalition motion the group votes on (#100)
+ * member who isn't suspended and whom no passed removal names (#115), the bot
+ * is on in effect (not off, nor narrowed by a steward), the Proposal is the
+ * group's own and `moment` is the one due, and nobody has claimed it yet. A coalition motion the group votes on (#100)
  * is never claimed: it isn't the group's own, has no number to name a thread,
  * and a device without the coalition's log, as the bot's fold is, doesn't
  * know it. So no thread is ever recorded for one either.
@@ -198,10 +202,10 @@ export function mayClaim(
 
 /**
  * Whether `author` may record `proposal`'s Discord thread at `state.at`
- * (#123): they are a member who isn't suspended, the bot is on in effect,
- * `author` made the Proposal's winning `open` claim (so it is a Proposal the
- * fold knows), and no thread is kept for it yet. The fold also needs the link
- * to be a {@link THREAD_URL}.
+ * (#123): they are a member who isn't suspended and whom no passed removal
+ * names (#115), the bot is on in effect, `author` made the Proposal's winning
+ * `open` claim (so it is a Proposal the fold knows), and no thread is kept for
+ * it yet. The fold also needs the link to be a {@link THREAD_URL}.
  */
 export function mayRecordThread(state: ChatThreadState, author: string, proposal: string): boolean {
   return (

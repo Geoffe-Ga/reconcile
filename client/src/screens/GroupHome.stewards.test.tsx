@@ -58,7 +58,8 @@ const rows = () =>
     .getAllByRole('listitem')
     .map((item) => {
       const copy = item.cloneNode(true) as HTMLElement;
-      for (const button of copy.querySelectorAll('button')) button.remove();
+      // Its actions, Suspend and Propose removing (#115), aren't part of what the row says.
+      for (const action of copy.querySelectorAll('button, .person-action')) action.remove();
       return copy.textContent;
     });
 

@@ -17,6 +17,7 @@ import {
   isDissolveProposal,
   isAdmitProposal,
   isReconcileProposal,
+  isRemovalProposal,
   isRulesProposal,
   isStewardProposal,
   parseEvent,
@@ -518,6 +519,42 @@ describe('parseEvent', () => {
       'proposal',
       { target: { kind: 'dissolve', wipe: false }, title: 't', why: 'w', window: '14' },
     ],
+    [
+      'a removal target with a numeric member',
+      'proposal',
+      { target: { kind: 'remove', member: 7 }, title: 't', why: 'w' },
+    ],
+    [
+      'a removal target that leaves out its member',
+      'proposal',
+      { target: { kind: 'remove' }, title: 't', why: 'w' },
+    ],
+    [
+      'a removal target whose member is null',
+      'proposal',
+      { target: { kind: 'remove', member: null }, title: 't', why: 'w' },
+    ],
+    [
+      'a removal Proposal that also names an Atom',
+      'proposal',
+      { atom: 'a', target: { kind: 'remove', member: 'k' }, title: 't', why: 'w' },
+    ],
+    [
+      'a removal Proposal without a why',
+      'proposal',
+      { target: { kind: 'remove', member: 'k' }, title: 't' },
+    ],
+    [
+      'a removal Proposal with a numeric link',
+      'proposal',
+      { target: { kind: 'remove', member: 'k' }, title: 't', why: 'w', link: 1 },
+    ],
+    ['removal-response without a Proposal', 'removal-response', { text: 'x' }],
+    ['removal-response without text', 'removal-response', { proposal: 'p' }],
+    ['removal-response with numeric text', 'removal-response', { proposal: 'p', text: 1 }],
+    ['removal-response with a numeric Proposal', 'removal-response', { proposal: 1, text: 'x' }],
+    ['remove without a Proposal', 'remove', {}],
+    ['remove with a numeric Proposal', 'remove', { proposal: 7 }],
     ['dissolve without a proposal', 'dissolve', {}],
     ['dissolve with a numeric proposal', 'dissolve', { proposal: 7 }],
     ['suspend without a member', 'suspend', { reason: 'r' }],
@@ -792,6 +829,61 @@ describe('parseEvent', () => {
     const edit = { atom: 'a', title: 't', why: 'w', text: 'x' };
     expect([dissolve, steward, edit].map(isDissolveProposal)).toEqual([true, false, false]);
     expect([dissolve, steward, edit].map(isStewardProposal)).toEqual([false, true, false]);
+  });
+
+  it('reads a removal Proposal as its member, dropping any window, text and unknown keys (#115)', () => {
+    const target = { kind: 'remove', member: BEN };
+    const parsed = parseEvent(
+      json(
+        envelope('proposal', {
+          target: { ...target, extra: 1 },
+          title: 't',
+          why: 'w',
+          text: 'x',
+          window: 3,
+          class: 'ordinary',
+        }),
+      ),
+    );
+    expect(parsed?.event.body).toEqual({ target, title: 't', why: 'w' });
+    const linked = parseEvent(
+      json(envelope('proposal', { target, title: 't', why: 'w', link: 'https://l' })),
+    );
+    expect(linked?.event.body).toEqual({ target, title: 't', why: 'w', link: 'https://l' });
+  });
+
+  it('tells a removal Proposal from a dissolve, a steward one and an edit (#115)', () => {
+    const removal = { target: { kind: 'remove', member: BEN } as const, title: 't', why: 'w' };
+    const dissolve = { target: { kind: 'dissolve', wipe: false } as const, title: 't', why: 'w' };
+    const steward = {
+      target: { kind: 'steward', seat: 1, member: null } as const,
+      title: 't',
+      why: 'w',
+    };
+    const edit = { atom: 'a', title: 't', why: 'w', text: 'x' };
+    const all = [removal, dissolve, steward, edit];
+    expect(all.map(isRemovalProposal)).toEqual([true, false, false, false]);
+    expect(all.map(isDissolveProposal)).toEqual([false, true, false, false]);
+    expect(all.map(isStewardProposal)).toEqual([false, false, true, false]);
+    expect(all.map(isRulesProposal)).toEqual([false, false, false, false]);
+  });
+
+  it('reads a removal-response as its Proposal and text, kept as written, dropping unknown keys (#115)', () => {
+    const body = { proposal: 'p1', text: ' I wasn’t there. ', extra: 1 };
+    expect(parseEvent(json(envelope('removal-response', body)))?.event).toEqual({
+      v: 1,
+      type: 'removal-response',
+      group: 'g1',
+      author: ANA,
+      ts: 1,
+      body: { proposal: 'p1', text: ' I wasn’t there. ' },
+    });
+  });
+
+  it('reads a remove as the removal it names, dropping unknown keys (#115)', () => {
+    const parsed = parseEvent(json(envelope('remove', { proposal: 'p1', member: BEN })));
+    expect(parsed?.event.body).toEqual({ proposal: 'p1' });
+    expect(parsed?.event.type).toBe('remove');
   });
 
   it('reads a dissolve as the Proposal it names, dropping unknown keys (#108)', () => {
@@ -1133,6 +1225,28 @@ describe('encryption keys and key changes (#98)', () => {
     });
   });
 
+  it('reads a recovery-share as its box alone, dropping a recipient or any other key (#109)', () => {
+    const parsed = parseEvent(json(envelope('recovery-share', { box: WRAP, to: BEN, t: 3 })));
+    expect(parsed?.event).toEqual({
+      v: 1,
+      type: 'recovery-share',
+      group: 'g1',
+      author: ANA,
+      ts: 1,
+      body: { box: WRAP },
+    });
+  });
+
+  it.each([
+    ['no box', {}],
+    ['a numeric box', { box: 7 }],
+    ['a box outside base64url', { box: 'a box' }],
+    ['a padded box', { box: `${WRAP}=` }],
+    ['a one-character box', { box: 'A' }],
+  ])('returns null for a recovery-share with %s (#109)', (_label, body) => {
+    expect(parseEvent(json(envelope('recovery-share', body)))).toBeNull();
+  });
+
   it('reads a key-rotate as its epoch, commit and wraps, dropping unknown keys', () => {
     const body = { epoch: 1, commit: COMMIT, wraps: { [ANA]: WRAP, [BEN]: WRAP }, secret: 'no' };
     const parsed = parseEvent(json(envelope('key-rotate', body)));
@@ -1321,9 +1435,16 @@ describe('coalitions (#100)', () => {
     }
   });
 
+  it('reads a reconcile Proposal with no inner, as a group asking into a formed coalition writes (#313)', () => {
+    const target = Object.fromEntries(Object.entries(RECONCILE).filter(([key]) => key !== 'inner'));
+    const parsed = parseEvent(json(envelope('proposal', { target, title: 'Join C', why: 'W' })));
+    expect(parsed?.event.body).toEqual({ target, title: 'Join C', why: 'W' });
+  });
+
   it.each([
     ['a short secret', { ...RECONCILE, secret: SECRET.slice(1) }],
-    ['no inner', { ...RECONCILE, inner: undefined }],
+    ['a short inner', { ...RECONCILE, inner: INNER.slice(1) }],
+    ['an inner that isn’t canonical', { ...RECONCILE, inner: `${INNER.slice(0, 42)}B` }],
     ['a numeric seat', { ...RECONCILE, seat: 5 }],
     ['a seat that isn’t canonical', { ...RECONCILE, seat: `${SEAT.slice(0, 42)}B` }],
     ['no name', { ...RECONCILE, name: undefined }],
@@ -1334,7 +1455,8 @@ describe('coalitions (#100)', () => {
     expect(parseEvent(json(envelope('proposal', body)))).toBeNull();
   });
 
-  const ADMIT = { kind: 'admit', seat: { name: 'Oak St', key: KEY }, proof: PROOF };
+  const KX = base64url(new Uint8Array(32).fill(7));
+  const ADMIT = { kind: 'admit', seat: { name: 'Oak St', key: KEY }, proof: PROOF, kx: KX };
 
   it('reads an admit Proposal (#114), keeping its window and dropping text and unknown keys', () => {
     const body = {
@@ -1369,6 +1491,10 @@ describe('coalitions (#100)', () => {
     ['a short proof', { ...ADMIT, proof: PROOF.slice(1) }],
     ['a proof with a character base64url lacks', { ...ADMIT, proof: `${PROOF.slice(0, 85)}+` }],
     ['a numeric proof', { ...ADMIT, proof: 6 }],
+    ['no kx (#313)', { ...ADMIT, kx: undefined }],
+    ['a short kx (#313)', { ...ADMIT, kx: KX.slice(1) }],
+    ['a kx that isn’t canonical (#313)', { ...ADMIT, kx: `${KX.slice(0, 42)}B` }],
+    ['a numeric kx (#313)', { ...ADMIT, kx: 7 }],
   ])('refuses an admit Proposal with %s (#114)', (_label, target) => {
     const body = { target, title: 'Admit Oak St', why: 'W' };
     expect(parseEvent(json(envelope('proposal', body)))).toBeNull();
@@ -1398,5 +1524,77 @@ describe('coalitions (#100)', () => {
     ['no result', { motion: 'm1', seat: KEY }],
   ])('refuses a group-result with %s', (_label, body) => {
     expect(parseEvent(json(envelope('group-result', body)))).toBeNull();
+  });
+});
+
+describe('a room wrap (#313)', () => {
+  const SEAT = base64url(new Uint8Array(32).fill(5));
+  const WRAP = base64url(new Uint8Array(104).fill(9));
+
+  it('reads a room-wrap with exactly its seat and a wrap of a 32-byte box', () => {
+    const body = { seat: SEAT, wrap: WRAP };
+    expect(WRAP).toHaveLength(139);
+    expect(parseEvent(json(envelope('room-wrap', body)))?.event).toEqual({
+      v: 1,
+      type: 'room-wrap',
+      group: 'g1',
+      author: ANA,
+      ts: 1,
+      body,
+    });
+  });
+
+  it.each([
+    ['an extra key such as inner', { seat: SEAT, wrap: WRAP, inner: SEAT }],
+    ['an extra key such as a name', { seat: SEAT, wrap: WRAP, name: 'Oak St' }],
+    ['no seat', { wrap: WRAP }],
+    ['a short seat', { seat: SEAT.slice(1), wrap: WRAP }],
+    ['no wrap', { seat: SEAT }],
+    ['a numeric wrap', { seat: SEAT, wrap: 9 }],
+    ['a wrap one byte short', { seat: SEAT, wrap: base64url(new Uint8Array(103).fill(9)) }],
+    ['a wrap one byte long', { seat: SEAT, wrap: base64url(new Uint8Array(105).fill(9)) }],
+    ['a wrap with a character base64url lacks', { seat: SEAT, wrap: `${WRAP.slice(0, 138)}+` }],
+    ['a wrap that isn’t canonical', { seat: SEAT, wrap: `${WRAP.slice(0, 138)}B` }],
+  ])('refuses a room-wrap with %s', (_label, body) => {
+    expect(parseEvent(json(envelope('room-wrap', body)))).toBeNull();
+  });
+});
+
+describe('a room message (#125)', () => {
+  it('reads a message with exactly its text, as written', () => {
+    for (const text of ['Can we meet Thursday?', '', '  <script>alert(1)</script>\n']) {
+      expect(parseEvent(json(envelope('message', { text })))?.event).toEqual({
+        v: 1,
+        type: 'message',
+        group: 'g1',
+        author: ANA,
+        ts: 1,
+        body: { text },
+      });
+    }
+  });
+
+  it.each([
+    ['an extra key such as a name', { text: 'Hi', name: 'Ana' }],
+    ['an extra key such as a group', { text: 'Hi', group: 'g2' }],
+    ['no text', {}],
+    ['a numeric text', { text: 1 }],
+    ['a list for text', { text: ['Hi'] }],
+  ])('refuses a message with %s', (_label, body) => {
+    expect(parseEvent(json(envelope('message', body)))).toBeNull();
+  });
+
+  it('signs a message as any event, its text in NFC', () => {
+    const signed = signEvent(testKeys('ana').secretKey, {
+      type: 'message',
+      group: 'g1',
+      ts: 7,
+      body: { text: 'Café' },
+    });
+    expect(parseRecord(signed.record)?.event).toMatchObject({
+      type: 'message',
+      author: ANA,
+      body: { text: 'Café' },
+    });
   });
 });

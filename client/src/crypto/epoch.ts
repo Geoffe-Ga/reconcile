@@ -35,7 +35,7 @@
 import { sha256 } from '@noble/hashes/sha2.js';
 import { concatBytes, utf8ToBytes } from '@noble/hashes/utils.js';
 
-import { base64url, fromBase64url } from './base64url';
+import { base64url, canonicalBytes } from './base64url';
 import { BOX_NONCE_BYTES, KX_KEY_BYTES, openBox, sealToWith } from './box';
 import { GROUP_SECRET_BYTES, newGroupSecret } from './groupKeys';
 import { hkdfSalted } from './hkdf';
@@ -54,9 +54,6 @@ const NO_SALT = new Uint8Array(0);
 
 /** The largest epoch: its big-endian u32. */
 const MAX_EPOCH = 0xffff_ffff;
-
-/** A wrap's text: unpadded base64url. */
-const BASE64URL = /^[A-Za-z0-9_-]+$/;
 
 /** Where a wrap belongs: its group, its epoch, and the member it is for. */
 export interface WrapPlace {
@@ -125,18 +122,6 @@ export function wrapEpochSecret(
   }
 }
 
-/** The bytes of canonical unpadded base64url `text`, or null. */
-function bytesOf(text: string): Uint8Array | null {
-  if (!BASE64URL.test(text)) return null;
-  try {
-    const bytes = fromBase64url(text);
-    return base64url(bytes) === text ? bytes : null;
-  } catch {
-    // A length no base64 has, such as one character.
-    return null;
-  }
-}
-
 /**
  * The secret in a member's `wrap`, opened with their X25519 secret key
  * `kxKey`, or null when it doesn't open there, or opens to anything that isn't
@@ -145,7 +130,7 @@ function bytesOf(text: string): Uint8Array | null {
 export function unwrapEpochSecret(
   place: WrapPlace & { readonly wrap: string; readonly kxKey: Uint8Array },
 ): Uint8Array | null {
-  const box = bytesOf(place.wrap);
+  const box = canonicalBytes(place.wrap);
   if (box === null) return null;
   const secret = openBox(place.kxKey, box, EPOCH_WRAP_INFO, wrapAad(place));
   if (secret?.length !== GROUP_SECRET_BYTES) return null;
@@ -166,7 +151,7 @@ export interface WrapSet {
 
 /** The 32-byte X25519 public key in base64url `kx`, or null. */
 function keyBytes(kx: string): Uint8Array | null {
-  const bytes = bytesOf(kx);
+  const bytes = canonicalBytes(kx);
   return bytes?.length === KX_KEY_BYTES ? bytes : null;
 }
 
