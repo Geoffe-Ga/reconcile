@@ -647,7 +647,7 @@ describe('a backup made before the dissolve (#231)', () => {
     fake.minute = DISSOLVED + EXPIRED;
     const phone = await freshDevice(fake, 'restored-after');
 
-    expect(await importGroups(phone.store, file, PASSPHRASE)).toBe(1);
+    expect(await importGroups(phone.store, file, PASSPHRASE)).toEqual({ groups: 1, skipped: 0 });
     const before = fake.requests.length;
     expect(await phone.sync.syncOnce()).toBe(true);
     fake.minute += 60;
@@ -667,7 +667,7 @@ describe('a backup made before the dissolve (#231)', () => {
     fake.minute = DISSOLVED + 10 * DAY_MINUTES;
     const phone = await freshDevice(fake, 'restored-before');
 
-    expect(await importGroups(phone.store, file, PASSPHRASE)).toBe(1);
+    expect(await importGroups(phone.store, file, PASSPHRASE)).toEqual({ groups: 1, skipped: 0 });
     expect(await phone.sync.syncOnce()).toBe(true);
 
     const restored = (await phone.store.getGroup(groupId)) ?? never();
