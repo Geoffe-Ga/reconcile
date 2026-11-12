@@ -9,19 +9,33 @@ import { documentTitle as titleOf } from '../engine/documents';
 import type { GroupState } from '../engine/fold';
 import { displayName } from '../engine/names';
 
-/** Who a Dispatch came from, as its card names them: a person by name, or a Proposal by title. */
+/**
+ * Who a Dispatch came from, as its card names them: a person by name, a
+ * Proposal by title, or, for one a coalition passed as it rose (#126), the
+ * seat that passed it below, by its name there.
+ */
 export type Sender =
   | { readonly kind: 'person'; readonly name: string }
-  | { readonly kind: 'proposal'; readonly id: string; readonly title: string };
+  | { readonly kind: 'proposal'; readonly id: string; readonly title: string }
+  | { readonly kind: 'seat'; readonly name: string };
 
 /**
  * Who sent a Dispatch: the member, named as everywhere else (former members
- * too), or the Proposal that carried it, by its title.
+ * too), or the Proposal that carried it, by its title. A coalition's
+ * promotion motion (#126) carried a Dispatch from the level below, so it
+ * names the seat that motion came from.
  */
 export function senderOf(state: GroupState, by: DispatchSender): Sender {
   if (typeof by === 'string') return { kind: 'person', name: displayName(state, by) ?? '' };
-  const title = state.proposals.find((proposal) => proposal.id === by.proposal)?.title ?? '';
-  return { kind: 'proposal', id: by.proposal, title };
+  const proposal = state.proposals.find((p) => p.id === by.proposal);
+  const target = proposal?.target;
+  if (target?.kind === 'promote') return { kind: 'seat', name: seatName(state, target.from) };
+  return { kind: 'proposal', id: by.proposal, title: proposal?.title ?? '' };
+}
+
+/** The name the coalition `state` gives its seat `key`, or `""` (#126). */
+function seatName(state: GroupState, key: string): string {
+  return state.coalition?.seats.find((seat) => seat.key === key)?.name ?? '';
 }
 
 /**

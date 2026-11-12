@@ -75,6 +75,7 @@ import type { DBSchema, IDBPDatabase, IDBPTransaction } from 'idb';
 
 import { MAX_RECORD_BYTES, RecordTooLarge } from '../crypto/record';
 import type { BotMoment } from '../engine/chatPosts';
+import type { Ceiling, Score } from '../engine/event';
 import { expiryKeyOf } from '../engine/expiry';
 import { keptInRoom } from '../engine/room';
 import {
@@ -163,6 +164,46 @@ export interface PushRegistration {
   readonly instance: string | null;
   /** The relay minute of the last registration the relay took. */
   readonly at: number;
+}
+
+/**
+ * A score this device's member in a group gave a Dispatch that may rise
+ * (#126; ADR-0037), kept on that group's record so it can be carried up:
+ * the Dispatch's id and ceiling, the score, the relay minute of the ballot
+ * that gave it, and the minute it is kept until, 30 days after the last
+ * decision on that Dispatch this device has seen, or null before one. No
+ * note: a carried ballot never copies one (ADR-0065). It is never in a
+ * backup file or a link, and goes when the group does.
+ */
+export interface KeptScore {
+  readonly dispatch: string;
+  readonly score: Score;
+  readonly ceiling: Ceiling;
+  readonly at: number;
+  readonly until: number | null;
+}
+
+/**
+ * A carried score this device means to cast in a group (#126; ADR-0037),
+ * kept on that group's record: the promotion motion it opened there, the
+ * Dispatch's id, the score, the relay minute drawn at random in the rest of
+ * the window that it is cast at or after, and the motion's deadline. A 0 is
+ * never cast on its own: the ballot asks for a fresh reason. `skipped` is
+ * set once the person chose Don't cast.
+ */
+export interface CarryPlan {
+  readonly motion: string;
+  readonly dispatch: string;
+  readonly score: Score;
+  readonly castAt: number;
+  readonly deadline: number;
+  readonly skipped?: true;
+}
+
+/** A group's carried scores (#126): those its member gave, and those planned to cast there. */
+export interface Carried {
+  readonly scores: readonly KeptScore[];
+  readonly carries: readonly CarryPlan[];
 }
 
 /**
@@ -341,6 +382,14 @@ export interface Group extends CoalitionPlan {
    * file, and dropped with an archive.
    */
   door?: DoorInbox;
+  /**
+   * The scores this member gave Dispatches that may rise (#126), which the
+   * device carries to its other groups. Absent until the first. Never in a
+   * backup file or a link.
+   */
+  scores?: KeptScore[];
+  /** The carried scores this device means to cast here (#126). Absent until the first. */
+  carries?: CarryPlan[];
   /**
    * The Proposals whose ballots this device has deleted (#111), which `fold`
    * takes, oldest first. Absent until the first. #73's invite marks the
@@ -938,6 +987,12 @@ export interface Store
    */
   markNudged(groupId: string, nudged: readonly string[]): Promise<void>;
   /**
+   * Replace the group's carried scores with `edit` of them (#126), in one
+   * change. A group this device is leaving or keeps read-only takes none
+   * (#77, #108).
+   */
+  updateCarried(groupId: string, edit: (held: Carried) => Carried): Promise<void>;
+  /**
    * Replace the group's front-door inbox with `edit` of it (#121), in one
    * change, or drop it when `edit` returns undefined. A group this device is
    * leaving or keeps read-only takes none (#77, #108).
@@ -1265,6 +1320,9 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
         // A dissolved group's front door has closed, and a removed member reads it no more:
         // its applications go (#121, #115).
         delete group.door;
+        // Nothing is cast in a read-only group, and its scores are carried no more (#126).
+        delete group.scores;
+        delete group.carries;
       }),
     clearArchive: (groupId, cleared) =>
       change(groupId, (group) => {
@@ -1359,6 +1417,18 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
     markNudged: (groupId, nudged) =>
       changeQuietly(groupId, (group) => {
         group.nudged = [...nudged];
+      }),
+    updateCarried: (groupId, edit) =>
+      change(groupId, (group) => {
+        if (group.leaving !== undefined || group.archived !== undefined) return;
+        const { scores, carries } = edit({
+          scores: group.scores ?? [],
+          carries: group.carries ?? [],
+        });
+        if (scores.length === 0) delete group.scores;
+        else group.scores = [...scores];
+        if (carries.length === 0) delete group.carries;
+        else group.carries = [...carries];
       }),
     updateInbox: (groupId, edit) =>
       change(groupId, (group) => {

@@ -293,7 +293,9 @@ export interface OptInProposalState extends Closing {
           | 'reconcile'
           | 'motion'
           | 'priority'
-          | 'admit';
+          | 'admit'
+          | 'dispatch'
+          | 'promote';
       }
     | RulesChange;
 }

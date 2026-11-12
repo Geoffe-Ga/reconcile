@@ -24,6 +24,7 @@ import {
   propose,
   type ProposalValues,
   proposeDissolve,
+  proposeDispatch,
   proposeRemoval,
   proposeRules,
   proposeSteward,
@@ -79,6 +80,63 @@ async function queuedProposal(device: TestDevice, groupId: string) {
   if (queued?.type !== 'proposal') throw new Error('Expected a queued proposal.');
   return queued.body;
 }
+
+describe('proposeDispatch (#126)', () => {
+  it('queues one Proposal putting the Dispatch to a vote with its ceiling and Document, NFC-normalized, titled as the Dispatch, and returns its id', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, author } = await founded(fake);
+    fake.offline = true;
+    const result = await proposeDispatch(device.services, groupId, {
+      title: 'Cafe\u0301 on Sunday',
+      text: 'Bring a chair.',
+      doc: groupId,
+      ceiling: 'coalitions',
+    });
+
+    const queued = await outbox(device, groupId);
+    expect(queued).toEqual([
+      {
+        v: 1,
+        type: 'proposal',
+        group: groupId,
+        author,
+        ts: expect.any(Number) as number,
+        body: {
+          target: { kind: 'dispatch', ceiling: 'coalitions', doc: groupId },
+          title: 'Caf\u00e9 on Sunday',
+          why: '',
+          dispatch: { title: 'Caf\u00e9 on Sunday', text: 'Bring a chair.' },
+        },
+      },
+    ]);
+    const group = await device.services.store.getGroup(groupId);
+    expect(result).toEqual({
+      outcome: 'proposed',
+      proposalId: parseRecord(group?.outbox[0] ?? new Uint8Array())?.id,
+    });
+  });
+
+  it('leaves out a Document when none is chosen, and the fold opens it once the relay has it', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId } = await founded(fake);
+    const result = await proposeDispatch(device.services, groupId, {
+      title: 'Meet on Sunday',
+      text: '',
+      doc: null,
+      ceiling: 1,
+    });
+    await device.services.sync.syncOnce();
+
+    const group = await device.services.store.getGroup(groupId);
+    const state = fold(group?.log ?? [], group?.relayNow ?? null);
+    const id = result.outcome === 'proposed' ? result.proposalId : '';
+    expect(state.proposals.find((p) => p.id === id)).toMatchObject({
+      target: { kind: 'dispatch', ceiling: 1 },
+      dispatch: { title: 'Meet on Sunday', text: '' },
+      class: 'ordinary',
+    });
+  });
+});
 
 describe('sendDispatch (#112)', () => {
   it('queues one dispatch, NFC-normalized, with its Document, and returns its id', async () => {

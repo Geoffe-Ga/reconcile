@@ -12,7 +12,7 @@ import { can, isOusted } from '../engine/capabilities';
 import { MAX_LEVEL, seatLevel, seatResult } from '../engine/coalition';
 import { coalitionProgress, type CoalitionProgress } from '../engine/coalitionProgress';
 import { resultMismatches, seatIn } from '../engine/crossing';
-import type { ReconcileTarget, SeatEntry } from '../engine/event';
+import type { Ceiling, ReconcileTarget, SeatEntry } from '../engine/event';
 import type { GroupState, HeldSeat, Proposal } from '../engine/fold';
 import { displayName } from '../engine/names';
 import { type HeldCoalition, innerOf } from '../store/coalitions';
@@ -285,6 +285,21 @@ function actsForGroup(state: GroupState, author: string): boolean {
 }
 
 /**
+ * Whether the group sits in a formed coalition on this device (#126): one
+ * whose seats name a seat its reconcile Proposals hold, so a Dispatch it
+ * passes can rise.
+ */
+export function sitsInFormed(
+  state: Pick<GroupState, 'coalitions'>,
+  coalitions: readonly HeldCoalition[],
+): boolean {
+  return state.coalitions.some(({ key }) => {
+    const above = coalitionSeating(coalitions, key)?.state.coalition;
+    return above?.status === 'formed';
+  });
+}
+
+/**
  * Group home's Coalitions (#114): one row per reconcile Proposal of the
  * group that holds a coalition entry on this device, newest last. `state`
  * should be folded with the coalitions' motions (`foldGroup`).
@@ -377,6 +392,21 @@ export interface MotionWords {
   readonly link: string | null;
   /** The proposer's key in the coalition, whose name only the coalition's own state holds. */
   readonly author: string;
+  /** For a promotion motion (#126): the Dispatch it sends on, and where it came from. */
+  readonly promoted: PromotedWords | null;
+}
+
+/**
+ * A promotion motion's Dispatch as a group votes on it (#126): its words,
+ * its ceiling and the level it has reached, and the name of the seat that
+ * passed it, as the coalition's seats name it.
+ */
+export interface PromotedWords {
+  readonly title: string;
+  readonly text: string;
+  readonly ceiling: Ceiling;
+  readonly level: number;
+  readonly from: string;
 }
 
 /**
@@ -414,6 +444,16 @@ function admitted(motion: Proposal): Pick<MotionWords, 'admits' | 'admitsLevel' 
   return { admits: seat.name, admitsLevel: seatLevel(seat), admitsGroups: groups };
 }
 
+/** A promotion motion's Dispatch and where it came from (#126), or null for any other motion. */
+function promotedOf(coalition: GroupState, motion: Proposal): PromotedWords | null {
+  const { target } = motion;
+  if (target.kind !== 'promote') return null;
+  const seat = coalition.coalition?.seats.find((s) => s.key === target.from);
+  const { title, text } = target.dispatch;
+  const { ceiling, level } = target;
+  return { title, text, ceiling, level, from: seat?.name ?? '' };
+}
+
 /** The words of the coalition motion `proposal`, or null for any other Proposal, or one not read yet. */
 export function motionWords(
   proposal: Pick<Proposal, 'id' | 'target'>,
@@ -432,6 +472,7 @@ export function motionWords(
     text: motion.text,
     link: motion.link,
     author: motion.author,
+    promoted: promotedOf(coalition, motion),
   };
 }
 
@@ -440,7 +481,9 @@ export function motionWords(
  * its coalition (#114, #120), so every list, card and ballot shows it as the
  * coalition wrote it: an edit's one version carries its new text, and its
  * proposer's coalition key, which the screens name from the coalition's
- * state (`versionViews`' `names`).
+ * state (`versionViews`' `names`). A promotion motion (#126) carries the
+ * Dispatch it sends on as `dispatch`, for the screens: the group's fold
+ * never sends it.
  */
 export function withMotionWords(
   state: GroupState,
@@ -450,9 +493,11 @@ export function withMotionWords(
   const proposals = state.proposals.map((p) => {
     const words = motionWords(p, coalitions);
     if (words === null) return p;
-    const { title, why, text, link, author } = words;
+    const { title, why, text, link, author, promoted } = words;
     const versions = p.versions.map((v, i) => (i === 0 ? { ...v, text, author } : v));
-    return { ...p, title, why, text, link, versions };
+    const dispatch =
+      promoted === null ? p.dispatch : { title: promoted.title, text: promoted.text };
+    return { ...p, title, why, text, link, versions, dispatch };
   });
   return { ...state, proposals };
 }

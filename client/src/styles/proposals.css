@@ -485,6 +485,12 @@
   font: var(--type-ui);
 }
 
+/* A score this device carries from another group (#126): who sees it, the notice, then Change and Don't cast. */
+.carry-notice {
+  display: grid;
+  gap: var(--space-3);
+}
+
 .ballot {
   display: grid;
   gap: var(--space-5);

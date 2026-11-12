@@ -243,12 +243,18 @@ function RemovalPassed({ removal, you }: { readonly removal: RemovalView; readon
 
 /**
  * A reconcile Proposal's or a coalition motion's pass (#114): only the
- * group's pass goes to the coalition, which decides with every group's.
+ * group's pass goes to the coalition, which decides with every group's. A
+ * Dispatch put to the group's vote went out, and the coalition votes next (#126).
  */
 function DecisionPassed({ proposal }: { readonly proposal: OutcomeProps['props']['proposal'] }) {
-  const { coalitions } = messages;
+  const { coalitions, rising } = messages;
+  const { kind } = proposal.target;
   const sentence =
-    proposal.target.kind === 'reconcile' ? coalitions.reconcilePassed : coalitions.motionPassed;
+    kind === 'dispatch'
+      ? rising.passed
+      : kind === 'reconcile'
+        ? coalitions.reconcilePassed
+        : coalitions.motionPassed;
   return (
     <div className="result-outcome">
       <p className="outcome-sentence">{sentence}</p>

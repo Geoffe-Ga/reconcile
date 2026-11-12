@@ -4,7 +4,7 @@
  * and folded through the engine (`test/coalitions.ts`); each test keeps them
  * in a real store.
  */
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { base64url, fromBase64url } from '../crypto/base64url';
 import { deriveCoalitionEntryId } from '../crypto/card';
@@ -29,6 +29,7 @@ import {
   ensureEntries,
   foldWithCoalitions,
   heldCoalitions,
+  holdings,
   newEntry,
   outsideFor,
   retireCoalitionsOf,
@@ -239,6 +240,56 @@ describe('settleCoalitions', () => {
     ]);
     expect(await settleCoalitions(store, clock)).toEqual([]);
     expect(await queued(store)).toHaveLength(1);
+  });
+
+  it('posts the promotion record its group owes for the seat its participant is bound to, once (#126)', async () => {
+    const store = await device();
+    const logs = new Logs();
+    const a = groupA(logs);
+    logs.formed(R + 10, ['A', 'B'], ['kim', 'dee']);
+    const words = { title: 'Rally Saturday', text: 'Meet at the river at ten.' };
+    const p = logs.dispatchVote('A', R + 20, 'ana', 1, words);
+    logs.vote('A', R + 21, 'ana', p, 4);
+    logs.vote('A', R + 21, 'ben', p, 4, 'canary-note');
+    await keepGroup(store, a, 'ana', logs.logs.A ?? []);
+    await keepEntry(store, logs, 'kim');
+
+    expect(await settleCoalitions(store, clock)).toEqual([ENTRY]);
+    const posted = (await queued(store)).map(({ event }) => event);
+    expect(posted).toEqual([
+      expect.objectContaining({
+        type: 'proposal',
+        group: logs.ids.coalition,
+        author: authorOf('kim'),
+        body: {
+          target: {
+            kind: 'promote',
+            dispatch: { id: p, ...words },
+            ceiling: 1,
+            level: 1,
+            from: seatKey('A'),
+          },
+          title: words.title,
+          why: '',
+        },
+      }),
+    ]);
+    expect(await settleCoalitions(store, clock)).toEqual([]);
+    expect(await queued(store)).toHaveLength(1);
+  });
+
+  it('posts no promotion record for a Dispatch the group is still voting on (#126)', async () => {
+    const store = await device();
+    const logs = new Logs();
+    const a = groupA(logs);
+    logs.formed(R + 10, ['A', 'B'], ['kim', 'dee']);
+    const p = logs.dispatchVote('A', R + 20, 'ana', 1, { title: 'Rally', text: '' });
+    logs.vote('A', R + 21, 'ana', p, 4);
+    await keepGroup(store, a, 'ana', logs.logs.A ?? []);
+    await keepEntry(store, logs, 'kim');
+
+    expect(await settleCoalitions(store, clock)).toEqual([]);
+    expect(await queued(store)).toEqual([]);
   });
 
   it('reports nothing for a participant whose group isn’t on the device', async () => {
@@ -515,6 +566,31 @@ describe('a group whose ballots have expired (#111)', () => {
     expect(kept.proposals.find((p) => p.id === reconcile)?.cleared).toBe(false);
     expect(cleared.coalitions.map((c) => c.key)).toEqual(kept.coalitions.map((c) => c.key));
     expect(cleared.proposals.map((p) => p.id)).toContain(motion);
+  });
+});
+
+describe('holdings (#126)', () => {
+  it('reads and folds no group on a device with no coalition, as a pass did before #126', async () => {
+    const store = await device();
+    const logs = new Logs();
+    await keepGroup(store, 'A', 'ana', logs.logs.A ?? []);
+    groupA(logs);
+    await keepGroup(store, 'B', 'ana', logs.logs.A ?? []);
+    const listGroups = vi.fn(() => store.listGroups());
+    const held = await holdings({ listCoalitions: () => store.listCoalitions(), listGroups });
+    expect(held).toEqual({ entries: [], coalitions: [], groups: [], logs: [] });
+    expect(listGroups).not.toHaveBeenCalled();
+  });
+
+  it('folds every group that goes on once a coalition is on the device', async () => {
+    const store = await device();
+    const logs = new Logs();
+    groupA(logs);
+    await keepGroup(store, 'A', 'ana', logs.logs.A ?? []);
+    await keepEntry(store, logs, 'kim');
+    const held = await holdings(store);
+    expect(held.entries.map((entry) => entry.groupId)).toEqual([ENTRY]);
+    expect(held.logs.map(({ group }) => group.groupId)).toEqual(['A', ENTRY]);
   });
 });
 
