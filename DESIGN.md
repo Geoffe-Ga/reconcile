@@ -186,6 +186,12 @@ Build on **React Aria Components** (unstyled, accessible). Style everything from
   - The text in body, as plain pre-wrapped text: line breaks and spaces show as typed, and Markdown and addresses stay text, never formatting or links.
   - "Open <Document title> →" as a forward link when it points to a Document.
   - On the Dispatches view, Send a Dispatch is the one primary action; on Group home, it's secondary, beside See all.
+  - A coalition's Dispatch (#124) comes from a passed motion, whose vote lives inside each member group, so "From the Proposal ‘<title>’" keeps its title as plain text there, and Open goes to the coalition's own Document.
+- **Following a coalition** (#124):
+  - **Share a follow link** sits last on a participant's coalition home, under the eyebrow "Followers": the plain warning first, as body text, then the button (secondary: the home has no one primary action), then the link in a read-only field with how copying went, as Copy invite link does.
+  - **Follow:** the eyebrow "Follow a coalition", the coalition's name as the heading, then a `surface` card: the eyebrow "Its member groups" over the names on one line, a `muted` "·" between each, then under a hairline "From its statement" over the excerpt in Newsreader. Every name is plain text in `<bdi>`. Then "Follow this coalition?" (heading-2), one line in `body` saying what following shows of you, which is nothing, Follow (the one primary action) and Not now (quiet).
+  - **A follower's coalition home:** the eyebrow "Following", the name, the member groups on one line as on Follow, then Dispatches, Documents and Decided, and Unfollow (secondary) at the end, which opens the same alert dialog as Leave. Nothing to propose or take part in.
+  - **Start's Following:** one card link per coalition, its name (heading-3) over its member groups (caption).
 - **Front door** (#121): the public page a group opens by Proposal.
   - The eyebrow "Front door", the group's name as the heading, then a `surface` card: the eyebrow "From their Document" over the excerpt in Newsreader at document size, and, only when the group chose it, how many people are in it (ui, `body`). Never a member's name.
   - "Ask to join" (heading-3), then two fields, the name to use and why, one line in `body` (ui) saying not to include anything the group shouldn't read, and Send, the page's one primary action. No contact field.

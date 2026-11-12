@@ -210,6 +210,14 @@ export interface Group extends CoalitionPlan {
    */
   kind?: 'coalition' | 'room';
   /**
+   * Set on a coalition's entry kept by following its link (#124): the person
+   * reads it without joining any member group, and posts nothing to it, so
+   * nothing outside this device records that they follow. Its `signingKey`
+   * signs nothing. Unfollow purges the entry. Absent for a group, and for an
+   * entry a group on the device holds the secret of.
+   */
+  following?: true;
+  /**
    * The 32-byte group secret, made at genesis, that only members hold. The
    * group's weekly mailbox ids and seal key derive from it (`crypto/groupKeys.ts`).
    */
@@ -448,6 +456,7 @@ export class VaultLocked extends Error {
 export type BackedUpGroup = Pick<
   Group,
   | 'kind'
+  | 'following'
   | 'groupId'
   | 'secret'
   | 'signingKey'
@@ -480,7 +489,9 @@ const HISTORY_GAP_MINUTES = HISTORY_GAP_MS / 60_000;
  * inviter has cleared (#111).
  */
 export type NewGroup = Pick<Group, 'groupId' | 'secret' | 'signingKey' | 'me'> &
-  Partial<Pick<Group, 'kxKey' | 'epoch' | 'cleared' | 'kind' | 'joinAs' | 'admitting'>>;
+  Partial<
+    Pick<Group, 'kxKey' | 'epoch' | 'cleared' | 'kind' | 'following' | 'joinAs' | 'admitting'>
+  >;
 
 /** True for a coalition's entry (#114), false for a group or a room. */
 export function isCoalitionEntry(group: Pick<Group, 'kind'>): boolean {

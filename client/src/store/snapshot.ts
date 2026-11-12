@@ -30,6 +30,12 @@
  * `personal` field, and reads as holding no personal Documents. A file from
  * before #105 holds no shares.
  *
+ * A coalition's entry (#114) goes in beside the groups once its genesis is
+ * back, and one kept by following its link (#124) says so with `following:
+ * true`, no new format number, so a restore keeps it followed; a file
+ * without it holds no followed coalition, and only a coalition's entry may
+ * carry it.
+ *
  * It also carries the device's relay backup key (#97, ADR-0075 §4), when the
  * device keeps one, so a device restored from the file keeps the relay
  * backup fresh. A restoring device that already keeps a key keeps its own. A
@@ -145,6 +151,7 @@ export function backedUpGroups(groups: readonly Group[]): BackedUpGroup[] {
     .filter(isFounded)
     .map((group) => ({
       ...(group.kind === undefined ? {} : { kind: group.kind }),
+      ...(group.following === true ? { following: true as const } : {}),
       groupId: group.groupId,
       secret: group.secret,
       signingKey: group.signingKey,
@@ -216,6 +223,7 @@ export function encodeSnapshot({ groups, personal, backupKey }: Snapshot): Uint8
     format: SNAPSHOT_FORMAT,
     groups: groups.map((group) => ({
       ...(group.kind === undefined ? {} : { kind: group.kind }),
+      ...(group.following === true ? { following: true } : {}),
       groupId: group.groupId,
       secret: base64url(group.secret),
       signingKey: base64url(group.signingKey),
@@ -528,15 +536,29 @@ function kindIn(value: unknown): Pick<BackedUpGroup, 'kind'> | null {
 }
 
 /**
+ * Whether a coalition entry is only followed (#124), as its own field: none
+ * when absent, and null for anything but `true` on a coalition's entry.
+ */
+function followingIn(
+  value: unknown,
+  kind: Pick<BackedUpGroup, 'kind'>,
+): Pick<BackedUpGroup, 'following'> | null {
+  if (value === undefined) return {};
+  return value === true && kind.kind === 'coalition' ? { following: value } : null;
+}
+
+/**
  * What a backed-up group says of who it is and what it holds: your
- * membership, its kind (#114) and its cleared Proposals (#111), or null when
- * any of them doesn't check out.
+ * membership, its kind (#114), whether it's only followed (#124) and its
+ * cleared Proposals (#111), or null when any of them doesn't check out.
  */
 function marksIn(value: Record<string, unknown>, signingKey: Uint8Array) {
   const me = meIn(value.me, signingKey);
   const kind = kindIn(value.kind);
+  const following = kind === null ? null : followingIn(value.following, kind);
   const cleared = clearedIn(value.cleared);
-  return me === null || kind === null || cleared === null ? null : { me, kind, cleared };
+  if (me === null || kind === null || following === null || cleared === null) return null;
+  return { me, kind: { ...kind, ...following }, cleared };
 }
 
 /** One backed-up group in `value`, or null when any part of it doesn't check out. */
