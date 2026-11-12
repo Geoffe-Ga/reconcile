@@ -1116,6 +1116,12 @@ export const messages = {
        */
       lockedPaused:
         'This link was live when the backup was made, and nothing goes to it until you choose. Your keys on this device are locked with your passkey. Close Reconcile, open it again and unlock it to keep sharing, stop sharing or delete this Document.',
+      /**
+       * In place of pausedIdle while the device's keys are locked (#255, #339): this device
+       * hasn't posted to the share for 30 days, and nothing goes to the link meanwhile.
+       */
+      lockedIdle:
+        'This device hasn’t updated this link in 30 days, so it may have been stopped on another device, and nothing goes to it until you choose. Your keys on this device are locked with your passkey. Close Reconcile, open it again and unlock it to keep sharing, stop sharing or delete this Document.',
       /** When Share link, Stop sharing or Keep sharing finds the keys locked, as another tab can lock them (#255). */
       lockedNow:
         'Your keys on this device are locked with your passkey, so nothing changed. Close Reconcile, open it again and unlock it, then try again.',

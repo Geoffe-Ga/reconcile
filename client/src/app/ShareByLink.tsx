@@ -50,6 +50,12 @@ const PAUSED_QUESTION: Readonly<Record<SharePause, string>> = {
   idle: messages.personal.share.pausedIdle,
 };
 
+/** The locked section's words for a paused share, as it came to wait for the person (#255). */
+const LOCKED_PAUSED: Readonly<Record<SharePause, string>> = {
+  restored: messages.personal.share.lockedPaused,
+  idle: messages.personal.share.lockedIdle,
+};
+
 /** Props for {@link ShareByLink}. */
 export interface ShareByLinkProps {
   readonly share: ShareByLinkState;
@@ -93,16 +99,16 @@ function ShareOff({ share }: Pick<ShareByLinkProps, 'share'>) {
 
 /**
  * On, while the device's keys are locked (#255): that it's shared, how to
- * unlock, and whether an edit waits; or, for a share a restore paused
- * (#328), that nothing goes to its link until the person unlocks and chooses.
+ * unlock, and whether an edit waits; or, for a paused share (#328, #339),
+ * why, and that nothing goes to its link until the person unlocks and chooses.
  */
 function ShareLocked({ view }: { readonly view: ShareView }) {
   const { personal } = messages;
-  // A paused share (#328) waits for a choice the keys must unlock, and sends nothing meanwhile.
+  // A paused share (#328, #339) waits for a choice the keys must unlock, and sends nothing meanwhile.
   if (view.paused !== null) {
     return (
       <div className="stack">
-        <p className="lede">{personal.share.lockedPaused}</p>
+        <p className="lede">{LOCKED_PAUSED[view.paused]}</p>
       </div>
     );
   }
