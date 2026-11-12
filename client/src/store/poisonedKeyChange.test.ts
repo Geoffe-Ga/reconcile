@@ -219,6 +219,28 @@ function typesUnder(scene: Scene, secret: Uint8Array): string[] {
   });
 }
 
+/** The author of each `type` record the relay holds that opens under `secret`, in any week this test sees. */
+function authorsUnder(scene: Scene, secret: Uint8Array, type: string): string[] {
+  const mailbox = deriveWeekMailboxId(secret, weekOf(scene.fake.minute));
+  const key = deriveSealKey(secret);
+  return scene.fake.blobs(mailbox).flatMap((blob) => {
+    const event = parseRecord(open(mailbox, key, blob) ?? new Uint8Array())?.event;
+    return event?.type === type ? [event.author] : [];
+  });
+}
+
+/**
+ * That each device's `unwrap-failed` reached the old mailbox once, and none
+ * the new: it counts only where it was posted, so a move never posts it again
+ * (#224), and the pass that posted it drops it from the outbox once (#349).
+ */
+function expectSaidOnceEach(scene: Scene, old: Uint8Array, fresh: Uint8Array): void {
+  const said = authorsUnder(scene, old, 'unwrap-failed');
+  expect(said.length).toBeGreaterThanOrEqual(1);
+  expect(new Set(said).size).toBe(said.length);
+  expect(authorsUnder(scene, fresh, 'unwrap-failed')).toEqual([]);
+}
+
 /** Runs one pass on each device in turn, `rounds` times. */
 async function passes(devices: readonly Device[], rounds: number): Promise<void> {
   for (let round = 0; round < rounds; round += 1) {
@@ -353,6 +375,7 @@ describe('a key change whose wraps don’t open (#224)', () => {
     // The next passes post it, refuse the key change, and write a fresh one that everyone takes up.
     await passes(honest, 3);
     const fresh = await expectRecovered(honest, scene, { poison, again, old: secret });
+    expectSaidOnceEach(scene, secret, fresh);
     await expectReadsNext(scene, honest, fresh);
     await expectIgnoredNextTime(scene, honest, fresh);
   });
@@ -411,6 +434,7 @@ describe('a key change whose wraps don’t open (#224)', () => {
     const state = await ana.state();
     expect(state.former.map((m) => m.author)).toEqual([authorOf('cal')]);
     expect(Object.keys(state.rotations[0]?.wraps ?? {}).sort()).toEqual([...EVERYONE].sort());
+    expectSaidOnceEach(scene, secret, fresh);
     await expectReadsNext(scene, honest, fresh, [removal.id]);
   });
 
@@ -440,7 +464,9 @@ describe('a key change whose wraps don’t open (#224)', () => {
     expectOne(after);
     expect(after.state?.refused).toEqual([]);
     expect(after.state?.rotations.map((r) => r.id)).toEqual([rotation]);
-    expect(typesUnder(scene, after.secret)).toContain('key-taken');
+    // Dee's key-taken reached the new mailbox once, and the old one never (#349).
+    expect(authorsUnder(scene, after.secret, 'key-taken')).toEqual([authorOf('dee')]);
+    expect(authorsUnder(scene, secret, 'key-taken')).toEqual([]);
     // No second key change was written, and Ana, who wrote the first, may still write the next.
     expect(typesUnder(scene, secret).filter((type) => type === 'key-rotate')).toHaveLength(1);
   });
