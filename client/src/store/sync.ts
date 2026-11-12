@@ -12,7 +12,8 @@
  *    gives the relay's week, so a device back from a long absence never
  *    writes to a stale week. The week comes from the relay only;
  * 2. posts the outbox in order to this week's mailbox, each record sealed for
- *    it, removing an entry only once the relay accepts it. A Proposal, or a
+ *    it, removing an entry only once the relay accepts it (a room's, only in
+ *    the change that saves the pull reading it back, #343). A Proposal, or a
  *    ballot after which this device's fold closes one early, goes with
  *    `wake=1` (#99, `engine/wake.ts`), whether or not this device's own push
  *    is on: the wake is for the others' phones;
@@ -123,10 +124,13 @@
  * then each coalition's room (#125, ./rooms.ts), synced as a group is under
  * keys from the coalition's `inner`: no key change, no `kx`, chat bot, door
  * or nudges, and no wake. A room never read before reads its last 5 weeks,
- * and each pull deletes what is more than 30 days of relay time old. Every
- * pass first keeps the device's rooms from the store alone, so a room whose
- * last member group here is leaving, read-only or gone is purged at once,
- * even while the relay can't be reached.
+ * and each pull deletes what is more than 30 days of relay time old. A
+ * message the relay took leaves the room's outbox in the change that adds
+ * the relay's copy to its log (#343), so the room lists it once throughout;
+ * a pass that fails between the two posts it again, and the log's dedupe by
+ * event id keeps one. Every pass first keeps the device's rooms from the
+ * store alone, so a room whose last member group here is leaving, read-only
+ * or gone is purged at once, even while the relay can't be reached.
  *
  * A group off the device leaves nothing in the loop's memory (#270): right
  * after the rooms, every pass forgets, from the store alone, what the loop
@@ -332,16 +336,22 @@ export interface SyncOptions {
 
 /** The running sync loop. */
 export interface Sync extends Poller {
-  /** Run one pass over every group, or join the one running; true when every group synced. */
+  /**
+   * Run one pass over every group; true when every group synced. A call made
+   * while a pass runs gets the one pass that follows it (#260), which every
+   * call made meanwhile shares, so what was queued after the running pass
+   * posted its outbox goes out now, not at the next poll.
+   */
   syncOnce(): Promise<boolean>;
   /** Whether the last pass succeeded (true before the first). */
   isReachable(): boolean;
   /** Hear when {@link Sync.isReachable} changes; returns the way to stop. */
   subscribe(listener: () => void): () => void;
   /**
-   * Stop for good (#78): no pass starts again, even on `start`, and a pass
-   * already running stops before its next group, running no chat bot for the
-   * group it finishes. Resolves once it has.
+   * Stop for good (#78): no pass starts again, even on `start` or one waiting
+   * to follow the running pass, and a pass already running stops before its
+   * next group, running no chat bot for the group it finishes. Resolves once
+   * it has.
    */
   halt(): Promise<void>;
 }
@@ -354,6 +364,8 @@ export function createSync(options: SyncOptions): Sync {
   let reachable = true;
   let halted = false;
   let inFlight: Promise<boolean> | null = null;
+  // The pass to run once the one in flight ends, for every call made meanwhile (#260).
+  let trailing: Promise<boolean> | null = null;
   // Each group as the coalitions' part of a pass last read it (#114), so an unchanged one isn't folded again.
   const scanned = new Map<string, string>();
   // Each group's fold as the rooms last read it (#125), for the same reason.
@@ -363,18 +375,20 @@ export function createSync(options: SyncOptions): Sync {
    * Post the group's current outbox in order; an entry leaves only once the
    * relay accepts it. While `frozen` (#98), every entry but a `key-rotate` or
    * `leave` stays queued, in its place. Once the relay has returned a seq for
-   * the group's leave, the group is purged: `left`. Else `posted` when the
-   * relay took anything, `none` when it took nothing.
+   * the group's leave, the group is purged: `left`. Else the records the
+   * relay took, in order. A room's stay queued (#343): the pull that reads
+   * them back drops them in the change that saves it (`Pull.sent`), so the
+   * room lists each message from its outbox or its log at every moment.
    */
   async function postOutbox(
     groupId: string,
     { mailbox, key }: Channel,
     frozen: boolean,
-  ): Promise<'left' | 'posted' | 'none'> {
+  ): Promise<'left' | Uint8Array[]> {
     const current = await store.getGroup(groupId);
-    if (current === undefined) return 'none';
+    if (current === undefined) return [];
     let before: GroupState | null = null;
-    let posted: 'posted' | 'none' = 'none';
+    const taken: Uint8Array[] = [];
     for (const bytes of current.outbox) {
       if (frozen && !passesFreeze(bytes)) continue;
       // No phone registers under a coalition's or a room's mailboxes (#120, #284), so nothing
@@ -382,15 +396,22 @@ export function createSync(options: SyncOptions): Sync {
       const wake =
         current.kind === undefined && wakeForRecord((before ??= foldGroup(current)), bytes);
       await relay.putBlob(mailbox, seal.seal(mailbox, key, bytes), GROUP_TTL_DAYS, { wake });
-      if (current.leaving !== undefined && sameBytes(bytes, current.leaving)) {
-        push?.forget(current);
-        await store.purgeGroup(groupId);
-        return 'left';
-      }
-      await store.markSent(groupId, bytes);
-      posted = 'posted';
+      if (await leftWith(current, bytes)) return 'left';
+      if (!isRoomEntry(current)) await store.markSent(groupId, bytes);
+      taken.push(bytes);
     }
-    return posted;
+    return taken;
+  }
+
+  /**
+   * Whether `bytes`, which the relay just took, is the group's leave (#77):
+   * then its push registration is forgotten and the group purged.
+   */
+  async function leftWith(group: Group, bytes: Uint8Array): Promise<boolean> {
+    if (group.leaving === undefined || !sameBytes(bytes, group.leaving)) return false;
+    push?.forget(group);
+    await store.purgeGroup(group.groupId);
+    return true;
   }
 
   /** GETs week `week`'s mailbox of `secret`, after its cursor in `cursors` (#110). */
@@ -458,9 +479,9 @@ export function createSync(options: SyncOptions): Sync {
     const frozen = !room && isFrozen(foldGroup(group), group);
     const { first, cursors } = await firstRead(group);
     const week = weekOf(first.now);
-    const outcome = await postOutbox(group.groupId, channelOf(group.secret, week), frozen);
-    if (outcome === 'left') return 'left';
-    const pass = { first, cursors, week, posted: outcome === 'posted' };
+    const taken = await postOutbox(group.groupId, channelOf(group.secret, week), frozen);
+    if (taken === 'left') return 'left';
+    const pass = { first, cursors, week, posted: taken.length > 0 };
     const reads = await readWeeks(group, pass);
     const { records, relayNow } = openReads(seal, group, reads);
     const advance = room ? null : advanceFor(group, records, relayNow);
@@ -471,6 +492,8 @@ export function createSync(options: SyncOptions): Sync {
       instance: first.instance,
       lastSyncAt: clock(),
       ...(advance === null ? {} : { advance }),
+      // A room's messages leave its outbox as their relay copies join its log (#343).
+      ...(room ? { sent: taken } : {}),
     };
     await store.applyPull(group.groupId, pull, idOf);
     await settleAfter(group, pull);
@@ -694,12 +717,29 @@ export function createSync(options: SyncOptions): Sync {
     return ok;
   }
 
-  function syncOnce(): Promise<boolean> {
-    if (halted) return Promise.resolve(false);
-    inFlight ??= pass().finally(() => {
+  /** Starts a pass, in flight until it ends. */
+  function start(): Promise<boolean> {
+    inFlight = pass().finally(() => {
       inFlight = null;
     });
     return inFlight;
+  }
+
+  /**
+   * A pass now, or, while one runs, the one pass that follows it (#260): the
+   * running pass may have posted the outbox before this call's event was
+   * queued. Passes never overlap, and none follows once halted.
+   */
+  function syncOnce(): Promise<boolean> {
+    if (halted) return Promise.resolve(false);
+    if (trailing !== null) return trailing;
+    if (inFlight === null) return start();
+    const follow = (): Promise<boolean> => {
+      trailing = null;
+      return halted ? Promise.resolve(false) : start();
+    };
+    trailing = inFlight.then(follow, follow);
+    return trailing;
   }
 
   const poller = createPoller(syncOnce, options.timers);

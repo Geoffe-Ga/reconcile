@@ -19,6 +19,7 @@
  */
 import { can, isOusted, isSuspended, type Roster } from './capabilities';
 import type { Dissolution } from './dissolve';
+import { isOpenAt } from './open';
 import { DAY_MINUTES, type Rules } from './rules';
 import { type Suspension, suspensionEnd } from './stewards';
 import { codePointLength } from './text';
@@ -57,9 +58,8 @@ export interface RemovalProposalState {
   readonly id: string;
   readonly target: { readonly kind: string; readonly member?: string | null };
   readonly deadline: number;
+  /** Its early close, null until the fold reaches it, on a cleared device too (#289). */
   readonly closedAt: number | null;
-  /** True once this device cleared its ballots (#111): its close then comes from its result. */
-  readonly cleared?: boolean;
 }
 
 /** What the removal rules read of a group, at relay minute `at`. */
@@ -76,13 +76,6 @@ export function removalTarget(proposal: Pick<RemovalProposalState, 'target'>): s
   return target.kind === 'remove' && typeof target.member === 'string' ? target.member : null;
 }
 
-/** True while a Proposal takes ballots at relay minute `at`: before its deadline and any early close. */
-function isOpen(proposal: RemovalProposalState, at: number): boolean {
-  if (at >= proposal.deadline) return false;
-  // A cleared removal knows its early close from the start, so it is open until that minute (#111).
-  return proposal.closedAt === null || (proposal.cleared === true && at < proposal.closedAt);
-}
-
 /** True when `person` is in the group now. */
 function isMember(state: Pick<Roster, 'members'>, person: string): boolean {
   return state.members.some((member) => member.author === person);
@@ -93,7 +86,7 @@ export function openRemovalOf(
   state: Pick<RemovalState, 'proposals' | 'at'>,
   person: string,
 ): RemovalProposalState | undefined {
-  return state.proposals.find((p) => removalTarget(p) === person && isOpen(p, state.at));
+  return state.proposals.find((p) => removalTarget(p) === person && isOpenAt(p, state.at));
 }
 
 /**
@@ -132,7 +125,7 @@ export function mayRespond(state: RemovalState, author: string, proposal: string
     state.dissolved === null &&
     found !== undefined &&
     removalTarget(found) === author &&
-    isOpen(found, state.at) &&
+    isOpenAt(found, state.at) &&
     isMember(state, author) &&
     responseTo(state, proposal) === undefined
   );

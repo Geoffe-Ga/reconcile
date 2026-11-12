@@ -261,7 +261,7 @@ describe('restoreGroups with personal Documents (#93)', () => {
     ]);
   });
 
-  it('keeps the file’s groups and Documents in one transaction over every store, the relay backup’s and the vault included (#95, #97)', async () => {
+  it('keeps the file’s groups and Documents in one transaction over every store, the relay backup’s, the vault and the sent applications’ included (#95, #97, #265)', async () => {
     const store = await openStore();
     const transaction = vi.spyOn(FakeIDBDatabase.prototype, 'transaction');
 
@@ -269,7 +269,7 @@ describe('restoreGroups with personal Documents (#93)', () => {
     const calls = transaction.mock.calls.map(([names, mode]) => [names, mode]);
     transaction.mockRestore();
 
-    expect(calls).toEqual([[['groups', 'personal', 'device', 'vault'], 'readwrite']]);
+    expect(calls).toEqual([[['groups', 'personal', 'device', 'vault', 'sent'], 'readwrite']]);
     expect((await store.listGroups()).map((group) => group.groupId)).toEqual([ana.groupId]);
     expect(await store.listPersonal()).toEqual([statement(FIRST, 5)]);
   });

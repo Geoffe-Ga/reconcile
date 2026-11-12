@@ -18,7 +18,7 @@ import { type ShareByLinkState, useShareByLink } from '../app/useShareByLink';
 import { normalizeAtomText } from '../engine/atomText';
 import { nfcLength } from '../engine/text';
 import { fitsShare } from '../share/copy';
-import { PERSONAL_TITLE_MAX, type PersonalDocument as Stored } from '../store/personal';
+import { PERSONAL_TITLE_MAX, type PersonalText } from '../store/personal';
 
 /** Props for {@link PersonalDocument}. */
 export interface PersonalDocumentProps {
@@ -135,7 +135,7 @@ function DeleteDialog(props: DeleteProps) {
 /** Props for {@link KeptAndShared}. */
 interface KeptAndSharedProps {
   /** The Document as last saved, or null before its first save. */
-  readonly saved: Stored | null;
+  readonly saved: PersonalText | null;
   /** The fields as typed. */
   readonly values: PersonalValues;
   readonly share: ShareByLinkState;
@@ -146,11 +146,13 @@ interface KeptAndSharedProps {
  * Under the fields: where the Document is kept, then, once it's saved, Share
  * by link (#105) and Delete. Whether the words as typed still fit a share is
  * worked out as they're typed, so a shared Document says when its link can't
- * keep up.
+ * keep up. A shared Document can't be deleted while the device's keys are
+ * locked, since stopping its share needs them (#255), so Delete waits.
  */
 function KeptAndShared({ saved, values, share, onDelete }: KeptAndSharedProps) {
   const { personal } = messages;
   const shared = share.view !== null && share.view !== undefined;
+  const locked = share.view?.link === null;
   const fits = fitsShare({ title: values.title.trim(), text: normalizeAtomText(values.text) });
   return (
     <>
@@ -158,9 +160,11 @@ function KeptAndShared({ saved, values, share, onDelete }: KeptAndSharedProps) {
       {saved === null ? null : (
         <>
           <ShareByLink share={share} fits={fits} />
-          <div>
-            <DeleteDialog title={saved.title} shared={shared} onDelete={onDelete} />
-          </div>
+          {locked ? null : (
+            <div>
+              <DeleteDialog title={saved.title} shared={shared} onDelete={onDelete} />
+            </div>
+          )}
         </>
       )}
     </>
