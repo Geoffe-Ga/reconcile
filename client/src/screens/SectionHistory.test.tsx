@@ -219,6 +219,25 @@ describe('SectionHistory', () => {
     expect(removed.querySelector('.history-why')).toBeNull();
   });
 
+  it('shows a move as the pass that moved the section, over the text it still reads, naming no voter (#103)', async () => {
+    const user = userEvent.setup();
+    const log = groupLog({ members: VOTERS.slice(1) });
+    const move = log.move('Ben', `${log.group}.1`, null, { title: 'Bins first', why: 'Tuesday.' });
+    everyone(log, move, { [move]: 4 });
+    const state = log.state(log.minute + 1);
+    documentView(state);
+    const sheet = await openHistory(user, 1);
+    const [moved, founded] = entriesOf(sheet);
+    if (moved === undefined || founded === undefined) throw new Error();
+    expect(within(moved).getByRole('heading', { level: 3 })).toHaveTextContent('Bins first');
+    expect(within(moved).getByText(messages.history.movedToTop)).toBeVisible();
+    expect(within(moved).getByText('Bins go out on Tuesday.')).toBeVisible();
+    expect(moved).toHaveTextContent('Proposed by Ben');
+    expect(within(founded).getByText('Bins go out on Tuesday.')).toBeVisible();
+    expect(document.body.textContent).not.toMatch(/canary/i);
+    expect(await axeViolations()).toEqual([]);
+  });
+
   it('reads a cleared Proposal’s totals from its result, and still names its author, not its voters (#111)', async () => {
     const user = userEvent.setup();
     const log = groupLog({ members: VOTERS.slice(1) });

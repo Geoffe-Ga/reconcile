@@ -750,6 +750,14 @@ export const messages = {
     decided: 'Decided',
     /** In place of the text, for the pass that removed the section (#75). */
     removed: 'This removed the section.',
+    /**
+     * Where a passed move put the section (#103), over its text in its history
+     * and in the change log: after the first words of the section it follows,
+     * to the top, or to the end once that section had gone.
+     */
+    movedAfter: (words: string) => `Moved after ‘${words}’`,
+    movedToTop: 'Moved to the top',
+    movedToEnd: 'Moved to the end',
     /** A group that hadn't posted a result on a coalition motion once results stopped counting. */
     noResult: 'No result',
     seeResult: 'See the full result',
