@@ -24,6 +24,7 @@ import { createRelay, type Fetch } from '../net/relay';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { authorOf, signedAs, testKeys, testKx } from '../test/keys';
+import { relayTook } from '../test/outbox';
 import { containsBytes, scanDb } from '../test/scanDb';
 import { LEVELS } from '../engine/capabilities';
 import { MINUTE_MS, settleDissolve, shownState, sweepArchives } from './archive';
@@ -415,8 +416,7 @@ describe('settleDissolve', () => {
     await keep(store, sync, group, [...events, last]);
     const leave = signedAs('ana', { type: 'leave', group: groupId, ts: TS, body: {} });
     // Ana's own dissolve is queued already; take it out, then mark the group leaving.
-    const queued = (await store.getGroup(groupId))?.outbox ?? [];
-    for (const bytes of queued) await store.markSent(groupId, bytes);
+    await relayTook(store, groupId, (await store.getGroup(groupId))?.outbox ?? []);
     await store.markLeaving(groupId, leave.record);
     await settleDissolve(store, groupId, () => TS);
     expect((await outboxOf(store, groupId)).map((event) => event?.type)).toEqual(['leave']);
