@@ -14,6 +14,7 @@ import {
   clearedLog,
   COALITION_VECTORS,
   FOLD_VECTORS,
+  type LogsVector,
   NESTED_VECTORS,
   type NestedVector,
   publicKeyNamed,
@@ -71,6 +72,7 @@ describe('vector files', () => {
       'classes-unchanged.json',
       'coalition-admit.json',
       'coalition-contest.json',
+      'coalition-expiry.json',
       'coalition-forgery.json',
       'coalition-formation.json',
       'coalition-group.json',
@@ -237,6 +239,7 @@ describe('vector files', () => {
       'fold',
       'fold',
       'fold',
+      'coalition',
       'coalition',
       'coalition',
       'coalition',
@@ -917,6 +920,13 @@ describe('vector files', () => {
     },
   );
 
+  it.each(['coalition-motion-cleared', 'coalition-motion-held'])(
+    'include the coalition motion expiry vector "%s" (#111, #278)',
+    (name) => {
+      expect(COALITION_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
+    },
+  );
+
   it.each(['room-commit-kept', 'room-commit-missing'])(
     'include the room commitment vector "%s" (#371)',
     (name) => {
@@ -1255,12 +1265,18 @@ describe('tally vectors', () => {
   });
 });
 
+/** By log, the Proposals whose ballots that log's device has cleared in `vector` (#111, #278). */
+function clearedIn(vector: LogsVector, ids: Parameters<typeof resolve>[1]) {
+  return resolve(vector.cleared ?? {}, ids) as Record<string, readonly string[]>;
+}
+
 describe('coalition vectors (#100)', () => {
   it.each(COALITION_VECTORS.map((vector) => [vector.name, vector] as const))(
     '%s',
     (_name, vector) => {
       const { logs, ids } = buildLogs(vector);
-      const states = foldLogs(logs, vector.relayNow);
+      const cleared = clearedIn(vector, ids);
+      const states = foldLogs(logs, vector.relayNow, cleared);
       for (const [log, expected] of Object.entries(vector.expect)) {
         expect(folded(states, log).state, log).toMatchObject(resolve(expected, ids) as object);
       }
@@ -1272,7 +1288,7 @@ describe('coalition vectors (#100)', () => {
       }
       for (const [log, seqs] of Object.entries(vector.unchangedWithout ?? {})) {
         const kept = (logs[log] ?? []).filter((record) => !seqs.includes(record.seq));
-        const without = foldLogs({ ...logs, [log]: kept }, vector.relayNow);
+        const without = foldLogs({ ...logs, [log]: kept }, vector.relayNow, cleared);
         for (const name of Object.keys(states)) {
           const left = folded(without, name).state;
           expect({ ...left, ignored: [] }, name).toEqual({

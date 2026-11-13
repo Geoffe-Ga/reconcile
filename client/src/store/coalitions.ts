@@ -68,7 +68,7 @@ import {
   signEvent,
 } from '../engine/event';
 import { fold, type GroupState } from '../engine/fold';
-import { type Group, isCoalitionEntry, type NewGroup, type Store } from './db';
+import { type Group, isArchive, isCoalitionEntry, type NewGroup, type Store } from './db';
 import { foldGroup } from './expiry';
 
 /** A coalition entry with its log folded. */
@@ -403,8 +403,9 @@ export async function ensureEntries(
   read: Map<string, string> = new Map(),
 ): Promise<void> {
   const held = new Set((await store.listCoalitions()).map((entry) => entry.groupId));
-  // A removed member's copy reads nothing new, a coalition's log included (#115).
-  const groups = (await store.listGroups()).filter((group) => group.archived?.reason !== 'removed');
+  // A removed member's copy or a dissolved group reads nothing new, a coalition's log included,
+  // and no coalition stays on the device through it (#115, #108, #278).
+  const groups = (await store.listGroups()).filter((group) => !isArchive(group.archived));
   for (const group of groups) {
     const mark = readMark(group);
     if (read.get(group.groupId) === mark) continue;
@@ -421,9 +422,9 @@ export async function ensureEntries(
 }
 
 /**
- * Whether the coalition `id` stays reached on this device without the
- * removed group: another group holds it, or a coalition below it that one
- * holds, whose `inner` may still arrive in a wrap (#313), carries its seat.
+ * Whether the coalition `id` stays reached on this device without the group
+ * it lost: another group holds it, or a coalition below it that one holds,
+ * whose `inner` may still arrive in a wrap (#313), carries its seat.
  */
 function stillReached(
   id: string,
@@ -434,24 +435,29 @@ function stillReached(
 }
 
 /**
- * Archives the coalition entries that `removed`, a group a vote removed this
- * device's member from, alone held here (#115): their copy reads nothing new,
- * the coalition's log included, so no request names its mailboxes again. So
- * are the coalitions above them that only they reached (#122). An entry
- * another of their groups on this device still holds, or reaches through a
- * coalition it holds, keeps syncing.
+ * Purges the coalition entries that `lost` alone held on this device (#278;
+ * CLAUDE.md, consent and reversibility): a group this member left, once the
+ * relay has the leave (#77), one a vote removed them from (#115), or one that
+ * dissolved (#108). Each goes with its secret, log, keys, outbox and sync
+ * state, and so do the coalitions above that only they reached (#122); a
+ * room goes with its coalition on the next pass (`keepRooms`). An entry
+ * another live group on the device still holds, or reaches through a
+ * coalition it holds, whose `inner` may still arrive in a wrap (#313), stays,
+ * and so does one this device follows by its link (#124), which no group
+ * needs to hold.
  */
-export async function retireCoalitionsOf(store: Store, removed: Group): Promise<void> {
+export async function dropCoalitionsOf(store: Store, lost: Group): Promise<void> {
   const entries = await store.listCoalitions();
-  const own = coalitionKeys([removed], entries);
+  const own = coalitionKeys([lost], entries);
   if (own.size === 0) return;
   const others = (await store.listGroups()).filter(
-    (group) => group.groupId !== removed.groupId && group.archived?.reason !== 'removed',
+    (group) => group.groupId !== lost.groupId && !isArchive(group.archived),
   );
   const kept = coalitionKeys(others, entries);
   for (const id of own.keys()) {
-    if (stillReached(id, own, kept) || (await store.getGroup(id)) === undefined) continue;
-    await store.markArchived(id, 'removed');
+    const entry = entries.find((each) => each.groupId === id);
+    if (entry === undefined || entry.following === true || stillReached(id, own, kept)) continue;
+    await store.purgeGroup(id);
   }
 }
 
