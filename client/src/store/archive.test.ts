@@ -707,6 +707,7 @@ describe('a dissolved group and backup files (#78)', () => {
     expect(await importGroups(store, file, PASSPHRASE)).toEqual({
       groups: 1,
       skipped: 0,
+      skippedDocuments: 0,
       older: false,
     });
 
@@ -735,6 +736,7 @@ describe('a dissolved group and backup files (#78)', () => {
     expect(await importGroups(other, file, PASSPHRASE)).toEqual({
       groups: 1,
       skipped: 0,
+      skippedDocuments: 0,
       older: false,
     });
 
@@ -796,6 +798,7 @@ describe('a backup made before the dissolve (#231)', () => {
     expect(await importGroups(phone.store, file, PASSPHRASE)).toEqual({
       groups: 1,
       skipped: 0,
+      skippedDocuments: 0,
       older: false,
     });
     const before = fake.requests.length;
@@ -820,6 +823,7 @@ describe('a backup made before the dissolve (#231)', () => {
     expect(await importGroups(phone.store, file, PASSPHRASE)).toEqual({
       groups: 1,
       skipped: 0,
+      skippedDocuments: 0,
       older: false,
     });
     expect(await phone.sync.syncOnce()).toBe(true);

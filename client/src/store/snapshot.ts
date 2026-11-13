@@ -60,13 +60,14 @@
  * every log record verifies, that each log folds to its own group, and that
  * each personal Document is one the device could keep (`isPersonalDocument`),
  * and that a backup key is 32 bytes. Each group entry is checked on its own
- * (#336): one that doesn't check out, or names a group an earlier entry
- * already holds, is left out, the rest come back, and the restore says how
- * many it left out (`Restored`), so one bad entry, which anyone else holding
- * the key could plant, never keeps every other group from coming back.
- * Anything else wrong, a format it doesn't read, a groups field that isn't a
- * list, a personal Document or a backup key that doesn't check out, fails as
- * a wrong passphrase does, with `BackupUnreadable`. The store keeps every
+ * (#336), and so is each personal Document (#351): one that doesn't check
+ * out, or names a group or Document an earlier one that does already holds,
+ * is left out, the rest come back, and the restore says how many of each it
+ * left out (`Restored`), so one bad entry, which anyone else holding the key
+ * could plant, never keeps everything else from coming back. Anything else
+ * wrong, a format it doesn't read, a groups or personal field that isn't a
+ * list, or a backup key that doesn't check out, fails as a wrong passphrase
+ * does, with `BackupUnreadable`. The store keeps every
  * group and Document in one transaction (`Store.restoreGroups`), then the
  * key. A group whose log folds to a `dissolve`, as an older app's file could
  * hold, comes back as a read-only copy, so a restore never brings a dissolved
@@ -162,27 +163,35 @@ export interface RelayGroup {
 
 /** What the relay backup reads of the relay copy before an upload (#247, #327). */
 export interface RelayCopy {
-  /** Its personal Documents, each checked as a restore checks it. */
+  /** Its personal Documents that check out as a restore checks them, each once (#351). */
   readonly personal: readonly PersonalDocument[];
   /** Its group entries whose id and author it could read, in its order. */
   readonly groups: readonly RelayGroup[];
   /** How many group entries it couldn't read an id and author from (#336). */
   readonly skipped: number;
+  /** How many personal Documents it left out, as a restore leaves them out (#351). */
+  readonly skippedDocuments: number;
 }
 
 /**
- * A backup's plaintext as a restore reads it (#336): everything in it that
- * checks out, and how many group entries didn't, or named a group an earlier
- * entry already held, and so were left out.
+ * A backup's plaintext as a restore reads it (#336, #351): everything in it
+ * that checks out, and how many group entries and personal Documents didn't,
+ * or named a group or Document an earlier one already held, and so were left
+ * out.
  */
 export interface ReadSnapshot extends Snapshot {
   readonly skipped: number;
+  readonly skippedDocuments: number;
 }
 
-/** What a restore brought back (#336): how many groups, and how many group entries it left out. */
+/**
+ * What a restore brought back: how many groups, how many group entries it
+ * left out (#336), and how many personal Documents it left out (#351).
+ */
 export interface Restored {
   readonly groups: number;
   readonly skipped: number;
+  readonly skippedDocuments: number;
 }
 
 /**
@@ -404,8 +413,8 @@ async function readBackup(file: Uint8Array, passphrase: string): Promise<Decoded
 /**
  * Opens `file` under `passphrase`, checks every group and personal Document
  * in it, and keeps them all in one transaction. Returns how many groups the
- * file brought back, how many group entries it left out (#336), and whether
- * it is an older, format 1 file (#225).
+ * file brought back, how many group entries (#336) and personal Documents
+ * (#351) it left out, and whether it is an older, format 1 file (#225).
  *
  * @throws {BackupUnreadable} for a wrong passphrase, a damaged or oversized
  *   file, or contents that don't check out; nothing is written then.
@@ -426,13 +435,14 @@ export async function importGroups(
  * none. From a link it keeps no share by link (#105), even one a bundle
  * holds, so the device keeps any share of its own (`restoredCopy`) and takes
  * none of another's. Returns how many groups it brought back, and how many
- * group entries it left out because they didn't check out (#336).
+ * group entries (#336) and personal Documents (#351) it left out because
+ * they didn't check out.
  * `importGroups` calls it once a file is open, a second device's link (#96)
  * once the bundle is in, and the relay backup's restore (#118) once
  * `fetchRelayBackup` has.
  *
- * @throws {BackupUnreadable} when anything in it but a group entry doesn't
- *   check out; nothing is written then.
+ * @throws {BackupUnreadable} when anything in it but a group entry or a
+ *   personal Document doesn't check out; nothing is written then.
  */
 export async function importSnapshot(
   store: Pick<Store, 'restoreGroups' | 'adoptRelayBackupKey'>,
@@ -448,7 +458,8 @@ export async function importSnapshot(
  * Keeps `decoded`'s groups and personal Documents in one transaction, marked
  * as `from` says, less any share by link from a link (#105), then its relay
  * backup key if the device has none. Returns how many groups it brought
- * back, and how many group entries it left out (#336).
+ * back, and how many group entries (#336) and personal Documents (#351) it
+ * left out.
  */
 async function keepSnapshot(
   store: Pick<Store, 'restoreGroups' | 'adoptRelayBackupKey'>,
@@ -458,7 +469,13 @@ async function keepSnapshot(
   const snapshot = from === 'link' ? withoutShares(decoded) : decoded;
   await store.restoreGroups(snapshot.groups, snapshot.personal, from);
   await adoptKeyOf(store, snapshot);
-  return { groups: snapshot.groups.length, skipped: decoded.skipped };
+  return restoredOf(decoded);
+}
+
+/** What keeping `read` brought back: its groups, and how many groups and Documents it left out. */
+function restoredOf(read: ReadSnapshot): Restored {
+  const { groups, skipped, skippedDocuments } = read;
+  return { groups: groups.length, skipped, skippedDocuments };
 }
 
 /**
@@ -469,8 +486,8 @@ async function keepSnapshot(
  * with the vault, so its state goes too, and the file's key, if it holds
  * one, is kept instead. Its personal Documents, which hold no key, merge as
  * {@link importGroups} merges them. Returns how many groups the file brought
- * back, how many group entries it left out (#336), and whether it is an
- * older, format 1 file (#225).
+ * back, how many group entries (#336) and personal Documents (#351) it left
+ * out, and whether it is an older, format 1 file (#225).
  *
  * @throws {BackupUnreadable} as {@link importGroups} does; nothing is written then.
  */
@@ -482,7 +499,7 @@ export async function replaceWithBackup(
   const { snapshot, older } = await readBackup(file, passphrase);
   await store.replaceGroups(snapshot.groups, snapshot.personal);
   await adoptKeyOf(store, snapshot);
-  return { groups: snapshot.groups.length, skipped: snapshot.skipped, older };
+  return { ...restoredOf(snapshot), older };
 }
 
 /** Keeps `snapshot`'s relay backup key, with its split (#272), when it holds one and the device holds none. */
@@ -506,18 +523,28 @@ function snapshotJson(plaintext: Uint8Array): Record<string, unknown> | null {
   return json.format === SNAPSHOT_FORMAT || json.format === FORMAT_1 ? json : null;
 }
 
+/** The personal Documents a backup holds, and how many it left out (#351). */
+interface ReadPersonal {
+  readonly personal: PersonalDocument[];
+  readonly skippedDocuments: number;
+}
+
 /**
- * The personal Documents in a backup's `json`, or null when any doesn't
- * check out. A file from before #93 has no `personal` field: it holds none.
+ * The personal Documents in a backup's `json` that check out, each once, and
+ * how many it left out (#351), or null when its personal field isn't a list.
+ * A file from before #93 has no `personal` field: it holds none.
  */
-function personalOf(json: Record<string, unknown>): PersonalDocument[] | null {
-  return json.personal === undefined ? [] : personalIn(json.personal);
+function personalOf(json: Record<string, unknown>): ReadPersonal | null {
+  return json.personal === undefined
+    ? { personal: [], skippedDocuments: 0 }
+    : personalIn(json.personal);
 }
 
 /**
  * Everything in a backup's plaintext that checks out, with how many group
- * entries didn't (#336), or null when anything else in it doesn't: its
- * format, its groups field, a personal Document or its backup key.
+ * entries (#336) and personal Documents (#351) didn't, or null when anything
+ * else in it doesn't: its format, its groups or personal field, or its
+ * backup key.
  */
 export function decodeSnapshot(plaintext: Uint8Array): ReadSnapshot | null {
   return decodeFile(plaintext)?.snapshot ?? null;
@@ -529,11 +556,12 @@ function decodeFile(plaintext: Uint8Array): DecodedFile | null {
   if (json === null) return null;
   const older = json.format === FORMAT_1;
   const read = groupsIn(json.groups, older ? groupIn : groupWithKeysIn);
-  const personal = personalOf(json);
-  if (read === null || personal === null) return null;
+  const documents = personalOf(json);
+  if (read === null || documents === null) return null;
   const { groups, skipped } = read;
   const key = backupKeyOf(json);
-  return key === null ? null : { snapshot: { groups, personal, skipped, ...key }, older };
+  if (key === null) return null;
+  return { snapshot: { groups, skipped, ...documents, ...key }, older };
 }
 
 /**
@@ -553,9 +581,11 @@ function backupKeyOf(
 
 /**
  * What the relay backup reads of the relay copy's plaintext before an upload
- * (#247, #327), or null when it isn't a format 2 snapshot, its groups field
- * isn't a list, or any personal Document doesn't check out as a restore
- * checks it. Of each group it reads only the id and author, and keeps the
+ * (#247, #327), or null when it isn't a format 2 snapshot, or its groups or
+ * personal field isn't a list. It reads each personal Document as a restore
+ * does, leaving out and counting one that doesn't check out or repeats an id
+ * (#351), so an upload never carries it on. Of each group it reads only the
+ * id and author, and keeps the
  * entry as it was: the device carries a group it doesn't hold through to its
  * upload once it checks out as a restore would read it (`restorable`, #336),
  * and never keeps, folds into its own state or syncs it. An entry without a
@@ -567,10 +597,11 @@ function backupKeyOf(
 export function decodeRelayCopy(plaintext: Uint8Array): RelayCopy | null {
   const json = snapshotJson(plaintext);
   if (json?.format !== SNAPSHOT_FORMAT || !Array.isArray(json.groups)) return null;
-  const personal = personalOf(json);
+  const documents = personalOf(json);
   const entries: readonly unknown[] = json.groups;
   const groups = entries.map(relayGroupIn).filter((group) => group !== null);
-  return personal === null ? null : { personal, groups, skipped: entries.length - groups.length };
+  if (documents === null) return null;
+  return { ...documents, groups, skipped: entries.length - groups.length };
 }
 
 /**
@@ -593,18 +624,6 @@ function relayGroupIn(value: unknown): RelayGroup | null {
   if (typeof groupId !== 'string' || !GROUP_ID.test(groupId)) return null;
   if (typeof author !== 'string' || !AUTHOR.test(author)) return null;
   return { groupId, author, entry: value };
-}
-
-/** Each of `values` read by `read`, or null when any is null or two share a key. */
-function allUnique<T>(
-  values: readonly unknown[],
-  read: (value: unknown) => T | null,
-  key: (item: T) => string,
-): T[] | null {
-  const items = values.map(read);
-  const kept = items.filter((item) => item !== null);
-  const keys = new Set(kept.map(key));
-  return kept.length === items.length && keys.size === kept.length ? kept : null;
 }
 
 /** Of `items`, in their order, the first for each `key`. */
@@ -635,10 +654,17 @@ function groupsIn(
   return { groups, skipped: entries.length - groups.length };
 }
 
-/** The personal Documents in `value`, or null when it isn't a list of valid ones, each once. */
-function personalIn(value: unknown): PersonalDocument[] | null {
+/**
+ * The personal Documents in `value`, each read on its own (#351), and how
+ * many it left out: each that doesn't check out, and each with the id of an
+ * earlier one that did. Null when it isn't a list at all.
+ */
+function personalIn(value: unknown): ReadPersonal | null {
   if (!Array.isArray(value)) return null;
-  return allUnique(value, documentIn, (document) => document.id);
+  const entries: readonly unknown[] = value;
+  const valid = entries.map(documentIn).filter((document) => document !== null);
+  const personal = firstOfEach(valid, (document) => document.id);
+  return { personal, skippedDocuments: entries.length - personal.length };
 }
 
 /** One personal Document in `value`, with its share when it has one (#105), or null. */

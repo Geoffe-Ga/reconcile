@@ -103,7 +103,8 @@ function setup(options: Options = {}) {
     lockedAtLaunch: options.locked ?? false,
     unlock,
     restore:
-      options.restore ?? vi.fn(() => Promise.resolve({ groups: 2, skipped: 0, older: false })),
+      options.restore ??
+      vi.fn(() => Promise.resolve({ groups: 2, skipped: 0, skippedDocuments: 0, older: false })),
   };
   const passkey: Passkey = {
     available: options.passkeyAvailable ?? false,
@@ -384,7 +385,9 @@ describe('FirstRunGate on a device whose keys are locked (#95)', () => {
   });
 
   it('opens the app once a backup file is restored in place of the locked keys', async () => {
-    const restore = vi.fn(() => Promise.resolve({ groups: 2, skipped: 0, older: false }));
+    const restore = vi.fn(() =>
+      Promise.resolve({ groups: 2, skipped: 0, skippedDocuments: 0, older: false }),
+    );
     const { user, app } = setup({ accepted: true, locked: true, unlocks: false, restore });
     await user.click(screen.getByRole('button', { name: messages.unlock.unlock }));
     const section = await screen.findByRole('region', { name: messages.unlock.restoreHeading });

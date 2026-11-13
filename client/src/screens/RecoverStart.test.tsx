@@ -54,7 +54,7 @@ describe('RecoverStart', () => {
   it('says how many shares have come, and hands over once the groups are back', async () => {
     const steps: RecoverStep[] = [
       { kind: 'waiting', shares: 1, needed: 2 },
-      { kind: 'restored', groups: 2, skipped: 0 },
+      { kind: 'restored', groups: 2, skipped: 0, skippedDocuments: 0 },
     ];
     const poll = vi.fn(() => Promise.resolve(steps.shift() ?? { kind: 'stopped' as const }));
     const props = renderStart({ poll });
