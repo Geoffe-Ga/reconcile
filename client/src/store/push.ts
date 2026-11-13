@@ -26,13 +26,18 @@
  *   deadline (`engine/nudges.ts`), each once, in the mailbox of the week the
  *   Proposal was received in (#110). The deadline's own week would do worse:
  *   its minute less the vote window is the Proposal's receipt in an earlier
- *   week's mailbox, so the relay could tie the two weeks' ids together.
+ *   week's mailbox, so the relay could tie the two weeks' ids together. So
+ *   does every device of a member a coalition's open motion is open to
+ *   (#284), the group folded with the coalitions on the device, at those
+ *   minutes shifted by the group's offset for the motion
+ *   (`crypto/nudgeOffset.ts`), so no two groups' nudges for one motion line
+ *   up but by chance. The relay keeps one nudge per mailbox and minute.
  * - **Upkeep**, after each sync pass that reached the relay: each group with
  *   push on is registered again 7 days after the relay last took it, or when
  *   this device's endpoint, the relay's `instance` or the group's mailboxes
  *   change. A registration names each week's mailbox from now to 30 days
- *   on and, before them, the week of each Proposal still open, where its
- *   nudges wait (#110). Then, if the relay's key isn't the one the subscription was made
+ *   on and, before them, the week of each Proposal still open, a coalition's
+ *   motion included (#284), where its nudges wait (#110). Then, if the relay's key isn't the one the subscription was made
  *   with (a rebuilt relay), the device subscribes again, and each group's old
  *   endpoint is forgotten as the new one is registered. After a failure the
  *   upkeep rests for an hour, so a refusal never repeats every few seconds.
@@ -48,15 +53,17 @@
  * the service worker ends the subscription, so the push service refuses the
  * relay's next push and the relay forgets the endpoint everywhere.
  */
+import { nudgeOffset } from '../crypto/nudgeOffset';
 import { drawBelow, type Random, randomBytes } from '../crypto/random';
+import type { GroupState } from '../engine/fold';
 import { nudgeKey, nudgesFor, type Nudge } from '../engine/nudges';
 import { DAY_MINUTES } from '../engine/rules';
 import type { PushRelay } from '../net/push';
 import { RelayError } from '../net/relay';
 import type { DeviceSubscription, PushPort } from '../platform/pushPort';
 import { MINUTE_MS } from './archive';
+import { foldCoalitions, foldWithCoalitions, type HeldCoalition } from './coalitions';
 import type { Group, PushForget, Store } from './db';
-import { foldGroup } from './expiry';
 import { mailboxAt as defaultMailboxAt, type MailboxAt, mailboxesFrom } from './mailbox';
 
 /** How often a registration is renewed, in relay minutes: the relay keeps one 30 days. */
@@ -83,7 +90,13 @@ export interface PushOptions {
   /** The device's groups. */
   readonly store: Pick<
     Store,
-    'getGroup' | 'listGroups' | 'setPush' | 'markNudged' | 'listPushForgets' | 'updatePushForgets'
+    | 'getGroup'
+    | 'listGroups'
+    | 'listCoalitions'
+    | 'setPush'
+    | 'markNudged'
+    | 'listPushForgets'
+    | 'updatePushForgets'
   >;
   /** The relay's push routes. */
   readonly relay: PushRelay;
@@ -109,7 +122,10 @@ export interface PushControls {
 
 /** What the sync loop asks of push. */
 export interface PushUpkeep {
-  /** Posts the nudges due for this device's own open Proposals in `groupId`, each once. */
+  /**
+   * Posts the nudges due in `groupId` for this device's own open Proposals,
+   * and for the coalitions' open motions its member may vote on, each once.
+   */
   nudge(groupId: string): Promise<void>;
   /** Keeps every group with push on registered at the relay, and sends the DELETEs due. Never rejects. */
   upkeep(): Promise<void>;
@@ -150,13 +166,29 @@ function sameList(a: readonly string[], b: readonly string[]): boolean {
 
 /**
  * Every mailbox `group`'s registration names at relay minute `now` (#110):
- * the week of each Proposal still open, where its proposer's nudges wait,
- * then each week's from now to 30 days on, each named once, in order.
+ * the week of each Proposal still open, a coalition's motion among
+ * `coalitions` included (#284), where its nudges wait, then each week's from
+ * now to 30 days on, each named once, in order.
  */
-function registrationOf(group: Group, now: number, at: MailboxAt): string[] {
-  const open = foldGroup(group).proposals.filter((proposal) => !proposal.final);
+function registrationOf(
+  group: Group,
+  now: number,
+  at: MailboxAt,
+  coalitions: readonly HeldCoalition[],
+): string[] {
+  const open = foldWithCoalitions(group, coalitions).proposals.filter((p) => !p.final);
   const waiting = open.map((proposal) => at(group, proposal.received));
   return [...new Set([...waiting, ...mailboxesFrom(group, now, at)])];
+}
+
+/**
+ * What `group`'s nudges stand on (#284): its log, and each coalition entry's
+ * on the device, since a motion opens in the group from a coalition's log
+ * with no new record of its own. Nothing is due until it changes.
+ */
+function nudgeMark(group: Group, entries: readonly Group[]): string {
+  const logs = entries.map((entry) => `${entry.groupId}:${String(entry.log.length)}`);
+  return [String(group.log.length), ...logs].join(' ');
 }
 
 /** True for a refusal that asking again won't change: any 4xx answer. */
@@ -186,8 +218,8 @@ class PushServiceRefused extends Error {
 export function createPush(options: PushOptions): Push {
   const { store, relay, port, mailboxAt = defaultMailboxAt, clock = Date.now } = options;
   const random = options.random ?? randomBytes;
-  /** Each group's log length when its nudges were last all posted: nothing is due until it grows. */
-  const posted = new Map<string, number>();
+  /** Each group's {@link nudgeMark} when its nudges were last all posted: nothing is due until it changes. */
+  const posted = new Map<string, string>();
   let restUntil = -Infinity;
 
   /** Best-effort DELETEs of `endpoint` under each mailbox; never rejects. */
@@ -253,10 +285,15 @@ export function createPush(options: PushOptions): Push {
    * forgotten once the new ones hold the endpoint, so nothing posted to the
    * old mailbox wakes this phone.
    */
-  async function register(group: Group, endpoint: string, now: number): Promise<void> {
+  async function register(
+    group: Group,
+    endpoint: string,
+    now: number,
+    coalitions: readonly HeldCoalition[],
+  ): Promise<void> {
     const old = group.push;
     if (old !== undefined && old.endpoint !== endpoint) await forgetAt(old.mailboxes, old.endpoint);
-    const mailboxes = registrationOf(group, now, mailboxAt);
+    const mailboxes = registrationOf(group, now, mailboxAt, coalitions);
     for (const mailbox of mailboxes) await relay.register(mailbox, endpoint);
     await store.setPush(group.groupId, { endpoint, mailboxes, instance: group.instance, at: now });
     if (old?.endpoint !== endpoint) return;
@@ -266,15 +303,19 @@ export function createPush(options: PushOptions): Push {
     );
   }
 
-  /** True when `group`'s registration needs the relay again for `endpoint`. */
-  function isDue(group: Group & Required<Pick<Group, 'push'>>, endpoint: string | null): boolean {
+  /** True when `group`'s registration needs the relay again for `endpoint`, the coalitions on the device as `coalitions`. */
+  function isDue(
+    group: Group & Required<Pick<Group, 'push'>>,
+    endpoint: string | null,
+    coalitions: readonly HeldCoalition[],
+  ): boolean {
     const { push } = group;
     const now = group.relayNow ?? push.at;
     return (
       push.endpoint !== endpoint ||
       push.instance !== group.instance ||
       now - push.at >= RENEW_MINUTES ||
-      !sameList(push.mailboxes, registrationOf(group, now, mailboxAt))
+      !sameList(push.mailboxes, registrationOf(group, now, mailboxAt, coalitions))
     );
   }
 
@@ -286,7 +327,8 @@ export function createPush(options: PushOptions): Push {
       const subscription = await subscriptionFor(await relay.key());
       const group = await store.getGroup(groupId);
       if (group === undefined || group.relayNow === null || !isLive(group)) return 'failed';
-      await register(group, subscription.endpoint, group.relayNow);
+      const coalitions = foldCoalitions(await store.listCoalitions());
+      await register(group, subscription.endpoint, group.relayNow, coalitions);
       return 'on';
     } catch (error) {
       await unsubscribeIfNoneOn().catch(() => undefined);
@@ -308,19 +350,22 @@ export function createPush(options: PushOptions): Push {
   }
 
   /**
-   * Posts each nudge due for `group`'s own open Proposals that this device
-   * hasn't, keeps the ones it has (dropping those no longer due), and, once
-   * none is left to send, rests until the log grows.
+   * Posts each nudge due in `group`, as `state` folds it, that this device
+   * hasn't: for its own open Proposals, and, at the group's offset, for the
+   * coalitions' open motions its member may vote on (#284). Keeps the ones
+   * it has (dropping those no longer due), and, once none is left to send,
+   * rests until `mark` changes.
    */
-  async function postDue(group: Group): Promise<void> {
-    const due = nudgesFor(foldGroup(group), group.me.author);
+  async function postDue(group: Group, state: GroupState, mark: string): Promise<void> {
+    const offsetOf = (motion: string) => nudgeOffset(group.secret, motion);
+    const due = nudgesFor(state, group.me.author, offsetOf);
     const sent = new Set(group.nudged ?? []);
     for (const nudge of due) {
       if (!sent.has(nudgeKey(nudge)) && (await post(group, nudge))) sent.add(nudgeKey(nudge));
     }
     const kept = due.map(nudgeKey).filter((key) => sent.has(key));
     if (!sameList(kept, group.nudged ?? [])) await store.markNudged(group.groupId, kept);
-    if (kept.length === due.length) posted.set(group.groupId, group.log.length);
+    if (kept.length === due.length) posted.set(group.groupId, mark);
   }
 
   /** Turns every group in `groups` off, as when the person took the permission away. */
@@ -339,11 +384,12 @@ export function createPush(options: PushOptions): Push {
       await turnAllOff(on);
       return;
     }
-    if (!on.some((group) => isDue(group, held?.endpoint ?? null))) return;
+    const coalitions = foldCoalitions(await store.listCoalitions());
+    if (!on.some((group) => isDue(group, held?.endpoint ?? null, coalitions))) return;
     const { endpoint } = await subscriptionFor(await relay.key());
     for (const group of on) {
-      if (group.relayNow !== null && isDue(group, endpoint)) {
-        await register(group, endpoint, group.relayNow);
+      if (group.relayNow !== null && isDue(group, endpoint, coalitions)) {
+        await register(group, endpoint, group.relayNow, coalitions);
       }
     }
   }
@@ -368,7 +414,10 @@ export function createPush(options: PushOptions): Push {
     async nudge(groupId) {
       const group = await store.getGroup(groupId);
       if (group === undefined || !isLive(group)) return;
-      if (posted.get(groupId) !== group.log.length) await postDue(group);
+      const entries = await store.listCoalitions();
+      const mark = nudgeMark(group, entries);
+      if (posted.get(groupId) === mark) return;
+      await postDue(group, foldWithCoalitions(group, foldCoalitions(entries)), mark);
     },
     async upkeep() {
       if (clock() < restUntil) return;

@@ -1,0 +1,59 @@
+{
+  "kind": "nudge-offset",
+  "about": "A group's nudge offset for a coalition motion (#284, crypto/nudgeOffset.ts): HKDF-SHA-256 of the group secret, with an empty salt and info UTF-8 'reconcile/v1/nudge-offset' ‖ 0x00 ‖ UTF-8 of the motion's event id in unpadded base64url, 4 bytes read big-endian, mod 60. Computed with Python's hmac and hashlib, not @noble. Each secret, motion id and output is its bytes, so no high-entropy text sits in the repository.",
+  "label": "reconcile/v1/nudge-offset",
+  "vectors": [
+    {
+      "name": "zeros",
+      "secret": [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0
+      ],
+      "motion": [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0
+      ],
+      "okm": [237, 203, 174, 149],
+      "offset": 13
+    },
+    {
+      "name": "counting",
+      "secret": [
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+        25, 26, 27, 28, 29, 30, 31
+      ],
+      "motion": [
+        87, 117, 155, 175, 212, 114, 189, 242, 244, 69, 12, 217, 185, 25, 134, 11, 12, 189, 90, 194,
+        160, 82, 211, 45, 75, 143, 1, 237, 201, 20, 197, 251
+      ],
+      "okm": [46, 116, 48, 255],
+      "offset": 15
+    },
+    {
+      "name": "sevens",
+      "secret": [
+        7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
+        7
+      ],
+      "motion": [
+        3, 26, 45, 98, 47, 135, 189, 69, 126, 168, 148, 36, 202, 119, 222, 247, 31, 162, 127, 6,
+        172, 170, 180, 119, 78, 201, 108, 81, 146, 228, 185, 178
+      ],
+      "okm": [247, 216, 245, 228],
+      "offset": 36
+    },
+    {
+      "name": "same secret, other motion",
+      "secret": [
+        7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
+        7
+      ],
+      "motion": [
+        194, 107, 241, 215, 122, 207, 228, 181, 115, 169, 8, 6, 163, 254, 76, 183, 29, 125, 3, 14,
+        116, 224, 20, 66, 254, 127, 122, 162, 155, 16, 219, 22
+      ],
+      "okm": [6, 85, 244, 120],
+      "offset": 20
+    }
+  ]
+}
