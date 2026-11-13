@@ -32,6 +32,28 @@
   align-items: center;
 }
 
+/* Words that keep the room their longest form takes (#407): what they say
+ * now, in the one child, and `data-room`, the longest they can say, set
+ * invisibly in the same grid cell. So a sync that shortens or lengthens them
+ * moves nothing after them, and a tap lands where it was aimed. Generated
+ * content, hidden, so no screen reader, search or copy meets the room. */
+.steady {
+  display: grid;
+}
+
+.steady > *,
+.steady::after {
+  grid-area: 1 / 1;
+}
+
+/* First in grid order, so the room's text gives the box its baseline even
+ * while it says nothing yet, and a row aligned by baseline stays put. */
+.steady::after {
+  order: -1;
+  content: attr(data-room);
+  visibility: hidden;
+}
+
 /* Type -------------------------------------------------------------------- */
 
 h1,

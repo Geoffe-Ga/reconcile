@@ -67,6 +67,25 @@ describe('ConsentMeter', () => {
     expect(group.querySelectorAll('.meter-line')).toHaveLength(2);
   });
 
+  it('keeps each reading’s widest room in its bar’s head, before and after the first score (#407)', () => {
+    const rooms = (group: HTMLElement) =>
+      Array.from(group.querySelectorAll('.meter-reading')).map((reading) => [
+        reading.textContent,
+        reading.getAttribute('data-room'),
+      ]);
+    const before = meterFor([], 4);
+    expect(rooms(before.group)).toEqual([
+      ['', '0.0 · Short by 2.0'],
+      ['', '100% · Too many zeros: 99 of 99'],
+    ]);
+    before.unmount();
+    const after = meterFor([4, 0], 4, ENTRENCHED);
+    expect(rooms(after.group)).toEqual([
+      ['2.0 · Short by 1.0', '0.0 · Short by 3.0'],
+      ['50% · Too many zeros: 1 of 2', '100% · Too many zeros: 99 of 99'],
+    ]);
+  });
+
   it('draws the lines and fills from the engine’s bar, as CSSOM styles', () => {
     const { group } = meterFor([4, 4, 2, 2], 4);
     const [average, zeros] = Array.from(group.querySelectorAll<HTMLElement>('.meter-track'));
