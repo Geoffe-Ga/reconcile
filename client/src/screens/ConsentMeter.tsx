@@ -51,20 +51,29 @@ interface MeterBarProps {
   readonly reading: string;
   /** Whether the reading shows beside the name too; before any score, the quorum line says it. */
   readonly showReading: boolean;
+  /** The widest reading the bar can show, whose room the reading keeps (#407). */
+  readonly room: string;
 }
 
 /** As a CSS percentage. */
 const percent = (share: number): string => `${String(share * 100)}%`;
 
-/** One bar: its name and line, its reading, then the track with its fill and line. */
-function MeterBar({ name, line, lineAt, fill, met, reading, showReading }: MeterBarProps) {
+/**
+ * One bar: its name and line, its reading, then the track with its fill and
+ * line. The reading keeps the room its widest takes (`.steady`), even before
+ * any score, so a ballot syncing in never wraps the head anew and moves the
+ * note and Send below it (#407).
+ */
+function MeterBar({ name, line, lineAt, fill, met, reading, showReading, room }: MeterBarProps) {
   return (
     <Meter className="meter-bar" value={fill * 100} valueLabel={reading}>
       <div className="meter-head">
         <Label className="meter-name">
           {name} {messages.ballot.separator} <span className="meter-line-name">{line}</span>
         </Label>
-        {showReading ? <span className="meter-reading">{reading}</span> : null}
+        <span className="meter-reading steady" data-room={room}>
+          <span>{showReading ? reading : null}</span>
+        </span>
       </div>
       <div className="meter-track">
         <div
@@ -90,6 +99,26 @@ function zeroReading(tally: VersionTally): string {
   const { meter } = messages;
   const standing = tally.zerosMet ? meter.passes : meter.tooManyZeros(tally.zeros, tally.scorers);
   return meter.reading(formatZeroShare(tally), standing);
+}
+
+/** The widest average reading at `bar`: no average yet, as far short as it can be. */
+function averageRoom(bar: Bar): string {
+  const { meter } = messages;
+  return meter.reading(formatAverage({ sum: 0, scorers: 0 }), meter.short(formatAverageLine(bar)));
+}
+
+/** The count a zeros reading keeps room for: two digits, for up to 99 people scoring. */
+const ROOM_COUNT = 99;
+
+/**
+ * The widest zeros reading: every score a 0, with room for two-digit counts,
+ * or more once more have scored. The reading's digits are tabular, so any
+ * two take the same room.
+ */
+function zeroRoom(tally: VersionTally): string {
+  const { meter } = messages;
+  const most = Math.max(ROOM_COUNT, tally.scorers);
+  return meter.reading(meter.percent(100), meter.tooManyZeros(most, most));
 }
 
 /**
@@ -120,6 +149,7 @@ export function ConsentMeter({ number, tally, bar, label }: ConsentMeterProps) {
         met={tally.averageMet}
         reading={scored ? averageReading(tally, bar) : meter.noScores}
         showReading={scored}
+        room={averageRoom(bar)}
       />
       <MeterBar
         name={meter.zeros}
@@ -129,6 +159,7 @@ export function ConsentMeter({ number, tally, bar, label }: ConsentMeterProps) {
         met={tally.zerosMet}
         reading={scored ? zeroReading(tally) : meter.noScores}
         showReading={scored}
+        room={zeroRoom(tally)}
       />
       <p className="caption meter-quorum">
         {scored ? meter.scoredBy(tally.scorers, tally.quorum) : meter.noScores}

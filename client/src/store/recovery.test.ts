@@ -7,7 +7,7 @@
  * holds a share, the key or the list in the clear; and choosing again
  * leaves every older share opening nothing.
  */
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { fromBase64url } from '../crypto/base64url';
 import {
@@ -17,7 +17,7 @@ import {
   openRelayBackup,
   sealRelayBackup,
 } from '../crypto/relayBackup';
-import { combineShares, type RecoveryShare } from '../crypto/shares';
+import { combineShares, openShare, type RecoveryShare } from '../crypto/shares';
 import { signEvent } from '../engine/event';
 import { fold } from '../engine/fold';
 import { local } from '../test/bytes';
@@ -30,6 +30,7 @@ import type { Group } from './db';
 import {
   chooseContacts,
   contactGroups,
+  forgetGoneVerdicts,
   heldShares,
   heldSharesIn,
   openHeldShare,
@@ -38,6 +39,12 @@ import {
   recoveryStatus,
 } from './recovery';
 import { fetchRelayBackup } from './relayBackup';
+
+// Count each box a device tries to open (#276), the real one opening it.
+vi.mock('../crypto/shares', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../crypto/shares')>();
+  return { ...real, openShare: vi.fn(real.openShare) };
+});
 
 freshIndexedDBPerTest();
 
@@ -610,5 +617,51 @@ describe('the shares a device holds', DEVICES, () => {
     await syncAll(devices);
     expect(heldSharesIn(await groupOn(ben, groupId)).map(({ name }) => name)).toEqual(['Ana']);
     expect(openHeldShare(await groupOn(ben, groupId), deeKey)).toBeNull();
+  });
+
+  it('tries each box once, keeps what it learned while the group is here, and forgets it once the group goes (#276)', async () => {
+    const { groupId, device, devices } = await group(['Ana', 'Ben', 'Cal', 'Dee']);
+    const [ana, ben, cal, dee] = [device('Ana'), device('Ben'), device('Cal'), device('Dee')];
+    await chooseContacts(ana.services, await choice(groupId, 2, [ben, cal, dee]));
+    await syncAll(devices);
+    // Ben's group as it stood while he was in it: the same boxes, read again below.
+    const held = await groupOn(ben, groupId);
+    expect(heldSharesIn(held).map(({ name }) => name)).toEqual(['Ana']);
+    vi.mocked(openShare).mockClear();
+
+    heldSharesIn(held);
+    await ben.services.sync.syncOnce();
+    heldSharesIn(held);
+    expect(openShare).not.toHaveBeenCalled();
+
+    await leaveGroup(ben, groupId);
+    await ben.services.sync.syncOnce();
+    expect(await ben.services.store.getGroup(groupId)).toBeUndefined();
+    heldSharesIn(held);
+    expect(openShare).toHaveBeenCalled();
+  });
+
+  it('forgets the verdicts of a group it keeps read-only or is leaving, and keeps a live one’s (#276)', async () => {
+    const { groupId, device, devices } = await group(['Ana', 'Ben', 'Cal', 'Dee']);
+    const [ana, ben, cal, dee] = [device('Ana'), device('Ben'), device('Cal'), device('Dee')];
+    await chooseContacts(ana.services, await choice(groupId, 2, [ben, cal, dee]));
+    await syncAll(devices);
+    const held = await groupOn(ben, groupId);
+    /** How many boxes reading `held` again tries, after forgetting all but `groups`'. */
+    const triedAfter = (groups: readonly Group[]): number => {
+      heldSharesIn(held);
+      forgetGoneVerdicts(groups);
+      vi.mocked(openShare).mockClear();
+      heldSharesIn(held);
+      return vi.mocked(openShare).mock.calls.length;
+    };
+
+    expect(triedAfter([held])).toBe(0);
+    expect(triedAfter([{ ...held, archived: { reason: 'removed' } }])).toBeGreaterThan(0);
+    expect(triedAfter([{ ...held, leaving: new Uint8Array([1]) }])).toBeGreaterThan(0);
+    // Another membership of the group, as after rejoining under a new key, is another's.
+    expect(
+      triedAfter([{ ...held, me: { ...held.me, author: await keyOf(cal, groupId) } }]),
+    ).toBeGreaterThan(0);
   });
 });

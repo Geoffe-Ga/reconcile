@@ -71,9 +71,46 @@ function lineOf(progress: Progress): ReactNode {
   );
 }
 
+/** Names as plain text, as {@link NameList} sets them: "A", "A and B" or "A, B and C". */
+function listText(names: readonly string[]): string {
+  const last = names.at(-1) ?? '';
+  const rest = names.slice(0, -1).join(`${coalitions.listSeparator} `);
+  return rest === '' ? last : `${rest} ${coalitions.and} ${last}`;
+}
+
+/**
+ * The longest line an open motion can show: every group still waiting, or at
+ * 5 groups and more the two-thirds line at its widest, or else its own
+ * group's fail, whichever is longer.
+ */
+function openRoom(progress: Progress): string {
+  const { needed, seats } = progress;
+  const waiting = needsEvery(progress)
+    ? `${coalitions.passedOf(0, seats)} ${coalitions.waitingFor} ${listText(progress.groups.map((group) => group.name))}${coalitions.end}`
+    : coalitions.twoThirds(needed, seats, seats, seats);
+  const failed = `${coalitions.mine.fail} ${coalitions.waitingMore(needed)}`;
+  return waiting.length >= failed.length ? waiting : failed;
+}
+
+/**
+ * The longest line `progress` can show from now on, as plain text: the room
+ * its line keeps on a vote's page (#407). Once the coalition has decided,
+ * that's a fail's sentence, or a pass's with the day it takes effect, which
+ * is longer than what it says once final.
+ */
+function roomOf(progress: Progress): string {
+  if (progress.outcome === undefined) return openRoom(progress);
+  if (progress.outcome === 'fail') {
+    return needsEvery(progress) ? coalitions.failedEvery : coalitions.failedTwoThirds;
+  }
+  return `${coalitions.takesEffect} ${formatDay(progress.settles)}${coalitions.end}`;
+}
+
 /**
  * The progress line, as the coalition home and a coalition vote's page show
- * it: a paragraph, or inside a card's link, a span.
+ * it: inside a card's link, a span; on its own, a paragraph that keeps the
+ * room its longest line takes (`.steady`, #407), so a group's pass or fail
+ * syncing in moves nothing below it, the ballot least of all.
  */
 export function ProgressLine({
   progress,
@@ -82,8 +119,12 @@ export function ProgressLine({
   readonly progress: Progress;
   readonly inline?: boolean;
 }) {
-  const Line = inline ? 'span' : 'p';
-  return <Line className="coalition-progress-line">{lineOf(progress)}</Line>;
+  if (inline) return <span className="coalition-progress-line">{lineOf(progress)}</span>;
+  return (
+    <p className="coalition-progress-line steady" data-room={roomOf(progress)}>
+      <span>{lineOf(progress)}</span>
+    </p>
+  );
 }
 
 /** One coalition's line on a nested motion (#122): "In Eastside Housing", then its progress. */

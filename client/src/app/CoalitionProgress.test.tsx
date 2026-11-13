@@ -135,6 +135,48 @@ describe('ProgressLine', () => {
   });
 });
 
+describe('ProgressLine’s room on a vote’s page (#407)', () => {
+  const groups = ['Riverside Tenants', 'Oak St Co-op', 'Elm Row'].map((name) => ({
+    name,
+    result: null,
+  }));
+
+  /** The line `value` shows on a vote's page, and the room it keeps. */
+  function roomFor(value: Progress) {
+    const { container } = render(<ProgressLine progress={value} />);
+    const line = container.querySelector('.coalition-progress-line');
+    return { text: line?.textContent, room: line?.getAttribute('data-room'), line };
+  }
+
+  it('keeps the line every group still waiting takes, so one fewer moves nothing below it', () => {
+    const later = roomFor(progress({ passed: 1, deciding: ['Oak St Co-op', 'Elm Row'], groups }));
+    expect(later.text).toBe('1 of 3 groups has passed. Waiting for Oak St Co-op and Elm Row.');
+    expect(later.room).toBe(
+      '0 of 3 groups have passed. Waiting for Riverside Tenants, Oak St Co-op and Elm Row.',
+    );
+    expect(later.line).toHaveClass('steady');
+  });
+
+  it('keeps the longest a two-thirds motion can say: its own group’s fail, at 5 groups', () => {
+    const five = progress({ seats: 5, needed: 4, passed: 1, deciding: ['Pine Row'], groups });
+    expect(roomFor(five).room).toBe('Your group didn’t pass this. Waiting for 4 more groups.');
+  });
+
+  it('keeps a pass’s day until it is final, and an outcome’s own sentence', () => {
+    const day = formatDay(30_000_000);
+    expect(roomFor(progress({ outcome: 'pass', passed: 3, groups })).room).toBe(
+      `${messages.coalitions.takesEffect} ${day}.`,
+    );
+    const fail = progress({ outcome: 'fail', failed: 1, groups });
+    expect(roomFor(fail).room).toBe(messages.coalitions.failedEvery);
+  });
+
+  it('keeps no room inline, in a card’s link', () => {
+    const { container } = render(<ProgressLine progress={progress({ groups })} inline />);
+    expect(container.querySelector('[data-room]')).toBeNull();
+  });
+});
+
 describe('NameList', () => {
   it('joins one, two and three names', () => {
     const joined = (names: string[]) => render(<NameList names={names} />).container.textContent;
