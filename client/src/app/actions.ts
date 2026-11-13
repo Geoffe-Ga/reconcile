@@ -339,7 +339,8 @@ export async function joinGroup(
   await services.store.addGroup({ groupId, secret, signingKey, kxKey, epoch, me, ...kept });
   const pull = { ...page, records: [...page.records], lastSyncAt: services.now() };
   await services.store.applyPull(groupId, pull, eventIdOf);
-  await keepCarried(services.store, groupId, found.coalitions, pull);
+  const read = { relayNow: page.relayNow, instance: page.instance, lastSyncAt: pull.lastSyncAt };
+  await keepCarried(services.store, groupId, found.coalitions, read);
   await services.store.enqueue(groupId, join.record);
   void services.sync.syncOnce();
   return groupId;

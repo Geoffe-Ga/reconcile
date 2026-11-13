@@ -565,7 +565,9 @@ async function keepOne(store: Store, { secret, entries }: CarriedCoalition, read
     return;
   }
   const cursor = entries.reduce((high, record) => Math.max(high, record.seq), 0);
-  await store.applyPull(entry.groupId, { ...read, records: [...entries], cursor }, eventIdOf);
+  const { relayNow, instance, lastSyncAt } = read;
+  const pull = { records: [...entries], cursor, relayNow, instance, lastSyncAt };
+  await store.applyPull(entry.groupId, pull, eventIdOf);
 }
 
 /**
