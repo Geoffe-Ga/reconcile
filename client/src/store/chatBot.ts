@@ -28,9 +28,10 @@
  * that with a 400, and the device sends the post once more without it, or
  * may post it in the channel all the same; either way this device remembers
  * that the webhook takes no threads, and from then on posts as #119 does.
- * Otherwise, when the post was the opening this device won, it reads the
- * webhook's server and channel once, and when the message landed in another
- * channel, a new thread, it queues a `chat-thread` with the thread's link.
+ * Otherwise, when the post was a claim this device won, the opening or, when
+ * the opening never landed, a later one (#245), it reads the webhook's server
+ * and channel once, and when the message landed in another channel, a new
+ * thread, it queues a `chat-thread` with the thread's link.
  * Later posts for the Proposal go into that thread, the result as the
  * concluded line. A group's posts go out one after another, so each sees
  * what the one before it learned.
@@ -187,9 +188,10 @@ export function createChatBot(options: ChatBotOptions): ChatBot {
   }
 
   /**
-   * After a Proposal's opening landed in `channel`: a new thread, unless that
-   * is the webhook's own channel. Its link goes in the log only from this
-   * device's winning open claim, as the fold would keep it.
+   * After a Proposal's first post that landed went into `channel`: a new
+   * thread, unless that is the webhook's own channel. Its link goes in the
+   * log only from a claim this device won, while the log holds no thread for
+   * the Proposal, as the fold would keep it (#245).
    */
   async function recordThread(job: Delivery, channel: string): Promise<void> {
     const { group, state, webhook, proposal } = job;

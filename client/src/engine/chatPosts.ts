@@ -24,10 +24,12 @@
  * (#123; ADR-0011). The device that won a Proposal's `open` claim opens the
  * thread with that post, and records its link with a `chat-thread` event,
  * which the fold keeps once per Proposal ({@link mayRecordThread}): only from
- * that claimant, so no other member can point Join discussion at another
- * server, and only a link of the one form {@link THREAD_URL} names. Later
- * posts for the Proposal go into the thread. The link sits only in the sealed
- * log, and points into the group's own Discord server.
+ * a member who won one of its claims, so no one who posted nothing for it can
+ * point Join discussion at another server, and only a link of the one form
+ * {@link THREAD_URL} names. When the opening post never landed, the next
+ * post's claimant opens and records the thread instead (#245). Later posts
+ * for the Proposal go into the thread. The link sits only in the sealed log,
+ * and points into the group's own Discord server.
  */
 import { can, isOusted, isSuspended, type Roster } from './capabilities';
 import { effectiveOptIn, type OptInState } from './optIns';
@@ -203,15 +205,20 @@ export function mayClaim(
 /**
  * Whether `author` may record `proposal`'s Discord thread at `state.at`
  * (#123): they are a member who isn't suspended and whom no passed removal
- * names (#115), the bot is on in effect, `author` made the Proposal's winning
- * `open` claim (so it is a Proposal the fold knows), and no thread is kept for
- * it yet. The fold also needs the link to be a {@link THREAD_URL}.
+ * names (#115), the bot is on in effect, `author` made one of the Proposal's
+ * winning claims (so it is a Proposal the fold knows), and no thread is kept
+ * for it yet. Any moment's winner may (#245), not only the opening's: when
+ * the opening post never landed, or nobody claimed it, as for the vote that
+ * turned the bot on, the next post opens the thread, and its claimant records
+ * it, so the posts after go into it rather than each opening another. The
+ * first kept still wins. The fold also needs the link to be a
+ * {@link THREAD_URL}.
  */
 export function mayRecordThread(state: ChatThreadState, author: string, proposal: string): boolean {
   return (
     mayAct(state, author) &&
     effectiveOptIn(state, 'chatBot') !== null &&
-    claimFor(state, proposal, 'open')?.by === author &&
+    BOT_MOMENTS.some((moment) => claimFor(state, proposal, moment)?.by === author) &&
     threadFor(state, proposal) === undefined
   );
 }
