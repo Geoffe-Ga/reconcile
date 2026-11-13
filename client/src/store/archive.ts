@@ -44,8 +44,9 @@ function dissolveQueued(group: Group): boolean {
 
 /**
  * Settles a dissolve for one group after a pass (#108): archives it once a
- * `dissolve` has folded, and purges the coalitions only it held here (#278),
- * or else, when a dissolve Proposal's pass is final,
+ * `dissolve` has folded, and purges the coalitions only it held here (#278;
+ * if the app closes between the two, the next pass does, `ensureEntries`,
+ * #405), or else, when a dissolve Proposal's pass is final,
  * queues this member's `dissolve`, unless one is queued already, the group is
  * leaving or a restored copy that sends nothing yet (#231), or the fold
  * wouldn't take one from this member (not yet in, or suspended). `clock` is
