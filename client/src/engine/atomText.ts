@@ -15,8 +15,13 @@ const SURROGATES = /[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDFFF]/g;
 /** The Unicode replacement character, which stands in for a lone surrogate. */
 const REPLACEMENT = '�';
 
-/** Spaces (U+0020) and tabs (U+0009) at the end of a line. Never `\s`, which also takes NBSP. */
-const TRAILING_SPACES = /[ \t]+$/gm;
+/**
+ * Spaces (U+0020) and tabs (U+0009) at the end of a line: before an LF, or at
+ * the very end. Never `\s`, which also takes NBSP, and never the `m` flag,
+ * whose `$` also ends a line at U+2028 and U+2029. Neither ends a line in
+ * CommonMark, in `splitAtoms` or in {@link isHeadingOnly} (#411).
+ */
+const TRAILING_SPACES = /[ \t]+(?=\n|$)/g;
 
 /** Every line feed at the very end. */
 const FINAL_NEWLINES = /\n+$/;
@@ -32,7 +37,8 @@ function wellFormed(text: string): string {
  * 1. each lone surrogate becomes U+FFFD;
  * 2. CRLF, then any lone CR, becomes LF;
  * 3. NFC;
- * 4. trailing U+0020 and U+0009 leave each line (a trailing NBSP stays);
+ * 4. trailing U+0020 and U+0009 leave each line, which only an LF ends (a
+ *    trailing NBSP stays, and so does a space before U+2028 or U+2029);
  * 5. the text ends in exactly one LF.
  *
  * Blank text becomes `""`, which a removal Proposal carries (#75). The result
