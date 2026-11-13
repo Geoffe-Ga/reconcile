@@ -59,7 +59,7 @@ import { signEvent } from '../engine/event';
 import type { GroupState, SealedShare } from '../engine/fold';
 import { displayName } from '../engine/names';
 import type { Relay } from '../net/relay';
-import type { ChosenContact, Group, RecoveryPlan, Store } from './db';
+import { type ChosenContact, type Group, type RecoveryPlan, type Store, takesNew } from './db';
 import { foldGroup } from './expiry';
 import { refreshRelayBackup, type RelayBackupServices, startRelayBackup } from './relayBackup';
 import type { Sync } from './sync';
@@ -441,10 +441,7 @@ function membershipOf(group: Pick<Group, 'groupId' | 'me'>): string {
  * verdicts go by the next one.
  */
 export function forgetGoneVerdicts(groups: readonly Group[]): void {
-  const live = groups.filter(
-    (group) => group.leaving === undefined && group.archived === undefined,
-  );
-  const kept = new Set(live.map(membershipOf));
+  const kept = new Set(groups.filter(takesNew).map(membershipOf));
   for (const key of verdicts.keys()) if (!kept.has(key)) verdicts.delete(key);
 }
 
