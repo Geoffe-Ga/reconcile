@@ -57,7 +57,7 @@ BOUGH_WOOD: Wood = (
     (170, 132, 96),
     (216, 182, 136),
 )
-FAR_WOOD: Wood = ((22, 40, 32), (32, 50, 38), (42, 62, 44), (56, 78, 52), (72, 96, 62))
+FAR_WOOD: Wood = ((22, 40, 32), (32, 50, 38), (42, 62, 44), (56, 78, 52), (60, 82, 54))
 ROOT_WOOD: Wood = (
     (50, 33, 25),
     (110, 77, 55),
@@ -65,9 +65,9 @@ ROOT_WOOD: Wood = (
     (172, 134, 102),
     (204, 170, 132),
 )
+SOIL_DEEP: Color = (62, 43, 32)
 LIGHT = np.array([0.5, -0.86])  # the sun is up and to the right
 THREAD: Color = (238, 222, 172)
-THREAD_DIM: Color = (176, 152, 108)
 GLOW: Color = (255, 190, 92)
 RAY: Color = (255, 244, 196)
 GROUND_TONE: Color = (150, 112, 82)  # the toned ground that shows between strokes
@@ -121,6 +121,12 @@ def bezier(p0: np.ndarray, ctrl: np.ndarray, p1: np.ndarray, n: int = 24) -> np.
     return (1 - t) ** 2 * p0 + 2 * (1 - t) * t * ctrl + t**2 * p1
 
 
+def toward(col: Color, other: Color, share: float) -> Color:
+    """Return ``col`` mixed ``share`` of the way toward ``other``."""
+    mixed = [round(c + (o - c) * share) for c, o in zip(col, other, strict=True)]
+    return (mixed[0], mixed[1], mixed[2])
+
+
 def pt(p: np.ndarray | tuple[float, float]) -> tuple[int, int]:
     """Round a point to whole pixels, as OpenCV wants it."""
     return round(float(p[0])), round(float(p[1]))
@@ -141,8 +147,8 @@ class Habit:
 
 
 BOUGH = Habit(0.085, None, 0.0, 4, (0.45, 0.95), (0.3, 0.5), 0.5, 2.0)
-SINKER = Habit(0.07, 1.57, 0.1, 4, (0.6, 1.15), (0.22, 0.36), 0.46, 2.6)
-LATERAL = Habit(0.11, 1.57, 0.022, 3, (0.4, 0.95), (0.35, 0.55), 0.5, 2.6)
+SINKER = Habit(0.04, 1.57, 0.1, 3, (0.6, 1.15), (0.22, 0.36), 0.46, 2.6)
+LATERAL = Habit(0.06, 1.57, 0.022, 2, (0.4, 0.95), (0.35, 0.55), 0.5, 2.6)
 HYPHA = Habit(0.35, None, 0.0, 2, (0.4, 1.0), (0.4, 0.7), 0.8, 0.9)
 
 
@@ -185,6 +191,7 @@ class Scene:
         self.ref = np.zeros((self.h, self.w, 3), np.uint8)
         self.rays = np.zeros((self.h, self.w), np.float32)
         self.glow = np.zeros((self.h, self.w), np.float32)
+        self.strands = np.zeros((self.h, self.w), np.float32)  # threads, as light
         self.angle = np.zeros((self.h, self.w), np.float32)
         self.over = np.zeros((self.h, self.w), np.uint8)  # what sits in front of lines
         self.tree_x = [f * self.w for f in self.lay.trees]
@@ -274,7 +281,10 @@ class Scene:
                 heading += (pull - heading) * rate
             step = np.array([math.cos(heading), math.sin(heading)]) * length / steps
             points.append(points[-1] + step)
-        return np.array(points)
+        path = np.array(points)
+        for _ in range(2):  # ease the kinks out, so it curves like a drawn line
+            path[1:-1] = (path[:-2] + path[1:-1] + path[2:]) / 3
+        return path
 
     def grow(
         self,
@@ -287,7 +297,7 @@ class Scene:
     ) -> list[Limb]:
         """Grow a limb from ``start`` and everything that forks off it."""
         path = self.wander(start, heading, length, habit.turn, habit.pull, habit.rate)
-        tip = max(wide * 0.3, 1.1 * self.u)
+        tip = max(wide * 0.14, 1.1 * self.u)
         limbs = [Limb(path, wide, tip, depth)]
         if depth >= 4 or wide * habit.thin < habit.finest * self.u:
             return limbs
@@ -306,27 +316,26 @@ class Scene:
             )
         return limbs
 
-    def wood(self, limb: Limb, pal: Wood, rim: bool = True) -> None:
-        """Draw a limb in the round: shadow underneath, light along the sunward side."""
+    def wood(self, limb: Limb, pal: Wood) -> None:
+        """Draw a limb in the round: shadow underneath, light along the sunward side.
+
+        Everything goes into the underdrawing, so the brush paints it like the
+        rest of the picture. Nothing here is a ruled line.
+        """
         path = limb.path
         widths = np.linspace(limb.w0, limb.w1, len(path))
         along = np.gradient(path, axis=0)
         along /= np.linalg.norm(along, axis=1, keepdims=True) + 1e-6
         across = np.stack([-along[:, 1], along[:, 0]], axis=1)
-        facing = (
-            across @ LIGHT
-        )  # how squarely this stretch faces the sun, and which side
+        facing = across @ LIGHT  # how squarely each stretch faces the sun
         lit = across * facing[:, None] * widths[:, None] * 1.25
-        bands = ((-0.26, 1.0), (0.0, 0.86), (0.2, 0.5), (0.34, 0.24))
-        for (shift, part), col in zip(bands, pal, strict=False):
+        bands = ((-0.26, 1.0), (0.0, 0.86), (0.2, 0.5), (0.34, 0.24), (0.44, 0.1))
+        for (shift, part), col in zip(bands, pal, strict=True):
             pts = path + lit * shift
             for i in range(len(path) - 1):
                 thick = max(1, round(widths[i] * part))
                 cv2.line(self.ref, pt(pts[i]), pt(pts[i + 1]), col, thick, cv2.LINE_AA)
         self.grain(path, widths, across * np.sign(facing)[:, None], pal)
-        if rim and limb.w0 > 9 * self.u:
-            edge = max(1.1 * self.u, limb.w0 * 0.07)
-            self.details.append(Detail(path + lit * 0.44, pal[4], edge))
 
     def grain(
         self, path: np.ndarray, widths: np.ndarray, sunward: np.ndarray, pal: Wood
@@ -368,13 +377,38 @@ class Scene:
         band = self.ref[y0:y1].astype(np.float32) * (1 - strength * mask)[:, :, None]
         self.ref[y0:y1] = band.astype(np.uint8)
 
-    def timber(self, limbs: list[Limb], pal: Wood, fine: Color) -> None:
-        """Draw a whole tree of limbs, thinnest first so the joints close over."""
+    def timber(
+        self,
+        limbs: list[Limb],
+        pal: Wood,
+        fine: Color,
+        sink: tuple[float, float] | None = None,
+    ) -> None:
+        """Draw a whole tree of limbs, thinnest first so the joints close over.
+
+        ``sink`` is a pair of rows: limbs fade toward the color of deep soil as
+        they go from the first to the second, the way edges are lost in the
+        distance. The finest limbs are only suggested: a soft streak for the
+        brush to pick up, never a ruled line.
+        """
         for limb in sorted(limbs, key=lambda limb: limb.w0):
+            fade = 0.0
+            if sink is not None:
+                depth = (limb.path[:, 1].mean() - sink[0]) / (sink[1] - sink[0])
+                fade = 0.15 + float(np.clip(depth, 0, 1)) * 0.5
+            warm = int(self.rng.integers(-10, 11))  # no two limbs quite one color
+            tones = [toward(col, SOIL_DEEP, fade) for col in (*pal, fine)]
+            tones = [(c[0] + warm, c[1] + warm // 2, c[2]) for c in tones]
             if limb.w0 < 4.5 * self.u:
-                self.details.append(Detail(limb.path, fine, limb.w0))
+                self.streak(limb.path, tones[5], limb.w0)
             else:
-                self.wood(limb, pal)
+                self.wood(limb, (tones[0], tones[1], tones[2], tones[3], tones[4]))
+
+    def streak(self, path: np.ndarray, col: Color, wide: float) -> None:
+        """Suggest a fine limb: a soft mark in the underdrawing, for the brush."""
+        line = [np.round(path).astype(np.int32)]
+        thick = max(1, round(max(wide, 3 * self.u)))
+        cv2.polylines(self.ref, line, False, col, thick, cv2.LINE_AA)
 
     def spray(self, center: np.ndarray, count: int, size: tuple[float, float]) -> None:
         """A bunch of leaves in front of whatever is there."""
@@ -483,7 +517,7 @@ class Scene:
         self.leaf_mass(y0, y1, 1500, light)
         for limb in self.boughs(y0, y1, (24, 36)):  # limbs further back, lost in shade
             if limb.w0 > 5 * u:
-                self.wood(limb, FAR_WOOD, rim=False)
+                self.wood(limb, FAR_WOOD)
         self.leaf_mass(y0, y1, 3400, light)
         near = self.boughs(y0, y1, (54, 76))
         self.shade_under(near, (y0, y1), (-0.5, 0.6), 0.45)
@@ -715,16 +749,13 @@ class Scene:
         self.mottle(y0, y1, 150 * u, 9)
         self.mottle(y0, y1, 36 * u, 6)
         self.set_angle(y0, y1, 0.0, 0.7)
-        stones = round(14 * (y1 - y0) * self.w / (u * u * 900_000))
+        stones = round(9 * (y1 - y0) * self.w / (u * u * 900_000))
         for _ in range(stones):
             self.stone(self.r(0, self.w), self.r(y0, y1), self.r(12, 34) * u)
         limbs = self.roots()
         reach = self.tops[4] + int(0.12 * (self.tops[5] - self.tops[4]))
         self.shade_under(limbs, (self.turf, reach), (-0.12, 0.34), 0.5)
-        self.timber(limbs, ROOT_WOOD, ROOTLET)
-        for limb in limbs:
-            if limb.w0 < 7 * u:
-                self.root_hairs(limb.path[-1])
+        self.timber(limbs, ROOT_WOOD, ROOTLET, sink=(self.turf, reach))
         for _ in range(stones // 2):  # and a few stones the roots pass behind
             spot = (self.r(0, self.w), self.r(y0, y1))
             self.stone(spot[0], spot[1], self.r(12, 30) * u, over=True)
@@ -747,20 +778,12 @@ class Scene:
                 limbs += self.grow(start, aim, reach, wide, LATERAL)
         return limbs
 
-    def root_hairs(self, tip: np.ndarray) -> None:
-        """Fray the end of a fine root into hairs."""
-        u = self.u
-        for _ in range(5):
-            end = tip + np.array([self.r(-34, 34) * u, self.r(14, 52) * u])
-            bend = (tip + end) / 2 + np.array([self.r(-12, 12) * u, 0])
-            self.details.append(Detail(bezier(tip, bend, end, 7), ROOTLET, 1.3 * u))
-
     def stone(self, x: float, y: float, rad: float, over: bool = False) -> None:
         """A buried stone, lit on its upper right. ``over``: in front of the roots."""
         self.ellipse((x, y + rad * 0.14), rad, rad * 0.62, (48, 36, 28))
-        self.ellipse((x, y), rad * 0.94, rad * 0.56, (98, 84, 72))
+        self.ellipse((x, y), rad * 0.94, rad * 0.56, (84, 70, 58))
         lit = (x + rad * 0.2, y - rad * 0.14)
-        self.ellipse(lit, rad * 0.5, rad * 0.24, (138, 122, 104))
+        self.ellipse(lit, rad * 0.5, rad * 0.24, (112, 98, 82))
         if over:
             axes = (max(1, round(rad)), max(1, round(rad * 0.62)))
             cv2.ellipse(self.over, pt((x, y)), axes, 0, 0, 360, 1, -1)
@@ -782,27 +805,27 @@ class Scene:
             mid = (nodes[a] + nodes[b]) / 2
             bend = (nodes[b] - nodes[a])[::-1] * [-1, 1] * self.r(-0.34, 0.34)
             path = bezier(nodes[a], mid + bend, nodes[b], 14)
-            self.thread(path, THREAD, 1.2 * u, 0.45)
+            self.thread(path, 1.4 * u, 0.9)
         for node in nodes:  # finer hyphae, forking as they feel their way out
             reach = self.r(70, 170) * u
             for limb in self.grow(node, self.r(0, 6.28), reach, 1.6 * u, HYPHA):
-                self.thread(limb.path, THREAD_DIM, limb.w0 * 0.7, 0.14)
+                self.thread(limb.path, limb.w0 * 0.7, 0.42)
         for i, node in enumerate(nodes):
-            rad = (5 if i % 4 == 0 else 2.6) * u
+            rad = (4 if i % 4 == 0 else 2.2) * u
+            cv2.circle(self.strands, pt(node), max(1, round(rad)), 1.0, -1, cv2.LINE_AA)
             cv2.circle(
-                self.glow, pt(node), max(1, round(rad * 1.8)), 1.0, -1, cv2.LINE_AA
+                self.glow, pt(node), max(1, round(rad * 2)), 1.0, -1, cv2.LINE_AA
             )
-            dot = np.array([node, node + np.array([0.6, 0.0])])
-            self.details.append(Detail(dot, (255, 240, 190), rad))
+        # Let the threads come and go, as a painter loses and finds an edge.
+        self.strands[y0:y1] *= 0.3 + 0.7 * self.noise(y0, y1, 70 * u)
         self.glow = cv2.GaussianBlur(self.glow, (0, 0), 9 * u)
 
-    def thread(self, path: np.ndarray, col: Color, wide: float, shine: float) -> None:
-        """Lay one fungal thread, and let it give off a little light."""
-        self.details.append(Detail(path, col, wide))
+    def thread(self, path: np.ndarray, wide: float, shine: float) -> None:
+        """Lay one fungal thread as light: a soft strand, and a glow around it."""
         line = [np.round(path).astype(np.int32)]
-        cv2.polylines(
-            self.glow, line, False, shine, max(1, round(wide * 2)), cv2.LINE_AA
-        )
+        thick = max(1, round(wide * 1.6))
+        cv2.polylines(self.strands, line, False, shine, thick, cv2.LINE_AA)
+        cv2.polylines(self.glow, line, False, shine * 0.5, thick * 2, cv2.LINE_AA)
 
     def web_nodes(self, band: tuple[float, float]) -> list[np.ndarray]:
         """Scatter the network's meeting points below the root tips, kept apart."""
@@ -814,7 +837,8 @@ class Scene:
                     [dx * u + self.r(-14, 14) * u, self.r(70, 150) * u]
                 )
                 ctrl = tip + np.array([dx * 0.4 * u, 60 * u])
-                self.details.append(Detail(bezier(tip, ctrl, end, 10), ROOT, 3.4 * u))
+                tone = toward(ROOT, SOIL_DEEP, 0.3)
+                self.streak(bezier(tip, ctrl, end, 10), tone, 4.5 * u)
                 nodes.append(end)
         top = band[0] + 0.18 * (band[1] - band[0])
         target = len(nodes) + round(70 * self.w * (band[1] - top) / (u * u * 640_000))
@@ -856,7 +880,13 @@ class Painter:
     def paint(self) -> np.ndarray:
         """Paint every layer, coarse to fine, then finish and return the picture."""
         u = self.scene.u
-        layers = ((30, 10, 3, 0), (15, 8, 2, 30), (7.5, 6, 2, 26), (3.6, 5, 1, 24))
+        layers = (
+            (30, 10, 3, 0),
+            (15, 8, 2, 30),
+            (7.5, 6, 2, 26),
+            (3.6, 5, 1, 24),
+            (2.2, 4, 1, 22),
+        )
         for radius, longest, shortest, tolerance in layers:
             self.layer(max(radius * u, 1.5), longest, shortest, tolerance)
         for detail in self.scene.details:
@@ -995,6 +1025,11 @@ class Painter:
         ):
             cover = np.clip(light * amount, 0, 1)[:, :, None]
             out += cover * (np.array(tint, np.float32) - out) * 0.9
+        # The fungal threads go on as light, broken up by the paint under them.
+        weave = 0.5 + cv2.GaussianBlur(self.height, (0, 0), 1.0)
+        soft = cv2.GaussianBlur(self.scene.strands, (0, 0), 0.9 * self.scene.u)
+        strand = np.clip(soft * weave * 1.5, 0, 1)[:, :, None]
+        out += strand * (np.array(THREAD, np.float32) - out) * 0.85
         return np.clip(out, 0, 255).astype(np.uint8)
 
 
