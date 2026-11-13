@@ -183,7 +183,12 @@ describe('SendDispatch', () => {
       options.map(
         (option) => option.getAttribute('aria-label') ?? option.closest('label')?.textContent,
       ),
-    ).toEqual(['This group only', 'One level up', 'Two levels up', 'As far as the coalitions go']);
+    ).toEqual([
+      'This group only',
+      'One level up',
+      'Two levels up',
+      'As high as your group’s coalitions reach',
+    ]);
     expect(within(picker).getByRole('radio', { name: 'This group only' })).toBeChecked();
     expect(within(picker).getByRole('radio', { name: 'One level up' })).toHaveAccessibleDescription(
       sendDispatch.ceilingHints[1],
@@ -197,7 +202,7 @@ describe('SendDispatch', () => {
     const { user, onSend, onPropose } = renderSend(log.state(), { rises: true });
     await fill(user, '  Rally Saturday  ', 'Meet at the river.');
     await user.click(screen.getByText('House rules'));
-    await user.click(screen.getByText('As far as the coalitions go'));
+    await user.click(screen.getByText('As high as your group’s coalitions reach'));
     expect(screen.getByText(sendDispatch.visibilityVote)).toBeVisible();
     expect(screen.queryByRole('button', { name: 'Send Dispatch' })).toBeNull();
     await user.click(screen.getByRole('button', { name: sendDispatch.submitVote }));

@@ -623,6 +623,8 @@ export function promotionFits(
   const { level, ceiling } = target;
   const below = seatLevel(from);
   const lowest = Math.min(below, 1) + 1;
+  // Looser than the true level at the top of a nest, but safe: promoteResult and sameRecord
+  // (crossing.ts) recompute the level from the seat's own fold, so a misstated one fails there.
   const fits = level >= lowest && level <= below + 1 && level <= MAX_LEVEL;
   return fits && withinCeiling(level, ceiling);
 }

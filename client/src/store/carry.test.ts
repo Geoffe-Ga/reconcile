@@ -115,6 +115,17 @@ describe('copiedNote', () => {
     expect(copiedNote('Not with them yet.', elsewhere)).toBe(false);
     expect(copiedNote('', ['', '  '])).toBe(false);
   });
+
+  it('finds it through zero-width characters and curly or straight punctuation (#378)', () => {
+    const elsewhere = ['Don’t send it — “not yet”…'];
+    expect(copiedNote('Don\'t send it - "not yet"...', elsewhere)).toBe(true);
+    expect(copiedNote('Do\u200Bn’t se\u200Dnd it\u2060 — “not yet”…\uFEFF', elsewhere)).toBe(true);
+    expect(copiedNote('Don‘t send it – ＂not yet＂…', elsewhere)).toBe(true);
+    expect(copiedNote('Don‘t send it – „not yet‟…', elsewhere)).toBe(true);
+    expect(copiedNote('Don’t send it — “not now”…', elsewhere)).toBe(false);
+    // A note of nothing but zero-width characters is no note.
+    expect(copiedNote('\u200B\u200D', ['\u200C'])).toBe(false);
+  });
 });
 
 /** The original reason Cy gave in Riverside, which must never reach another group. */
