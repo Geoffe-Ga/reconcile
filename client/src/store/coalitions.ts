@@ -68,7 +68,9 @@ import {
   signEvent,
 } from '../engine/event';
 import { fold, type GroupState } from '../engine/fold';
+import type { CarriedCoalition } from '../invite/envelope';
 import { type Group, isArchive, isCoalitionEntry, type NewGroup, type Store } from './db';
+import { eventIdOf } from './eventId';
 import { foldGroup } from './expiry';
 
 /** A coalition entry with its log folded. */
@@ -184,8 +186,15 @@ function remember(keys: Map<string, KeysDraft>, found: Found): boolean {
   return known === undefined || inner !== null;
 }
 
+/**
+ * What {@link coalitionKeys} reads of a group or a coalition entry: its id,
+ * its log and outbox, and what it folds them at. A coalition's log an invite
+ * carried (#279) is read the same way before the device keeps it.
+ */
+export type KeysSource = Pick<Group, 'groupId' | 'log' | 'outbox' | 'relayNow' | 'cleared'>;
+
 /** The coalitions a group's readable reconcile targets carry, in its log and its outbox. */
-function fromGroup(group: Group): Found[] {
+function fromGroup(group: KeysSource): Found[] {
   const held = [...targetsOf(foldGroup(group)), ...targetsIn(group.outbox)];
   return plain(held).map(({ proposal, target }) => ({
     secret: fromBase64url(target.secret),
@@ -264,7 +273,7 @@ export function seatsAbove(state: GroupState, inner: Uint8Array): SeatAbove[] {
  * targets carry, in its log and its outbox, that open under its `inner`
  * (#122), as {@link openedAbove} opens them.
  */
-function fromCoalition(entry: Group, state: GroupState, inner: Uint8Array): Found[] {
+function fromCoalition(entry: KeysSource, state: GroupState, inner: Uint8Array): Found[] {
   const id = state.group;
   if (id === null) return [];
   const held = sealedOf([...targetsOf(state), ...targetsIn(entry.outbox)]);
@@ -332,8 +341,8 @@ function unwrapInners(keys: Map<string, KeysDraft>, states: ReadonlyMap<string, 
  * a seat no one has wrapped for yet, opens nothing.
  */
 export function coalitionKeys(
-  groups: readonly Group[],
-  coalitions: readonly Group[],
+  groups: readonly KeysSource[],
+  coalitions: readonly KeysSource[],
 ): ReadonlyMap<string, CoalitionKeys> {
   const keys = new Map<string, KeysDraft>();
   const states = new Map(coalitions.map((entry) => [entry.groupId, foldGroup(entry)]));
@@ -480,6 +489,83 @@ async function dropArchived(store: Store, groups: readonly Group[], read: Map<st
     await dropCoalitionsOf(store, group);
     read.set(group.groupId, mark);
   }
+}
+
+/**
+ * The coalitions an invite to `group` carries (#279): the relay-accepted log
+ * of each coalition entry here that the group reaches ({@link coalitionKeys},
+ * a nested one through the coalition below it), nearest first, so a newcomer
+ * reads a coalition that formed before the relay's 30 days as they read the
+ * group (#73). A coalition this device follows only by its link (#124) isn't
+ * one the group reaches, so it stays here; one with no log yet has nothing
+ * to carry.
+ */
+export async function carriedCoalitions(
+  store: Pick<Store, 'listCoalitions'>,
+  group: Group,
+): Promise<CarriedCoalition[]> {
+  const entries = await store.listCoalitions();
+  const byId = new Map(entries.map((entry) => [entry.groupId, entry]));
+  return [...coalitionKeys([group], entries).keys()].flatMap((id) => {
+    const entry = byId.get(id);
+    if (entry === undefined || entry.log.length === 0) return [];
+    return [{ secret: entry.secret, entries: entry.log }];
+  });
+}
+
+/** Where a carried log was read: the invite GET's relay minute and instance, and the device clock then. */
+export interface CarriedRead {
+  readonly relayNow: number;
+  readonly instance: string;
+  readonly lastSyncAt: number;
+}
+
+/**
+ * Keeps on this device each coalition an invite to `groupId` carried (#279)
+ * that the group reaches, judged with the carried logs themselves, so a
+ * nested coalition counts through the carried one below it. A new entry takes
+ * its log as a pull read at `read`, through sync's verify and dedupe, as Bring
+ * takes a card's (#114); an entry the device keeps already, or that another
+ * tab makes first, merges in what it lacks, as a device already in the group
+ * merges an invite's log (#73). Nothing an inviter carried that the group
+ * doesn't reach, and nothing at all for a group this device keeps as an
+ * archive, removed or dissolved, which no coalition stays through (#278).
+ */
+export async function keepCarried(
+  store: Store,
+  groupId: string,
+  carried: readonly CarriedCoalition[],
+  read: CarriedRead,
+): Promise<void> {
+  const group = await store.getGroup(groupId);
+  if (group === undefined || isArchive(group.archived)) return;
+  const candidates = carried.map(({ secret, entries }) => ({
+    groupId: deriveCoalitionEntryId(secret),
+    log: [...entries],
+    outbox: [],
+    relayNow: read.relayNow,
+  }));
+  const reached = coalitionKeys([group], [...(await store.listCoalitions()), ...candidates]);
+  for (const coalition of carried) {
+    if (reached.has(deriveCoalitionEntryId(coalition.secret))) {
+      await keepOne(store, coalition, read);
+    }
+  }
+}
+
+/** Keeps one carried coalition: a new entry with its log, or what an entry here lacks merged in. */
+async function keepOne(store: Store, { secret, entries }: CarriedCoalition, read: CarriedRead) {
+  const entry = newEntry(secret);
+  const made = await store.addGroup(entry).then(
+    () => true,
+    () => false,
+  );
+  if (!made) {
+    await store.mergeLog(entry.groupId, entries, eventIdOf);
+    return;
+  }
+  const cursor = entries.reduce((high, record) => Math.max(high, record.seq), 0);
+  await store.applyPull(entry.groupId, { ...read, records: [...entries], cursor }, eventIdOf);
 }
 
 /**

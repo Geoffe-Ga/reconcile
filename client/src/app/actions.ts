@@ -29,6 +29,7 @@ import { fold, type GroupState, type LogRecord } from '../engine/fold';
 import { displayName } from '../engine/names';
 import { DEFAULT_RULES } from '../engine/rules';
 import {
+  type CarriedCoalition,
   type Envelope,
   INVITE_TTL_DAYS,
   type InvitePreview,
@@ -36,6 +37,7 @@ import {
   sealEnvelope,
 } from '../invite/envelope';
 import type { Relay } from '../net/relay';
+import { carriedCoalitions, keepCarried } from '../store/coalitions';
 import type { Me, Store } from '../store/db';
 import { adoptionFor, epochOf, keyFits, secretFits } from '../store/epochs';
 import { eventIdOf } from '../store/eventId';
@@ -133,6 +135,8 @@ export interface FoundGroup {
   readonly token: InviteToken;
   /** The Proposals whose ballots the inviter's device has cleared (#111), kept on Join. */
   readonly cleared: readonly string[];
+  /** The log of each coalition the group reaches (#279), which Join keeps where the group reaches it. */
+  readonly coalitions: readonly CarriedCoalition[];
   /**
    * The envelope's entries, the highest seq among them, and the invite GET's
    * relay time and instance: what Join keeps, so the Document shows at once.
@@ -170,7 +174,8 @@ function previewOf(state: GroupState, me: Me): InvitePreview {
 /**
  * Copy invite link's work (spec §7): a fresh seed, then the envelope (the
  * group secret, a preview, this member's token and the relay-accepted log,
- * never the outbox) sealed under the invite key and posted to the invite
+ * never the outbox, then the log of each coalition the group reaches, #279)
+ * sealed under the invite key and posted to the invite
  * mailbox, kept {@link INVITE_TTL_DAYS} day. Returns the link only once every
  * PUT has succeeded; otherwise it rejects, and no link exists to copy. A copy
  * this device keeps read-only makes none: a dissolved group's (#108), whose
@@ -200,6 +205,7 @@ export async function makeInvite(
     token: { by: group.me.author, sig },
     entries: group.log,
     cleared,
+    coalitions: await carriedCoalitions(services.store, group),
   });
   for (const blob of blobs) {
     await services.relay.putBlob(channel.mailbox, blob, INVITE_TTL_DAYS);
@@ -217,14 +223,24 @@ function highestSeq(records: readonly LogRecord[]): number {
  * then takes up the invite's secret when its epoch is later than the one the
  * device holds and its key change's commit names it (#98): how a device that
  * missed a new key gets back in. A restored copy that hadn't heard from its
- * group goes live (#231): someone in the group made the link.
+ * group goes live (#231): someone in the group made the link. Last, the logs
+ * of the coalitions it carries merge in too, or come as new entries, where
+ * the group reaches them (#279): how a device that was away while one formed
+ * catches up, read at `read`.
  */
-async function mergeInvite(services: Services, groupId: string, envelope: Envelope) {
+async function mergeInvite(
+  services: Services,
+  groupId: string,
+  envelope: Envelope,
+  read: { readonly now: number; readonly instance: string },
+) {
   const { store } = services;
   await store.mergeLog(groupId, envelope.entries, eventIdOf);
   const group = await store.getGroup(groupId);
   const advance = group && adoptionFor(group, envelope.epoch, envelope.groupSecret);
   if (advance) await store.adoptEpoch(groupId, advance);
+  const at = { relayNow: read.now, instance: read.instance, lastSyncAt: services.now() };
+  await keepCarried(store, groupId, envelope.coalitions, at);
 }
 
 /**
@@ -253,7 +269,7 @@ export async function lookupInvite(services: Services, seed: Uint8Array): Promis
   if (envelope === null || state === null || groupId === null) return { kind: 'missing' };
   if (!secretFits(state, envelope.epoch, envelope.groupSecret)) return { kind: 'missing' };
   if ((await services.store.getGroup(groupId)) !== undefined) {
-    await mergeInvite(services, groupId, envelope);
+    await mergeInvite(services, groupId, envelope, page);
     return { kind: 'joined', groupId };
   }
   return newcomerFinds(state, envelope, { groupId, now: page.now, instance: page.instance });
@@ -272,7 +288,7 @@ function newcomerFinds(
   read: { readonly groupId: string; readonly now: number; readonly instance: string },
 ): InviteLookup {
   if (!keyFits(state, envelope.epoch, envelope.groupSecret)) return { kind: 'missing' };
-  const { preview, groupSecret: secret, epoch, token, entries, cleared } = envelope;
+  const { preview, groupSecret: secret, epoch, token, entries, cleared, coalitions } = envelope;
   const { groupId, now, instance } = read;
   const cursor = highestSeq(entries);
   return {
@@ -284,6 +300,7 @@ function newcomerFinds(
       epoch,
       token,
       cleared,
+      coalitions,
       page: { records: entries, cursor, relayNow: now, instance },
     },
   };
@@ -295,8 +312,10 @@ function newcomerFinds(
  * whole history, read through the same dedupe sync uses, with the cursor at
  * its highest seq, so the Document shows at once. It keeps the Proposals the
  * inviter has cleared as its own `cleared` (#111), so it folds their outcomes
- * from their results. Then queues the signed `join`, carrying the inviter's
- * token, and sends it.
+ * from their results, and each coalition the invite carries that the group
+ * reaches, with its whole log (#279), so one older than the relay's 30 days
+ * shows too. Then queues the signed `join`, carrying the inviter's token, and
+ * sends it.
  */
 export async function joinGroup(
   services: Services,
@@ -320,6 +339,7 @@ export async function joinGroup(
   await services.store.addGroup({ groupId, secret, signingKey, kxKey, epoch, me, ...kept });
   const pull = { ...page, records: [...page.records], lastSyncAt: services.now() };
   await services.store.applyPull(groupId, pull, eventIdOf);
+  await keepCarried(services.store, groupId, found.coalitions, pull);
   await services.store.enqueue(groupId, join.record);
   void services.sync.syncOnce();
   return groupId;
