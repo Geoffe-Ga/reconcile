@@ -384,7 +384,7 @@ describe('a Dispatch as far as the coalitions go', SLOW, () => {
     const fake = createFakeRelay();
     const groups = await metroFormed(fake);
     const { ana, ben, eve, riverside, oak, elm } = groups;
-    const id = await anaPutsItToAVote(ana, riverside, 'As far as the coalitions go');
+    const id = await anaPutsItToAVote(ana, riverside, 'As high as your group’s coalitions reach');
     await riversidePasses(groups, id);
 
     // Eastside Housing: Ben passes it in Oak St; Cy's 4 is carried there at its minute.

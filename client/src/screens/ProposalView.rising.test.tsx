@@ -73,7 +73,9 @@ describe('ProposalView: a Dispatch put to the group’s vote (#126)', () => {
     const words = block();
     expect(within(words).getByText(WORDS.title)).toBeVisible();
     expect(within(words).getByText(/Meet at the river at ten\./).textContent).toBe(WORDS.text);
-    expect(within(words).getByText(rising.ceiling('As far as the coalitions go'))).toBeVisible();
+    expect(
+      within(words).getByText(rising.ceiling('As high as your group’s coalitions reach')),
+    ).toBeVisible();
     // What passing does sits once, on the ballot's one card.
     expect(screen.getAllByText(rising.groupLine.coalitions)).toHaveLength(1);
     expect(within(words).queryByText(rising.groupLine.coalitions)).toBeNull();
