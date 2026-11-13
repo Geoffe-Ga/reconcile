@@ -191,7 +191,7 @@ class Scene:
         self.ref = np.zeros((self.h, self.w, 3), np.uint8)
         self.rays = np.zeros((self.h, self.w), np.float32)
         self.glow = np.zeros((self.h, self.w), np.float32)
-        self.strands = np.zeros((self.h, self.w), np.float32)  # threads, as light
+        self.strands = np.zeros((self.h, self.w), np.float32)  # the fungal threads
         self.angle = np.zeros((self.h, self.w), np.float32)
         self.over = np.zeros((self.h, self.w), np.uint8)  # what sits in front of lines
         self.tree_x = [f * self.w for f in self.lay.trees]
@@ -427,6 +427,7 @@ class Scene:
         self.sky()
         self.canopy()
         self.trunks()
+        self.deep_earth()  # before the roots, which run down into it
         self.soil()
         self.deep()
         return self
@@ -788,8 +789,8 @@ class Scene:
             axes = (max(1, round(rad)), max(1, round(rad * 0.62)))
             cv2.ellipse(self.over, pt((x, y)), axes, 0, 0, 360, 1, -1)
 
-    def deep(self) -> None:
-        """The deepest earth, the last root tips, and the network that joins them."""
+    def deep_earth(self) -> None:
+        """The deepest earth itself: dark soil and a few stones."""
         y0, y1 = self.tops[4], self.tops[5]
         u = self.u
         self.gradient(
@@ -800,6 +801,12 @@ class Scene:
         band = (y0 + 0.07 * (y1 - y0), y0 + self.lay.web * (y1 - y0))
         for _ in range(round(8 * self.w / (1600 * u))):
             self.stone(self.r(0, self.w), self.r(band[0], band[1]), self.r(12, 28) * u)
+
+    def deep(self) -> None:
+        """The last root tips, and the network of threads that joins them."""
+        y0, y1 = self.tops[4], self.tops[5]
+        u = self.u
+        band = (y0 + 0.07 * (y1 - y0), y0 + self.lay.web * (y1 - y0))
         nodes = self.web_nodes(band)
         for a, b in self.web_edges(nodes):
             mid = (nodes[a] + nodes[b]) / 2
@@ -816,14 +823,20 @@ class Scene:
             cv2.circle(
                 self.glow, pt(node), max(1, round(rad * 2)), 1.0, -1, cv2.LINE_AA
             )
-        # Let the threads come and go, as a painter loses and finds an edge.
-        self.strands[y0:y1] *= 0.3 + 0.7 * self.noise(y0, y1, 70 * u)
+        # The threads go into the underdrawing, so the brush paints them too.
+        # They come and go, as a painter loses and finds an edge.
+        soft = cv2.GaussianBlur(self.strands[y0:y1], (0, 0), 1.1 * u)
+        fade = np.clip(self.noise(y0, y1, 70 * u), 0, 1)
+        cover = np.clip(soft * 1.4, 0, 1) * (0.35 + 0.65 * fade)
+        band_ref = self.ref[y0:y1].astype(np.float32)
+        band_ref += cover[:, :, None] * (np.array(THREAD, np.float32) - band_ref)
+        self.ref[y0:y1] = np.clip(band_ref, 0, 255).astype(np.uint8)
         self.glow = cv2.GaussianBlur(self.glow, (0, 0), 9 * u)
 
     def thread(self, path: np.ndarray, wide: float, shine: float) -> None:
-        """Lay one fungal thread as light: a soft strand, and a glow around it."""
+        """Lay one fungal thread: a strand for the brush, and a glow around it."""
         line = [np.round(path).astype(np.int32)]
-        thick = max(1, round(wide * 1.6))
+        thick = max(2, round(wide * 3))
         cv2.polylines(self.strands, line, False, shine, thick, cv2.LINE_AA)
         cv2.polylines(self.glow, line, False, shine * 0.5, thick * 2, cv2.LINE_AA)
 
@@ -1025,11 +1038,6 @@ class Painter:
         ):
             cover = np.clip(light * amount, 0, 1)[:, :, None]
             out += cover * (np.array(tint, np.float32) - out) * 0.9
-        # The fungal threads go on as light, broken up by the paint under them.
-        weave = 0.5 + cv2.GaussianBlur(self.height, (0, 0), 1.0)
-        soft = cv2.GaussianBlur(self.scene.strands, (0, 0), 0.9 * self.scene.u)
-        strand = np.clip(soft * weave * 1.5, 0, 1)[:, :, None]
-        out += strand * (np.array(THREAD, np.float32) - out) * 0.85
         return np.clip(out, 0, 255).astype(np.uint8)
 
 

@@ -42,8 +42,8 @@ Keep it there when you edit.
    first, then finer ones only where the picture still differs from it. Each stroke is a bundle of
    bristles of slightly different color, so it streaks like gouache. Branches, twigs and roots are
    part of the underdrawing, so the brush paints them like everything else; none of them is a
-   ruled line. Only grass and ferns go on last with a fine brush. The sunbeams, the fungal threads
-   and their glow are laid over the top as light.
+   ruled line, and neither are the fungal threads. Only grass and ferns go on last with a fine
+   brush. The sunbeams and the threads' glow are laid over the top as light.
 3. **Cut.** It slices the tall picture into a piece per page section.
 
 ```bash
