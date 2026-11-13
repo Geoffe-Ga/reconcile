@@ -13,8 +13,9 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { base64url } from '../crypto/base64url';
+import { base64url, fromBase64url } from '../crypto/base64url';
 import { sealBackup } from '../crypto/backup';
+import { deriveCoalitionEntryId } from '../crypto/card';
 import { deriveSealKey, deriveWeekMailboxId, weekOf } from '../crypto/groupKeys';
 import { xchachaSeal } from '../crypto/seal';
 import { newSigningKeys } from '../crypto/sign';
@@ -22,6 +23,7 @@ import { parseRecord, type Score, type SignedEvent } from '../engine/event';
 import type { GroupState } from '../engine/fold';
 import { DAY_MINUTES } from '../engine/rules';
 import { createRelay, type Fetch } from '../net/relay';
+import { COALITION_STATEMENT, seatSecret, testSecret } from '../test/coalitions';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { authorOf, signedAs, testKeys, testKx } from '../test/keys';
@@ -29,6 +31,7 @@ import { relayTook } from '../test/outbox';
 import { containsBytes, scanDb } from '../test/scanDb';
 import { LEVELS } from '../engine/capabilities';
 import { clearedArchive, MINUTE_MS, settleDissolve, shownState, sweepArchives } from './archive';
+import { newEntry } from './coalitions';
 import { type BackedUpGroup, type Group, openStore, type Store } from './db';
 import type { PersonalDocument } from './personal';
 import { fetchRelayBackup, startRelayBackup } from './relayBackup';
@@ -490,6 +493,55 @@ describe('sweepArchives', () => {
     await sweepArchives(store, clockAt(START + 400 * DAY_MINUTES));
     expect(await store.getGroup(groupId)).toEqual(archived);
   });
+});
+
+describe('a dissolve beside coalitions (#278, #405)', () => {
+  /** Ana's Proposal to reconcile the group into a coalition, before the dissolve. */
+  const reconcile = (group: Founded) => [
+    signedAs('ana', {
+      type: 'proposal',
+      group: group.genesis.id,
+      ts: TS,
+      body: {
+        target: {
+          kind: 'reconcile',
+          secret: testSecret('coalition'),
+          seat: base64url(seatSecret('A')),
+          ...COALITION_STATEMENT,
+        },
+        title: 'Reconcile',
+        why: 'We share a river.',
+      },
+    }),
+  ];
+
+  it.each([
+    ['wipes it', true, 7],
+    ['clears it', false, 30],
+  ] as const)(
+    'purges what the archive alone held before the launch sweep %s, should the app have closed first',
+    async (_, wipe, days) => {
+      const { store } = await dissolvedDevice(wipe, reconcile);
+      const secret = fromBase64url(testSecret('coalition'));
+      const entry = deriveCoalitionEntryId(secret);
+      // The app closed after archiving the group and before purging the coalition's entry.
+      await store.addGroup(newEntry(secret));
+      const before = await scanDb(DB);
+      expect([before.text.includes(entry), containsBytes(before.bytes, secret)]).toEqual([
+        true,
+        true,
+      ]);
+
+      await sweepArchives(store, clockAt(DISSOLVED + days * DAY_MINUTES));
+
+      expect(await store.listCoalitions()).toEqual([]);
+      const after = await scanDb(DB);
+      expect([after.text.includes(entry), containsBytes(after.bytes, secret)]).toEqual([
+        false,
+        false,
+      ]);
+    },
+  );
 });
 
 describe('settleDissolve', () => {
