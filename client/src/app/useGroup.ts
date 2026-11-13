@@ -92,7 +92,12 @@ export interface GroupView {
    * now, and it isn't a read-only archive, which no backup carries (#108).
    */
   suggestBackup: boolean;
-  /** Whether the store has answered for this group; with `me` still null, the device isn't in it. */
+  /**
+   * Whether the store has answered for this group, and for the device's
+   * coalitions, which its fold and its home read (#334): a screen drawn
+   * before the coalitions would show none, then the rows jump in. With `me`
+   * still null, the device isn't in it.
+   */
   loaded: boolean;
   /** Once this device has cleared a dissolved group's ballots (#108): when, and the tallies it kept. */
   cleared: Pick<ClearedArchive, 'at' | 'tallies'> | null;
@@ -136,8 +141,7 @@ const NO_RECORDS: readonly LogRecord[] = [];
 /** The group `groupId`, kept current as sync and the user change it. */
 export function useGroup(groupId: string): GroupView {
   const { store, sync } = useServices();
-  const { group, loaded } = useStoredGroup(store, groupId);
-  const coalitions = useCoalitions(store);
+  const { group, coalitions, loaded } = useGroupAndCoalitions(store, groupId);
   const reachable = useSyncExternalStore(sync.subscribe, sync.isReachable);
   const state = useMemo(() => {
     if (group === undefined) return null;
@@ -164,23 +168,26 @@ export function useGroup(groupId: string): GroupView {
 
 const NO_CARRIES: readonly CarryPlan[] = [];
 
+/**
+ * The group `groupId` as stored, the device's coalitions, and whether the
+ * store has answered for both (#334): every group screen folds the group
+ * with its coalitions, and Group home lists them, so none shows the group
+ * before it can show them too.
+ */
+function useGroupAndCoalitions(store: GroupServices['store'], groupId: string) {
+  const { group, loaded } = useStoredGroup(store, groupId);
+  const listed = useCoalitionList(store);
+  return { group, coalitions: listed ?? NO_COALITIONS, loaded: loaded && listed !== null };
+}
+
 /** No coalitions: one shared empty list, so it never looks changed. */
 const NO_COALITIONS: readonly HeldCoalition[] = [];
 
 /**
  * Every coalition entry on this device, each with its log folded with the
  * motions it decides from the coalitions above it (#114, #122), read again
- * whenever the store says anything changed.
- */
-export function useCoalitions(
-  store: Pick<GroupServices['store'], 'listCoalitions' | 'subscribe'>,
-): readonly HeldCoalition[] {
-  return useCoalitionList(store) ?? NO_COALITIONS;
-}
-
-/**
- * As {@link useCoalitions}, but null until the store has first answered, so
- * a coalition's screens can tell loading from missing (#120).
+ * whenever the store says anything changed; null until the store has first
+ * answered, so a screen can tell loading from none (#120, #334).
  */
 export function useCoalitionList(
   store: Pick<GroupServices['store'], 'listCoalitions' | 'subscribe'>,
