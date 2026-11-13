@@ -36,8 +36,9 @@
  *     deep-equal. `unchangedExcept` names any other fields left out of that comparison, as a
  *     `recovery-share` (#109) is kept in `recoveryShares` and changes nothing else.
  * - A coalition file (#100), `{kind: "coalition", vectors}`, holds vectors with several logs:
- *   `{name, logs: {coalition: [...], A: [...]}, relayNow, expect: {coalition, A}, report?,
- *   mismatches?, unchangedWithout?}`. Seqs are global, as the relay's one counter is, so `@n`
+ *   `{name, logs: {coalition: [...], A: [...]}, cleared?, relayNow, expect: {coalition, A},
+ *   report?, mismatches?, unchangedWithout?}`, `cleared` naming by log the Proposals whose ballots
+ *   that log's device has cleared (#111, #278). Seqs are global, as the relay's one counter is, so `@n`
  *   names a record in any log. vectors.test.ts folds the coalition log, then each other log, a
  *   member group, with the motions its seat is owed (`motionsFor`), and matches `report` and
  *   `mismatches` against `resultsToReport` and `resultMismatches` for that group's seat.
@@ -129,6 +130,8 @@ export interface FoldVector {
 export interface LogsVector {
   readonly name: string;
   readonly logs: Readonly<Record<string, readonly VectorRecord[]>>;
+  /** By log, the Proposals (by `@seq`) whose ballots its device has cleared (#111, #278). */
+  readonly cleared?: Readonly<Record<string, readonly string[]>>;
   readonly relayNow: number | null;
   readonly expect: Readonly<Record<string, object>>;
   readonly report?: Readonly<Record<string, readonly unknown[]>>;

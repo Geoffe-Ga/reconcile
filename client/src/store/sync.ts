@@ -175,7 +175,16 @@ import { settleDissolve } from './archive';
 import { settleRemoval } from './removal';
 import type { ChatBot } from './chatBot';
 import { type Random, settleCarries } from './carry';
-import { ensureEntries, holdings, settleCoalitions, stillSyncs } from './coalitions';
+import {
+  dropCoalitionsOf,
+  ensureEntries,
+  foldWithCoalitions,
+  type HeldCoalition,
+  heldCoalitions,
+  holdings,
+  settleCoalitions,
+  stillSyncs,
+} from './coalitions';
 import {
   type EventIdOf,
   type Group,
@@ -439,12 +448,14 @@ export function createSync(options: SyncOptions): Sync {
 
   /**
    * Lets go of a group this device has left (#77): notes the DELETEs of its
-   * push registration it owes, sent within the day (#99, #356), then purges it.
+   * push registration it owes, sent within the day (#99, #356), then purges it,
+   * and the coalitions only it held here with it (#278).
    */
   async function letGo(groupId: string): Promise<'left'> {
     const current = await store.getGroup(groupId);
     if (current !== undefined) await push?.forget(current);
     await store.purgeGroup(groupId);
+    if (current !== undefined) await dropCoalitionsOf(store, current);
     return 'left';
   }
 
@@ -734,14 +745,16 @@ export function createSync(options: SyncOptions): Sync {
    * this relay minute, with nothing owed, is skipped, and one that just
    * queued results is settled again on the next pass, which clears by them.
    * A restored copy that goes on in that minute is settled again at once, as
-   * the group it now is.
+   * the group it now is. The group folds with the coalitions' motions its
+   * seats decide (`coalitions`), so its ballots on them expire as its ballots
+   * on its own Proposals do, its result going in its own log first (#278).
    */
-  async function settleExpiry(groupId: string): Promise<void> {
+  async function settleExpiry(groupId: string, coalitions: readonly HeldCoalition[]) {
     const group = await store.getGroup(groupId);
     if (group === undefined || isArchive(group.archived)) return;
     const noted = owed.get(groupId) ?? [];
     if (settled.get(groupId) === settleMark(group) && noted.length === 0) return;
-    const state = foldGroup(group);
+    const state = foldWithCoalitions(group, coalitions);
     const due = resultsDue(state, group);
     const now = due.filter((p) => noted.includes(p.id));
     owed.set(
@@ -785,7 +798,10 @@ export function createSync(options: SyncOptions): Sync {
       // Only after a complete pass: a device that missed records mustn't write a key change.
       if (ok) ok = await eachGroup((group) => rotateIfDue(group.groupId));
       // Then results and expiry (#111), at each group's epoch after any key change.
-      if (ok) ok = await eachGroup((group) => settleExpiry(group.groupId));
+      if (ok) {
+        const coalitions = await heldCoalitions(store);
+        ok = await eachGroup((group) => settleExpiry(group.groupId, coalitions));
+      }
       // Coalitions read their groups as this pass left them (#114).
       if (ok && !halted) ok = await syncCoalitions();
     } catch {
