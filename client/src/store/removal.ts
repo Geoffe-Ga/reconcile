@@ -31,11 +31,12 @@ function removeQueued(group: Group, proposal: string): boolean {
 
 /**
  * Archives `group`, whose fold holds a `remove` of this device's member, as
- * removed (#115), and purges the coalitions only it held here (#278), calling `forget`
- * with it first so its push registration goes, within the day (#99, #356).
- * A restored copy that hasn't heard from its group (#231) sends nothing, so
- * it forgets nothing: `markArchived` drops its registration, which the relay
- * lets expire.
+ * removed (#115), calling `forget` with it first so its push registration
+ * goes, within the day (#99, #356), then purges the coalitions only it held
+ * here (#278). Should the app close between the archive and the purge, the
+ * next pass purges them (`ensureEntries`, #405). A restored copy that
+ * hasn't heard from its group (#231) sends nothing, so it forgets nothing:
+ * `markArchived` drops its registration, which the relay lets expire.
  */
 async function archiveRemoved(store: Store, group: Group, forget: (group: Group) => Promise<void>) {
   if (group.archived === undefined) await forget(group);

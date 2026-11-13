@@ -910,4 +910,28 @@ describe('retiring the coalitions a removed group alone held (#115, #122)', () =
     expect(await store.getGroup(c)).toBeDefined();
     expect(await store.getGroup(d)).toBeUndefined();
   });
+
+  it.each(['removed', 'dissolved'] as const)(
+    'purges them on the next pass when the app closed after archiving the %s group and before purging (#405)',
+    async (reason) => {
+      const store = await device();
+      await nestedOn(store, 'none');
+      await store.markArchived('A', reason);
+      expect(await store.listCoalitions()).toHaveLength(2);
+
+      await ensureEntries(store);
+      expect(await store.listCoalitions()).toEqual([]);
+    },
+  );
+
+  it('keeps on that pass every coalition another group on the device still reaches (#405)', async () => {
+    const store = await device();
+    const { c, d } = await nestedOn(store, 'inner');
+    await store.markArchived('A', 'removed');
+
+    await ensureEntries(store);
+    expect((await store.listCoalitions()).map((entry) => entry.groupId).sort()).toEqual(
+      [c, d].sort(),
+    );
+  });
 });
