@@ -26,10 +26,10 @@
  *   deadline (`engine/nudges.ts`), each once, in the mailbox of the week the
  *   Proposal was received in (#110). The deadline's own week would do worse:
  *   its minute less the vote window is the Proposal's receipt in an earlier
- *   week's mailbox, so the relay could tie the two weeks' ids together. So
- *   does every device of a member a coalition's open motion is open to
- *   (#284), the group folded with the coalitions on the device, at those
- *   minutes shifted by the group's offset for the motion
+ *   week's mailbox, so the relay could tie the two weeks' ids together. Each
+ *   device whose member may vote on a coalition's open motion does the same
+ *   for it (#284), folding the group with the coalitions on the device, at
+ *   those minutes shifted by the group's offset for the motion
  *   (`crypto/nudgeOffset.ts`), so no two groups' nudges for one motion line
  *   up but by chance. The relay keeps one nudge per mailbox and minute.
  * - **Upkeep**, after each sync pass that reached the relay: each group with
@@ -37,9 +37,10 @@
  *   this device's endpoint, the relay's `instance` or the group's mailboxes
  *   change. A registration names each week's mailbox from now to 30 days
  *   on and, before them, the week of each Proposal still open, a coalition's
- *   motion included (#284), where its nudges wait (#110). Then, if the relay's key isn't the one the subscription was made
- *   with (a rebuilt relay), the device subscribes again, and each group's old
- *   endpoint is forgotten as the new one is registered. After a failure the
+ *   motion included (#284), where its nudges wait (#110). Then, if the
+ *   relay's key isn't the one the subscription was made with (a rebuilt
+ *   relay), the device subscribes again, and each group's old endpoint is
+ *   forgotten as the new one is registered. After a failure the
  *   upkeep rests for an hour, so a refusal never repeats every few seconds.
  *
  * Registrations, nudges and forgets take their mailbox only from `mailboxAt`
@@ -303,7 +304,10 @@ export function createPush(options: PushOptions): Push {
     );
   }
 
-  /** True when `group`'s registration needs the relay again for `endpoint`, the coalitions on the device as `coalitions`. */
+  /**
+   * True when `group`'s registration needs the relay again for `endpoint`,
+   * with the coalitions on the device folded as `coalitions`.
+   */
   function isDue(
     group: Group & Required<Pick<Group, 'push'>>,
     endpoint: string | null,
