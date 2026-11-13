@@ -5,9 +5,10 @@
  *
  * - **Choosing.** {@link chooseContacts} takes `t` and the contacts the
  *   picker offered ({@link contactGroups}: current members of the person's
- *   groups, never themselves, by their name in that group). It starts the
- *   relay backup (`startRelayBackup`, #97), since a backup nobody else can
- *   unlock helps no one, splits its key `t` of `n` (`crypto/shares.ts`),
+ *   groups, never themselves nor anyone a removal has passed against, by
+ *   their name in that group). It starts the relay backup
+ *   (`startRelayBackup`, #97), since a backup nobody else can unlock helps
+ *   no one, splits its key `t` of `n` (`crypto/shares.ts`),
  *   and queues one `recovery-share` per contact in the group they share,
  *   sealed to their per-group encryption key (#98). The event names no one,
  *   so the group sees only an opaque box from the person. A contact picked
@@ -51,7 +52,7 @@ import { fromBase64url } from '../crypto/base64url';
 import { isAllowedThreshold } from '../crypto/recoveryPolicy';
 import { isRelayBackupBlob, newScrubBlob } from '../crypto/relayBackup';
 import { newSplitId, openShare, type RecoveryShare, sealShare, splitKey } from '../crypto/shares';
-import { can } from '../engine/capabilities';
+import { can, isOusted } from '../engine/capabilities';
 import { signEvent } from '../engine/event';
 import type { GroupState, SealedShare } from '../engine/fold';
 import { displayName } from '../engine/names';
@@ -166,12 +167,17 @@ function liveState(group: Group, folded?: GroupState): GroupState | null {
   return state.group === null || state.dissolved !== null || !present ? null : state;
 }
 
-/** One group's offers: every other current member with an encryption key, by their name there. */
+/**
+ * One group's offers: every other current member with an encryption key, by
+ * their name there, but no one a removal has passed against, though its
+ * `remove` hasn't landed yet (#360). None at all once one has passed against
+ * this member, who may then only read (`can`, #115).
+ */
 function offersIn(group: Group): OfferGroup | null {
   const state = liveState(group);
   if (state === null || !can(state, group.me.author, 'see-roster')) return null;
   const members = state.members.flatMap(({ author, kx }) =>
-    author === group.me.author || kx === null
+    author === group.me.author || kx === null || isOusted(state, author)
       ? []
       : [{ member: author, name: displayName(state, author) ?? '', kx }],
   );
@@ -181,8 +187,8 @@ function offersIn(group: Group): OfferGroup | null {
 /**
  * The groups the picker lists, in the store's order: each where this member
  * may see the roster, with every other current member a share can be sealed
- * to (one with a `kx`, #98), by their name there. A group with no one to
- * pick is left out.
+ * to (one with a `kx`, #98), by their name there, leaving out anyone a
+ * removal has passed against (#360). A group with no one to pick is left out.
  */
 export function contactGroups(groups: readonly Group[]): ContactGroup[] {
   return groups.flatMap((group) => {
