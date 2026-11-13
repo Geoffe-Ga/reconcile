@@ -14,6 +14,7 @@ import {
   clearedLog,
   COALITION_VECTORS,
   FOLD_VECTORS,
+  type LogsVector,
   NESTED_VECTORS,
   type NestedVector,
   publicKeyNamed,
@@ -1264,12 +1265,17 @@ describe('tally vectors', () => {
   });
 });
 
+/** By log, the Proposals whose ballots that log's device has cleared in `vector` (#111, #278). */
+function clearedIn(vector: LogsVector, ids: Parameters<typeof resolve>[1]) {
+  return resolve(vector.cleared ?? {}, ids) as Record<string, readonly string[]>;
+}
+
 describe('coalition vectors (#100)', () => {
   it.each(COALITION_VECTORS.map((vector) => [vector.name, vector] as const))(
     '%s',
     (_name, vector) => {
       const { logs, ids } = buildLogs(vector);
-      const cleared = resolve(vector.cleared ?? {}, ids) as Record<string, readonly string[]>;
+      const cleared = clearedIn(vector, ids);
       const states = foldLogs(logs, vector.relayNow, cleared);
       for (const [log, expected] of Object.entries(vector.expect)) {
         expect(folded(states, log).state, log).toMatchObject(resolve(expected, ids) as object);
