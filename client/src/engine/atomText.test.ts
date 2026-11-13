@@ -80,6 +80,21 @@ describe('normalizeAtomText', () => {
     expect(normalizeAtomText(' \n\t\n')).toBe('');
   });
 
+  it('ends a line only at LF, so a space or tab before U+2028 or U+2029 stays (#411)', () => {
+    fc.assert(
+      fc.property(
+        line,
+        fc.constantFrom(' ', '\t'),
+        fc.constantFrom('\u2028', '\u2029'),
+        line,
+        (before, gap, separator, after) => {
+          const out = normalizeAtomText(`${before}x${gap}${separator}${after}`);
+          expect(out).toContain(`x${gap}${separator}`);
+        },
+      ),
+    );
+  });
+
   it('is idempotent', () => {
     fc.assert(
       fc.property(anyText, (text) => {
@@ -164,17 +179,26 @@ describe('isHeadingOnly (#103)', () => {
     expect(isHeadingOnly(text)).toBe(expected);
   });
 
+  /** Whether a heading of `depth` over `words` is heading-only exactly when a word follows its `#`s. */
+  function headsOver(depth: number, words: string): void {
+    const text = normalizeAtomText(`${'#'.repeat(depth)} ${words}`);
+    expect(isHeadingOnly(text)).toBe(/\S/u.test(text.slice(depth + 1)));
+  }
+
   it('is true for a heading of any level 1–6 over any one line with a word in it', () => {
     const level = fc.integer({ min: 1, max: 6 });
-    const line = fc
+    // One line as the normalizer reads it, so the breaks are its own and not a list kept here (#411).
+    const oneLine = fc
       .string({ unit: 'grapheme', minLength: 1, maxLength: 20 })
-      .filter((words) => !words.includes('\n') && !words.includes('\r') && words.trim() !== '');
-    fc.assert(
-      fc.property(level, line, (depth, words) => {
-        const text = normalizeAtomText(`${'#'.repeat(depth)} ${words}`);
-        expect(isHeadingOnly(text)).toBe(/\S/u.test(text.slice(depth + 1)));
-      }),
-    );
+      .filter((words) => words.trim() !== '' && /^[^\n]*\n$/u.test(normalizeAtomText(words)));
+    fc.assert(fc.property(level, oneLine, headsOver));
+  });
+
+  it('keeps the space after the #s when the words start with U+2028, which ends no line (#411)', () => {
+    // The property's counterexample at seed 2056568699: a heading of level 1 over U+2028 and "!".
+    expect(normalizeAtomText('# \u2028!')).toBe('# \u2028!\n');
+    headsOver(1, '\u2028!');
+    expect(isHeadingOnly(normalizeAtomText('# \u2028!'))).toBe(true);
   });
 
   it('is false whenever a second line follows the heading', () => {
