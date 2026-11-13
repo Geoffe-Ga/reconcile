@@ -8,14 +8,17 @@ for, and the words sit on paper cards over the painting.
 
 | Layer | What it says |
 |-------|--------------|
-| Sky | The word itself: *Reconcile*, defined, with the two things the page is about |
-| Canopy | Dispatches, and how one travels up by vote ([ADR-0037](../docs/adr/0037-holonic-promotion.md), [ADR-0071](../docs/adr/0071-self-hosting-and-reach.md)) |
-| Canopy, where the boughs cross | Reconciling: groups joining into Coalitions, and Coalitions into wider ones ([ADR-0074](../docs/adr/0074-mvp-scope-revised.md)). It sits just above the trunks, so writing a shared mission statement leads into how Documents change |
-| Trunks | Living Documents, the consent floor ([ADR-0002](../docs/adr/0002-consent-floor-vote-rule.md)) and the three levels ([ADR-0021](../docs/adr/0021-level-names-and-self-selection.md)) |
-| Soil and roots | Local-first, and no list of everyone ([ADR-0001](../docs/adr/0001-local-first-trust-model.md)) |
-| Mycelium | A feed that follows affiliation, not attention ([ADR-0070](../docs/adr/0070-patronage-not-attention.md)) |
+| Sky | The word itself: *Reconcile*, defined, with what a Group can do |
+| Canopy | **Dispatch**, as a case study: news of one talk, voted up from a Group to a Coalition to a bigger one, and where it stops ([ADR-0037](../docs/adr/0037-holonic-promotion.md), [ADR-0071](../docs/adr/0071-self-hosting-and-reach.md)) |
+| Canopy, where the boughs cross | **Reconcile**, as a case study: two Groups that disagree on one thing and share another form a Coalition ([ADR-0074](../docs/adr/0074-mvp-scope-revised.md)) |
+| Trunks | **Documents**, as two short case studies, then how a vote works ([ADR-0002](../docs/adr/0002-consent-floor-vote-rule.md)) and the three levels ([ADR-0021](../docs/adr/0021-level-names-and-self-selection.md)) |
+| Soil and roots | **Privacy**: the risk, then the answer ([ADR-0001](../docs/adr/0001-local-first-trust-model.md)) |
+| Mycelium | Built to pass ideas along, not to hold attention ([ADR-0070](../docs/adr/0070-patronage-not-attention.md)) |
 
-Dispatches and reconciling lead the page. Document governance supports them.
+The page explains each feature through a case study, not a description. The case studies are the
+founder's. Each is broken into small pieces a reader can take in at a glance: numbered steps with
+how each vote came out, two things side by side, lines marked as shared or dividing, and tags.
+Color never carries a meaning alone; the words or a mark say it too.
 
 The copy aims at about a 7th-grade reading level: short sentences, common words, one idea each.
 Keep it there when you edit.
@@ -80,7 +83,8 @@ Check it at a phone width (about 390px) and a desktop width, in light and dark.
   `data:` URLs.
 - **The copy uses the domain vocabulary** in the root `CLAUDE.md`, and the ballot labels match
   `client/src/app/messages.ts`.
-- **Nothing here promises a public directory**, or names a real group.
+- **Nothing here promises a public directory.** The case studies use kinds of group (a sangha,
+  a local chapter), never a real, named one.
 
 ## Open questions
 
