@@ -5,10 +5,13 @@
  * device asks the relay to wake its group's mailbox (`wake=1` on the PUT) for
  * the events other members need to hear of at once: a new Proposal, the
  * ballot that closes one early, since its result is then in, and a Dispatch
- * (#112), which every level follows (ADR-0003). The other two moments, a
- * vote's last day and its result at the deadline, come from nudges the
- * proposer's device schedules (`nudges.ts`). A Dispatch a Proposal carries
- * rides its result's wake, so it needs none of its own.
+ * (#112), which every level follows (ADR-0003). A coalition's motion opened
+ * in a group counts as any Proposal for its early close (#284): the ballot
+ * that closes it in the group wakes it. The other two moments, a vote's last
+ * day and its result at the deadline, come from nudges the proposer's device
+ * schedules, or, for a coalition's motion, each eligible member's
+ * (`nudges.ts`). A Dispatch a Proposal carries rides its result's wake, so it
+ * needs none of its own.
  *
  * Every device marks wakes, whether or not its own push is on: the wake is
  * for the others' phones.

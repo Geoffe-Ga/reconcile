@@ -3,14 +3,17 @@
  * weekly mailbox ids and seal key (`groupKeys.ts`), an invite seed's mailbox
  * id and key (`invite.ts`), a share seed's (`share.ts`, #105), a front
  * door's page, inbox and reply mailboxes (`door.ts`, #121), a link's
- * channels (`link.ts`, #96), a coalition room's entry id (`room.ts`, #125)
- * and a seat's encryption key (`room.ts`, #313) all derive through it, each
- * under a label of its own, so no two ever coincide. Most take an empty salt
- * and 32 bytes of output. A weekly mailbox id's info is bytes, its label then
- * its week (#110). A box's key (`box.ts`, #98) is salted with the two public
- * keys of its X25519 exchange; a link's number and key are salted with the
- * hash of the link's transcript, and its number takes 4 bytes; the key
- * vault's key (`keyVault.ts`, #95) is salted with the passkey's PRF salt.
+ * channels (`link.ts`, #96), a coalition room's entry id (`room.ts`, #125),
+ * a seat's encryption key (`room.ts`, #313) and a group's nudge offset for a
+ * coalition's motion (`nudgeOffset.ts`, #284, `reconcile/v1/nudge-offset`)
+ * all derive through it, each under a label of its own, so no two ever
+ * coincide. Most take an empty salt and 32 bytes of output. A weekly mailbox
+ * id's info is bytes, its label then its week (#110), and a nudge offset's,
+ * its label, a 0x00 byte, then the motion's id; a nudge offset takes 4 bytes.
+ * A box's key (`box.ts`, #98) is salted with the two public keys of its
+ * X25519 exchange; a link's number and key are salted with the hash of the
+ * link's transcript, and its number takes 4 bytes; the key vault's key
+ * (`keyVault.ts`, #95) is salted with the passkey's PRF salt.
  */
 import { hkdf } from '@noble/hashes/hkdf.js';
 import { sha256 } from '@noble/hashes/sha2.js';

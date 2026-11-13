@@ -17,8 +17,9 @@
  *    shows it pending, then folded, and never neither; a pass that fails
  *    between the two posts it again, and the log's dedupe by event id keeps
  *    one. A Proposal, or a ballot after which this device's fold closes one
- *    early, goes with `wake=1` (#99, `engine/wake.ts`), whether or not this
- *    device's own push is on: the wake is for the others' phones;
+ *    early, a coalition's motion included (#284), goes with `wake=1` (#99,
+ *    `engine/wake.ts`), whether or not this device's own push is on: the wake
+ *    is for the others' phones;
  * 3. reads every record after its cursor in each mailbox `pollWeeks` names:
  *    last week's and this week's, and each week since the last sync, once,
  *    back to the last 5. It opens each blob (skipping one that won't open),
@@ -37,7 +38,8 @@
  *    the page of a door no longer open, a dissolved group's included (#108),
  *    and never fails the pass;
  * 7. posts the push nudges due for this device's own open Proposals (#99,
- *    ./push.ts), each once, which likewise never fails the pass. A read-only
+ *    ./push.ts), and for the coalitions' open motions its member may vote on
+ *    (#284), each once, which likewise never fails the pass. A read-only
  *    archive (#108) posts none.
  *
  * After a pass in which every group synced, and unless the loop is halted,
@@ -436,9 +438,11 @@ export function createSync(options: SyncOptions): Sync {
     for (const bytes of current.outbox) {
       if (frozen && !passesFreeze(bytes)) continue;
       // No phone registers under a coalition's or a room's mailboxes (#120, #284), so nothing
-      // there asks to wake one.
+      // there asks to wake one. A group's fold holds the coalitions' motions its seats decide,
+      // so the ballot that closes one early in the group wakes it, as for any Proposal (#284).
       const wake =
-        current.kind === undefined && wakeForRecord((before ??= foldGroup(current)), bytes);
+        current.kind === undefined &&
+        wakeForRecord((before ??= foldWithCoalitions(current, await heldCoalitions(store))), bytes);
       await relay.putBlob(mailbox, seal.seal(mailbox, key, bytes), GROUP_TTL_DAYS, { wake });
       taken.push(bytes);
       if (isLeave(current, bytes)) return { taken, left: true };
