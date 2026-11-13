@@ -39,7 +39,9 @@
  *   against its own encryption key there, and keeps the latest that opens per
  *   (group, person) while both are in the group ({@link heldShares}). It
  *   shows only whose share it holds, and where. #118 reads the share itself
- *   with {@link openHeldShare}.
+ *   with {@link openHeldShare}. It tries each box once a page, keeping only
+ *   whether it opened, and forgets that of a group once the group no longer
+ *   goes on here (#276).
  *
  * A group counts here only while it goes on for this device: its genesis is
  * back, it hasn't dissolved (#108) or turned read-only, this device isn't
@@ -378,12 +380,16 @@ function relayDayOf(groups: readonly Pick<Group, 'relayNow'>[]): number | null {
 
 /**
  * What the app runs after each complete sync pass (`createSync`'s
- * `afterPass`): the relay backup's daily refresh (#97), then the overwrite of
- * any backup id an earlier choice retired (#109).
+ * `afterPass`): first it forgets the share verdicts of each group no longer
+ * on the device as one it goes on in (#276), then the relay backup's daily
+ * refresh (#97), then the overwrite of any backup id an earlier choice
+ * retired (#109).
  */
 export async function afterSyncPass(
   services: RelayBackupServices & { readonly store: RetireServices['store'] },
 ): Promise<void> {
+  // First, from the store alone, so a refresh that fails still lets a gone group's verdicts go.
+  await services.store.listGroups().then(forgetGoneVerdicts, () => undefined);
   await refreshRelayBackup(services);
   await retireOldBackups(services);
 }
@@ -411,20 +417,47 @@ export function recoveryStatus(
 }
 
 /**
- * The verdicts of shares this page has tried, by member, group and event id:
- * whether each opened for that member. They hold no share, only whether one
- * opened, so a store change doesn't open every box again.
+ * The verdicts of shares this page has tried, by membership (member and
+ * group), then event id: whether each opened for that member. They hold no
+ * share, only whether one opened, so a store change doesn't open every box
+ * again. A membership's go once its group no longer goes on here
+ * ({@link forgetGoneVerdicts}, #276), so the map never outgrows the groups
+ * on the device.
  */
-const verdicts = new Map<string, boolean>();
+const verdicts = new Map<string, Map<string, boolean>>();
+
+/** The key {@link verdicts} keeps `group`'s membership under. */
+function membershipOf(group: Pick<Group, 'groupId' | 'me'>): string {
+  return `${group.me.author} ${group.groupId}`;
+}
+
+/**
+ * Forgets the verdicts of every membership but those of `groups`, the
+ * device's groups, that it may still hold shares in (#276). A group it left,
+ * which is gone from the store, and one it is leaving or keeps read-only (a
+ * removal or a dissolve, #108, #115), whose shares it never reads again,
+ * take theirs with them. The sync loop's `afterPass` runs it after every
+ * complete pass ({@link afterSyncPass}), so however a group went, its
+ * verdicts go by the next one.
+ */
+export function forgetGoneVerdicts(groups: readonly Group[]): void {
+  const live = groups.filter(
+    (group) => group.leaving === undefined && group.archived === undefined,
+  );
+  const kept = new Set(live.map(membershipOf));
+  for (const key of verdicts.keys()) if (!kept.has(key)) verdicts.delete(key);
+}
 
 /** Whether `posted` opens for this device's membership of `group`, trying it once per page. */
 function opensHere(group: Group, posted: SealedShare, kxKey: Uint8Array): boolean {
-  const key = `${group.me.author} ${group.groupId} ${posted.id}`;
-  const known = verdicts.get(key);
+  const key = membershipOf(group);
+  const tried = verdicts.get(key) ?? new Map<string, boolean>();
+  verdicts.set(key, tried);
+  const known = tried.get(posted.id);
   if (known !== undefined) return known;
   const share = openShareFrom(group, posted, kxKey);
   share?.share.fill(0);
-  verdicts.set(key, share !== null);
+  tried.set(posted.id, share !== null);
   return share !== null;
 }
 
