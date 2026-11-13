@@ -44,8 +44,9 @@ function dissolveQueued(group: Group): boolean {
 
 /**
  * Settles a dissolve for one group after a pass (#108): archives it once a
- * `dissolve` has folded, and purges the coalitions only it held here (#278),
- * or else, when a dissolve Proposal's pass is final,
+ * `dissolve` has folded, and purges the coalitions only it held here (#278;
+ * if the app closes between the two, the next pass does, `ensureEntries`,
+ * #405), or else, when a dissolve Proposal's pass is final,
  * queues this member's `dissolve`, unless one is queued already, the group is
  * leaving or a restored copy that sends nothing yet (#231), or the fold
  * wouldn't take one from this member (not yet in, or suspended). `clock` is
@@ -114,7 +115,10 @@ function clearMinuteOf(state: GroupState, me: string): number | null {
  * the same way, `ballotExpiryDays` after the `remove`: it no longer syncs, so
  * #111's expiry, which runs in relay time, never reaches it. A restored copy
  * that hasn't heard from its group (#231) is left alone: it still syncs, so
- * #111's expiry clears it. `clock` is the device clock in ms.
+ * #111's expiry clears it. Each first purges the coalitions only it held
+ * here, which its settle does too, in case the app closed before that could
+ * (#278, #405): erased or cleared, its log no longer says which they were.
+ * `clock` is the device clock in ms.
  */
 export async function sweepArchives(store: Store, clock: () => number = Date.now): Promise<void> {
   for (const group of await store.listGroups()) {
@@ -124,11 +128,15 @@ export async function sweepArchives(store: Store, clock: () => number = Date.now
     const minute = Math.floor(now / MINUTE_MS);
     const { dissolved } = state;
     if (dissolved?.wipe === true) {
-      if (minute >= wipeMinute(dissolved)) await store.purgeGroup(group.groupId);
+      if (minute >= wipeMinute(dissolved)) {
+        await dropCoalitionsOf(store, group);
+        await store.purgeGroup(group.groupId);
+      }
       continue;
     }
     const clearAt = clearMinuteOf(state, group.me.author);
     if (clearAt !== null && minute >= clearAt) {
+      await dropCoalitionsOf(store, group);
       await store.clearArchive(group.groupId, clearedArchive(state, now));
     }
   }

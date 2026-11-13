@@ -396,16 +396,19 @@ async function keepEntries(store: Store, held: Set<string>, secrets: readonly Ui
  * folded again; the sync loop keeps one for its life. Then it keeps one for
  * each coalition above them that a coalition entry's sealed reconcile target
  * carries (#122). An entry made now has no log yet, so the one above it
- * follows on a later pass, once its log is in.
+ * follows on a later pass, once its log is in. Last, while the device holds
+ * any coalition, it purges what an archive alone held, should the app have
+ * closed before its settle could ({@link dropArchived}, #405).
  */
 export async function ensureEntries(
   store: Store,
   read: Map<string, string> = new Map(),
 ): Promise<void> {
   const held = new Set((await store.listCoalitions()).map((entry) => entry.groupId));
+  const all = await store.listGroups();
   // A removed member's copy or a dissolved group reads nothing new, a coalition's log included,
   // and no coalition stays on the device through it (#115, #108, #278).
-  const groups = (await store.listGroups()).filter((group) => !isArchive(group.archived));
+  const groups = all.filter((group) => !isArchive(group.archived));
   for (const group of groups) {
     const mark = readMark(group);
     if (read.get(group.groupId) === mark) continue;
@@ -419,6 +422,7 @@ export async function ensureEntries(
     held,
     [...keys.values()].map((k) => k.secret),
   );
+  if (held.size > 0) await dropArchived(store, all, read);
 }
 
 /**
@@ -458,6 +462,23 @@ export async function dropCoalitionsOf(store: Store, lost: Group): Promise<void>
     const entry = entries.find((each) => each.groupId === id);
     if (entry === undefined || entry.following === true || stillReached(id, own, kept)) continue;
     await store.purgeGroup(id);
+  }
+}
+
+/**
+ * Purges what each archive among `groups` alone held ({@link dropCoalitionsOf}),
+ * once for each as `read` last saw it (#405). `settleRemoval` and
+ * `settleDissolve` archive a group and then drop its coalitions, and the app
+ * may close between the two writes; the sync loop never settles an archive
+ * again, so each pass makes sure here.
+ */
+async function dropArchived(store: Store, groups: readonly Group[], read: Map<string, string>) {
+  for (const group of groups) {
+    if (!isArchive(group.archived)) continue;
+    const mark = `${readMark(group)} ${group.archived.reason}`;
+    if (read.get(group.groupId) === mark) continue;
+    await dropCoalitionsOf(store, group);
+    read.set(group.groupId, mark);
   }
 }
 
