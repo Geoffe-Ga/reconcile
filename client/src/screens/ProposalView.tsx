@@ -551,6 +551,7 @@ function Vote({ props, proposal, versions, motion }: VoteProps) {
         <CarriedOrBallot props={props} proposal={proposal} mine={mine} closed={closed}>
           {(carried) => (
             <Ballot
+              // The Proposal's id alone, which no sync changes, so an unsent choice survives one (#354).
               key={proposal.id}
               versions={versions}
               current={comparison.current}
