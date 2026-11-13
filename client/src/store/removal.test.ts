@@ -9,7 +9,7 @@
  * request names any of its weekly mailboxes again (#110). A file holding such a log comes back
  * read-only.
  */
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { base64url, fromBase64url } from '../crypto/base64url';
 import { sealBackup } from '../crypto/backup';
@@ -26,6 +26,7 @@ import { createRelay, type Fetch } from '../net/relay';
 import { COALITION_STATEMENT, seatSecret, testSecret } from '../test/coalitions';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
+import { containsBytes, scanDb } from '../test/scanDb';
 import { authorOf, signedAs, testKeys, testKx } from '../test/keys';
 import { relayTook } from '../test/outbox';
 import { MINUTE_MS, shownState, sweepArchives } from './archive';
@@ -570,8 +571,12 @@ describe('a removal beside ballot expiry (#111)', () => {
 });
 
 describe('a removal beside coalitions (#114)', () => {
-  it('purges the coalition only the removed group held, once its remove folds, and no later loop reads or makes it again (#278)', async () => {
-    const fake = createFakeRelay({ minute: START });
+  /**
+   * Cal's device holding the group, Ana's Proposal to reconcile it into a
+   * coalition in its log, and the vote to remove Cal passed; the coalition's
+   * secret and its entry's id.
+   */
+  async function calInCoalition(fake: FakeRelay) {
     const group = founding();
     const groupId = group.genesis.id;
     const { events, last, remove } = history(group);
@@ -590,11 +595,21 @@ describe('a removal beside coalitions (#114)', () => {
     });
     const device = await openDevice(fake.fetch);
     await keep(device, group, 'cal', [...events, reconcile, last]);
-    const entry = deriveCoalitionEntryId(fromBase64url(testSecret('coalition')));
+    const secret = fromBase64url(testSecret('coalition'));
+    return { device, groupId, remove, secret, entry: deriveCoalitionEntryId(secret) };
+  }
+
+  /** What a raw read of the device's database finds of the coalition's entry `entry`: its id and its `secret`. */
+  async function traces(entry: string, secret: Uint8Array) {
+    const scan = await scanDb(DB);
+    return { id: scan.text.includes(entry), secret: containsBytes(scan.bytes, secret) };
+  }
+
+  it('purges the coalition only the removed group held, once its remove folds, and no later loop reads or makes it again (#278)', async () => {
+    const fake = createFakeRelay({ minute: START });
+    const { device, groupId, remove, secret, entry } = await calInCoalition(fake);
     expect((await device.store.getGroup(entry))?.archived).toBeUndefined();
-    const ids = weeksOf(fromBase64url(testSecret('coalition')));
-    const named = () =>
-      fake.requests.filter((request) => ids.includes(mailboxIn(request.url))).length;
+    const named = () => groupRequests(fake, secret);
     // The control: while Cal is in the group, his device reads the coalition.
     expect(named()).toBeGreaterThan(0);
 
@@ -615,6 +630,53 @@ describe('a removal beside coalitions (#114)', () => {
     expect(await fresh.sync.syncOnce()).toBe(true);
     expect(await fresh.store.getGroup(entry)).toBeUndefined();
     expect(named()).toBe(before);
+  });
+
+  /**
+   * Cal's device, closed between archiving the group as removed and purging
+   * the coalition it alone held: the coalition's entry is still there, as a
+   * raw read of the database finds it (the control).
+   */
+  async function closedBeforePurge(fake: FakeRelay) {
+    const held = await calInCoalition(fake);
+    const { device, groupId, remove, secret, entry } = held;
+    vi.spyOn(device.store, 'purgeGroup').mockRejectedValueOnce(new Error('The app closed.'));
+    await device.store.enqueue(groupId, remove('ben').record);
+    fake.minute += 1;
+    expect(await device.sync.syncOnce()).toBe(false);
+    device.sync.stop();
+    expect((await device.store.getGroup(groupId))?.archived).toEqual({ reason: 'removed' });
+    expect(await traces(entry, secret)).toEqual({ id: true, secret: true });
+    return held;
+  }
+
+  it('purges it on the next pass when the app closed after archiving the group and before purging it (#405)', async () => {
+    const fake = createFakeRelay({ minute: START });
+    const { secret, entry } = await closedBeforePurge(fake);
+
+    // The app opens again, and its first pass purges the entry before it reads anything of it.
+    const opened = await openDevice(fake.fetch);
+    const before = groupRequests(fake, secret);
+    fake.minute += 1;
+    expect(await opened.sync.syncOnce()).toBe(true);
+
+    expect(await opened.store.listCoalitions()).toEqual([]);
+    expect(await traces(entry, secret)).toEqual({ id: false, secret: false });
+    expect(groupRequests(fake, secret)).toBe(before);
+  });
+
+  it('purges it before the launch sweep clears the archive, should no pass have come first (#405)', async () => {
+    const fake = createFakeRelay({ minute: START });
+    const { device, groupId, secret, entry } = await closedBeforePurge(fake);
+    const state = foldGroup((await device.store.getGroup(groupId)) ?? never());
+    const at = removedClearMinute(state.rules, state.removals[0] ?? never()) ?? never();
+
+    // The app opens again, offline, once the archive's ballots are due to clear.
+    await sweepArchives(device.store, () => at * MINUTE_MS);
+
+    expect((await device.store.getGroup(groupId))?.archived?.cleared).toBeDefined();
+    expect(await device.store.listCoalitions()).toEqual([]);
+    expect(await traces(entry, secret)).toEqual({ id: false, secret: false });
   });
 });
 
