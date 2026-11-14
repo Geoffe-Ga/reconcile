@@ -287,7 +287,7 @@ describe('CoalitionHome', () => {
 
     const followers = region('Followers');
     expect(followers).toHaveTextContent(messages.coalitions.shareWarning);
-    const button = within(followers).getByRole('button', { name: 'Share a follow link' });
+    const button = within(followers).getByRole('button', { name: 'Copy a follow link' });
     expect(button).toHaveAccessibleDescription(messages.coalitions.shareWarning);
     await user.click(button);
 
@@ -302,7 +302,7 @@ describe('CoalitionHome', () => {
     expect(await axeViolations()).toEqual([]);
   });
 
-  it('puts Share beside Share a follow link, handing the share sheet a new link alone (#424)', async () => {
+  it('puts Share beside Copy a follow link, handing the share sheet a new link alone (#424)', async () => {
     const user = userEvent.setup();
     const makeFollowLink = vi.fn(() => Promise.resolve('https://reconcile.test/#follow/abc'));
     const share = vi.fn<WebShare>(() => Promise.resolve());
@@ -314,6 +314,12 @@ describe('CoalitionHome', () => {
     );
 
     const followers = region('Followers');
+    // Each button says what it does: one copies, the other opens the share sheet (#456).
+    expect(
+      within(followers)
+        .getAllByRole('button')
+        .map((button) => button.textContent),
+    ).toEqual(['Copy a follow link', 'Share']);
     const shareButton = within(followers).getByRole('button', { name: messages.linkShare.button });
     expect(shareButton).toHaveClass('button-secondary');
     expect(within(followers).getByText(messages.linkShare.chatNote)).toBeVisible();
@@ -330,7 +336,7 @@ describe('CoalitionHome', () => {
     const user = userEvent.setup();
     const makeFollowLink = vi.fn(() => Promise.reject(new Error('offline')));
     render(<CoalitionHome {...props({ view: { ...VIEW, share: true }, makeFollowLink })} />);
-    await user.click(screen.getByRole('button', { name: 'Share a follow link' }));
+    await user.click(screen.getByRole('button', { name: 'Copy a follow link' }));
     expect(
       await within(region('Followers')).findByText(messages.coalitions.shareFailed),
     ).toBeVisible();

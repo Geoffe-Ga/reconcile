@@ -1,9 +1,9 @@
 /**
- * What Share a follow link, Follow and Unfollow do (spec §4 Coalitions,
+ * What making a follow link, Follow and Unfollow do (spec §4 Coalitions,
  * "Following"; ADR-0003, ADR-0021, ADR-0053, ADR-0075 §5; #124), apart from
  * any screen.
  *
- * Share a follow link posts an M2-03 envelope to a fresh follow mailbox: the
+ * Making a follow link posts an M2-03 envelope to a fresh follow mailbox: the
  * coalition secret, a preview, and the coalition's log, never `inner` or a
  * seat secret (`coalition/follow.ts`). Follow keeps the coalition as an entry
  * on this device, marked `following`, and imports the log through sync's
@@ -49,7 +49,7 @@ function isFormed(state: GroupState): boolean {
 }
 
 /**
- * Share a follow link's work (#124): a fresh seed, then the envelope (the
+ * Making a follow link (#124): a fresh seed, then the envelope (the
  * coalition secret, a preview and the coalition's relay-accepted log, never
  * its outbox) sealed under the follow key and posted to the follow mailbox,
  * kept {@link FOLLOW_TTL_DAYS} day. Returns the link only once every PUT has

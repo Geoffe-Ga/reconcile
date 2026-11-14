@@ -1,7 +1,7 @@
 /**
  * A follow link's seed, and what derives from it (spec §3 "Follow seed"; #124).
  *
- * Share a follow link makes 32 random bytes, the link's seed, which travels
+ * A new follow link starts from 32 random bytes, the link's seed, which travels
  * only after `#` in the link. The follow mailbox id and the key its envelope
  * is sealed under derive from the seed through the same HKDF as a group
  * secret's (`hkdf.ts`), under labels of their own, so a seed names no group,

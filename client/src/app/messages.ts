@@ -2333,9 +2333,9 @@ export const messages = {
     followingEyebrow: 'Following',
     /** Between member groups' names under a followed coalition's name: "Riverside Tenants · Oak St Co-op". */
     groupsSeparator: '·',
-    /** Share a follow link (#124; ADR-0053). */
+    /** A follow link (#124; ADR-0053): the button copies one, with Share beside it (#424, #456). */
     followers: 'Followers',
-    share: 'Share a follow link',
+    copyFollowLink: 'Copy a follow link',
     shareWarning:
       'Anyone who opens this link in the next 2 days can read this coalition from then on, including the names its participants chose and which group each comes from. They won’t see inside any member group.',
     shareField: 'Follow link',

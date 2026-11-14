@@ -232,10 +232,10 @@ test('a participant shares a follow link, a stranger follows and unfollows, and 
     await expect(followers).toContainText(
       'Anyone who opens this link in the next 2 days can read this coalition from then on',
     );
-    await followers.getByRole('button', { name: 'Share a follow link' }).click();
+    await followers.getByRole('button', { name: 'Copy a follow link' }).click();
     const link = followers.getByRole('textbox', { name: 'Follow link' });
     await expect(link).toHaveValue(/^https?:\/\/[^#]+\/#follow\/[A-Za-z0-9_-]{43}$/);
-    await expectAccessible(ana, 'Share a follow link');
+    await expectAccessible(ana, 'Copy a follow link');
     followLink = await link.inputValue();
   });
 
