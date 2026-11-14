@@ -1,7 +1,7 @@
 import { Fragment, useMemo } from 'react';
 
 import { messages } from '../messages';
-import { type DiffPart, wordDiff } from './wordDiff';
+import { type DiffPart, wordDiff } from './wordDiffParts';
 
 /** Props for {@link WordDiff}. */
 export interface WordDiffProps {
