@@ -21,7 +21,7 @@ function meterFor(scores: readonly number[], eligible: number, bar: Bar = ORDINA
   const view = render(
     <main>
       <h1>Proposal</h1>
-      <ConsentMeter number={1} tally={version} bar={detail.bar} />
+      <ConsentMeter number={1} tally={version} bar={detail.bar} eligible={eligible} />
     </main>,
   );
   const group = screen.getByRole('group', { name: 'How version 1 stands so far' });
@@ -76,13 +76,27 @@ describe('ConsentMeter', () => {
     const before = meterFor([], 4);
     expect(rooms(before.group)).toEqual([
       ['', '0.0 · Short by 2.0'],
-      ['', '100% · Too many zeros: 99 of 99'],
+      ['', '100% · Too many zeros: 4 of 4'],
     ]);
     before.unmount();
     const after = meterFor([4, 0], 4, ENTRENCHED);
     expect(rooms(after.group)).toEqual([
       ['2.0 · Short by 1.0', '0.0 · Short by 3.0'],
-      ['50% · Too many zeros: 1 of 2', '100% · Too many zeros: 99 of 99'],
+      ['50% · Too many zeros: 1 of 2', '100% · Too many zeros: 4 of 4'],
+    ]);
+  });
+
+  it('keeps the zeros reading’s room for everyone the ballot counts, so 99 scorers or 100 take the same (#417)', () => {
+    const zeroRoom = (scorers: number) => {
+      const meter = meterFor([0, ...many(scorers - 1, 4)], 120);
+      const [, zeros] = Array.from(meter.group.querySelectorAll('.meter-reading'));
+      const room = zeros?.getAttribute('data-room');
+      meter.unmount();
+      return room;
+    };
+    expect([zeroRoom(99), zeroRoom(100)]).toEqual([
+      '100% · Too many zeros: 120 of 120',
+      '100% · Too many zeros: 120 of 120',
     ]);
   });
 

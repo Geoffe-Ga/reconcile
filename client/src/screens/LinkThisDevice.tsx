@@ -116,12 +116,15 @@ function isStopped(step: JoinStep | null): step is Stopped {
   return step !== null && step.kind in STOPPED;
 }
 
-/** "Linked. This device now has <n> groups.", any group left out (#336), and the way to them. */
-function LinkedView({ groups, skipped }: { readonly groups: number; readonly skipped: number }) {
+/**
+ * "Linked. This device now has <n> groups.", any group (#336) or personal
+ * Document (#351) left out, and the way to them.
+ */
+function LinkedView({ step }: { readonly step: Extract<JoinStep, { kind: 'linked' }> }) {
   return (
     <div className="stack">
       <p role="status" className="lede">
-        {messages.link.linked(groups, skipped)}
+        {messages.link.linked(step.groups, step.skipped, step.skippedDocuments)}
       </p>
       <div>
         <Link className="button button-primary" href={routeHref({ name: 'start' })}>
@@ -187,7 +190,7 @@ function Joined({ join, onLinked, onRestart }: JoinedProps) {
     if (linked) onLinked();
   }, [linked, onLinked]);
 
-  if (step?.kind === 'linked') return <LinkedView groups={step.groups} skipped={step.skipped} />;
+  if (step?.kind === 'linked') return <LinkedView step={step} />;
   if (isStopped(step)) return <StoppedView step={step} onRestart={onRestart} />;
   const number = step?.kind === 'compare' ? step.number : null;
   return <WaitingView number={number} unreachable={unreachable} onRestart={onRestart} />;

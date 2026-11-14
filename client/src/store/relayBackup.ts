@@ -401,16 +401,17 @@ function groupTags(own: Snapshot, onRelay: Live, { key, uploadedGroups = [] }: U
  * Whether the relay already holds what an upload of `copy` would, as far as
  * the digest can't tell (#247): it does unless it holds nothing, or a copy
  * whose personal Documents or groups aren't `copy`'s, as when a linked
- * device wrote its own (#327), or one with a group entry this device
- * couldn't read (#336), which the upload leaves out. One this device can't
- * read at all counts as held, as before #247, so only a change here uploads
- * over it.
+ * device wrote its own (#327), or one with a group entry (#336) or a
+ * personal Document (#351) that doesn't check out, which the upload leaves
+ * out. One this device can't read at all counts as held, as before #247, so
+ * only a change here uploads over it.
  */
 function holdsAlready(onRelay: Live, copy: Snapshot): boolean {
   if (onRelay.kind !== 'copy') return onRelay.kind === 'unreadable';
   const planned = [...copy.groups, ...(copy.carried ?? [])];
   return (
     onRelay.skipped === 0 &&
+    onRelay.skippedDocuments === 0 &&
     personalDigest(onRelay.personal) === personalDigest(copy.personal) &&
     sameIds(onRelay.groups, planned)
   );

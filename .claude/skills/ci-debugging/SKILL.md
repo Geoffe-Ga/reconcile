@@ -32,6 +32,8 @@ git diff <last-passing-commit> HEAD
 
 Ask: Did I modify config files? Add dependencies? Change imports or module structure?
 
+`main` runs the full CI nightly, not on each merge, so two earlier PRs that broke only together can first fail in your PR's CI. Don't assume it; prove it. Run the failing check on a clean checkout of `origin/main`, or read `main`'s latest nightly run: `gh run list --workflow ci.yml --branch main --event schedule --limit 1`. Only a failure on `main` itself is pre-existing.
+
 ### Step 2: Read the Actual Error (5 minutes)
 
 ```bash

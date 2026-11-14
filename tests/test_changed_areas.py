@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess  # nosec B404 - runs our own script and git in a temp repo
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import pytest
 import yaml
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "scripts" / "changed-areas.sh"
@@ -109,6 +114,13 @@ def test_all_flag_checks_every_area(repo: Path) -> None:
         ("pyproject.toml", {"python"}),
         ("scripts/check-all.sh", set(AREAS)),
         (".github/workflows/ci.yml", set(AREAS)),
+        # tests/ checks every workflow: test_workflows.py, test_code_review_workflow.py.
+        (".github/workflows/code-review.yml", {"python"}),
+        (".github/workflows/graph-docs.yml", {"python"}),
+        # The merge recap is Python with its own tests, and no other area runs it.
+        ("scripts/ralph/recap.py", {"python"}),
+        # The graph scripts feed graph-build.yml and graph-docs.yml, never a gate.
+        ("scripts/graph/build.sh", set()),
         ("an-unrecognized-file", set(AREAS)),
         ("README.md", set()),
         (".gitignore", set()),
@@ -150,6 +162,39 @@ def test_ci_gates_every_area_on_its_own_check_all_job() -> None:
         assert gated[0] in jobs["gate"]["needs"]
 
 
+def _ci_areas_step(repo: Path, force_all: str, base_ref: str) -> dict[str, str]:
+    """Run ci.yml's own area step in repo, with the env Actions would give it."""
+    steps = yaml.safe_load(CI.read_text(encoding="utf-8"))["jobs"]["changes"]["steps"]
+    script = next(step["run"] for step in steps if step.get("id") == "areas")
+    env = {k: v for k, v in os.environ.items() if k != "BASE_REF"}
+    env.update(FORCE_ALL=force_all, BASE_REF=base_ref, GITHUB_OUTPUT=os.devnull)
+    out = subprocess.run(  # nosec B603 - fixed argv, no shell
+        [BASH, "--noprofile", "--norc", "-eo", "pipefail", "-c", script],
+        cwd=repo,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    return dict(line.split("=", 1) for line in out.split())
+
+
+def test_ci_area_step_checks_everything_when_it_has_no_base(repo: Path) -> None:
+    """A run on main with no base (a nightly one) checks every area.
+
+    The router alone diffs main against itself there and finds nothing, so
+    the step must not hand it an empty base.
+    """
+    assert _areas(repo, "") == NONE
+    assert _ci_areas_step(repo, force_all="false", base_ref="") == EVERY
+
+
+def test_ci_area_step_obeys_force_all_and_a_prs_base(repo: Path) -> None:
+    """FORCE_ALL runs every area; otherwise a PR's docs-only diff runs none."""
+    assert _ci_areas_step(repo, force_all="true", base_ref="HEAD~1") == EVERY
+    assert _ci_areas_step(repo, force_all="false", base_ref="HEAD~1") == NONE
+
+
 def test_ci_e2e_job_installs_and_runs_both_browsers() -> None:
     """CI's e2e job installs Chromium and WebKit and never narrows the run.
 
@@ -160,3 +205,46 @@ def test_ci_e2e_job_installs_and_runs_both_browsers() -> None:
     runs = "\n".join(step.get("run", "") for step in job["steps"])
     assert "npx playwright install --with-deps chromium webkit" in runs
     assert "E2E_PROJECTS" not in CI.read_text(encoding="utf-8")
+
+
+def _step_index(steps: list[dict[str, Any]], found: Callable[[Any], bool]) -> int:
+    """The index of the one step ``found`` accepts."""
+    matches = [i for i, step in enumerate(steps) if found(step)]
+    assert len(matches) == 1, matches
+    return matches[0]
+
+
+def test_ci_e2e_job_restores_the_browsers_it_installs(tmp_path: Path) -> None:
+    """The e2e job restores Playwright's browsers before it installs them.
+
+    The key names the locked Playwright version, the runner's Ubuntu (WebKit is
+    built for each release) and both browsers, so a new one of any never reuses
+    old builds. The install still runs on a hit: it downloads nothing then, and
+    adds the system packages the browsers need.
+    """
+    steps = yaml.safe_load(CI.read_text(encoding="utf-8"))["jobs"]["e2e"]["steps"]
+    cache = _step_index(
+        steps, lambda s: s.get("with", {}).get("path") == "~/.cache/ms-playwright"
+    )
+    install = _step_index(steps, lambda s: "playwright install" in s.get("run", ""))
+    name = _step_index(steps, lambda s: s.get("id") == "browsers")
+    assert name < cache < install
+    assert steps[cache]["uses"].startswith("actions/cache@")
+    assert steps[cache]["with"]["key"] == "${{ steps.browsers.outputs.key }}"
+
+    output = tmp_path / "output"
+    subprocess.run(  # nosec B603 - fixed argv, no shell
+        [BASH, "-euo", "pipefail", "-c", steps[name]["run"]],
+        cwd=ROOT,
+        env={
+            "PATH": os.environ["PATH"],
+            "ImageOS": "ubuntu26",
+            "GITHUB_OUTPUT": str(output),
+        },
+        check=True,
+    )
+    lock = json.loads((ROOT / "client" / "package-lock.json").read_text("utf-8"))
+    version = lock["packages"]["node_modules/playwright-core"]["version"]
+    assert output.read_text("utf-8") == (
+        f"key=playwright-{version}-ubuntu26-chromium-webkit\n"
+    )

@@ -255,11 +255,15 @@ function onlyFollows(held: HeldCoalition, members: readonly MemberGroup[]): bool
 
 /**
  * Whether this person may share a follow link (#124): they take part in the
- * formed coalition, bound to a seat. A follower holds no binding: they read
- * at the Member level, which doesn't invite.
+ * formed coalition, bound to a seat, and don't only follow it. A follower
+ * reads at the Member level, which doesn't invite. Their key is a fresh one
+ * no join binds, so the binding alone would turn them away today; the check
+ * says so outright, so a change that reused a key can't offer them the
+ * share (#364).
  */
 function maySharePerson(held: HeldCoalition): boolean {
   const { entry, state } = held;
+  if (entry.following === true) return false;
   const bound = state.coalition?.bindings.some((b) => b.author === entry.me.author) ?? false;
   return bound && state.coalition?.status === 'formed';
 }

@@ -13,7 +13,9 @@ import { UnlockScreen, type UnlockScreenProps } from './UnlockScreen';
 function setup(props: Partial<UnlockScreenProps> = {}) {
   const all: UnlockScreenProps = {
     onUnlock: vi.fn(() => Promise.resolve(false)),
-    onRestore: vi.fn(() => Promise.resolve({ groups: 1, skipped: 0, older: false })),
+    onRestore: vi.fn(() =>
+      Promise.resolve({ groups: 1, skipped: 0, skippedDocuments: 0, older: false }),
+    ),
     onErase: vi.fn(() => new Promise<void>(() => undefined)),
     ...props,
   };

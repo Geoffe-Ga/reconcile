@@ -4,14 +4,16 @@
  *
  * Playwright's `webServer` can't be stopped while tests run, and the
  * relay-learns-nothing spec (#71) must stop the relay before it scans what
- * the relay left on disk. So each test starts its own: on the port, SQLite
- * file and log file that `scripts/e2e.sh` chose (`RECONCILE_RELAY_PORT`,
- * `RECONCILE_RELAY_DB`, `E2E_RELAY_LOG`), stopped with SIGTERM, the way
- * systemd stops it, when the test is done. Every test shares the one
- * database, so a later scan reads every earlier test's blobs too.
+ * the relay left on disk. So each test starts its own: on its worker's port,
+ * SQLite file and log file, which `scripts/e2e.sh` chose (`E2E_RELAY_PORTS`,
+ * `E2E_RELAY_DIR`), stopped with SIGTERM, the way systemd stops it, when the
+ * test is done. Every test on a worker shares that worker's database, so a
+ * later scan reads every blob the worker's earlier tests left too. No worker
+ * reaches another's relay, database or log.
  */
 import { type ChildProcess, spawn } from 'node:child_process';
 import { closeSync, existsSync, openSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
@@ -27,12 +29,24 @@ const STOP_MS = 10_000;
 /** The wait between health checks. */
 const POLL_MS = 100;
 
-/** Where the relay keeps its data and writes its output, as `scripts/e2e.sh` set them. */
+/** Where a relay keeps its data and writes its output. */
 export interface RelayFiles {
   /** The SQLite file. Its `-wal` and `-shm` files sit beside it while it runs. */
   readonly db: string;
   /** The file that gets the relay's stdout and stderr. */
   readonly log: string;
+}
+
+/** One worker's relay: the port it listens on, and its files. */
+export interface RelaySlot extends RelayFiles {
+  readonly port: string;
+}
+
+/** One Playwright worker's servers: its own `vite preview` and its own relay. */
+export interface WorkerServers {
+  /** The port its `vite preview` listens on, which proxies /v1 to its relay. */
+  readonly web: string;
+  readonly relay: RelaySlot;
 }
 
 /** A relay this test started. */
@@ -50,9 +64,41 @@ export function required(name: string): string {
   return value;
 }
 
-/** The relay's files for this run. */
-export function relayFiles(): RelayFiles {
-  return { db: required('RECONCILE_RELAY_DB'), log: required('E2E_RELAY_LOG') };
+/** The space-separated ports in `name`, one per worker, as `scripts/e2e.sh` set them. */
+function ports(name: string): string[] {
+  return required(name)
+    .split(' ')
+    .filter((port) => port !== '');
+}
+
+/**
+ * Every worker's servers, in worker order: `scripts/e2e.sh` chose a web port
+ * and a relay port for each, and one directory for every relay's files.
+ */
+export function workerServers(): WorkerServers[] {
+  const web = ports('E2E_WEB_PORTS');
+  const relay = ports('E2E_RELAY_PORTS');
+  const dir = required('E2E_RELAY_DIR');
+  return web.map((port, index) => {
+    const relayPort = relay[index];
+    if (relayPort === undefined || relay.length !== web.length) {
+      throw new Error('E2E_WEB_PORTS and E2E_RELAY_PORTS must name one port for each worker.');
+    }
+    const files = join(dir, `relay-${String(index)}`);
+    return { web: port, relay: { port: relayPort, db: `${files}.db`, log: `${files}.log` } };
+  });
+}
+
+/** The servers of the worker Playwright numbers `parallelIndex`. */
+export function serversOf(servers: readonly WorkerServers[], parallelIndex: number): WorkerServers {
+  const own = servers[parallelIndex];
+  if (own === undefined) {
+    throw new Error(
+      `No servers for worker ${String(parallelIndex)}: scripts/e2e.sh started ` +
+        `${String(servers.length)}. Set E2E_WORKERS rather than passing --workers.`,
+    );
+  }
+  return own;
 }
 
 /** The end of the relay's log, for an error message. The relay logs no requests. */
@@ -69,12 +115,15 @@ interface RelayProcess {
   readonly failure: () => Error | null;
 }
 
-/** Runs `scripts/relay.sh`, sending its stdout and stderr to `log`. */
-function spawnRelay(log: string): RelayProcess {
-  const output = openSync(log, 'a');
+/** Runs `scripts/relay.sh` on the slot's port and database, sending its stdout and stderr to its log. */
+function spawnRelay(slot: RelaySlot): RelayProcess {
+  const output = openSync(slot.log, 'a');
   let child: ChildProcess;
   try {
-    child = spawn(RELAY_SH, [], { stdio: ['ignore', output, output] });
+    child = spawn(RELAY_SH, [], {
+      stdio: ['ignore', output, output],
+      env: { ...process.env, RECONCILE_RELAY_PORT: slot.port, RECONCILE_RELAY_DB: slot.db },
+    });
   } finally {
     closeSync(output);
   }
@@ -100,9 +149,9 @@ function isDown({ child, failure }: RelayProcess): boolean {
 async function waitUntilHealthy(
   request: APIRequestContext,
   relay: RelayProcess,
-  log: string,
+  { port, log }: RelaySlot,
 ): Promise<void> {
-  const url = `http://127.0.0.1:${required('RECONCILE_RELAY_PORT')}/v1/health`;
+  const url = `http://127.0.0.1:${port}/v1/health`;
   const deadline = Date.now() + START_MS;
   while (Date.now() < deadline) {
     if (isDown(relay)) {
@@ -135,17 +184,19 @@ async function shutDown(relay: RelayProcess): Promise<void> {
   }
 }
 
-/** Starts the relay with `scripts/relay.sh`, appending its output to the run's log file. */
-export async function startRelay(request: APIRequestContext): Promise<RunningRelay> {
-  const files = relayFiles();
-  const relay = spawnRelay(files.log);
+/** Starts a worker's relay with `scripts/relay.sh`, appending its output to the worker's log file. */
+export async function startRelay(
+  request: APIRequestContext,
+  slot: RelaySlot,
+): Promise<RunningRelay> {
+  const relay = spawnRelay(slot);
   let stopping: Promise<void> | null = null;
   const stop = (): Promise<void> => (stopping ??= shutDown(relay));
   try {
-    await waitUntilHealthy(request, relay, files.log);
+    await waitUntilHealthy(request, relay, slot);
   } catch (error) {
     await stop();
     throw error;
   }
-  return { ...files, stop };
+  return { db: slot.db, log: slot.log, stop };
 }

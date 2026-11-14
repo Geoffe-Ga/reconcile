@@ -112,6 +112,7 @@ describe('restoreBackup', () => {
     expect(await restoreBackup(second.services, bytes, PASSPHRASE)).toEqual({
       groups: 1,
       skipped: 0,
+      skippedDocuments: 0,
       older: false,
     });
 

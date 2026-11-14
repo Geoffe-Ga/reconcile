@@ -12,7 +12,7 @@ const CODE = `RR1.${'A'.repeat(64)}`;
 const SHOWN = { code: CODE, check: '304118', number: '966043' };
 const WAITING: RecoverStep = { kind: 'waiting', shares: 0, needed: null, mismatched: 0 };
 const FOUND: RecoverStep = { kind: 'found', groups: ['Riverside Tenants', 'سكن النهر'] };
-const RESTORED: RecoverStep = { kind: 'restored', groups: 2, skipped: 0 };
+const RESTORED: RecoverStep = { kind: 'restored', groups: 2, skipped: 0, skippedDocuments: 0 };
 
 function renderStart(overrides: Partial<RecoverStartProps> = {}) {
   const props: RecoverStartProps = {

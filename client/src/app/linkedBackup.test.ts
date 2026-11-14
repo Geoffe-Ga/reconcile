@@ -443,16 +443,20 @@ describe('a group entry planted in the relay copy that doesn’t check out (#336
       await plant(fake, key, entry);
 
       const { device, restored } = await restoring(fake, key);
-      expect(restored).toEqual({ groups: 2, skipped: 1 });
+      expect(restored).toEqual({ groups: 2, skipped: 1, skippedDocuments: 0 });
       expect(await groupIds(device)).toEqual(all);
       expect(await titles(device)).toEqual(['What I stand for']);
 
       // The laptop holds neither the planted group nor the phone's join: it carries the join, not the plant.
       await nextDay(fake, laptop);
-      expect((await restoring(fake, key)).restored).toEqual({ groups: 2, skipped: 0 });
+      expect((await restoring(fake, key)).restored).toEqual({
+        groups: 2,
+        skipped: 0,
+        skippedDocuments: 0,
+      });
       await nextDay(fake, phone);
       const again = await restoring(fake, key);
-      expect(again.restored).toEqual({ groups: 2, skipped: 0 });
+      expect(again.restored).toEqual({ groups: 2, skipped: 0, skippedDocuments: 0 });
       expect(await groupIds(again.device)).toEqual(all);
     },
   );

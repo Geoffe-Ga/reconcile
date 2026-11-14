@@ -141,11 +141,12 @@ describe('ProgressLine’s room on a vote’s page (#407)', () => {
     result: null,
   }));
 
-  /** The line `value` shows on a vote's page, and the room it keeps. */
+  /** The line `value` shows on a vote's page, and the rooms it keeps. */
   function roomFor(value: Progress) {
     const { container } = render(<ProgressLine progress={value} />);
     const line = container.querySelector('.coalition-progress-line');
-    return { text: line?.textContent, room: line?.getAttribute('data-room'), line };
+    const alt = line?.getAttribute('data-room-alt');
+    return { text: line?.textContent, room: line?.getAttribute('data-room'), alt, line };
   }
 
   it('keeps the line every group still waiting takes, so one fewer moves nothing below it', () => {
@@ -154,12 +155,26 @@ describe('ProgressLine’s room on a vote’s page (#407)', () => {
     expect(later.room).toBe(
       '0 of 3 groups have passed. Waiting for Riverside Tenants, Oak St Co-op and Elm Row.',
     );
+    expect(later.alt).toBe('Your group didn’t pass this. Waiting for 3 more groups.');
     expect(later.line).toHaveClass('steady');
   });
 
-  it('keeps the longest a two-thirds motion can say: its own group’s fail, at 5 groups', () => {
+  it('keeps both a two-thirds motion’s widest line and its own group’s fail, at 5 groups', () => {
     const five = progress({ seats: 5, needed: 4, passed: 1, deciding: ['Pine Row'], groups });
-    expect(roomFor(five).room).toBe('Your group didn’t pass this. Waiting for 4 more groups.');
+    expect([roomFor(five).room, roomFor(five).alt]).toEqual([
+      'Needs 4 of 5 · 5 passed, 5 didn’t',
+      'Your group didn’t pass this. Waiting for 4 more groups.',
+    ]);
+  });
+
+  it('keeps both lines whatever their glyphs, so the wider wins where the longer wouldn’t (#417)', () => {
+    const wide = ['東京住宅', '大阪借家'].map((name) => ({ name, result: null }));
+    const two = progress({ seats: 2, needed: 2, deciding: wide.map((g) => g.name), groups: wide });
+    const kept = roomFor(two);
+    // Fewer characters than the fail line, but wider glyphs: both stay in the room.
+    expect(kept.room?.length).toBeLessThan(kept.alt?.length ?? 0);
+    expect(kept.room).toBe('0 of 2 groups have passed. Waiting for 東京住宅 and 大阪借家.');
+    expect(kept.alt).toBe('Your group didn’t pass this. Waiting for 2 more groups.');
   });
 
   it('keeps a pass’s day until it is final, and an outcome’s own sentence', () => {
@@ -168,7 +183,10 @@ describe('ProgressLine’s room on a vote’s page (#407)', () => {
       `${messages.coalitions.takesEffect} ${day}.`,
     );
     const fail = progress({ outcome: 'fail', failed: 1, groups });
-    expect(roomFor(fail).room).toBe(messages.coalitions.failedEvery);
+    expect([roomFor(fail).room, roomFor(fail).alt]).toEqual([
+      messages.coalitions.failedEvery,
+      null,
+    ]);
   });
 
   it('keeps no room inline, in a card’s link', () => {
