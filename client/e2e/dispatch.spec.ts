@@ -8,7 +8,8 @@
  * Document. Kim's Group home leads with it, See all lists it, and Open takes
  * her to the Document. Then Ana proposes a change that carries a Dispatch,
  * her ballot passes it, and Kim reads "Updated: House rules" from the
- * Proposal.
+ * Proposal. Kim then founds a group of her own and sends it a Dispatch, and
+ * Discover lists all three, each under its group's name (#429).
  *
  * Every request either profile sends is captured: the Dispatch's PUT asks
  * the relay for its content-free wake (`wake=1`), and no request carries the
@@ -50,6 +51,9 @@ const GROUP = 'Riverside Tenants';
 const TITLE = 'House rules';
 const PHONE = { width: 390, height: 844 };
 const PROPOSAL = 'Later quiet hours';
+/** Kim's own group, and the Dispatch she sends it (#429). */
+const OWN_GROUP = 'Oak St Allotments';
+const OWN_DISPATCH = 'Seeds are in';
 
 /** axe on what `person` sees, in the light theme and then the dark one, ending where it began. */
 async function inBothThemes(person: Person, screen: string, start: 'light' | 'dark') {
@@ -196,6 +200,36 @@ test('a Co-Creator’s Dispatch reaches a Member who follows, and no request car
   const { secret } = await onlyGroup(kim.page);
   // Its weekly mailboxes (#110), whichever week this run fell in.
   const mailboxes = groupMailboxes(Uint8Array.from(secret));
+
+  await test.step('Kim, now in two groups, reads both groups’ Dispatches on Discover', async () => {
+    const { page } = kim;
+    await page.goto('/#/');
+    await foundGroup(page, {
+      name: OWN_GROUP,
+      title: 'Plot rules',
+      atoms: ['Water at dawn.'],
+      founder: 'Kim',
+    });
+    const dispatches = page.getByRole('region', { name: 'Dispatches', exact: true });
+    await dispatches.getByRole('link', { name: 'Send a Dispatch' }).click();
+    await page.getByRole('textbox', { name: 'Title' }).fill(OWN_DISPATCH);
+    await page.getByRole('button', { name: 'Send Dispatch' }).click();
+    await expect(page.getByRole('article').filter({ hasText: OWN_DISPATCH })).toContainText(
+      'From Kim',
+    );
+    await page.goto('/#/discover');
+    const feed = page.getByRole('list', { name: 'Dispatches from your groups and coalitions' });
+    // All three land within a relay minute or so, where ties go by id: the order itself is
+    // pinned in src/app/discoverFeed.test.ts, so this checks each card and where it's from.
+    await expect(feed.getByRole('article')).toHaveCount(3, { timeout: 15_000 });
+    const from = (title: string) =>
+      feed.getByRole('article').filter({ hasText: title }).locator('.dispatch-from');
+    await expect(from(OWN_DISPATCH)).toHaveText(OWN_GROUP);
+    await expect(from(`Updated: ${TITLE}`)).toHaveText(GROUP);
+    await expect(from(CANARY.title)).toHaveText(GROUP);
+    await expect(feed.getByRole('link', { name: OWN_GROUP })).toHaveAttribute('href', /^#\/g\//);
+    await inBothThemes(kim, 'Discover, two groups’ Dispatches', 'dark');
+  });
 
   await test.step('the stopped relay’s database, WAL, shared memory and log hold no trace', async () => {
     for (const { page } of [ana, kim]) await page.context().setOffline(true);
