@@ -1,9 +1,9 @@
-import { type SyntheticEvent, useRef, useState } from 'react';
+import { type ReactNode, type SyntheticEvent, useRef, useState } from 'react';
 import { Button, Form, Link } from 'react-aria-components';
 
 import { CopyLink } from '../app/CopyLink';
 import { messages } from '../app/messages';
-import type { CardValues } from '../app/reconcile';
+import type { CardGroup, CardValues } from '../app/reconcile';
 import type { SharePort } from '../app/share';
 import { type Route, routeHref } from '../app/router';
 import { sectionsCheck, sectionsPreview } from '../app/sectionsPreview';
@@ -12,6 +12,7 @@ import { BackLink, Field, PageHeader } from '../app/ui';
 import { WHY_MAX } from '../engine/fold';
 import { NAME_MAX } from '../invite/envelope';
 import { nfcLength } from '../engine/text';
+import { GroupPicker } from './BringCard';
 
 /** Where making a card got to: refused as too large, or queued with its post still to run. */
 export type CardStep =
@@ -138,10 +139,14 @@ interface FormProps {
   readonly refused: Record<string, string>;
   /** The hints under the name, the statement and Why: a group's, or a coalition's (#122). */
   readonly hints: Pick<ReturnType<typeof wordsFor>, 'nameHint' | 'statementHint' | 'whyHint'>;
+  /** What comes first in the form: at a front door, the group it's from (#426). */
+  readonly lead?: ReactNode;
+  /** Submit's words, Make the card unless given. */
+  readonly submit?: string;
 }
 
 /** The coalition's name, its first statement, why, and your name in it. */
-function CardForm({ onSubmit, refused, hints }: FormProps) {
+function CardForm({ onSubmit, refused, hints, lead, submit: label = card.submit }: FormProps) {
   const [statement, setStatement] = useState('');
   const submit = (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -149,6 +154,7 @@ function CardForm({ onSubmit, refused, hints }: FormProps) {
   };
   return (
     <Form className="form" onSubmit={submit} validationErrors={refused}>
+      {lead}
       <Field
         name="name"
         label={card.nameLabel}
@@ -184,15 +190,15 @@ function CardForm({ onSubmit, refused, hints }: FormProps) {
         validate={checkYourName}
       />
       <Button type="submit" className="button button-primary">
-        {card.submit}
+        {label}
       </Button>
     </Form>
   );
 }
 
 /** "Making the card…", or why there's no card yet, with Try again. */
-function Unsent({ phase, onRetry }: { readonly phase: Phase; readonly onRetry: () => void }) {
-  if (phase.kind === 'posting') {
+function Unsent({ posting, onRetry }: { readonly posting: boolean; readonly onRetry: () => void }) {
+  if (posting) {
     return (
       <p role="status" className="status">
         {card.making}
@@ -272,7 +278,7 @@ export function ReconcileCard(props: ReconcileCardProps) {
       ) : null}
       {phase.kind === 'posting' || phase.kind === 'unsent' ? (
         <Unsent
-          phase={phase}
+          posting={phase.kind === 'posting'}
           onRetry={() => {
             post(phase.step);
           }}
@@ -287,6 +293,166 @@ export function ReconcileCard(props: ReconcileCardProps) {
           sharing={sharing}
           coalitionId={coalitionId}
         />
+      ) : null}
+    </main>
+  );
+}
+
+/** Where making a card at a front door got to (#426): refused as too large, or queued with its post to run. */
+export type DoorCardStep =
+  | { readonly kind: 'too-large' }
+  | {
+      readonly kind: 'queued';
+      /** The picked group's reconcile Proposal. */
+      readonly proposalId: string;
+      /** Sends the card and leaves it at the door; rejects when the relay can't be reached. */
+      readonly post: () => Promise<void>;
+    };
+
+/** Props for {@link ReconcileAtDoor}. */
+export interface ReconcileAtDoorProps {
+  /** The door's group's name, as its page shows it. */
+  readonly doorName: string;
+  /** This device's groups that may propose reconciling with it, first picked to start. */
+  readonly groups: readonly CardGroup[];
+  /** Queues the picked group's reconcile Proposal, from valid entries. */
+  readonly onMake: (groupId: string, values: CardValues) => Promise<DoorCardStep>;
+  /** Back to the door's page, sending nothing. */
+  readonly onBack: () => void;
+}
+
+/** Where Propose reconciling is: the form, posting, a post that failed, or sent. */
+type DoorPhase =
+  | { readonly kind: 'form' }
+  | {
+      readonly kind: 'posting' | 'unsent' | 'sent';
+      readonly step: DoorQueued;
+      readonly groupId: string;
+    };
+
+type DoorQueued = Extract<DoorCardStep, { kind: 'queued' }>;
+
+/** A line of `parts` around the door's group's name, in its own `<bdi>`. */
+function AroundName(props: {
+  readonly parts: { readonly before: string; readonly after: string };
+  readonly name: string;
+}) {
+  const { parts, name } = props;
+  return (
+    <>
+      {parts.before} <bdi>{name}</bdi>
+      {parts.after}
+    </>
+  );
+}
+
+/** "Your card is at <group>'s front door. …", and the way to the group's own Proposal. */
+function DoorSent(props: {
+  readonly doorName: string;
+  readonly groupId: string;
+  readonly proposalId: string;
+}) {
+  const { doorName, groupId, proposalId } = props;
+  return (
+    <div className="stack">
+      <p role="status" className="lede">
+        <AroundName parts={card.doorSent} name={doorName} />
+      </p>
+      <p>
+        <Link className="forward-link" href={routeHref({ name: 'proposal', groupId, proposalId })}>
+          {card.proposalLink}
+          <span aria-hidden="true">{messages.app.forward}</span>
+        </Link>
+      </p>
+    </div>
+  );
+}
+
+/**
+ * Propose reconciling with this group (#426; ADR-0077 §5), from another
+ * group's front door: which of this person's groups it's from, as Bring a
+ * card's radio offers them, then Reconcile with another group's own fields.
+ * Submit queues that group's reconcile Proposal, then sends the card and
+ * leaves it at the door; only once the relay holds both does it say so,
+ * with the way to the Proposal. When posting fails, the Proposal stays
+ * queued and Try again sends the card again. Under the eyebrow "Front door",
+ * like the door's page, and the tab's title never carries a group's name.
+ */
+export function ReconcileAtDoor({ doorName, groups, onMake, onBack }: ReconcileAtDoorProps) {
+  const busy = useRef(false);
+  const [groupId, setGroupId] = useState(groups[0]?.groupId ?? '');
+  const [phase, setPhase] = useState<DoorPhase>({ kind: 'form' });
+  const [refused, setRefused] = useState<Record<string, string>>({});
+
+  const post = (step: DoorQueued, from: string) => {
+    setPhase({ kind: 'posting', step, groupId: from });
+    step.post().then(
+      () => {
+        setPhase({ kind: 'sent', step, groupId: from });
+      },
+      () => {
+        setPhase({ kind: 'unsent', step, groupId: from });
+      },
+    );
+  };
+
+  const make = async (form: HTMLFormElement, statement: string) => {
+    if (busy.current) return;
+    busy.current = true;
+    setRefused({});
+    const from = groupId;
+    const step = await onMake(from, readValues(form, statement)).finally(() => {
+      busy.current = false;
+    });
+    if (step.kind === 'too-large') setRefused({ statement: card.tooLarge });
+    else post(step, from);
+  };
+
+  const picker = (
+    <GroupPicker
+      groups={groups}
+      value={groupId}
+      onChange={setGroupId}
+      words={{ label: card.doorGroupLabel, hint: card.doorGroupHint }}
+    />
+  );
+  return (
+    <main className="shell">
+      <div>
+        <Button className="back-link door-back" onPress={onBack}>
+          <span aria-hidden="true">{messages.app.back}</span>
+          {card.doorBack}
+        </Button>
+      </div>
+      <PageHeader
+        eyebrow={messages.door.eyebrow}
+        title={card.doorTitle}
+        pageTitle={messages.door.pageTitle}
+      />
+      {phase.kind === 'form' ? (
+        <>
+          <p className="lede">
+            <AroundName parts={card.doorLede} name={doorName} />
+          </p>
+          <CardForm
+            onSubmit={make}
+            refused={refused}
+            hints={card}
+            lead={picker}
+            submit={card.doorSubmit}
+          />
+        </>
+      ) : null}
+      {phase.kind === 'posting' || phase.kind === 'unsent' ? (
+        <Unsent
+          posting={phase.kind === 'posting'}
+          onRetry={() => {
+            post(phase.step, phase.groupId);
+          }}
+        />
+      ) : null}
+      {phase.kind === 'sent' ? (
+        <DoorSent doorName={doorName} groupId={phase.groupId} proposalId={phase.step.proposalId} />
       ) : null}
     </main>
   );

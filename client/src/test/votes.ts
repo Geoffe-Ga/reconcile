@@ -134,6 +134,8 @@ export interface LogBuilder {
   remove(name: string, proposal: string): string;
   /** Adds `name`'s record of an invite sent to the front door's `application` (#121), returning its id. */
   doorInvited(name: string, application: string): string;
+  /** `name` closes the card `card` from the front door (#426): brought to a vote or dismissed. */
+  doorCardClosed(name: string, card: string): string;
   /** Adds `name`'s record of `proposal`'s Discord thread at `url` (#123), returning its id. */
   chatThread(name: string, proposal: string, url: string): string;
   /** Adds `name`'s Dispatch (#112), returning its id. */
@@ -398,6 +400,9 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
     },
     doorInvited(name: string, application: string) {
       return add(name, { type: 'door-invited', group, ts: 0, body: { application } });
+    },
+    doorCardClosed(name: string, card: string) {
+      return add(name, { type: 'door-card-closed', group, ts: 0, body: { card } });
     },
     chatThread(name: string, proposal: string, url: string) {
       return add(name, { type: 'chat-thread', group, ts: 0, body: { proposal, url } });
