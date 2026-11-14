@@ -36,3 +36,7 @@ A door's two secrets, the page signing key `sign` and the inbox key `box`, trave
   - [#366](https://github.com/Geoffe-Ga/reconcile/issues/366) decides whether to accept that for the pilot or have the relay keep a tombstone.
 
 The spec's §4, Front door, has the rules.
+
+## Amendment (2026-11-14): a shelf of single Dispatches
+
+[ADR-0077](0077-discover.md) lifts "no public index" for one thing: single Dispatches a group or coalition votes to show in public. There is still no directory of groups or people.

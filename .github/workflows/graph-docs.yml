@@ -54,7 +54,11 @@ jobs:
   build:
     name: Build docs graph
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # A routine run re-sends only changed docs, but docs/spec/phase-1-spec.md
+    # changes in most merges and is re-sent whole: about 8 min now, up from 1 min
+    # three days ago. 30 is twice that with room for its growth. A full rebuild
+    # skips the cache, so a timed-out one would start over: it keeps 45.
+    timeout-minutes: ${{ inputs.full_rebuild && 45 || 30 }}
     env:
       OUT_DIR: graphify-out
       CACHE_DIR: graphify-out/docs-build/cache/semantic
@@ -184,7 +188,7 @@ jobs:
     name: Publish docs graph
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5  # slowest successful run: 0.2 min
     permissions:
       contents: write
     env:

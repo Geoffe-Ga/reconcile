@@ -41,7 +41,7 @@ Settled decisions about how Reconcile works. Before designing anything, check he
 | [0035](0035-reconcile-group-minimal-eternal-core.md) | Reconcile-the-group starts from a short eternal core, its wording settled before genesis; the rest is ratified by the first groups | Accepted; amended 2026-11-08 |
 | [0036](0036-coalition-each-group-passes.md) | Coalition motions pass group by group; only signed results cross group lines | Accepted |
 | [0037](0037-holonic-promotion.md) | Each level decides; the author sets a ceiling, at most the coalitions (0071); votes travel with the Dispatch on the voter's own device | Accepted; amended by 0065, 0070, 0071 |
-| [0038](0038-optional-discovery.md) | Discovery is optional; groups can open a front door that never lists people, and that closes when a membership ends (#288) | Accepted; amended 2026-11-12 (#288) |
+| [0038](0038-optional-discovery.md) | Discovery is optional; groups can open a front door that never lists people, and that closes when a membership ends (#288) | Accepted; amended 2026-11-12 (#288), and by 0077 |
 | [0039](0039-integrations-per-group-opt-in.md) | Bot reach and sight are a per-group ladder, nudge-only by default | Accepted |
 | [0040](0040-group-opt-ins-are-governed.md) | Every group-level opt-in is decided by Proposal; widening is entrenched, narrowing is easy | Accepted |
 | [0041](0041-digitalocean-relay-hosting.md) | The pilot relay runs on a DigitalOcean VM; we terminate TLS, logs off. The MVP runs it as a systemd service, not a container, until it needs another host | Accepted; amended 2026-11-09 |
@@ -77,9 +77,10 @@ Settled decisions about how Reconcile works. Before designing anything, check he
 | [0071](0071-self-hosting-and-reach.md) | A license grant to run unmodified relays and clients; promotion stops at coalitions | Accepted |
 | [0072](0072-protocol-details-for-decomposition.md) | Protocol details settled during decomposition: causal time, length caps, expiring sensitive text, re-open and readmit binding, `dissolve` target, backup endpoint, generic lock-screen text | Accepted; amended 2026-11-09 |
 | [0073](0073-mvp-scope.md) | MVP scope: build the simple loop first. Defers parts of 42 ADRs until pilot feedback asks, and 0041's container until the relay needs another host | Accepted; amended by 0074, and 2026-11-09 |
-| [0074](0074-mvp-scope-revised.md) | MVP scope revised: each feature at the founder's chosen depth, with Phase 2 coalitions in | Accepted; amended by 0075 |
+| [0074](0074-mvp-scope-revised.md) | MVP scope revised: each feature at the founder's chosen depth, with Phase 2 coalitions in | Accepted; amended by 0075 and 0077 |
 | [0075](0075-safeguards-for-the-revised-mvp.md) | Safeguards for the revised MVP: coalition seats, push linkage, steward limits, recovery; a key change whose wraps don't open is refused, and its author may write no other (2026-11-11); a room wrap counts only when it holds the `inner` the coalition's genesis commits to (2026-11-12); one person's latest choice of recovery contacts wins on every device (2026-11-12, #272); a device that leaves or is removed takes its push address back within the day, not at the key change (2026-11-12, #356) | Accepted; amended 2026-11-11, 2026-11-12 |
 | [0076](0076-merge-recap-to-discord.md) | Merge recaps send only metadata, PR titles included, to a private Discord channel; the bot token runs merged code | Accepted (tooling) |
+| [0077](0077-discover.md) | Discover: a public shelf of single Dispatches, each published by its own vote; Ask to join through open front doors; personal Documents sealed into an application; an on-device strange-bedfellows view; doors take reconcile cards; a bottom tab bar | Accepted; shelf publishing waits on 0035's wording and a spike |
 
 **Status column:** "amended by 00NN" means a later ADR changed part of the decision, and the ADR's own file says what changed. A date means the ADR was amended in place, with no ADR of its own. Each one-liner describes the decision as amended.
 
