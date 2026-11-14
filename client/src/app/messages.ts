@@ -1346,13 +1346,13 @@ export const messages = {
     lede: 'Documents of your own. Nobody votes on them: you change them whenever you like.',
     /** Personal's line on where Documents go, while the device keeps no relay backup key. */
     privacy:
-      'They stay on this device. Nothing here is sent to the relay or to your groups, unless you share one by link. A backup file you save includes them.',
+      'They stay on this device. Nothing here is sent to the relay or to your groups, unless you share one by link or send one with a request to join. A backup file you save includes them.',
     /** In place of privacy once the device keeps a relay backup key (#97, #248): its sealed copy carries them. */
     privacyRelayBackup:
       'They stay on this device. Nothing here goes to your groups. A backup file you save includes them, and so does your sealed relay backup.',
     /** The editor's line on where its Document goes, while the device keeps no relay backup key. */
     documentPrivacy:
-      'This stays on this device. Nothing here is sent to the relay or to your groups. A backup file you save includes it.',
+      'This stays on this device. Nothing here is sent to the relay or to your groups, unless you send it with a request to join. A backup file you save includes it.',
     /** In place of documentPrivacy once the device keeps a relay backup key (#97, #248). */
     documentPrivacyRelayBackup:
       'This stays on this device. Nothing here goes to your groups. A backup file you save includes it, and so does your sealed relay backup.',
