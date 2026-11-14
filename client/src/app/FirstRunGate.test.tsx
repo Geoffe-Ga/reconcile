@@ -311,6 +311,88 @@ describe('FirstRunGate with a front door’s link (#121)', () => {
   });
 });
 
+/**
+ * A reconcile card's and a follow link's own forms (#114, #124), each holding
+ * a seed as an invite does: what an iPhone in Safari lost at the install gate (#280).
+ */
+const SEED_LINKS = [
+  {
+    kind: 'card',
+    prefix: '#reconcile/',
+    held: '#/card',
+    copy: 'Copy card link',
+    label: 'Your card link',
+    damaged: 'This card has expired or is damaged. Ask the group that sent it for a new one.',
+  },
+  {
+    kind: 'follow',
+    prefix: '#follow/',
+    held: '#/follow',
+    copy: 'Copy follow link',
+    label: 'Your follow link',
+    damaged:
+      'This follow link has expired or is damaged. Ask someone in the coalition for a new one.',
+  },
+] as const;
+
+describe.each(SEED_LINKS)('FirstRunGate with a $kind link (#280)', (link) => {
+  it('holds it in memory under the install guide, out of the address bar, to copy into the installed app', () => {
+    const seed = newInvite();
+    const { lookup, app } = setup({
+      platform: IPHONE_TAB,
+      hash: `${link.prefix}${invitePayload(seed)}`,
+    });
+    expect(guideHeading()).toBeVisible();
+    expect(window.location.pathname).toBe('/');
+    expect(window.location.hash).toBe('');
+    const field = screen.getByRole('textbox', { name: link.label });
+    expect(field).toHaveValue(`${ORIGIN}/${link.prefix}${invitePayload(seed)}`);
+    expect(screen.getByRole('button', { name: link.copy })).toBeVisible();
+    expect(screen.queryByRole('textbox', { name: 'Reconcile’s address' })).toBeNull();
+    // It's no invite: nothing opens an invite's envelope for it.
+    expect(lookup).not.toHaveBeenCalled();
+    expect(app).not.toHaveBeenCalled();
+  });
+
+  it('reads one that opens in this window while the guide shows', async () => {
+    const seed = newInvite();
+    setup({ platform: IPHONE_TAB });
+    act(() => {
+      window.location.hash = `${link.prefix}${invitePayload(seed)}`;
+    });
+    expect(await screen.findByRole('textbox', { name: link.label })).toHaveValue(
+      `${ORIGIN}/${link.prefix}${invitePayload(seed)}`,
+    );
+    expect(window.location.hash).toBe('');
+  });
+
+  it('takes a damaged one out of the address bar too, and says so in its own words', () => {
+    setup({ platform: IPHONE_TAB, hash: `${link.prefix}damaged` });
+    expect(window.location.hash).toBe('');
+    expect(screen.getByText(link.damaged)).toBeVisible();
+    expect(screen.queryByRole('button', { name: link.copy })).toBeNull();
+  });
+
+  it('holds it through the notice, out of the address bar, and hands it to the app at its page', async () => {
+    const seed = newInvite();
+    const { user, opened } = setup({ hash: `${link.prefix}${invitePayload(seed)}` });
+    expect(noticeHeading()).toBeVisible();
+    expect(window.location.hash).toBe(link.held);
+    await user.click(screen.getByRole('button', { name: 'I understand' }));
+    expect(appHeading()).toBeVisible();
+    expect(window.location.hash).toBe(link.held);
+    expect(opened.at(-1)?.heldSeed).toEqual(seed);
+  });
+
+  it('leaves it to the app once nothing stood in the way at launch', () => {
+    const hash = `${link.prefix}${invitePayload(newInvite())}`;
+    const { opened } = setup({ accepted: true, hash });
+    expect(appHeading()).toBeVisible();
+    expect(window.location.hash).toBe(hash);
+    expect(opened[0]?.heldSeed).toBeNull();
+  });
+});
+
 const offerHeading = () =>
   screen.queryByRole('heading', { level: 1, name: messages.passkey.title });
 /** The offer, once it has read the groups' way back (#389). */

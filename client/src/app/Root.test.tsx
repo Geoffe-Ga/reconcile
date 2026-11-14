@@ -1,7 +1,8 @@
 /**
  * First run in front of the whole app (#76): nobody gets keys before the
  * pilot notice, an iPhone browser tab gets none at all, and an invite link,
- * opened or pasted, reaches the same preview.
+ * opened or pasted, reaches the same preview. A reconcile card's link is held
+ * through the install gate and the notice the same way (#280).
  */
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -13,6 +14,7 @@ import type { PlatformEnv } from '../platform/installGate';
 import type { NoticeRecord } from '../platform/notice';
 import { testDevice, type TestDevice } from '../test/appServices';
 import { axeViolations } from '../test/axe';
+import { anaMakesCard, CARD_VALUES, closeAll, found, open } from '../test/coalitionDevices';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { sharePayloadOf, startSharing } from '../share/shareLink';
@@ -50,6 +52,8 @@ const IPHONE_TAB: PlatformEnv = {
   displayModeStandalone: false,
   navigatorStandalone: undefined,
 };
+/** The same iPhone, running Reconcile from its Home Screen. */
+const IPHONE_INSTALLED: PlatformEnv = { ...IPHONE_TAB, displayModeStandalone: true };
 
 async function device(fake: FakeRelay, name: string): Promise<TestDevice> {
   const opened = await testDevice(fake, name);
@@ -288,5 +292,68 @@ describe('Root', () => {
     });
 
     expect(screen.getByRole('heading', { level: 1, name: messages.notice.title })).toBeVisible();
+  });
+});
+
+/** Bring a card's page for Ana's card (#114): the coalition's name, and the group that sent it. */
+async function cardShown(): Promise<void> {
+  const heading = await screen.findByRole('heading', { level: 1, name: CARD_VALUES.name });
+  expect(heading).toBeVisible();
+  expect(screen.getByText(/^From/)).toHaveTextContent('From Riverside Tenants');
+}
+
+/** Ana's card for Riverside Tenants, posted to the relay, and Ben's device, which holds Oak St Co-op. */
+async function anasCard(): Promise<{ readonly link: string; readonly ben: TestDevice }> {
+  const fake = createFakeRelay();
+  const ana = await open(fake, 'ana');
+  const ben = await open(fake, 'ben');
+  const riverside = await found(ana, 'Riverside Tenants', 'Ana');
+  await found(ben, 'Oak St Co-op', 'Ben');
+  const { link } = await anaMakesCard(ana, ben, riverside);
+  keysMade.mockClear();
+  return { link, ben };
+}
+
+describe('Root with a reconcile card’s link (#280)', () => {
+  afterEach(() => {
+    closeAll();
+  });
+
+  it('holds it at an iPhone’s install guide to copy, and the installed app brings it from the link bar', async () => {
+    const { link, ben } = await anasCard();
+    window.history.replaceState(null, '', new URL(link).hash);
+    const tab = renderRoot(ben, IPHONE_TAB);
+    const held = screen.getByRole('region', { name: messages.install.held.card.heading });
+    const field = within(held).getByRole('textbox', { name: messages.install.held.card.label });
+    expect(field).toHaveValue(link);
+    expect(window.location.hash).toBe('');
+    expect(screen.queryByRole('button', { name: messages.bring.submit })).not.toBeInTheDocument();
+    expect(keysMade).not.toHaveBeenCalled();
+    expect(await axeViolations()).toEqual([]);
+    const copied = (field as HTMLInputElement).value;
+    tab.unmount();
+
+    // From the Home Screen, the app opens at its start, with nothing of Safari's.
+    window.history.replaceState(null, '', '/');
+    const { user } = renderRoot(ben, IPHONE_INSTALLED);
+    await user.click(screen.getByRole('button', { name: messages.notice.accept }));
+    await user.click(await screen.findByRole('searchbox', { name: messages.linkBar.label }));
+    await user.paste(copied);
+    await user.keyboard('{Enter}');
+    await cardShown();
+    expect(window.location.hash).toBe('#/card');
+  });
+
+  it('holds it through the notice out of the address bar, and opens Bring a card with it', async () => {
+    const { link, ben } = await anasCard();
+    const seed = new URL(link).hash.slice('#reconcile/'.length);
+    window.history.replaceState(null, '', new URL(link).hash);
+    const { user } = renderRoot(ben);
+    expect(screen.getByRole('heading', { level: 1, name: messages.notice.title })).toBeVisible();
+    expect(window.location.hash).toBe('#/card');
+    await user.click(screen.getByRole('button', { name: messages.notice.accept }));
+    await cardShown();
+    expect(window.location.href).not.toContain(seed);
+    expect(keysMade).not.toHaveBeenCalled();
   });
 });
