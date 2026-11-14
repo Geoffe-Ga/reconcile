@@ -1616,8 +1616,8 @@ function Screen({ route, services, heldSeed, holdSeed, persistence, guide }: Scr
 /**
  * The current route's screen, with the store and sync loop provided to
  * `useGroup`, and, on the four pages that are its places, the tab bar under
- * it (#423): the page and the bar share one column at least the viewport
- * tall, so the bar sits at the bottom and stays there as the page scrolls.
+ * it (#423): the page scrolls in its own region above the bar, so the bar
+ * stays at the bottom and never covers any of the page.
  */
 export function App({ services, initialSeed = null, persistence = null }: AppProps) {
   const route = useRoute();
@@ -1644,7 +1644,7 @@ export function App({ services, initialSeed = null, persistence = null }: AppPro
         screen
       ) : (
         <div className="tabbed">
-          {screen}
+          <div className="tabbed-page">{screen}</div>
           <TabBar route={route} />
         </div>
       )}

@@ -7,8 +7,9 @@
  *
  * axe checks every screen they settle on, and any CSP violation in any page
  * fails the test. Nothing here moves time: everyone scores, so the vote
- * closes early. Last, C opens Discover from the tab bar on a phone, and axe
- * checks it in both themes (#423).
+ * closes early. Last, C opens Discover from the tab bar on a phone, where
+ * the page scrolls above the bar and never under it, and axe checks it in
+ * both themes (#423).
  */
 import { type Locator, type Page } from '@playwright/test';
 
@@ -274,6 +275,18 @@ test('three members propose, vote and see the Update', async ({ openProfile }) =
       'page',
     );
     await expect(page.getByRole('textbox', { name: 'Card or link' })).toBeVisible();
+    // The page scrolls in a region of its own that ends where the bar begins, so nothing sits under it.
+    const region = await page.getByRole('main').evaluate((main) => {
+      const scroller = main.parentElement;
+      return {
+        bottom: Math.round(scroller?.getBoundingClientRect().bottom ?? Number.POSITIVE_INFINITY),
+        sideways: (scroller?.scrollWidth ?? 0) > (scroller?.clientWidth ?? 0),
+      };
+    });
+    expect(region).toEqual({
+      bottom: Math.round((await tabs.boundingBox())?.y ?? 0),
+      sideways: false,
+    });
     for (const colorScheme of ['dark', 'light'] as const) {
       await page.emulateMedia({ colorScheme });
       await expectAccessible(cal, `Discover on a phone, ${colorScheme}`);
