@@ -40,6 +40,7 @@ Every member of a group, at any level, can read its log. So the group's coalitio
 - **Accept: polling links a phone's groups live.** A device polls all its groups' mailboxes from one IP address every few seconds. Whoever watches the relay live can tie those groups together. Weekly mailboxes protect stored data, not a live watcher. The pilot notice already says the relay sees which mailboxes a device checks. This ADR records the risk so the outside review covers it.
 - **Revisit** before groups outside the founder's circle use the app: a separate push address per group, if browsers support it in installed iOS apps, or no push for a group that asks for none.
 - **Amendment (2026-11-12, #356):** a group's push address is taken back at a random minute within the day after the device leaves or is removed, not at the key change. See the amendment below.
+- **Amendment (2026-11-12, #284):** each group shifts its nudges for a coalition motion by its own offset, so the nudges the relay stores don't line the member groups up on the same minutes. See the amendment below.
 
 ### 3. Stewards
 
@@ -313,6 +314,36 @@ A device that leaves a group (#77), or that a vote removes (#115), took its push
 - **A day, not never.** The relay can still guess that an address left a group within a day of its key change. In a small pilot, with few key changes a day, that may still narrow it down. #356's option 3 or a longer window are the next steps, if a pilot finds this matters.
 - **An ended subscription can show.** When no other group has push on, the push service refuses the relay's next push to the address. The relay sees that only at a wake someone else's Proposal, Dispatch or nudge asks for. A leave and a key change ask none.
 - **One stray notification.** For up to a day, a wake under the old mailboxes, such as a nudge already scheduled, still reaches a phone whose subscription lives on for another group. It shows the one content-free notification.
+
+## Amendment (2026-11-12, #284): Each Group Shifts a Coalition Motion's Nudges by Its Own Offset
+
+**Decided by the founder on 2026-11-12 (#284, option 1). Built by #410 and recorded here by #415.**
+
+### Context
+
+§2 accepts that push lets the relay link one phone's groups through its address. It doesn't accept the relay learning which groups form a coalition: the coalition graph is high-risk data (CLAUDE.md, threat model).
+
+A coalition motion opens in every member group with the same deadline, and each group's devices post push nudges for it (#99: closing soon, and the result). Built literally, the nudges the relay stores, for up to 14 days, would show several groups' mailboxes due at identical minutes, motion after motion, and link those groups to one coalition. So #120 shipped coalition motions without wakes until this was decided.
+
+### Options considered
+
+1. **Chosen: a per-group offset.** Each group shifts its nudge minutes for a motion by 0 to 59 minutes, derived from its own secret and the motion's id. A group's devices all agree on it, and different groups' minutes don't line up. A nudge comes up to an hour late, which is fine for a wake.
+2. **Accept the link** as a pilot risk beside §2, and post nudges at the motion's own minutes.
+3. **No wakes for coalition motions,** relying on group activity and each group's own nudges.
+
+### Decision
+
+- **The offset.** HKDF-SHA-256 of the group's current secret, with info `reconcile/v1/nudge-offset` ‖ `0x00` ‖ the motion id, read as 4 bytes big-endian modulo 60 ([spec §3](../spec/phase-1/03-identity-and-keys.md)).
+- **The nudges.** Which devices post them, at which minutes and to which mailbox are in [spec §4, Coalitions, Push](../spec/phase-1/04-events/15-coalitions.md) and [§7, Push](../spec/phase-1/07-sync.md). Two groups' nudges for one motion meet only when their offsets do, about 1 time in 60.
+
+**Privacy.** The relay stores the same nudges as before, at minutes that no longer line up across a coalition's groups. Nothing new is sent.
+
+### Accepted pilot risks added
+
+Both are spelled out in [spec §4, Coalitions, Push](../spec/phase-1/04-events/15-coalitions.md).
+
+- **The same hour.** Each group's nudges for a motion still fall within the hour after its two minutes, so at rest the relay sees every member group's mailbox take a nudge within the same hour, twice. At the pilot's scale that's a weaker signal than the same minute.
+- **Live timing.** The offsets protect what the relay stores, not a live watcher. Member groups' devices read a new motion within a pass or two of each other and post its nudges then. And a device polls its groups' and its coalitions' mailboxes in one pass from one IP address. That's §2's "polling links a phone's groups live", and the pilot notice already discloses it ([spec §9](../spec/phase-1/09-privacy-rules.md): whoever runs the relay sees connecting IP addresses and timing live).
 
 ## Amendment (2026-11-14): A Second Number, and Asking Before Restoring (#398)
 
