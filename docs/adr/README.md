@@ -60,7 +60,7 @@ Settled decisions about how Reconcile works. Before designing anything, check he
 | [0054](0054-digest-notifications.md) | One daily digest (including votes closing soon); only recovery attempts notify immediately | Accepted; amended by 0072 |
 | [0055](0055-accessibility-and-languages.md) | WCAG 2.2 AA with automated checks and periodic manual passes; English, translation-ready | Accepted; amended by 0068 |
 | [0056](0056-pilot-plan.md) | The pilot: two contrasting groups for 6 weeks, learned through interviews (relationships included) and Signal, with a plain notice | Accepted; amended by 0069 |
-| [0057](0057-environments-updates-retention.md) | Staging and production; protocol rules change only by version; blobs 30 days, backups 180 days | Accepted; amended by 0072 |
+| [0057](0057-environments-updates-retention.md) | Staging and production; protocol rules change only by version; blobs 30 days, backups 180 days; a group's invite carries the log of each coalition it reaches, so a newcomer reads one older than 30 days (2026-11-13) | Accepted; amended by 0072 |
 | [0058](0058-security-review-on-demand.md) | A paid security review when an activist group calls for it, booked at the first serious conversation | Accepted |
 | [0059](0059-suspension-during-removal.md) | A suspension lasts until an open removal vote against the member ends (at most 21 days, since removal votes run 14) | Accepted; amended by 0075 |
 | [0060](0060-how-phase-1-is-built.md) | Agents build in waves; green merges (no separate human sign-off); main protected; label scheme | Accepted; amended by 0075 |
