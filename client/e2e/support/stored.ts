@@ -101,6 +101,35 @@ export function storedGroups(page: Page): Promise<StoredGroup[]> {
   });
 }
 
+/**
+ * How many records `page`'s device has queued for the relay, across its
+ * groups. An entry leaves the outbox only in the store change that saves the
+ * pull reading it back (#343, #349), so 0 means all it queued went out and
+ * came back.
+ */
+export function queuedRecords(page: Page): Promise<number> {
+  return page.evaluate(async () => {
+    const request = <T>(asking: IDBRequest<T>): Promise<T> =>
+      new Promise((resolve, reject) => {
+        asking.onsuccess = () => {
+          resolve(asking.result);
+        };
+        asking.onerror = () => {
+          reject(asking.error ?? new Error('IndexedDB refused the request.'));
+        };
+      });
+    const db = await request(indexedDB.open('reconcile'));
+    try {
+      const groups = (await request(db.transaction('groups').objectStore('groups').getAll())) as {
+        outbox: Uint8Array[];
+      }[];
+      return groups.reduce((queued, group) => queued + group.outbox.length, 0);
+    } finally {
+      db.close();
+    }
+  });
+}
+
 /** One group's relay-ordered log on a device: each record's seq, receipt time and bytes in hex. */
 export interface StoredLog {
   readonly groupId: string;
