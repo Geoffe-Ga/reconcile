@@ -46,9 +46,10 @@ async function founderInvite(openProfile: OpenProfile): Promise<string> {
   return foundGroup(ana.page, GROUP);
 }
 
-/** Nothing here makes keys or records anything. */
+/** Nothing here makes keys or records anything, and no link bar (#444) stands over the gate. */
 async function expectNothingMade(page: Page): Promise<void> {
   await expect(page.getByRole('button', { name: 'I understand' })).toHaveCount(0);
+  await expect(page.getByRole('search')).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Create group' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Join group' })).toHaveCount(0);
   await expect(page.getByRole('textbox', { name: 'Your name' })).toHaveCount(0);

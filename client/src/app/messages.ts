@@ -46,6 +46,39 @@ export const messages = {
     /** Ends a quotation that leaves words out, as in "Shared spaces are cleaned every…". */
     ellipsis: '…',
   },
+  /** The link bar (#444; ADR-0077 §6): the pill at the top of every screen that opens any Reconcile link. */
+  linkBar: {
+    /** The field's name, and its placeholder. */
+    label: 'Search or paste a link',
+    clear: 'Clear',
+    paste: 'Paste',
+    /** The rows' name as a list. */
+    rows: 'What you pasted',
+    open: 'Open',
+    /** What each kind of link is, in plain words. */
+    kinds: {
+      invite: 'An invite',
+      card: 'A reconcile card',
+      follow: 'A coalition to follow',
+      door: 'A front door',
+      shared: 'A shared Document',
+    },
+    damaged: 'This link is damaged or cut off. Copy all of it and paste it again.',
+    notALink: 'That isn’t a Reconcile link.',
+    /** A code pasted here: where it goes, and the screen that takes it. The bar never keeps the code. */
+    codes: {
+      'linking-code': {
+        line: 'That’s a linking code. Open Link to my other device and paste it there.',
+        screen: 'Link to my other device',
+      },
+      'recovery-code': {
+        line: 'That’s a recovery code. Open Help someone recover and paste it there.',
+        screen: 'Help someone recover',
+      },
+    },
+    /** How many rows show, said politely as they change. */
+    results: (count: number) => (count === 1 ? '1 result' : `${String(count)} results`),
+  },
   /** The tab bar (#423; ADR-0077 §7): the app's three places, a glyph and a word each. */
   tabs: {
     /** The bar's name as a landmark. */
@@ -54,19 +87,14 @@ export const messages = {
     discover: 'Discover',
     me: 'Me',
   },
-  /** Discover (#423; ADR-0077 §6): reading across groups, and the field that opens a card or link. */
+  /** Discover (#423; ADR-0077 §6): reading across groups. */
   discover: {
     pageTitle: 'Discover',
     title: 'Discover',
     /** The empty state's one sentence, until the shelf (ADR-0077 §1) has entries to show. */
     empty: 'Dispatches that groups put on the public shelf will show up here.',
-    openHeading: 'Open a card or link',
-    openLabel: 'Card or link',
-    openHint:
-      'Paste an invite link, a reconcile card, a coalition’s follow link or a group’s front door link.',
-    open: 'Open',
-    /** For anything none of those reads; it never repeats the text. */
-    badLink: 'This isn’t a link Reconcile can open. Check you copied all of it.',
+    /** Where a card or link opens: the link bar (#444). */
+    pasteInBar: 'To open a card or link, paste it into the bar at the top.',
   },
   start: {
     pageTitle: 'Your groups',
@@ -74,10 +102,8 @@ export const messages = {
     empty: 'You aren’t in any groups on this device yet.',
     create: 'Create group',
     inviteHeading: 'Have an invite link?',
-    inviteLabel: 'Invite link',
-    inviteHint:
-      'Paste the link someone in your group sent you, a reconcile card from another group, or a coalition’s follow link.',
-    openInvite: 'Join with an invite link',
+    /** Where an invite, or any other Reconcile link, opens now: the link bar (#444). */
+    pasteInBar: 'Paste it, or any Reconcile link, into the bar at the top.',
     documentTitle: (title: string) => `Document: ${title}`,
     settingUp: 'Saved on this device. Waiting for the relay.',
     mayClear: 'This browser may clear Reconcile’s data if the device runs low on space.',
@@ -99,7 +125,8 @@ export const messages = {
     otherApp: 'If you opened this inside another app, open it in Safari first.',
     steps: ['Tap Share, or tap ••• and then Share.', 'Choose Add to Home Screen, then tap Add.'],
     open: 'Open Reconcile from your Home Screen.',
-    openToJoin: 'Open Reconcile from your Home Screen and tap Join with an invite link.',
+    openToJoin:
+      'Open Reconcile from your Home Screen and paste your invite link into the bar at the top.',
     why: 'Safari can clear a website’s data after a week without a visit, so on iPhone and iPad Reconcile runs from your Home Screen.',
     inviteHeading: 'Your invite',
     inviteLabel: 'Your invite link',
@@ -1262,13 +1289,8 @@ export const messages = {
     installLabel: 'This front door’s link',
     installHint: 'Copy it now, then paste it into Reconcile once it’s on your Home Screen.',
     copyLink: 'Copy link',
-    openToApply: 'Open Reconcile from your Home Screen and tap Open the front door.',
-    /** Start's field for a front door link. */
-    startHeading: 'Have a front door link?',
-    startLabel: 'Front door link',
-    startHint: 'Paste the link a group posted.',
-    startOpen: 'Open the front door',
-    startBadLink: 'This isn’t a front door link. Check you copied all of it.',
+    openToApply:
+      'Open Reconcile from your Home Screen and paste the front door link into the bar at the top.',
     /** Start's list of this device's requests. */
     requestsHeading: 'Asked to join',
     waiting: (day: string) => `Asked ${day}. No invite yet.`,

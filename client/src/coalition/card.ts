@@ -256,9 +256,9 @@ function fragmentOf(text: string): string | null {
 }
 
 /**
- * The 32-byte seed in a pasted card link, from any origin, or null. Start's
- * paste field and the Bring screen read cards through it. A bare seed is an
- * invite's (`parseInviteLink`), so only a whole link reads as a card.
+ * The 32-byte seed in a pasted card link, from any origin, or null. A bare
+ * seed is an invite's (`parseInviteLink`), so only a whole link reads as a
+ * card. The link bar reads a card's kind and payload through `linkKind`.
  */
 export function parseCardLink(text: string): Uint8Array | null {
   const hash = fragmentOf(text.trim());

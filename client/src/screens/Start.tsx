@@ -1,14 +1,11 @@
-import { type ReactNode, type SyntheticEvent, useId } from 'react';
-import { Button, Form, Link } from 'react-aria-components';
+import { type ReactNode, useId } from 'react';
+import { Button, Link } from 'react-aria-components';
 
 import { messages } from '../app/messages';
-import { OpenLink, type OpenLinkWords } from '../app/OpenLink';
 import { RestoreBackup, type RestoreBackupProps } from '../app/RestoreBackup';
 import { routeHref } from '../app/router';
 import { formatDay } from '../app/time';
-import { Field, PageHeader } from '../app/ui';
-import { base64url } from '../crypto/base64url';
-import { parseDoorLink } from '../door/page';
+import { PageHeader } from '../app/ui';
 import type { Persistence } from '../platform/persist';
 
 /** A group as Start lists it. Name and title are null until its genesis reaches the relay. */
@@ -46,14 +43,8 @@ export interface StartProps {
   readonly following?: readonly StartFollowing[];
   /** The applications this device sent at front doors and still keeps (#121). */
   readonly requests?: readonly StartRequest[];
-  /** Opens a pasted invite's seed. It travels in memory, never through the address bar. */
+  /** Opens the invite a front door's reply brought (#121). It travels in memory, never through the address bar. */
   readonly onOpenInvite: (seed: Uint8Array) => void;
-  /** Opens a pasted reconcile card's seed (#114), in memory likewise. */
-  readonly onOpenCard?: (seed: Uint8Array) => void;
-  /** Opens a pasted follow link's seed (#124), in memory likewise. */
-  readonly onOpenFollow?: (seed: Uint8Array) => void;
-  /** Opens a pasted front door link's page (#121), by the address after `#door/`. */
-  readonly onOpenDoor?: (payload: string) => void;
   /** What the browser said about keeping this site's data, or null before it answered. */
   readonly persistence?: Persistence | null;
   /** Restores a backup file (#78); without it, Start offers no Restore. */
@@ -99,19 +90,6 @@ function PersonalCard() {
     </div>
   );
 }
-
-/**
- * Start's paste field (#423 shares it with Discover): an invite, a reconcile
- * card (#114) or a follow link (#124), and M2-03's expired-or-damaged line for
- * anything else. A front door link has its own field here (#121).
- */
-const INVITE_WORDS: OpenLinkWords = {
-  heading: messages.start.inviteHeading,
-  label: messages.start.inviteLabel,
-  hint: messages.start.inviteHint,
-  button: messages.start.openInvite,
-  badLink: messages.join.badLink,
-};
 
 /**
  * "Following" (#124): each coalition this device follows, its name over its
@@ -205,39 +183,15 @@ function Requests(
   );
 }
 
-/** The front door line for anything that isn't a door link (#121). It never repeats the text. */
-function checkDoor(text: string): string | null {
-  return parseDoorLink(text) === null ? messages.door.startBadLink : null;
-}
-
-/** "Have a front door link?", a field to paste one into, and Open the front door (#121). */
-function DoorSection({ onOpenDoor }: { readonly onOpenDoor: (payload: string) => void }) {
+/** "Have an invite link?", and where it opens: the link bar at the top (#444). */
+function InviteSection() {
   const heading = useId();
-  const { door } = messages;
-  const open = (event: SyntheticEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const text = new FormData(event.currentTarget).get('door');
-    const address = typeof text === 'string' ? parseDoorLink(text) : null;
-    if (address !== null) onOpenDoor(base64url(address));
-  };
   return (
     <section className="stack" aria-labelledby={heading}>
       <h2 id={heading} className="heading-3">
-        {door.startHeading}
+        {messages.start.inviteHeading}
       </h2>
-      <Form className="form" onSubmit={open}>
-        <Field
-          name="door"
-          label={door.startLabel}
-          hint={door.startHint}
-          autoComplete="off"
-          isRequired
-          validate={checkDoor}
-        />
-        <Button type="submit" className="button button-secondary">
-          {door.startOpen}
-        </Button>
-      </Form>
+      <p>{messages.start.pasteInBar}</p>
     </section>
   );
 }
@@ -293,16 +247,16 @@ function RecoverSection() {
  * Start (`#/`): every group on this device by name, each marked while its
  * leave waits for the relay (#77), Create group, the coalitions this device
  * follows (#124), the front doors this device asked to join at and any
- * invite they sent (#121), a card that opens Personal (#93), Join with an
- * invite link, a field to paste one, a card or a follow link into, a
- * field for a front door link (#121), Restore a backup (#78), Link to my
- * other device (#96), Recover with my contacts (#118), and a quiet link to
+ * invite they sent (#121), a card that opens Personal (#93), "Have an
+ * invite link?" pointing to the link bar, where an invite or any other
+ * Reconcile link opens (#444), Restore a backup (#78), Link to my other
+ * device (#96), Recover with my contacts (#118), and a quiet link to
  * Settings. While a recovery of this person waits, its alert comes first
- * (#118). The app reads the clipboard only through that paste. When the
- * browser may clear the app's data, one quiet line says so (ADR-0029).
+ * (#118). When the browser may clear the app's data, one quiet line says so
+ * (ADR-0029).
  */
 export function Start(props: StartProps) {
-  const { groups, requests = [], onOpenInvite, onOpenDoor } = props;
+  const { groups, requests = [], onOpenInvite } = props;
   const { persistence = null, onRestore, alert } = props;
 
   return (
@@ -330,14 +284,7 @@ export function Start(props: StartProps) {
       <Following following={props.following} />
       {requests.length === 0 ? null : <Requests requests={requests} onOpenInvite={onOpenInvite} />}
       <PersonalCard />
-      <OpenLink
-        words={INVITE_WORDS}
-        name="invite"
-        onOpenInvite={onOpenInvite}
-        onOpenCard={props.onOpenCard}
-        onOpenFollow={props.onOpenFollow}
-      />
-      {onOpenDoor === undefined ? null : <DoorSection onOpenDoor={onOpenDoor} />}
+      <InviteSection />
       {onRestore === undefined ? null : <RestoreSection onRestore={onRestore} />}
       <LinkSection />
       <RecoverSection />

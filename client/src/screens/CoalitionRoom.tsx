@@ -45,15 +45,21 @@ export interface CoalitionRoomProps {
 /** Within this many pixels of the end of the page counts as the bottom. */
 const BOTTOM_SLACK = 64;
 
+/** What the page scrolls in: the app's page region, under the link bar (#444), or the document. */
+function scroller(): HTMLElement {
+  return document.querySelector<HTMLElement>('.app-page') ?? document.documentElement;
+}
+
 /** Whether the page is scrolled to its end. */
 function isAtBottom(): boolean {
-  const page = document.documentElement;
-  return page.scrollTop + window.innerHeight >= page.scrollHeight - BOTTOM_SLACK;
+  const page = scroller();
+  const seen = page === document.documentElement ? window.innerHeight : page.clientHeight;
+  return page.scrollTop + seen >= page.scrollHeight - BOTTOM_SLACK;
 }
 
 /** Scrolls the page to its end, where the newest message and the box are. */
 function toBottom(): void {
-  const page = document.documentElement;
+  const page = scroller();
   page.scrollTop = page.scrollHeight;
 }
 
@@ -78,9 +84,10 @@ function useArrivals(list: readonly RoomMessage[], me: string): string {
     const onScroll = (): void => {
       atBottom.current = isAtBottom();
     };
-    window.addEventListener('scroll', onScroll, { passive: true });
+    // Captured, so the page region's own scroll, which doesn't bubble, is heard too.
+    window.addEventListener('scroll', onScroll, { passive: true, capture: true });
     return () => {
-      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('scroll', onScroll, { capture: true });
     };
   }, []);
   useLayoutEffect(() => {

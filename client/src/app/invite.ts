@@ -37,8 +37,8 @@ function fragmentOf(text: string): string | null {
 
 /**
  * The 32-byte seed in a pasted invite, or null: the whole link, from any
- * origin, or just the bare 43-character seed. Start's paste field and the
- * Join screen both read invites through it.
+ * origin, or just the bare 43-character seed. The link bar reads an invite's
+ * kind and payload through `linkKind`, which takes no bare seed.
  */
 export function parseInviteLink(text: string): Uint8Array | null {
   const trimmed = text.trim();

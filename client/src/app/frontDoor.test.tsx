@@ -141,7 +141,8 @@ async function kimApplies(kim: TestDevice, link: string): Promise<HTMLElement> {
     within(k).getByText('Don’t include anything you wouldn’t want this group to read.'),
   ).toBeVisible();
   await user.click(within(k).getByRole('button', { name: 'Send' }));
-  expect(await within(k).findByRole('status')).toHaveTextContent(
+  // The page's own status, not the link bar's (#444).
+  expect(await within(within(k).getByRole('main')).findByRole('status')).toHaveTextContent(
     'Sent. If someone in Riverside Tenants invites you, it shows on Your groups.',
   );
   return k;

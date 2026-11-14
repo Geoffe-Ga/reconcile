@@ -150,7 +150,7 @@ Keep running text to 60–70 characters per line. Use `text-wrap: balance` on he
 ## Shapes and depth
 
 - Radius: `sm` 6px for inputs and chips, `md` 10px for cards and ballots, `full` for buttons and score pills.
-- Depth comes from surface contrast (`canvas` → `surface` → `sunken`) and 1px `hairline` borders. One soft shadow at most, and only for floating layers (menus, dialogs).
+- Depth comes from surface contrast (`canvas` → `surface` → `sunken`) and 1px `hairline` borders. One soft shadow at most, and only for floating layers (menus, dialogs, the link bar).
 - A modal dialog sits on `surface` over a `scrim`, which darkens the page in both themes, and its shadow uses the same `scrim`.
 
 ## Components (Reconcile-specific)
@@ -237,13 +237,20 @@ Build on **React Aria Components** (unstyled, accessible). Style everything from
   - an inline card on `ochre-soft` with plain context ("Reconcile is free to use and runs on reciprocity…")
   - a suggested amount, then *Gift* (primary) and *Not now* (quiet text button) on the same line
   - never modal, never repeated in the same session, never guilt-tripping
+- **Link bar** (#444; ADR-0077 §6): one pill at the top of every screen of the app once first run is through, forms and ballots included, where any Reconcile link opens. Never behind the install gate, the pilot notice or the unlock screen, and never on a shared page, which stands outside the app.
+  - A `search` landmark: a pill (`full` radius) on `surface` with a `hairline` border and the one soft shadow, centered, at most 42rem wide with a 16px gutter on phones, in a band of `canvas` along the top of the viewport padded by `env(safe-area-inset-top)` to clear the notch. The page scrolls in its own region under the band (and above the tab bar where there is one), so the pill never covers a heading, and never half of a control or a focused one.
+  - At least 44px tall: a magnifier glyph (`muted`) at its start, the field in body (16px, so iOS doesn't zoom it) with the placeholder "Search or paste a link", and at its end Clear once there is text, or Paste on a touch device while it's empty and focused, where the browser lets a tap read the clipboard. Focused, the pill takes the 3px `ochre` ring.
+  - Under it, a `surface` panel the pill's width, with a `hairline` border and the soft shadow, over the `scrim`. A link gets one row: what it is in ui ("An invite", "A reconcile card", "A coalition to follow", "A front door", "A shared Document"), then "Open →" in `primary`; the row the keyboard is on sits on `sunken`. A damaged or cut-off link gets one line saying so, and anything else "That isn't a Reconcile link.", both in `body`, never an alert color. A linking or recovery code gets one line saying where it goes and a quiet forward link to that screen; the field empties at once, and the code goes nowhere with the link.
+  - While the panel shows, the page and the tab bar under the `scrim` are inert; a tap on the scrim empties the bar.
+  - Pasting never opens anything: Enter or a tap on the row does, through the link's own page. Then the bar empties and lets go of focus. It keeps no history and suggests nothing.
+  - Cmd+L (Ctrl+L) puts the cursor in it with its text selected, from anywhere, and so does `/` outside a field. Escape empties it; a second Escape returns focus to where it was.
 - **Tab bar** (#423; ADR-0077 §7): the app's three places, one tap apart: **Groups** (Start, still the opening screen), **Discover** and **Me** (Personal, with Settings a quiet forward link at its end).
   - A `nav` named "Main" along the bottom of the viewport: `surface` with a `hairline` rule on its top edge, and padded below by `env(safe-area-inset-bottom)` so it clears the iPhone home indicator in the installed app. Three equal columns, held to the reading column on wide screens.
-  - The page scrolls in its own full-width region above the bar, as an installed app's does, so nothing ever sits under the bar: a control at the bottom edge is never half covered, and a focused one is never hidden.
+  - The page scrolls in its own full-width region between the link bar's band and the tab bar, as an installed app's does, so nothing ever sits under either: a control at an edge is never half covered, and a focused one is never hidden.
   - Each tab is one link: a 24px line glyph (1.75px `currentColor` strokes, round ends) over its word in caption, at least 44px tall, `muted` at rest. Groups is two people, Discover a compass, Me one person.
   - The current place says so three ways, never by color alone: `aria-current` ("page", or "true" on Settings, a page of Me's), its glyph and word in `primary` with the word at 650, and a 3px `primary` pill, 32px wide, on its top edge.
   - Never a count, a badge or a dot. It shows only on Start, Discover, Personal and Settings: never behind first run, on a shared page or a link's own page, or on a screen whose one primary action is a form or a ballot.
-- **Discover** (#423; ADR-0077 §6): the eyebrow "Reconcile" and the heading "Discover", then the empty state's one sentence as a lede, then "Open a card or link" (heading-3) over one field, "Card or link", whose hint names every kind it opens, and Open, the page's one primary action. It opens an invite, a reconcile card, a follow link or a front door link exactly as Start's field does, through the same shared field; anything else gets one line in the field's error, which never repeats the text.
+- **Discover** (#423; ADR-0077 §6): the eyebrow "Reconcile" and the heading "Discover", then the empty state's one sentence as a lede, and one line in body pointing to the link bar, where a card or link opens (#444).
 - **Empty states:** one sentence and one action. No illustrations of crowds or protest imagery.
 
 ## Voice

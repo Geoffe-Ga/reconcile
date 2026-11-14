@@ -120,7 +120,7 @@ describe('InstallGuide', () => {
 
     const steps = within(screen.getByRole('list')).getAllByRole('listitem');
     expect(steps.at(-1)).toHaveTextContent(
-      'Open Reconcile from your Home Screen and tap Join with an invite link.',
+      'Open Reconcile from your Home Screen and paste your invite link into the bar at the top.',
     );
     const field = within(preview).getByRole('textbox', { name: 'Your invite link' });
     expect(field).toHaveValue(link);
@@ -205,7 +205,9 @@ describe('InstallGuide with a front door’s link (#121)', () => {
     expect(screen.queryByRole('textbox', { name: 'Name you’d like to use' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Send' })).toBeNull();
     expect(
-      screen.getByText('Open Reconcile from your Home Screen and tap Open the front door.'),
+      screen.getByText(
+        'Open Reconcile from your Home Screen and paste the front door link into the bar at the top.',
+      ),
     ).toBeVisible();
     expect(screen.getByRole('textbox', { name: 'This front door’s link' })).toHaveValue(
       `${ORIGIN}/#door/${ADDRESS}`,

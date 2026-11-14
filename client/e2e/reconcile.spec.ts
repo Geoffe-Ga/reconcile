@@ -1,10 +1,11 @@
 /**
  * Two groups reconcile (#114), in two browser profiles through the real
  * relay: Ana founds Riverside, Ben founds Oak St, Ana makes a reconcile card
- * from Riverside's home, Ben opens its link and brings it to Oak St, and
- * each group votes on its own reconcile Proposal. Once both pass, both group
- * homes list the coalition as formed, with both groups. axe runs on the
- * card's form, its link, Bring and the Coalitions section.
+ * from Riverside's home, Ben pastes its link into the link bar on Oak St's
+ * home (#444) and brings it to Oak St, and each group votes on its own
+ * reconcile Proposal. Once both pass, both group homes list the coalition as
+ * formed, with both groups. axe runs on the card's form, its link, Bring and
+ * the Coalitions section.
  *
  * Then the relay stops, and its database, WAL, shared memory and log are
  * scanned for every canary: the coalition's name and statement, each
@@ -23,8 +24,8 @@
  * relay. `coalition.spec.ts` (#127) sees a coalition's text change once a
  * pass is final, and a change fail in one group.
  */
-import { expect, expectAccessible, heading, test } from './support/fixtures';
-import { bringCard, coalitionKeys, makeCard, type NewCoalition } from './support/coalition';
+import { type Bringing, coalitionKeys, makeCard, type NewCoalition } from './support/coalition';
+import { expect, expectAccessible, heading, type Person, test } from './support/fixtures';
 import { type Canary, describeFinding, putControl, scan, tag, textCanary } from './support/scan';
 import { found, vote } from './support/steps';
 import { storedGroups } from './support/stored';
@@ -34,6 +35,38 @@ const DOCUMENT = { title: 'House rules', atoms: ['Quiet hours start at ten.'] };
 
 /** The pill both groups pass with. */
 const FOUR = '4 · Strongly supportive';
+
+/**
+ * `person` pastes the card `link` into the link bar on their group's home
+ * (#444), opens it with Enter, sees it as plain text, and brings it to the
+ * group `bringing` names, landing on that group's reconcile Proposal. The
+ * steps after opening are `bringCard`'s (support/coalition.ts), which opens
+ * the link itself instead.
+ */
+async function bringCardFromBar(person: Person, link: string, bringing: Bringing): Promise<void> {
+  const { page } = person;
+  const { coalition } = bringing;
+  await expect(heading(page, bringing.to)).toBeVisible();
+  const bar = page.getByRole('searchbox', { name: 'Search or paste a link' });
+  await bar.fill(link);
+  await expect(page.getByRole('option')).toHaveText(/^A reconcile card/u);
+  await bar.press('Enter');
+  await expect(heading(page, coalition.name)).toBeVisible();
+  // The card's seed never reached the address bar.
+  await expect(page).toHaveURL(/#\/card$/u);
+  await expect(bar).toHaveValue('');
+  for (const section of coalition.statement) await expect(page.getByText(section)).toBeVisible();
+  await expect(page.getByText(`From ${bringing.from}`)).toBeVisible();
+  const picker = page.getByRole('radiogroup', { name: 'Your group' });
+  await expect(picker.getByRole('radio')).toHaveCount(1);
+  await expect(picker.getByRole('radio', { name: bringing.to })).toBeChecked();
+  await expectAccessible(person, 'Bring a card');
+  await page.getByRole('textbox', { name: 'Your name in the coalition' }).fill(bringing.yourName);
+  await page.getByRole('button', { name: 'Bring to my group' }).click();
+  await expect(heading(page, `Reconcile into ${coalition.name}`)).toBeVisible();
+  const statement = page.getByRole('region', { name: 'The coalition’s statement' });
+  await expect(statement).toContainText(`Reconcile with ${bringing.from}`);
+}
 
 test('two groups reconcile by a card, both pass, and the relay keeps none of it readable', async ({
   openProfile,
@@ -77,8 +110,8 @@ test('two groups reconcile by a card, both pass, and the relay keeps none of it 
     cardLink = await makeCard(ana, coalition);
   });
 
-  await test.step('Ben opens the card, sees it as plain text, and brings it to Oak St', async () => {
-    await bringCard(ben, cardLink, {
+  await test.step('Ben pastes the card into the link bar, sees it as plain text, and brings it to Oak St', async () => {
+    await bringCardFromBar(ben, cardLink, {
       coalition,
       from: words.riverside,
       to: words.oak,

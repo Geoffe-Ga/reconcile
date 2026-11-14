@@ -255,4 +255,27 @@ describe('CoalitionRoom', () => {
     render(<CoalitionRoom {...props()} />);
     expect(document.documentElement.scrollTop).toBe(3000);
   });
+
+  it('scrolls the app’s page region, where the page scrolls under the link bar (#444)', () => {
+    const region = document.createElement('div');
+    region.className = 'app-page';
+    document.body.append(region);
+    Object.defineProperty(region, 'scrollHeight', { configurable: true, value: 4000 });
+    Object.defineProperty(region, 'clientHeight', { configurable: true, value: 600 });
+    const { rerender } = render(<CoalitionRoom {...props()} />, { container: region });
+    expect(region.scrollTop).toBe(4000);
+    expect(document.documentElement.scrollTop).toBe(0);
+    const live = document.querySelector('.room-announcer');
+
+    // Scrolled up in the region: what arrives is not announced.
+    region.scrollTop = 1000;
+    act(() => {
+      region.dispatchEvent(new Event('scroll'));
+    });
+    const one = { ...VIEW, messages: [...VIEW.messages, said('m3', 'Jo', 'Bring chairs.', 1)] };
+    rerender(<CoalitionRoom {...props({ view: one })} />);
+    expect(live).toHaveTextContent('');
+    expect(region.scrollTop).toBe(1000);
+    region.remove();
+  });
 });

@@ -212,9 +212,9 @@ function fragmentOf(text: string): string | null {
 }
 
 /**
- * The 32-byte seed in a pasted follow link, from any origin, or null. Start's
- * paste field reads follow links through it. A bare seed is an invite's
- * (`parseInviteLink`), so only a whole link reads as a follow link.
+ * The 32-byte seed in a pasted follow link, from any origin, or null. A bare
+ * seed is an invite's (`parseInviteLink`), so only a whole link reads as a
+ * follow link. The link bar reads its kind and payload through `linkKind`.
  */
 export function parseFollowLink(text: string): Uint8Array | null {
   const hash = fragmentOf(text.trim());
