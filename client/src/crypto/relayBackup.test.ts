@@ -307,7 +307,9 @@ describe('sealRelayBackup and openRelayBackup', () => {
     ]);
   });
 
-  it('round-trip the largest plaintext, and refuse one byte more', () => {
+  // Seals and opens the full 16 MiB: about 0.3 s alone, 2.3 s under coverage on
+  // an idle machine, and over the default 5 s on a loaded CI runner (#463).
+  it('round-trip the largest plaintext, and refuse one byte more', { timeout: 30_000 }, () => {
     const largest = new Uint8Array(MAX_RELAY_BACKUP_PLAINTEXT).fill(0x5a);
 
     const blob = sealRelayBackup(KEY, largest);

@@ -71,6 +71,8 @@ async function setup(options: Options = {}) {
       asked={asked}
       onApply={onApply}
       documents={options.documents ?? []}
+      cardGroups={[]}
+      onMakeCard={() => Promise.reject(new Error('Not on this device.'))}
     />,
   );
   return { user: userEvent.setup(), onApply, asked, fake };

@@ -106,6 +106,7 @@ import {
   type ChatThreadBody,
   type CoalitionGenesisBody,
   type DispatchBody,
+  type DoorCardClosedBody,
   type DoorInvitedBody,
   type DispatchProposalBody,
   type DissolveBody,
@@ -167,7 +168,7 @@ import {
   type VoteBody,
   type VouchBody,
 } from './event';
-import { type DoorInvite, mayRecordInvite } from './frontDoor';
+import { type DoorCardClosed, type DoorInvite, mayCloseCard, mayRecordInvite } from './frontDoor';
 import { isRefused, type KeyChecks, keyChecksOf } from './keyChecks';
 import { isOpenAt } from './open';
 import {
@@ -535,7 +536,9 @@ export interface Focus {
  * (#112): each valid `dispatch` at its receipt, and each passed Proposal's at
  * its close, in close order, ahead of any record received from that minute
  * on. `doorInvites` holds each invite a member sent from the front door, the
- * first valid `door-invited` per application, in relay order (#121).
+ * first valid `door-invited` per application, in relay order (#121), and
+ * `doorCardsClosed` each reconcile card from it a member brought to a vote
+ * or dismissed, the first valid `door-card-closed` per card (#426).
  * `doorClosure` is the `leave` or `remove` that closed the front door, while
  * it stays closed, and `exposedDoors` the front door Proposals that were open
  * when a membership ended, whose pass opens no door (#288). `epoch` is the
@@ -593,6 +596,7 @@ export interface GroupState {
   readonly chatThreads: readonly ChatThread[];
   readonly dispatches: readonly Dispatch[];
   readonly doorInvites: readonly DoorInvite[];
+  readonly doorCardsClosed: readonly DoorCardClosed[];
   readonly doorClosure: DoorClosure | null;
   readonly exposedDoors: readonly string[];
   readonly epoch: number;
@@ -713,6 +717,7 @@ interface Draft {
   readonly chatThreads: ChatThread[];
   readonly dispatches: Dispatch[];
   readonly doorInvites: DoorInvite[];
+  readonly doorCardsClosed: DoorCardClosed[];
   doorClosure: DoorClosure | null;
   readonly exposedDoors: string[];
   readonly exposed: Set<string>;
@@ -2095,6 +2100,23 @@ function applyDoorInvited(
 }
 
 /**
+ * Keeps a record of a front-door card closed (#426) when its author may
+ * close it at its receipt (frontDoor.ts): they may propose, the id is a
+ * SHA-256, and none is kept for it yet. The first valid one per card wins.
+ */
+function applyDoorCardClosed(
+  draft: Draft,
+  body: DoorCardClosedBody,
+  author: string,
+  at: Receipt,
+): boolean {
+  const { card } = body;
+  if (!mayCloseCard(draft, author, card)) return false;
+  draft.doorCardsClosed.push({ ...at, by: author, card });
+  return true;
+}
+
+/**
  * True when a cleared Proposal's record from before #289, which doesn't say
  * where in its close's minute the closing ballot came, puts this version on
  * its ballot: it arrived in that minute, before the closing ballot (#111). A
@@ -2484,7 +2506,7 @@ function applyAdmitted(draft: Draft, event: GroupEvent, at: Receipt): boolean {
  * The events the restored features added: `suspend` (#102), `narrow` (#117),
  * `vouch` (#101), `chat-posted` (#119), `chat-thread` (#123), `dispatch`
  * (#112), `kx` and `key-rotate` (#98), `group-result` (#100), and
- * `door-invited` (#121).
+ * `door-invited` (#121) and `door-card-closed` (#426).
  */
 type LaterEvent = Extract<
   GroupEvent,
@@ -2502,6 +2524,7 @@ type LaterEvent = Extract<
       | 'key-taken'
       | 'group-result'
       | 'door-invited'
+      | 'door-card-closed'
       | 'room-wrap';
   }
 >;
@@ -2531,8 +2554,9 @@ function applyLater(draft: Draft, event: LaterEvent | ProposalEvent, at: Receipt
 
 /**
  * {@link applyLater} for `kx` and `key-rotate` (#98), `unwrap-failed` and
- * `key-taken` (#224), `group-result` (#100) and `door-invited` (#121), and the
- * events that act on a Proposal ({@link applyProposalEvent}).
+ * `key-taken` (#224), `group-result` (#100), `door-invited` (#121) and
+ * `door-card-closed` (#426), and the events that act on a Proposal
+ * ({@link applyProposalEvent}).
  */
 function applyKeyed(
   draft: Draft,
@@ -2560,6 +2584,8 @@ function applyKeyed(
       return applyGroupResult(draft, event.body, event.author, at);
     case 'door-invited':
       return applyDoorInvited(draft, event.body, event.author, at);
+    case 'door-card-closed':
+      return applyDoorCardClosed(draft, event.body, event.author, at);
     case 'room-wrap':
       return applyRoomWrap(draft, event.body, event.author, at);
     default:
@@ -3240,6 +3266,7 @@ function foldPass(pass: Pass): { state: GroupState; distrusted: string[] } {
     chatThreads: [],
     dispatches: [],
     doorInvites: [],
+    doorCardsClosed: [],
     doorClosure: null,
     exposedDoors: [],
     exposed: new Set(),
@@ -3284,7 +3311,7 @@ function foldPass(pass: Pass): { state: GroupState; distrusted: string[] } {
   const documents = applyPasses(draft.founded, proposals);
   const { group, rules, name, chat, members, former, at, stewards, suspensions } = draft;
   const { removals, responses, narrowings, vouches, chatPosts, chatThreads } = draft;
-  const { dispatches, doorInvites, doorClosure, exposedDoors } = draft;
+  const { dispatches, doorInvites, doorCardsClosed, doorClosure, exposedDoors } = draft;
   const { epoch, nextEpoch, rotations, refused, rotationDue } = draft;
   const state = {
     group,
@@ -3308,6 +3335,7 @@ function foldPass(pass: Pass): { state: GroupState; distrusted: string[] } {
     chatThreads,
     dispatches,
     doorInvites,
+    doorCardsClosed,
     doorClosure,
     exposedDoors,
     epoch,

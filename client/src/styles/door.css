@@ -117,3 +117,29 @@
 .request .heading-3 {
   overflow-wrap: anywhere;
 }
+
+/* Propose reconciling, from a door (#426): its way back is a button that
+ * reads as Back's link, since it stays on the door's own address. */
+.door-back {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--primary);
+  cursor: pointer;
+}
+
+.door-back[data-focus-visible] {
+  outline: 3px solid var(--ochre);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* Groups asking to reconcile (#426): a card left at the door, its preview as
+ * Bring a card shows it, then your name in the coalition and the actions. */
+.door-card .invite-document {
+  padding-block-start: var(--space-3);
+}
+
+.door-card-form {
+  gap: var(--space-3);
+}
