@@ -7,9 +7,10 @@
  *
  * axe checks every screen they settle on, and any CSP violation in any page
  * fails the test. Nothing here moves time: everyone scores, so the vote
- * closes early. Last, C opens Discover from the tab bar on a phone, where
- * the page scrolls above the bar and never under it, and axe checks it in
- * both themes (#423).
+ * closes early. C joins by pasting the invite into the link bar on Personal
+ * (#444). Last, C opens Discover from the tab bar on a phone, where the page
+ * scrolls between the link bar and the tab bar and never under either, and
+ * axe checks it with the link bar open in both themes (#423, #444).
  */
 import { type Locator, type Page } from '@playwright/test';
 
@@ -179,15 +180,26 @@ test('three members propose, vote and see the Update', async ({ openProfile }) =
     await acceptNotice(ben);
     await join(ben);
 
-    // C pastes it on Start, in the dark theme.
+    // C pastes it, with the words a chat app copies around it, into the link bar on Personal (#444).
     await cal.page.goto('/');
     await acceptNotice(cal);
     await expect(heading(cal.page, 'Your groups')).toBeVisible();
     await expectAccessible(cal, 'Start');
-    await cal.page.getByRole('textbox', { name: 'Invite link' }).fill(inviteLink);
-    await cal.page.getByRole('button', { name: 'Join with an invite link' }).click();
+    await cal.page
+      .getByRole('navigation', { name: 'Main' })
+      .getByRole('link', { name: 'Me' })
+      .click();
+    await expect(heading(cal.page, 'Personal')).toBeVisible();
+    await cal.page.keyboard.press('Control+l');
+    const bar = cal.page.getByRole('searchbox', { name: 'Search or paste a link' });
+    await expect(bar).toBeFocused();
+    await bar.fill(`Join us here: ${inviteLink}`);
+    await expect(cal.page.getByRole('option')).toHaveText(/^An invite/u);
+    await expect(heading(cal.page, 'Personal')).toBeVisible();
+    await cal.page.keyboard.press('Enter');
     // C will open the composer, which only the creating level holds.
     await join(cal, 'Co-Creator');
+    await expect(bar).toHaveValue('');
   });
 
   await test.step('all three see the Document and everyone in the group', async () => {
@@ -262,7 +274,7 @@ test('three members propose, vote and see the Update', async ({ openProfile }) =
     for (const person of [ana, ben, cal]) await expectUpdate(person);
   });
 
-  await test.step('C opens Discover from the tab bar on a phone, in both themes', async () => {
+  await test.step('C opens Discover from the tab bar on a phone, and the link bar, in both themes', async () => {
     const { page } = cal;
     await page.setViewportSize(PHONE);
     await page.goto('/#/');
@@ -274,16 +286,25 @@ test('three members propose, vote and see the Update', async ({ openProfile }) =
       'aria-current',
       'page',
     );
-    await expect(page.getByRole('textbox', { name: 'Card or link' })).toBeVisible();
-    // The page scrolls in a region of its own that ends where the bar begins, so nothing sits under it.
+    await expect(
+      page.getByText('To open a card or link, paste it into the bar at the top.'),
+    ).toBeVisible();
+    // The page scrolls in a region of its own between the link bar's band and the tab bar, so nothing sits under either.
     const region = await page.getByRole('main').evaluate((main) => {
       const scroller = main.parentElement;
+      const box = scroller?.getBoundingClientRect();
       return {
-        bottom: Math.round(scroller?.getBoundingClientRect().bottom ?? Number.POSITIVE_INFINITY),
+        top: Math.round(box?.top ?? Number.NEGATIVE_INFINITY),
+        bottom: Math.round(box?.bottom ?? Number.POSITIVE_INFINITY),
         sideways: (scroller?.scrollWidth ?? 0) > (scroller?.clientWidth ?? 0),
       };
     });
+    const band = await page.getByRole('search').evaluate((search) => {
+      const box = search.parentElement?.getBoundingClientRect();
+      return Math.round(box?.bottom ?? 0);
+    });
     expect(region).toEqual({
+      top: band,
       bottom: Math.round((await tabs.boundingBox())?.y ?? 0),
       sideways: false,
     });
@@ -291,5 +312,20 @@ test('three members propose, vote and see the Update', async ({ openProfile }) =
       await page.emulateMedia({ colorScheme });
       await expectAccessible(cal, `Discover on a phone, ${colorScheme}`);
     }
+    // With the link bar open on a link, the page under its scrim is inert, and axe passes.
+    await page.keyboard.press('/');
+    const bar = page.getByRole('searchbox', { name: 'Search or paste a link' });
+    await expect(bar).toBeFocused();
+    await bar.fill(inviteLink);
+    await expect(page.getByRole('option')).toHaveText(/^An invite/u);
+    for (const colorScheme of ['dark', 'light'] as const) {
+      await page.emulateMedia({ colorScheme });
+      await expectAccessible(cal, `the link bar open on a phone, ${colorScheme}`);
+    }
+    await page.keyboard.press('Escape');
+    await expect(bar).toHaveValue('');
+    await page.keyboard.press('Escape');
+    await expect(bar).not.toBeFocused();
+    await expect(heading(page, 'Discover')).toBeVisible();
   });
 });

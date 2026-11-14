@@ -41,10 +41,12 @@ function scores(page: Page, option: string): Locator {
   return page.getByRole('radiogroup', { name: `Score for ${option}` });
 }
 
-/** True when nothing on the page scrolls sideways. */
+/** True when nothing on the page scrolls sideways: the document, nor the region it scrolls in under the link bar (#444). */
 async function fitsWidth(page: Page): Promise<boolean> {
-  return page.evaluate(
-    () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+  return page.evaluate(() =>
+    [document.documentElement, document.querySelector('.app-page')].every(
+      (box) => box === null || box.scrollWidth <= box.clientWidth,
+    ),
   );
 }
 

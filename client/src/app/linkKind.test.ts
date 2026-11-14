@@ -1,106 +1,147 @@
 /**
- * What a pasted link is and how a screen opens it (#423; ADR-0077 §6): link
- * in, route out, with no field around it, so Start's field, Discover's and
- * the floating link bar to come (#444) all read a link the same way.
+ * What a pasted link is (#444; ADR-0077 §6): link in, kind and payload out,
+ * with no field around it. Every link the app makes reads back as its own
+ * kind, as a whole link from any origin or its bare fragment, with any
+ * whitespace or words around it as a chat app copies it; one with its
+ * payload cut short reads as damaged; anything else is no link at all.
  */
 import fc from 'fast-check';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { cardLink } from '../coalition/card';
 import { followLink } from '../coalition/follow';
 import { newCardSeed } from '../crypto/card';
+import { base64url } from '../crypto/base64url';
 import { newInviteSeed } from '../crypto/invite';
+import { linkCode, newLinkKeys, newLinkSeed } from '../crypto/link';
+import { newRecoveryKeys, recoveryCode } from '../crypto/recovery';
+import { doorLinkOf } from '../door/page';
+import { shareLinkOf } from '../share/shareLink';
 import { inviteLink } from './invite';
-import { readLink } from './linkKind';
+import { type LinkKindName, linkKind } from './linkKind';
 
 const ORIGIN = 'https://reconcile.example';
-const ADDRESS = `${'A'.repeat(42)}E`;
 
-/** A spy for every kind of link. */
-function openers() {
-  return {
-    onOpenInvite: vi.fn(),
-    onOpenCard: vi.fn(),
-    onOpenFollow: vi.fn(),
-    onOpenDoor: vi.fn(),
-  };
-}
+/** Each kind of link the app makes, from an origin and two 32-byte values. */
+const MAKERS: Readonly<
+  Record<LinkKindName, (origin: string, a: Uint8Array, b: Uint8Array) => string>
+> = {
+  invite: (origin, seed) => inviteLink(origin, seed),
+  card: (origin, seed) => cardLink(origin, seed),
+  follow: (origin, seed) => followLink(origin, seed),
+  door: (origin, address) => doorLinkOf(origin, address),
+  shared: (origin, seed, publicKey) => shareLinkOf(origin, { seed, publicKey }),
+};
 
-/** The handlers `open` was called through, by name. */
-function called(open: ReturnType<typeof openers>): string[] {
-  return Object.entries(open)
-    .filter(([, handler]) => handler.mock.calls.length > 0)
-    .map(([name]) => name);
-}
+const KINDS = Object.keys(MAKERS) as LinkKindName[];
 
-describe('readLink', () => {
+/** A link the app makes, its kind, and what follows its fragment's prefix. */
+const madeLink = fc
+  .record({
+    kind: fc.constantFrom(...KINDS),
+    origin: fc.constantFrom(ORIGIN, 'https://app.example', 'http://localhost:5173'),
+    a: fc.uint8Array({ minLength: 32, maxLength: 32 }),
+    b: fc.uint8Array({ minLength: 32, maxLength: 32 }),
+    bare: fc.boolean(),
+  })
+  .map(({ kind, origin, a, b, bare }) => {
+    const full = MAKERS[kind](origin, a, b);
+    const fragment = new URL(full).hash;
+    const payload = fragment.slice(fragment.indexOf('/') + 1);
+    return { kind, payload, link: bare ? fragment : full };
+  });
+
+/** Whitespace as pasting leaves it: spaces, tabs and line breaks. */
+const blank = fc.stringMatching(/^[ \t\r\n]{0,4}$/);
+
+/** Words a chat app copies around a link. */
+const words = fc
+  .array(fc.constantFrom('hey,', 'join', 'us', 'here’s', 'the', 'link:', 'thanks!', '🙂'), {
+    maxLength: 4,
+  })
+  .map((list) => list.join(' '));
+
+describe('linkKind', () => {
+  it('reads every link the app makes back as its kind and payload, whatever is around it', () => {
+    fc.assert(
+      fc.property(madeLink, blank, words, words, blank, (made, lead, before, after, trail) => {
+        const text = `${lead}${before} ${made.link} ${after}${trail}`;
+        expect(linkKind(text)).toEqual({ kind: made.kind, payload: made.payload });
+      }),
+    );
+  });
+
   it.each([
-    ['an invite', 'invite', 'onOpenInvite', (seed: Uint8Array) => inviteLink(ORIGIN, seed)],
-    ['a reconcile card', 'card', 'onOpenCard', (seed: Uint8Array) => cardLink(ORIGIN, seed)],
-    ['a follow link', 'follow', 'onOpenFollow', (seed: Uint8Array) => followLink(ORIGIN, seed)],
+    ['in angle brackets', (link: string) => `<${link}>`],
+    ['in parentheses', (link: string) => `(${link})`],
+    ['at the end of a sentence', (link: string) => `Join us at ${link}.`],
+    ['in quotes', (link: string) => `“${link}”`],
+  ])('reads a link %s, as chat apps copy them', (_name, wrap) => {
+    const seed = newInviteSeed();
+    const link = inviteLink(ORIGIN, seed);
+    const payload = new URL(link).hash.slice('#join/'.length);
+
+    expect(linkKind(wrap(link))).toEqual({ kind: 'invite', payload });
+  });
+
+  it('reads the first link that opens, past a damaged one before it', () => {
+    const card = cardLink(ORIGIN, newCardSeed());
+    const payload = new URL(card).hash.slice('#reconcile/'.length);
+
+    expect(linkKind(`${ORIGIN}/#join/cut ${card}`)).toEqual({ kind: 'card', payload });
+  });
+
+  it('reads any link the app makes, cut short anywhere in its payload, as damaged', () => {
+    fc.assert(
+      fc.property(madeLink, fc.nat(), (made, at) => {
+        const cut = made.link.slice(0, made.link.length - 1 - (at % made.payload.length));
+        expect(linkKind(cut)).toEqual({ kind: 'damaged' });
+      }),
+    );
+  });
+
+  it.each([
+    ['a linking code', () => linkCode(newLinkSeed(), newLinkKeys().publicKey), 'linking-code'],
+    ['a recovery code', () => recoveryCode(newRecoveryKeys()), 'recovery-code'],
   ] as const)(
-    'reads %s, and opening it hands its seed to that handler alone',
-    (_name, kind, handler, link) => {
-      const open = openers();
-      const seed = kind === 'card' ? newCardSeed() : newInviteSeed();
-
-      const read = readLink(` ${link(seed)}\n`, open);
-
-      expect(read?.kind).toBe(kind);
-      expect(called(open)).toEqual([]);
-      read?.open();
-      expect(called(open)).toEqual([handler]);
-      expect(Array.from(open[handler].mock.calls[0]?.[0] as Uint8Array)).toEqual(Array.from(seed));
+    'reads %s, with words around it, by its kind alone, carrying none of it',
+    (_name, make, kind) => {
+      expect(linkKind(`here’s my code:\n${make()} thanks`)).toEqual({ kind });
     },
   );
 
-  it('reads a front door link from any origin, and opens it by its address', () => {
-    const open = openers();
-
-    const read = readLink(`https://elsewhere.example/#door/${ADDRESS}`, open);
-
-    expect(read?.kind).toBe('door');
-    read?.open();
-    expect(called(open)).toEqual(['onOpenDoor']);
-    expect(open.onOpenDoor).toHaveBeenCalledWith(ADDRESS);
-  });
-
-  it('leaves a front door link unread where the screen opens none (Start has its own field)', () => {
-    const onOpenInvite = vi.fn();
-
-    expect(readLink(`${ORIGIN}/#door/${ADDRESS}`, { onOpenInvite })).toBeNull();
-    expect(onOpenInvite).not.toHaveBeenCalled();
-  });
-
-  it('reads a card or follow link even where nothing opens one, and opening it then does nothing', () => {
-    const onOpenInvite = vi.fn();
-    const card = readLink(cardLink(ORIGIN, newCardSeed()), { onOpenInvite });
-    const follow = readLink(followLink(ORIGIN, newInviteSeed()), { onOpenInvite });
-
-    expect([card?.kind, follow?.kind]).toEqual(['card', 'follow']);
-    card?.open();
-    follow?.open();
-    expect(onOpenInvite).not.toHaveBeenCalled();
+  it.each([
+    ['RL1.', 'linking-code'],
+    ['RR1.', 'recovery-code'],
+  ] as const)('reads a code by its prefix %s alone, cut short or not', (prefix, kind) => {
+    expect(linkKind(prefix)).toEqual({ kind });
+    expect(linkKind(`${prefix}abc`)).toEqual({ kind });
   });
 
   it.each([
     ['nothing', ''],
-    ['words', 'not a link'],
+    ['blank space', ' \n\t '],
+    ['words', 'quiet hours'],
     ['another site', 'https://example.com/whatever'],
-    ['a damaged invite', `${ORIGIN}/#join/not-a-real-payload`],
+    ['another site’s fragment', 'https://example.com/#top'],
+    ['one of the app’s own pages', `${ORIGIN}/#/g/abc`],
+    ['a bare seed, which names no kind', base64url(newInviteSeed())],
+    ['a fragment with no payload', '#join'],
   ])('reads %s as no link', (_name, text) => {
-    expect(readLink(text, openers())).toBeNull();
+    expect(linkKind(text)).toEqual({ kind: 'not-a-link' });
   });
 
-  it('never throws, and reading alone never opens anything', () => {
+  it('never throws, and reads anything as a kind, damaged or no link', () => {
+    const names: readonly string[] = [
+      ...KINDS,
+      'linking-code',
+      'recovery-code',
+      'damaged',
+      'not-a-link',
+    ];
     fc.assert(
-      fc.property(fc.string(), (text) => {
-        const open = openers();
-        const read = readLink(text, open);
-        expect(read === null || ['invite', 'card', 'follow', 'door'].includes(read.kind)).toBe(
-          true,
-        );
-        expect(called(open)).toEqual([]);
+      fc.property(fc.string({ unit: 'binary' }), (text) => {
+        expect(names).toContain(linkKind(text).kind);
       }),
     );
   });

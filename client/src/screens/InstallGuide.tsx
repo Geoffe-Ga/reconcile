@@ -200,7 +200,7 @@ function DoorArea({ payload, origin, copyText, readDoor }: DoorAreaProps) {
 /** The last step: open the app, and with an invite or a door, where to paste its link. */
 function lastStep(arrival: Arrival, phase: Phase): string {
   if (arrival.kind === 'door') return messages.door.openToApply;
-  // Join with an invite link is the next step only while the link still works.
+  // Pasting the invite into the link bar is the next step only while the link still works.
   const toJoin = arrival.kind === 'invite' && phase.kind !== 'missing';
   return toJoin ? messages.install.openToJoin : messages.install.open;
 }

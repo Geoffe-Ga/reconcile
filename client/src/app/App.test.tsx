@@ -150,7 +150,7 @@ describe('App', () => {
     expect(await axeViolations()).toEqual([]);
   });
 
-  it('opens a pasted invite without putting it in the address bar', async () => {
+  it('opens an invite pasted into the link bar without putting it in the address bar', async () => {
     const user = userEvent.setup();
     const fake = createFakeRelay();
     const ana = await device(fake, 'ana');
@@ -158,9 +158,9 @@ describe('App', () => {
     const ben = await device(fake, 'ben');
     render(<App services={ben.services} />);
 
-    await user.click(await screen.findByRole('textbox', { name: 'Invite link' }));
+    await user.click(await screen.findByRole('searchbox', { name: 'Search or paste a link' }));
     await user.paste(link);
-    await user.click(screen.getByRole('button', { name: 'Join with an invite link' }));
+    await user.keyboard('{Enter}');
 
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Riverside Tenants' }),

@@ -54,8 +54,10 @@ import type { SeatNumber } from '../engine/stewards';
 import type { GuideRecord } from '../platform/guide';
 import type { Persistence } from '../platform/persist';
 import { Start, type StartFollowing, type StartRequest } from '../screens/Start';
+import { LinkBar } from './LinkBar';
+import type { OpenableLink } from './linkKind';
+import { openPasted } from './openPasted';
 import { TabBar } from './TabBar';
-import { tabPlaceOf } from './tabPlace';
 import { StewardComposer, type StewardOutcome } from '../screens/StewardComposer';
 import { dismissed } from '../store/applications';
 import { dispatchOf, notesElsewhere, skipCarry } from '../store/carry';
@@ -170,9 +172,8 @@ export interface AppProps {
 
 interface StartScreenProps {
   readonly services: AppServices;
+  /** Opens the invite a front door's reply brought (#121), its seed held in memory. */
   readonly onOpenInvite: (seed: Uint8Array) => void;
-  readonly onOpenCard: (seed: Uint8Array) => void;
-  readonly onOpenFollow: (seed: Uint8Array) => void;
   readonly persistence: Persistence | null;
 }
 
@@ -195,13 +196,8 @@ function followingOf(coalitions: readonly HeldCoalition[]): StartFollowing[] {
   });
 }
 
-/** Opens a front door link pasted into Start (#121). */
-function openDoor(payload: string): void {
-  navigate({ name: 'door', payload });
-}
-
 function StartScreen(props: StartScreenProps) {
-  const { services, onOpenInvite, onOpenCard, onOpenFollow, persistence } = props;
+  const { services, onOpenInvite, persistence } = props;
   const groups = useGroupList(services.store);
   const alert = useAlertCard(services);
   const coalitions = useCoalitionList(services.store);
@@ -226,9 +222,6 @@ function StartScreen(props: StartScreenProps) {
       groups={groups}
       requests={requests}
       onOpenInvite={onOpenInvite}
-      onOpenDoor={openDoor}
-      onOpenCard={onOpenCard}
-      onOpenFollow={onOpenFollow}
       following={following}
       persistence={persistence}
       onRestore={onRestore}
@@ -1461,40 +1454,23 @@ type LinkRoute = Extract<Route, { readonly payload: unknown }>;
 
 interface PlainScreenProps extends Omit<ScreenProps, 'route' | 'heldSeed' | 'holdSeed'> {
   readonly route: PlainRoute;
+  /** Opens the invite a front door's reply brought (#121), its seed held in memory. */
   readonly openInvite: (seed: Uint8Array) => void;
-  /** Opens a reconcile card pasted into Start (#114), its seed held in memory. */
-  readonly openCard: (seed: Uint8Array) => void;
-  /** Opens a follow link pasted into Start (#124), its seed held in memory. */
-  readonly openFollow: (seed: Uint8Array) => void;
 }
 
 /** Start, Personal, and the pages that take no argument (`BareScreen`). */
 function PlainScreen(props: PlainScreenProps) {
-  const { route, services, persistence, guide, openInvite, openCard, openFollow } = props;
+  const { route, services, persistence, guide, openInvite } = props;
   if (isBare(route)) return <BareScreen route={route} services={services} guide={guide} />;
   switch (route.name) {
     case 'start':
       return (
-        <StartScreen
-          services={services}
-          onOpenInvite={openInvite}
-          onOpenCard={openCard}
-          onOpenFollow={openFollow}
-          persistence={persistence}
-        />
+        <StartScreen services={services} onOpenInvite={openInvite} persistence={persistence} />
       );
     case 'personal':
       return <PersonalScreen services={services} />;
     case 'discover':
-      return (
-        <DiscoverScreen
-          store={services.store}
-          onOpenInvite={openInvite}
-          onOpenCard={openCard}
-          onOpenFollow={openFollow}
-          onOpenDoor={openDoor}
-        />
-      );
+      return <DiscoverScreen store={services.store} />;
     case 'personalDocument':
       // Keyed by id, so another Document starts its editor afresh.
       return <PersonalDocumentScreen key={route.id} services={services} id={route.id} />;
@@ -1556,20 +1532,6 @@ function Screen({ route, services, heldSeed, holdSeed, persistence, guide }: Scr
     },
     [holdSeed],
   );
-  const openCard = useCallback(
-    (seed: Uint8Array) => {
-      holdSeed(seed);
-      navigate({ name: 'card', payload: null });
-    },
-    [holdSeed],
-  );
-  const openFollow = useCallback(
-    (seed: Uint8Array) => {
-      holdSeed(seed);
-      navigate({ name: 'follow', payload: null });
-    },
-    [holdSeed],
-  );
   if ('groupId' in route) {
     return (
       <>
@@ -1598,17 +1560,16 @@ function Screen({ route, services, heldSeed, holdSeed, persistence, guide }: Scr
       persistence={persistence}
       guide={guide}
       openInvite={openInvite}
-      openCard={openCard}
-      openFollow={openFollow}
     />
   );
 }
 
 /**
  * The current route's screen, with the store and sync loop provided to
- * `useGroup`, and, on the four pages that are its places, the tab bar under
- * it (#423): the page scrolls in its own region above the bar, so the bar
- * stays at the bottom and never covers any of the page.
+ * `useGroup`, in the app's frame: the link bar at the top (#444), the page
+ * in its own scroll region under it, and, on the four pages that are its
+ * places, the tab bar at the bottom (#423), so neither bar ever covers any
+ * of the page. A shared page stands outside the app, with neither (#105).
  */
 export function App({ services, initialSeed = null, persistence = null }: AppProps) {
   const route = useRoute();
@@ -1619,6 +1580,11 @@ export function App({ services, initialSeed = null, persistence = null }: AppPro
     () => ({ store: services.store, sync: services.sync }),
     [services.store, services.sync],
   );
+  // While the link bar's panel shows, the page and the tab bar under its scrim are inert (#444).
+  const [barOpen, setBarOpen] = useState(false);
+  const openLink = useCallback((link: OpenableLink) => {
+    openPasted(link, holdSeed);
+  }, []);
   const screen = (
     <Screen
       route={route}
@@ -1631,12 +1597,15 @@ export function App({ services, initialSeed = null, persistence = null }: AppPro
   );
   return (
     <GroupServicesContext value={groupServices}>
-      {tabPlaceOf(route) === null ? (
+      {route.name === 'shared' ? (
         screen
       ) : (
-        <div className="tabbed">
-          <div className="tabbed-page">{screen}</div>
-          <TabBar route={route} />
+        <div className="app-frame">
+          <LinkBar onOpen={openLink} onPanelChange={setBarOpen} />
+          <div className="app-page" inert={barOpen}>
+            {screen}
+          </div>
+          <TabBar route={route} inert={barOpen} />
         </div>
       )}
     </GroupServicesContext>

@@ -337,9 +337,9 @@ describe('following a coalition (#124)', SLOW, () => {
     const gus = await open(fake, 'gus');
 
     openApp(gus, '#/');
-    await user.click(await screen.findByRole('textbox', { name: 'Invite link' }));
+    await user.click(await screen.findByRole('searchbox', { name: 'Search or paste a link' }));
     await user.paste(link);
-    await user.click(screen.getByRole('button', { name: 'Join with an invite link' }));
+    await user.keyboard('{Enter}');
     expect(await screen.findByRole('heading', { level: 1, name: CANARY_NAME })).toBeVisible();
     expect(window.location.hash).toBe('#/follow');
     await user.click(screen.getByRole('button', { name: 'Not now' }));

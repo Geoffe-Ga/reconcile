@@ -85,13 +85,15 @@ function currentOf(route: Route, tab: (typeof TABS)[number]): 'page' | 'true' | 
 export interface TabBarProps {
   /** Where the app is: the bar shows only on a place's own pages. */
   readonly route: Route;
+  /** True while the link bar's panel covers the app, so the tabs can't be reached under it (#444). */
+  readonly inert?: boolean;
 }
 
 /** Groups, Discover and Me, on the four pages that are theirs; nothing anywhere else. */
-export function TabBar({ route }: TabBarProps) {
+export function TabBar({ route, inert = false }: TabBarProps) {
   if (tabPlaceOf(route) === null) return null;
   return (
-    <nav className="tab-bar" aria-label={messages.tabs.label}>
+    <nav className="tab-bar" aria-label={messages.tabs.label} inert={inert}>
       <ul className="tab-bar-list">
         {TABS.map((tab) => {
           const current = currentOf(route, tab);

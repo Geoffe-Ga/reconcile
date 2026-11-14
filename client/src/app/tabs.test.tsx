@@ -1,7 +1,8 @@
 /**
  * The tab bar in the app (#423; ADR-0077 §6–§7): each tab opens its place,
  * Me opens Personal with Settings reached from it, the bar stays off a form,
- * and a reconcile card pasted on Discover opens Bring a card, as from Start.
+ * and a reconcile card pasted into the link bar on Discover opens Bring a
+ * card (#444).
  */
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -76,17 +77,17 @@ describe('the tab bar', SLOW, () => {
   });
 });
 
-describe('Discover’s Open a card or link', SLOW, () => {
-  it('opens Bring a card from a pasted reconcile card, its seed held in memory, as Start does', async () => {
+describe('Discover and the link bar', SLOW, () => {
+  it('opens Bring a card from a reconcile card pasted into the link bar on Discover, its seed held in memory', async () => {
     const user = userEvent.setup();
     const fake = createFakeRelay();
     const seed = newCardSeed();
     opening(await open(fake, 'ben'), '#/discover');
     expect(await heading('Discover')).toBeVisible();
 
-    await user.click(screen.getByRole('textbox', { name: 'Card or link' }));
+    await user.click(screen.getByRole('searchbox', { name: 'Search or paste a link' }));
     await user.paste(cardLink('https://reconcile.test', seed));
-    await user.click(screen.getByRole('button', { name: 'Open' }));
+    await user.keyboard('{Enter}');
 
     // Bring a card reads the card's mailbox, which holds nothing here, so it says the card has expired.
     expect(await screen.findByText(messages.bring.badLink)).toBeVisible();
