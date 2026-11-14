@@ -17,10 +17,19 @@
  *   sealed (`seal.ts`) under `HKDF(r, empty salt, "reconcile/v1/recovery-seal",
  *   32)`, so the relay sees one padded blob per contact under an id it can
  *   tie to nothing.
+ * - **The second number** (#398). Beside the check, the new device shows six
+ *   more digits, `u32be(HKDF(E_R's secret key, empty salt,
+ *   "reconcile/v1/recovery-number", 32)[0..4]) mod 10^6`, which the person
+ *   reads out on the same call. They come from the secret key, which never
+ *   leaves the device, so nobody holding only the code can work them out.
+ *   Each contact types them, and their device seals them inside the release.
  * - **The release.** Inside each blob is a box (`box.ts`) to `E_R` under
  *   `reconcile/v1/recovery-release`, with the mailbox id as associated data,
- *   holding the share as `shares.ts`'s `{split, t, n, share}`. Only the new
- *   device, which alone holds `E_R`'s secret, opens it.
+ *   holding the UTF-8 JSON `{v: 2, split, t, n, share, number}`: the share
+ *   as `shares.ts` writes it, and the second number the contact typed. Only
+ *   the new device, which alone holds `E_R`'s secret, opens it, and it takes
+ *   a share only when the number is its own (`recovery/request.ts`). A
+ *   release from before #398 has no `v` and no number, and opens to nothing.
  * - **The alert.** When a contact approves, their device posts a box to the
  *   person's encryption key in the share's group under
  *   `reconcile/v1/recovery-alert`, with the group id ‖ the person's key as
@@ -28,8 +37,8 @@
  *   the person's devices name the alert by it when they cancel, so a cancel
  *   tells nobody else which alert it answers.
  *
- * `vectors/recovery.json` pins the code, the check, the mailbox, a release
- * and an alert, computed outside @noble.
+ * `vectors/recovery.json` pins the code, the check, the second number, the
+ * mailbox, a release of each format and an alert, computed outside @noble.
  */
 import { sha256 } from '@noble/hashes/sha2.js';
 import { concatBytes, randomBytes, utf8ToBytes } from '@noble/hashes/utils.js';
@@ -58,6 +67,15 @@ export const RECOVERY_SEAL_INFO = 'reconcile/v1/recovery-seal';
 
 /** The HKDF label of a release's box. */
 export const RECOVERY_RELEASE_INFO = 'reconcile/v1/recovery-release';
+
+/** The HKDF label of the second number (#398). */
+export const RECOVERY_NUMBER_INFO = 'reconcile/v1/recovery-number';
+
+/** The release plaintext version this file seals and opens (#398): the first had no `v`. */
+const RELEASE_VERSION = 2;
+
+/** A second number as a release carries it: exactly six ASCII digits. */
+const SIX_DIGITS = /^[0-9]{6}$/;
 
 /** The HKDF label of an alert's box. */
 export const RECOVERY_ALERT_INFO = 'reconcile/v1/recovery-alert';
@@ -143,6 +161,19 @@ export function recoveryCheck(code: string): string {
   return sixDigits(digest.subarray(0, 4));
 }
 
+/**
+ * The second number (#398) the new device shows beside the check, from its
+ * X25519 `secretKey`: six digits, the same for the request's whole life.
+ */
+export function recoveryNumber(secretKey: Uint8Array): string {
+  const derived = hkdf32(secretKey, RECOVERY_NUMBER_INFO);
+  try {
+    return sixDigits(derived.subarray(0, 4));
+  } finally {
+    derived.fill(0);
+  }
+}
+
 /** The request mailbox's id and seal key, both derived from the seed alone. */
 export function recoveryChannel(seed: Uint8Array): RecoveryChannel {
   return {
@@ -152,18 +183,26 @@ export function recoveryChannel(seed: Uint8Array): RecoveryChannel {
 }
 
 /**
- * `share` sealed to the new device's `publicKey` for `mailbox`: the box a
- * contact's device puts, sealed again under the mailbox's key, in the
- * request mailbox.
+ * `share` and the second `number` the contact typed, sealed to the new
+ * device's `publicKey` for `mailbox` (#398): the box a contact's device puts,
+ * sealed again under the mailbox's key, in the request mailbox.
  *
- * @throws {RangeError} when the share isn't well shaped, or the key can't take a box.
+ * @throws {RangeError} when the share isn't well shaped, the number isn't six
+ *   digits, or the key can't take a box.
  */
 export function sealRelease(
   publicKey: Uint8Array,
   mailbox: string,
   share: RecoveryShare,
+  number: string,
 ): Uint8Array<ArrayBuffer> {
-  const plaintext = encodeShare(share);
+  if (!SIX_DIGITS.test(number)) throw new RangeError('A second number is six digits.');
+  // Checks the share, and gives its fields as a release writes them.
+  const fields = encodeShare(share);
+  const shape = objectIn(fields) ?? {};
+  fields.fill(0);
+  const body = { v: RELEASE_VERSION, ...shape, number };
+  const plaintext = utf8ToBytes(JSON.stringify(body));
   try {
     return sealTo(publicKey, plaintext, RECOVERY_RELEASE_INFO, utf8ToBytes(mailbox));
   } finally {
@@ -172,19 +211,27 @@ export function sealRelease(
 }
 
 /**
- * The share in a release `box` for the holder of `secretKey`, or null when
- * it doesn't open for this mailbox (another key, mailbox or any changed
- * byte) or opens to anything but a well-shaped share.
+ * The share and second number in a release `box` for the holder of
+ * `secretKey`, or null when it doesn't open for this mailbox (another key,
+ * mailbox or any changed byte) or opens to anything but version 2: a
+ * well-shaped share and six digits. Whether the number is the device's own is
+ * the caller's to check (`recovery/request.ts`).
  */
 export function openRelease(
   secretKey: Uint8Array,
   mailbox: string,
   box: Uint8Array,
-): RecoveryShare | null {
+): Release | null {
   const plaintext = openBox(secretKey, box, RECOVERY_RELEASE_INFO, utf8ToBytes(mailbox));
   if (plaintext === null) return null;
   try {
-    return decodeShare(plaintext);
+    const body = objectIn(plaintext);
+    const { number } = body ?? {};
+    if (body?.v !== RELEASE_VERSION || typeof number !== 'string' || !SIX_DIGITS.test(number)) {
+      return null;
+    }
+    const share = decodeShare(plaintext);
+    return share === null ? null : { share, number };
   } finally {
     plaintext.fill(0);
   }
@@ -198,6 +245,12 @@ export function newAlertTag(): string {
 /** Whether `tag` is 16 bytes in canonical unpadded base64url. */
 function isAlertTag(tag: unknown): tag is string {
   return canonicalBytes(tag)?.length === ALERT_TAG_BYTES;
+}
+
+/** What a release opens to (#398): the share, and the second number the contact typed. */
+export interface Release {
+  readonly share: RecoveryShare;
+  readonly number: string;
 }
 
 /** An alert's associated data: the group id ‖ the person's key, in UTF-8. */
