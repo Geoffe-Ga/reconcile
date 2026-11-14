@@ -4,22 +4,40 @@ name: CI
 # locally, with the same pinned tools (requirements-dev.txt, client lockfile,
 # client/.nvmrc). Rules live in pyproject.toml, client config, and scripts/,
 # never in this file, so CI and a laptop can't disagree.
+#
+# Every job sets timeout-minutes: about twice its slowest successful run
+# (measured over November 2026's runs), rounded up to 5 minutes, so a hung job
+# costs that, not GitHub's six-hour default. tests/test_workflows.py holds every
+# workflow to it. Playwright's and Vitest's own timeouts are unchanged.
 
+# No push trigger: a merge to main starts no run (ADR-0061, amended
+# 2026-11-12). A PR's own CI tests what lands, and each PR is merged with
+# current main and checked locally before it merges. This nightly full run is
+# the backstop for skew between merges. tests/test_ci_triggers.py holds it.
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
+  # 14:17 UTC (06:17 Pacific). In the week before this, no merge landed
+  # between 14:00 and 16:00 UTC, so it checks the overnight merges on a
+  # settled main, well clear of graph-build.yml's 04:40 run. Not :00 or :30,
+  # where GitHub delays and, under load, drops scheduled runs.
+  schedule:
+    - cron: "17 14 * * *"
   workflow_dispatch:
 
+# One run per event and ref, so a PR's newer push cancels its older run. A
+# nightly run and a dispatch both run on refs/heads/main; the event keeps
+# them apart, so neither cancels the other: not a dispatched mutation run hours
+# in, and not the nightly backstop.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   changes:
     name: Detect changed areas
     runs-on: ubuntu-latest
+    timeout-minutes: 5  # slowest successful run: 0.4 min
     outputs:
       python: ${{ steps.areas.outputs.python }}
       client: ${{ steps.areas.outputs.client }}
@@ -33,11 +51,13 @@ jobs:
       - name: Classify changed paths (scripts/changed-areas.sh)
         id: areas
         env:
-          # PRs compare against their base; pushes compare against the previous commit.
-          BASE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before }}
-          FORCE_ALL: ${{ github.event_name == 'workflow_dispatch' }}
+          # Only a PR has a base to diff against. A nightly or manual run on
+          # main has none (the router would diff main against itself and check
+          # nothing), so it checks every area; an empty base does too.
+          BASE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || '' }}
+          FORCE_ALL: ${{ github.event_name != 'pull_request' }}
         run: |
-          if [[ "$FORCE_ALL" == "true" || "$BASE_REF" == "0000000000000000000000000000000000000000" ]]; then
+          if [[ "$FORCE_ALL" == "true" || -z "$BASE_REF" ]]; then
             ./scripts/changed-areas.sh --all | tee -a "$GITHUB_OUTPUT"
           else
             ./scripts/changed-areas.sh | tee -a "$GITHUB_OUTPUT"
@@ -46,6 +66,7 @@ jobs:
   python:
     name: Python gate (${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    timeout-minutes: 5  # slowest successful run: 1.8 min
     needs: changes
     if: needs.changes.outputs.python == 'true'
     strategy:
@@ -73,6 +94,7 @@ jobs:
   client:
     name: Client gate
     runs-on: ubuntu-latest
+    timeout-minutes: 50  # slowest successful run: 23.1 min
     needs: changes
     if: needs.changes.outputs.client == 'true'
     steps:
@@ -94,6 +116,7 @@ jobs:
   deploy:
     name: Deploy config gate
     runs-on: ubuntu-latest
+    timeout-minutes: 10  # slowest successful run: 3.4 min
     needs: changes
     if: needs.changes.outputs.deploy == 'true'
     steps:
@@ -113,6 +136,7 @@ jobs:
   e2e:
     name: End-to-end loop (Playwright)
     runs-on: ubuntu-latest
+    timeout-minutes: 55  # slowest successful run: 26.6 min, apart from apt stalls (below)
     needs: changes
     if: needs.changes.outputs.e2e == 'true'
     steps:
@@ -136,8 +160,27 @@ jobs:
           cache: npm
           cache-dependency-path: client/package-lock.json
 
+      # Playwright's browsers, restored so the install below downloads none.
+      # The key names the locked Playwright, the runner's Ubuntu (WebKit is
+      # built for each release) and the browsers. On a hit the install still
+      # runs: it adds the system packages the browsers need.
+      - name: Name the browser cache
+        id: browsers
+        run: |
+          version="$(python3 -c "import json; print(json.load(open('client/package-lock.json'))['packages']['node_modules/playwright-core']['version'])")"
+          echo "key=playwright-${version}-${ImageOS}-chromium-webkit" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ steps.browsers.outputs.key }}
+
+      # Usually 1-2 min. Ubuntu's mirror has stalled --with-deps for 26, 46 and
+      # 96 minutes; a stall now fails here, and a re-run gets a fresh runner.
       - name: Install locked dependencies and both browsers
         working-directory: client
+        timeout-minutes: 10
         run: |
           npm ci
           npx playwright install --with-deps chromium webkit
@@ -157,6 +200,7 @@ jobs:
   pre-commit:
     name: Pre-commit hooks (changed files)
     runs-on: ubuntu-latest
+    timeout-minutes: 5  # slowest successful run: 1.5 min
     steps:
       - uses: actions/checkout@v4
         with:
@@ -188,10 +232,11 @@ jobs:
 
       - name: pre-commit on changed files
         env:
-          # The branch guard protects local commits; CI checks out main on push.
+          # The branch guard protects local commits; a nightly or manual run checks out main.
           SKIP: no-commit-to-branch
-          BASE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before }}
-          FULL: ${{ github.event_name == 'workflow_dispatch' }}
+          # As in "changes": only a PR diffs against a base; other runs check every file.
+          BASE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || '' }}
+          FULL: ${{ github.event_name != 'pull_request' }}
         run: ./scripts/precommit-changed.sh --show-diff-on-failure
 
   gate:
@@ -199,6 +244,7 @@ jobs:
     # The one check branch protection requires. Area jobs skip when their area
     # didn't change; this fails only if a job that ran failed or was cancelled.
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     needs: [changes, python, client, deploy, e2e, pre-commit]
     if: always()
     steps:
@@ -214,8 +260,9 @@ jobs:
   mutation:
     name: Mutation testing (manual, before a release)
     # Recommended before a release, not a merge gate (ADR-0061).
-    # Run from the Actions tab: "Run workflow" on main.
+    # Run from the Actions tab: "Run workflow" on main. Never nightly.
     runs-on: ubuntu-latest
+    timeout-minutes: 360  # no run measured yet: the hosted-runner maximum, set on purpose
     if: github.event_name == 'workflow_dispatch'
     steps:
       - uses: actions/checkout@v4

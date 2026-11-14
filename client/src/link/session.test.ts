@@ -152,7 +152,12 @@ describe('linking, end to end over the relay', () => {
     expect(await join.poll()).toEqual(onA);
 
     expect(await offer.confirm()).toBe('sent');
-    expect(await join.poll()).toEqual({ kind: 'linked', groups: 1, skipped: 0 });
+    expect(await join.poll()).toEqual({
+      kind: 'linked',
+      groups: 1,
+      skipped: 0,
+      skippedDocuments: 0,
+    });
 
     const held = await onlyGroup(b.store);
     expect(held.groupId).toBe(kept.groupId);
@@ -181,7 +186,12 @@ describe('linking, end to end over the relay', () => {
     await join.poll();
     await offer.confirm();
 
-    expect(await join.poll()).toEqual({ kind: 'linked', groups: 2, skipped: 0 });
+    expect(await join.poll()).toEqual({
+      kind: 'linked',
+      groups: 2,
+      skipped: 0,
+      skippedDocuments: 0,
+    });
   });
 
   it('puts every blob in this flow with ttl_days=1, in throwaway mailboxes', async () => {
@@ -228,7 +238,12 @@ describe('linking, end to end over the relay', () => {
     await offer.poll();
     await join.poll();
     await offer.confirm();
-    expect(await join.poll()).toEqual({ kind: 'linked', groups: 1, skipped: 0 });
+    expect(await join.poll()).toEqual({
+      kind: 'linked',
+      groups: 1,
+      skipped: 0,
+      skippedDocuments: 0,
+    });
 
     const canaries = [
       ...keyCanaries('seed', seed),
@@ -316,7 +331,12 @@ describe('linking a device whose keys are locked with a passkey (#95)', () => {
     await offer.poll();
     await join.poll();
     expect(await offer.confirm()).toBe('sent');
-    expect(await join.poll()).toEqual({ kind: 'linked', groups: 1, skipped: 0 });
+    expect(await join.poll()).toEqual({
+      kind: 'linked',
+      groups: 1,
+      skipped: 0,
+      skippedDocuments: 0,
+    });
 
     const canaries = [
       ...keyCanaries('group secret', kept.secret),
@@ -663,7 +683,12 @@ describe('the new device (B)', () => {
       await a.relay.putBlob(bundle.mailbox, blob, 1);
     }
 
-    expect(await join.poll()).toEqual({ kind: 'linked', groups: 1, skipped: 1 });
+    expect(await join.poll()).toEqual({
+      kind: 'linked',
+      groups: 1,
+      skipped: 1,
+      skippedDocuments: 0,
+    });
     expect((await onlyGroup(b.store)).groupId).toBe(kept.groupId);
   });
 

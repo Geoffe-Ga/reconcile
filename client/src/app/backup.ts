@@ -71,8 +71,9 @@ export async function saveBackup(
 
 /**
  * Restores the backup in `bytes` under `passphrase`, then syncs. Returns how
- * many groups it brought back, how many group entries it left out (#336),
- * and whether it is an older file, which holds no encryption key (#225).
+ * many groups it brought back, how many group entries (#336) and personal
+ * Documents (#351) it left out, and whether it is an older file, which holds
+ * no encryption key (#225).
  *
  * @throws {BackupUnreadable} when it doesn't open or doesn't check out; nothing is written then.
  */

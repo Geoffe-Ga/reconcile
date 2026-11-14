@@ -727,6 +727,51 @@ describe('the refresh keeps a group only the relay copy holds, and never one thi
   });
 });
 
+describe('a personal Document planted in the relay copy that doesn’t check out (#351)', () => {
+  /** Puts the relay copy under `key` back with `planted` among its personal Documents, as anyone holding the key could. */
+  async function plant(fake: FakeRelay, key: Uint8Array, planted: unknown): Promise<void> {
+    const relay = createRelay({ fetch: fake.fetch });
+    const plaintext = await fetchRelayBackup(relay, key);
+    if (plaintext === null) throw new Error('Expected a relay copy.');
+    const copy = JSON.parse(text(plaintext)) as { personal: unknown[] };
+    const personal = [planted, ...copy.personal];
+    await relay.putBackup(
+      backupIdFor(key),
+      sealRelayBackup(key, utf8(JSON.stringify({ ...copy, personal }))),
+    );
+  }
+
+  it('rewrites the copy without it at the next refresh, though nothing changed here, and never carries it', async () => {
+    const fake = createFakeRelay({ minute: NOON });
+    const phone = await settledPhone(fake);
+    const key = await keyOf(phone.store);
+    await plant(fake, key, { ...doc(B, 'Planted', TS, 2), title: '' });
+    const before = backupCalls(fake).length;
+
+    await nextDay(fake, phone);
+
+    expect(backupCalls(fake).slice(before)).toEqual(['GET', 'PUT']);
+    expect(await titlesOnRelay(fake, key)).toEqual(['Mine']);
+    expect((await phone.store.listPersonal()).map((document) => document.title)).toEqual(['Mine']);
+    // Once rewritten, a day with nothing changed uploads nothing.
+    const after = backupCalls(fake).length;
+    await nextDay(fake, phone);
+    expect(backupCalls(fake).slice(after)).toEqual(['GET']);
+  });
+
+  it('keeps every Document the copy holds that checks out, beside the one it leaves out', async () => {
+    const fake = createFakeRelay({ minute: NOON });
+    const { phone, laptop, key } = await phoneAndLaptop(fake);
+    await laptop.store.savePersonal(doc(C, 'From the laptop', TS, 3));
+    await nextDay(fake, laptop);
+    await plant(fake, key, 'not a Document');
+
+    await nextDay(fake, phone);
+
+    expect(await titlesOnRelay(fake, key)).toEqual(['From the laptop']);
+  });
+});
+
 /** Opens the IndexedDB database `name` as it is, with no upgrade. */
 function rawDatabase(name: string): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {

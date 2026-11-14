@@ -14,14 +14,20 @@ const LOCALE = 'en-GB';
 const count = (n: number): string => n.toLocaleString(LOCALE);
 
 /**
- * What a restore or a link says of the group entries it left out because
- * they didn't check out (#336), `where` they were, or null for none.
+ * What a restore or a link says of the group entries (#336) and personal
+ * Documents (#351) it left out because they didn't check out, `where` they
+ * were: a sentence for each kind it left any of, groups first.
  */
-function leftOut(skipped: number, where: string): string | null {
-  if (skipped === 0) return null;
-  return skipped === 1
-    ? `One group ${where} couldn’t be read and was left out.`
-    : `${count(skipped)} groups ${where} couldn’t be read and were left out.`;
+function leftOut(skipped: number, skippedDocuments: number, where: string): string[] {
+  const groups =
+    skipped === 1
+      ? `One group ${where} couldn’t be read and was left out.`
+      : `${count(skipped)} groups ${where} couldn’t be read and were left out.`;
+  const documents =
+    skippedDocuments === 1
+      ? `One personal Document ${where} couldn’t be read and was left out.`
+      : `${count(skippedDocuments)} personal Documents ${where} couldn’t be read and were left out.`;
+  return [...(skipped === 0 ? [] : [groups]), ...(skippedDocuments === 0 ? [] : [documents])];
 }
 
 /** What a result says once a device has deleted its ballots: by expiry (#111), or in an archive (#108). */
@@ -1675,17 +1681,19 @@ export const messages = {
     submit: 'Restore',
     restoring: 'Opening your backup…',
     /**
-     * How many groups came back, then how many group entries didn't check out
-     * and were left out (#336), when any were: only that, when none came back.
+     * How many groups came back, then how many group entries (#336) and
+     * personal Documents (#351) didn't check out and were left out, when any
+     * were. When no group came back: what it left out of the groups, or else
+     * that it holds none, then any Documents it left out.
      */
-    restored: (groups: number, skipped: number) => {
-      const left = leftOut(skipped, 'in this backup');
-      if (groups === 0) return left ?? 'This backup holds no groups.';
+    restored: (groups: number, skipped: number, skippedDocuments: number) => {
+      const left = leftOut(skipped, skippedDocuments, 'in this backup');
       const back =
         groups === 1
           ? '1 group is back on this device.'
           : `${count(groups)} groups are back on this device.`;
-      return left === null ? back : `${back} ${left}`;
+      const lead = groups === 0 ? (skipped === 0 ? 'This backup holds no groups.' : null) : back;
+      return [...(lead === null ? [] : [lead]), ...left].join(' ');
     },
     /**
      * After a restore from a file saved before #98, which holds no encryption
@@ -1762,14 +1770,16 @@ export const messages = {
     waitingOther: 'Waiting for your other device…',
     check: 'Check that your other device shows the same number, then confirm there.',
     cancel: 'Cancel',
-    /** How many groups the device now has, then how many from the bundle were left out (#336). */
-    linked: (groups: number, skipped: number) => {
+    /**
+     * How many groups the device now has, then how many group entries (#336)
+     * and personal Documents (#351) from the bundle were left out.
+     */
+    linked: (groups: number, skipped: number, skippedDocuments: number) => {
       const now =
         groups === 1
           ? 'Linked. This device now has 1 group.'
           : `Linked. This device now has ${count(groups)} groups.`;
-      const left = leftOut(skipped, 'from your other device');
-      return left === null ? now : `${now} ${left}`;
+      return [now, ...leftOut(skipped, skippedDocuments, 'from your other device')].join(' ');
     },
     mismatch: 'That code didn’t match. Start again on your other device.',
     damaged: 'Your groups didn’t arrive in one piece. Start again on your other device.',

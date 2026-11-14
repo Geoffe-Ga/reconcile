@@ -35,7 +35,7 @@ Quality engineering is not a checkbox—it's a continuous commitment:
 
 - **Before Commit**: Run `./scripts/check-all.sh` and fix every issue
 - **During Review**: Address every comment, resolve every suggestion
-- **After Merge**: Monitor CI, ensure all checks remain green
+- **After Merge**: `main` runs the full CI nightly, not on each merge (gate 4 in the root `CLAUDE.md`); fix a red nightly run first
 - **Always**: Treat linting errors as bugs, not suggestions
 
 ### 1.4 The "No Red Checks" Rule

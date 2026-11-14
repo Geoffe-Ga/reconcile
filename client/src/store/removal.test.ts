@@ -365,6 +365,7 @@ describe('a removed member’s group and backup files (#78)', () => {
     expect(await importGroups(other, file, 'a long walk')).toEqual({
       groups: 1,
       skipped: 0,
+      skippedDocuments: 0,
       older: false,
     });
 

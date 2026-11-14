@@ -5,8 +5,9 @@
  * The file picker is React Aria's `FileTrigger` with no `accept` list, since
  * iOS greys out a file whose type it doesn't know. Restoring reads the file
  * on the device and checks all of it before writing anything. Success says
- * how many groups came back, and how many group entries it left out because
- * they didn't check out, if any (#336), and, for an older file from before
+ * how many groups came back, and how many group entries (#336) and personal
+ * Documents (#351) it left out because they didn't check out, if any, and,
+ * for an older file from before
  * #98, that this device won't get a group's new key once another device of
  * the person's has a key in it, and how it gets back in (#225); any other
  * failure says one plain line, whether the passphrase was wrong or the file
@@ -24,8 +25,8 @@ import { Field } from './ui';
 export interface RestoreBackupProps {
   /**
    * Restores the file's bytes under the passphrase; resolves to how many
-   * groups came back, how many group entries were left out (#336), and
-   * whether it is an older file (#225).
+   * groups came back, how many group entries (#336) and personal Documents
+   * (#351) were left out, and whether it is an older file (#225).
    */
   readonly onRestore: (bytes: Uint8Array, passphrase: string) => Promise<RestoredFile>;
 }
@@ -110,7 +111,7 @@ export function RestoreBackup({ onRestore }: RestoreBackupProps) {
         <p className="status">
           {outcome.kind === 'restoring' ? messages.restore.restoring : null}
           {outcome.kind === 'restored'
-            ? messages.restore.restored(outcome.groups, outcome.skipped)
+            ? messages.restore.restored(outcome.groups, outcome.skipped, outcome.skippedDocuments)
             : null}
         </p>
         {outcome.kind === 'restored' && isOlder(outcome) ? (

@@ -32,6 +32,12 @@ export interface ConsentMeterProps {
   readonly tally: VersionTally;
   /** The bar the engine tallied against. */
   readonly bar: Bar;
+  /**
+   * How many the ballot counts: its eligible set, fixed when the vote opened
+   * (ADR-0015), which no count of scorers passes. The zeros reading keeps its
+   * room for it (#417).
+   */
+  readonly eligible: number;
   /** The meter's name for a priority option (#107), in place of "How version N stands so far". */
   readonly label?: string;
 }
@@ -107,18 +113,15 @@ function averageRoom(bar: Bar): string {
   return meter.reading(formatAverage({ sum: 0, scorers: 0 }), meter.short(formatAverageLine(bar)));
 }
 
-/** The count a zeros reading keeps room for: two digits, for up to 99 people scoring. */
-const ROOM_COUNT = 99;
-
 /**
- * The widest zeros reading: every score a 0, with room for two-digit counts,
- * or more once more have scored. The reading's digits are tabular, so any
- * two take the same room.
+ * The widest zeros reading on a ballot that counts `eligible`: every one of
+ * them scoring 0. The eligible set is fixed when the vote opens, so the room
+ * never widens as more score (#417), and the reading's digits are tabular,
+ * so no count it shows takes more.
  */
-function zeroRoom(tally: VersionTally): string {
+function zeroRoom(eligible: number): string {
   const { meter } = messages;
-  const most = Math.max(ROOM_COUNT, tally.scorers);
-  return meter.reading(meter.percent(100), meter.tooManyZeros(most, most));
+  return meter.reading(meter.percent(100), meter.tooManyZeros(eligible, eligible));
 }
 
 /**
@@ -134,7 +137,7 @@ function zeroLineOf(bar: Bar): string {
 }
 
 /** One version's meter: its two bars and how many have scored it of how many it needs. */
-export function ConsentMeter({ number, tally, bar, label }: ConsentMeterProps) {
+export function ConsentMeter({ number, tally, bar, eligible, label }: ConsentMeterProps) {
   const { meter } = messages;
   const scored = tally.scorers > 0;
   const lines = lineShare(bar);
@@ -159,7 +162,7 @@ export function ConsentMeter({ number, tally, bar, label }: ConsentMeterProps) {
         met={tally.zerosMet}
         reading={scored ? zeroReading(tally) : meter.noScores}
         showReading={scored}
-        room={zeroRoom(tally)}
+        room={zeroRoom(eligible)}
       />
       <p className="caption meter-quorum">
         {scored ? meter.scoredBy(tally.scorers, tally.quorum) : meter.noScores}

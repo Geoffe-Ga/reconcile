@@ -55,9 +55,9 @@ const APP_FOLDS = { timeout: 3_000 };
 
 /**
  * The Coalitions section of `device`'s group home for `groupId`, read from the
- * app, once it shows `text`; fails if it never does. Group home can show
- * before the device has read its coalitions (`useCoalitions` starts empty), so
- * a section read as soon as it appears may not hold them yet.
+ * app, once it shows `text`; fails if it never does. Group home waits for the
+ * device's coalitions before it shows (#334), but a home drawn before a sync
+ * pass lands may not say yet what that pass brings.
  */
 async function expectCoalitionsOnHome(
   device: TestDevice,
