@@ -85,8 +85,9 @@ export type RecoverStep =
   | { readonly kind: 'waiting'; readonly shares: number; readonly needed: number | null }
   /**
    * A backup opened and its groups are on this device: how many came back,
-   * and how many group entries were left out because they didn't check out
-   * (#336).
+   * and how many group entries (#336) and personal Documents (#351) were left
+   * out because they didn't check out. The screen says none of it: it shows
+   * no count, and the person's groups are back either way.
    */
   | ({ readonly kind: 'restored' } & Restored)
   /** There is no request on this device: it stopped, or another tab finished it. */
@@ -179,9 +180,10 @@ function subsetKey(subset: readonly RecoveryShare[]): string {
 
 /**
  * What restoring the backup `key` names brought back, or null when it
- * doesn't open or anything in it but a group entry doesn't check out;
- * nothing is written then. A group entry that doesn't check out is left out
- * and counted, as from a file (#336). The device keeps the key with `split`,
+ * doesn't open or anything in it but a group entry or a personal Document
+ * doesn't check out; nothing is written then. A group entry (#336) or
+ * personal Document (#351) that doesn't check out is left out and counted,
+ * as from a file. The device keeps the key with `split`,
  * the split the shares that rebuilt it came from (#272).
  *
  * @throws {RelayError | TypeError} when the relay can't be reached.

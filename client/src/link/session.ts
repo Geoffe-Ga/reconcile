@@ -48,7 +48,7 @@ import {
 import type { Seal } from '../crypto/seal';
 import type { Relay, RelayRecord } from '../net/relay';
 import type { Store } from '../store/db';
-import { importSnapshot, takeSnapshot } from '../store/snapshot';
+import { importSnapshot, type Restored, takeSnapshot } from '../store/snapshot';
 import { openBundle, sealBundle } from './bundle';
 
 /** How long the relay keeps every blob in a link: 1 day, rounded up to the end of the next UTC day. */
@@ -121,7 +121,12 @@ export interface LinkOffer {
 export type JoinStep =
   | { readonly kind: 'waiting' }
   | { readonly kind: 'compare'; readonly number: string }
-  | { readonly kind: 'linked'; readonly groups: number; readonly skipped: number }
+  | {
+      readonly kind: 'linked';
+      readonly groups: number;
+      readonly skipped: number;
+      readonly skippedDocuments: number;
+    }
   | { readonly kind: 'mismatch' | 'damaged' | 'expired' | 'closed' };
 
 /** The new device's side of a link. It has no way to confirm: only the existing device can. */
@@ -388,18 +393,19 @@ export async function joinLink(
 
 /**
  * Keeps the bundle's groups, as from a link, and says how many groups the
- * device now has, and how many of the bundle's group entries it left out
- * because they didn't check out (#336).
+ * device now has, and how many of the bundle's group entries (#336) and
+ * personal Documents (#351) it left out because they didn't check out.
  */
 async function keep(store: LinkServices['store'], plaintext: Uint8Array): Promise<Ended<JoinStep>> {
-  let skipped: number;
+  let left: Pick<Restored, 'skipped' | 'skippedDocuments'>;
   try {
-    ({ skipped } = await importSnapshot(store, plaintext, 'link'));
+    left = await importSnapshot(store, plaintext, 'link');
   } catch (error) {
     if (error instanceof BackupUnreadable) return { kind: 'damaged' };
     throw error;
   } finally {
     plaintext.fill(0);
   }
-  return { kind: 'linked', groups: (await store.listGroups()).length, skipped };
+  const { skipped, skippedDocuments } = left;
+  return { kind: 'linked', groups: (await store.listGroups()).length, skipped, skippedDocuments };
 }

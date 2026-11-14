@@ -134,7 +134,12 @@ describe('recovering on a new device', DEVICES, () => {
     expect(await fresh.services.store.listGroups()).toEqual([]);
     await cal.services.sync.syncOnce();
 
-    expect(await session.poll()).toEqual({ kind: 'restored', groups: 2, skipped: 0 });
+    expect(await session.poll()).toEqual({
+      kind: 'restored',
+      groups: 2,
+      skipped: 0,
+      skippedDocuments: 0,
+    });
     const groups = await fresh.services.store.listGroups();
     expect(groups.map(({ groupId: id }) => id).sort()).toEqual([groupId, allotment].sort());
     for (const group of groups) {
@@ -197,6 +202,7 @@ describe('recovering on a new device', DEVICES, () => {
       kind: 'restored',
       groups: 2,
       skipped: 0,
+      skippedDocuments: 0,
     });
     // The corrupted share with each good one, then the two good ones.
     expect(backupReads(fake)).toBe(3);
@@ -252,12 +258,37 @@ describe('recovering on a new device', DEVICES, () => {
       kind: 'restored',
       groups: 2,
       skipped: 1,
+      skippedDocuments: 0,
     });
     const held = (await fresh.services.store.listGroups()).map(({ groupId }) => groupId);
     expect(held.sort()).toEqual([world.groupId, world.allotment].sort());
     expect(local((await fresh.services.store.getRelayBackup())?.key ?? new Uint8Array())).toEqual(
       key,
     );
+    expect(await fresh.services.store.getRecoveredAt()).toBeTypeOf('number');
+  });
+
+  it('leaves out a personal Document someone planted in the relay copy, restores the rest and counts it (#351)', async () => {
+    const { fake, world, fresh, shown } = await setUp();
+    const key = await anaKey(world);
+    const copy = await fetchRelayBackup(world.ana.services.relay, key);
+    if (copy === null) throw new Error('Expected Ana’s relay copy.');
+    const json = JSON.parse(text(copy)) as { personal?: unknown[] };
+    const personal = [{ id: 'not an id', title: '' }, ...(json.personal ?? [])];
+    await world.ana.services.relay.putBackup(
+      backupIdFor(key),
+      sealRelayBackup(key, utf8(JSON.stringify({ ...json, personal }))),
+    );
+    await release(fake, world.ben, shown.code, await heldBy(world, world.ben, world.groupId));
+    await release(fake, world.dee, shown.code, await heldBy(world, world.dee, world.groupId));
+
+    expect(await recoverSession(fresh.services).poll()).toEqual({
+      kind: 'restored',
+      groups: 2,
+      skipped: 0,
+      skippedDocuments: 1,
+    });
+    expect(await fresh.services.store.listPersonal()).toEqual([]);
     expect(await fresh.services.store.getRecoveredAt()).toBeTypeOf('number');
   });
 
