@@ -1987,6 +1987,17 @@ export const messages = {
     save: 'Save a backup',
     notNow: 'Not now',
   },
+  /**
+   * Share beside Copy on a reconcile card's link and a follow link (#424;
+   * ADR-0077 §6): the device's share sheet gets the link alone.
+   */
+  linkShare: {
+    button: 'Share',
+    shared: 'Shared.',
+    /** By the button: a chat app's operator can read what goes through it, for as long as the link works. */
+    chatNote:
+      'If you send it through a chat app, whoever runs that app can read the link too, and open it in those 2 days.',
+  },
   /** Reconcile with another group (#114): making a card, and the card a formed coalition's row makes. */
   card: {
     pageTitle: 'Reconcile with another group',

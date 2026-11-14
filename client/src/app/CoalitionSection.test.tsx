@@ -6,6 +6,7 @@ import { axeViolations } from '../test/axe';
 import type { CoalitionRow } from './coalitionLines';
 import { CoalitionSection, type CoalitionSectionProps } from './CoalitionSection';
 import { messages } from './messages';
+import type { WebShare } from './share';
 
 const ROW: CoalitionRow = {
   entryId: 'entry-1',
@@ -30,6 +31,7 @@ function props(overrides: Partial<CoalitionSectionProps> = {}): CoalitionSection
     onTakePart: vi.fn(() => Promise.resolve()),
     makeCardLink: vi.fn(() => Promise.resolve('https://reconcile.test/#reconcile/abc')),
     copyText: vi.fn(() => Promise.resolve()),
+    sharing: { share: undefined },
     ...overrides,
   };
 }
@@ -187,6 +189,25 @@ describe('CoalitionSection', () => {
     await user.click(screen.getByRole('button', { name: 'Copy' }));
     expect(copyText).toHaveBeenCalledWith('https://reconcile.test/#reconcile/abc');
     expect(await axeViolations()).toEqual([]);
+  });
+
+  it('puts Share beside Copy on the card it made, sharing the link alone (#424)', async () => {
+    const user = userEvent.setup();
+    const share = vi.fn<WebShare>(() => Promise.resolve());
+    const copyText = vi.fn(() => Promise.resolve());
+    render(<CoalitionSection {...props({ sharing: { share }, copyText })} />);
+
+    await user.click(screen.getByRole('button', { name: messages.card.another }));
+    expect(await screen.findByRole('textbox', { name: 'Card link' })).toBeVisible();
+    const shareButton = screen.getByRole('button', { name: messages.linkShare.button });
+    expect(shareButton).toHaveClass('button-secondary');
+    expect(shareButton).toHaveAccessibleDescription(messages.linkShare.chatNote);
+    expect(await axeViolations()).toEqual([]);
+
+    await user.click(shareButton);
+    expect(share.mock.calls).toEqual([[{ url: 'https://reconcile.test/#reconcile/abc' }]]);
+    expect(copyText).not.toHaveBeenCalled();
+    expect(await within(section()).findByText(messages.linkShare.shared)).toBeVisible();
   });
 
   it('makes one card at a time', async () => {

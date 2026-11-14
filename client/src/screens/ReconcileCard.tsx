@@ -4,6 +4,7 @@ import { Button, Form, Link } from 'react-aria-components';
 import { CopyLink } from '../app/CopyLink';
 import { messages } from '../app/messages';
 import type { CardValues } from '../app/reconcile';
+import type { SharePort } from '../app/share';
 import { type Route, routeHref } from '../app/router';
 import { sectionsCheck, sectionsPreview } from '../app/sectionsPreview';
 import { MarkdownField } from '../app/text/MarkdownField';
@@ -37,6 +38,8 @@ export interface ReconcileCardProps {
   readonly onMake: (values: CardValues) => Promise<CardStep>;
   /** Puts text on the clipboard; rejects when the browser blocks it. */
   readonly copyText: (text: string) => Promise<void>;
+  /** Where the made card's Share sends its link (#424): the device's share sheet, or the clipboard. */
+  readonly sharing: SharePort;
 }
 
 /** Text trimmed, required, and at most `max` code points after NFC (spec §4). */
@@ -92,16 +95,19 @@ interface MadeProps {
   readonly proposalId: string;
   readonly link: string;
   readonly copyText: ReconcileCardProps['copyText'];
+  readonly sharing: SharePort;
   /** A coalition's card (#122): its home, where its reconcile motion shows. */
   readonly coalitionId?: string | undefined;
 }
 
 /**
  * The card's link, once the relay holds its envelope: a read-only field with
- * Copy beside the warning about who can read it, then the way to the group's
- * own Proposal, or for a coalition's card, to the coalition's home (#122).
+ * Copy, and Share beside it (#424), under the warning about who can read it,
+ * then the way to the group's own Proposal, or for a coalition's card, to the
+ * coalition's home (#122).
  */
-export function CardMade({ groupId, proposalId, link, copyText, coalitionId }: MadeProps) {
+export function CardMade(props: MadeProps) {
+  const { groupId, proposalId, link, copyText, sharing, coalitionId } = props;
   const next =
     coalitionId === undefined
       ? { href: routeHref({ name: 'proposal', groupId, proposalId }), label: card.proposalLink }
@@ -115,6 +121,7 @@ export function CardMade({ groupId, proposalId, link, copyText, coalitionId }: M
         button={card.copy}
         primary
         copyText={copyText}
+        sharing={sharing}
       />
       <p>
         <Link className="forward-link" href={next.href}>
@@ -217,7 +224,7 @@ function Unsent({ phase, onRetry }: { readonly phase: Phase; readonly onRetry: (
  * (`#/c/{coalitionId}/reconcile`; #122), the same form one level up.
  */
 export function ReconcileCard(props: ReconcileCardProps) {
-  const { groupId, groupName, onMake, copyText, coalitionId } = props;
+  const { groupId, groupName, onMake, copyText, sharing, coalitionId } = props;
   const busy = useRef(false);
   const [phase, setPhase] = useState<Phase>({ kind: 'form' });
   const [refused, setRefused] = useState<Record<string, string>>({});
@@ -277,6 +284,7 @@ export function ReconcileCard(props: ReconcileCardProps) {
           proposalId={phase.step.proposalId}
           link={phase.link}
           copyText={copyText}
+          sharing={sharing}
           coalitionId={coalitionId}
         />
       ) : null}

@@ -30,6 +30,7 @@ import { DispatchCard } from '../app/DispatchCard';
 import { formatDay } from '../app/format';
 import { messages } from '../app/messages';
 import { routeHref } from '../app/router';
+import type { SharePort } from '../app/share';
 import { ShareLink } from '../app/ShareLink';
 import { minuteIso } from '../app/time';
 import { BackLink, PageHeader, Section } from '../app/ui';
@@ -51,6 +52,8 @@ export interface CoalitionHomeProps {
   readonly makeFollowLink: () => Promise<string>;
   /** Puts a link on the clipboard once it resolves; rejects when the browser blocks it. */
   readonly copyText: (text: string | Promise<string>) => Promise<void>;
+  /** Where the follow link's Share sends it (#424): the device's share sheet, or the clipboard. */
+  readonly sharing: SharePort;
   /** Unfollows (#124): purges the coalition from this device; rejects when it couldn't be saved. */
   readonly onUnfollow: () => Promise<void>;
 }
@@ -357,6 +360,7 @@ export function CoalitionHome(props: CoalitionHomeProps) {
               makeLink={props.makeFollowLink}
               copyText={props.copyText}
               primary={false}
+              sharing={props.sharing}
             />
           </Section>
         ) : null}

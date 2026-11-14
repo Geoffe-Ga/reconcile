@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { CoalitionHomeView, MotionItem } from '../app/coalitionHome';
 import { formatDay } from '../app/format';
 import { messages } from '../app/messages';
+import type { WebShare } from '../app/share';
 import { RESULT_GRACE_MINUTES } from '../engine/coalition';
 import type { CoalitionProgress } from '../engine/coalitionProgress';
 import { newestFirst } from '../engine/dispatches';
@@ -89,6 +90,7 @@ function props(overrides: Partial<CoalitionHomeProps> = {}): CoalitionHomeProps 
     onTakePart: vi.fn(() => Promise.resolve()),
     makeFollowLink: vi.fn(() => Promise.resolve('https://reconcile.test/#follow/abc')),
     copyText: vi.fn(() => Promise.resolve()),
+    sharing: { share: undefined },
     onUnfollow: vi.fn(() => Promise.resolve()),
     ...overrides,
   };
@@ -297,6 +299,30 @@ describe('CoalitionHome', () => {
     expect(within(followers).getByRole('status')).toHaveTextContent(
       messages.coalitions.shareCopied,
     );
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('puts Share beside Share a follow link, handing the share sheet a new link alone (#424)', async () => {
+    const user = userEvent.setup();
+    const makeFollowLink = vi.fn(() => Promise.resolve('https://reconcile.test/#follow/abc'));
+    const share = vi.fn<WebShare>(() => Promise.resolve());
+    const copyText = vi.fn(() => Promise.resolve());
+    render(
+      <CoalitionHome
+        {...props({ view: { ...VIEW, share: true }, makeFollowLink, copyText, sharing: { share } })}
+      />,
+    );
+
+    const followers = region('Followers');
+    const shareButton = within(followers).getByRole('button', { name: messages.linkShare.button });
+    expect(shareButton).toHaveClass('button-secondary');
+    expect(within(followers).getByText(messages.linkShare.chatNote)).toBeVisible();
+    await user.click(shareButton);
+
+    expect(makeFollowLink).toHaveBeenCalledOnce();
+    expect(await within(followers).findByText(messages.linkShare.shared)).toBeVisible();
+    expect(share.mock.calls).toEqual([[{ url: 'https://reconcile.test/#follow/abc' }]]);
+    expect(copyText).not.toHaveBeenCalled();
     expect(await axeViolations()).toEqual([]);
   });
 
