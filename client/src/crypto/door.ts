@@ -63,6 +63,13 @@ export const APPLICATION_INFO = 'reconcile/v1/door-application';
 /** The box label of a reply, sealed to the applicant's reply key. */
 export const REPLY_INFO = 'reconcile/v1/door-reply-box';
 
+/**
+ * The box label of a reconcile card left at a front door (#426), sealed to
+ * the page's `box` key as an application is, under a label of its own, so
+ * neither ever opens as the other.
+ */
+export const DOOR_CARD_INFO = 'reconcile/v1/door-card';
+
 /** The bytes before a padded box's plaintext: its 4-byte length. */
 const LENGTH_BYTES = 4;
 

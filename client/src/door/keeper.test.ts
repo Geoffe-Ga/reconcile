@@ -34,6 +34,7 @@ import { freshIndexedDBPerTest } from '../test/idb';
 import { members } from '../test/members';
 import { testDevice } from '../test/appServices';
 import { apply } from './apply';
+import { cardGoneAt, leaveCard } from './card';
 import { sendInvite } from './inbox';
 import { CLOSED, doorsThatStood, pagesDue } from './keeper';
 import {
@@ -386,6 +387,71 @@ describe('the keeper reads the inbox, and Send an invite answers', DEVICES, () =
     expect(await sendInvite({ ...ana.services, makeInvite: make }, groupId, 'nobody')).toBe(
       'missing',
     );
+  });
+});
+
+describe('the keeper reads reconcile cards at the door (#426)', DEVICES, () => {
+  const SEED = new Uint8Array(32).fill(0x5e);
+  const OTHER = new Uint8Array(32).fill(0x5f);
+
+  /** A person in another group leaves the card `seed` names at the open door. */
+  async function leave(fake: FakeRelay, seed: Uint8Array) {
+    const view = await readDoor(reader(fake), addressOf(DOOR));
+    if (view.kind !== 'open') throw new Error('Expected an open door.');
+    await leaveCard(reader(fake), addressOf(DOOR), view.page, seed);
+  }
+
+  /** The cards `device` holds for `groupId`'s door, once it has synced. */
+  async function cards(device: TestDevice | undefined, groupId: string) {
+    await device?.services.sync.syncOnce();
+    return (await device?.services.store.getGroup(groupId))?.door?.cards ?? [];
+  }
+
+  it('brings a card to every inviter’s device, never as an application', async () => {
+    const { fake, groupId, devices } = await openGroup();
+    const [ana, ben] = present(devices);
+    const kim = await stranger(fake);
+    await applyAt(fake, kim);
+    await leave(fake, SEED);
+    expect(await cards(ana, groupId)).toMatchObject([{ seed: base64url(SEED) }]);
+    expect(await cards(ben, groupId)).toHaveLength(1);
+    expect(await inbox(ana, groupId)).toMatchObject([{ name: 'Kim' }]);
+  });
+
+  it('drops a card’s seed once a member closes it, and once the relay has surely dropped it', async () => {
+    const { fake, groupId, devices } = await openGroup();
+    const [ana, ben] = present(devices);
+    await leave(fake, SEED);
+    const [held] = await cards(ana, groupId);
+    if (held === undefined) throw new Error('Expected a card.');
+    await post(ben, groupId, { type: 'door-card-closed', body: { card: held.id } });
+    const [closed] = await cards(ana, groupId);
+    expect(closed).toEqual({ id: held.id, seq: held.seq, received: held.received });
+
+    await leave(fake, OTHER);
+    const [, later] = await cards(ana, groupId);
+    expect(later?.seed).toBe(base64url(OTHER));
+    fake.minute = cardGoneAt(later?.received ?? 0) - 1;
+    expect((await cards(ana, groupId))[1]?.seed).toBe(base64url(OTHER));
+    fake.minute += 1;
+    expect((await cards(ana, groupId))[1]).toEqual({
+      id: later?.id,
+      seq: later?.seq,
+      received: later?.received,
+    });
+  });
+
+  it('drops a closed card’s seed on a device whose door has closed since it read it', async () => {
+    const { fake, groupId, devices } = await openGroup();
+    const [ana, ben] = present(devices);
+    await leave(fake, SEED);
+    const [held] = await cards(ana, groupId);
+    expect((await cards(ben, groupId))[0]?.seed).toBe(base64url(SEED));
+    await post(ana, groupId, { type: 'door-card-closed', body: { card: held?.id ?? '' } });
+    await propose(ana, groupId, false, true);
+    await ben.services.sync.syncOnce();
+    const door = (await ben.services.store.getGroup(groupId))?.door;
+    expect(door?.cards?.[0]?.seed).toBeUndefined();
   });
 });
 

@@ -23,7 +23,7 @@ import {
 import { parseRecord } from '../engine/event';
 import type { ParsedEvent } from '../engine/event';
 import type { GroupState, LogRecord } from '../engine/fold';
-import type { ReceivedApplication } from '../store/applications';
+import type { ReceivedApplication, ReceivedCard } from '../store/applications';
 import { foldCoalitions, foldWithCoalitions, type HeldCoalition } from '../store/coalitions';
 import type { CarryPlan, ClearedArchive, Group, Me, Store } from '../store/db';
 import { type KeyChange, keyChangeOf } from '../store/epochs';
@@ -111,6 +111,8 @@ export interface GroupView {
    * dismissed ones included, oldest first: none until it has read one.
    */
   applications: readonly ReceivedApplication[];
+  /** The reconcile cards this device read from the door's inbox (#426), oldest first: none until one. */
+  cards: readonly ReceivedCard[];
   /** Every coalition on this device, each with its log folded (#114). */
   coalitions: readonly HeldCoalition[];
   /** The carried scores this device means to cast in this group (#126): none until the first. */
@@ -134,6 +136,18 @@ function newSharesIn(group: Group | undefined, state: GroupState | null): readon
 
 /** No applications: one shared empty list, so it never looks changed. */
 const NO_APPLICATIONS: readonly ReceivedApplication[] = [];
+
+/** No cards (#426): one shared empty list, so it never looks changed. */
+const NO_CARDS: readonly ReceivedCard[] = [];
+
+/** What this device read from the group's front-door inbox (#121, #426): its applications and cards. */
+function doorOf(group: Group | undefined): Pick<GroupView, 'applications' | 'cards'> {
+  const door = group?.door;
+  return {
+    applications: door?.applications ?? NO_APPLICATIONS,
+    cards: door?.cards ?? NO_CARDS,
+  };
+}
 
 /** The log of a group that isn't loaded: one shared empty list, so it never looks changed. */
 const NO_RECORDS: readonly LogRecord[] = [];
@@ -160,7 +174,7 @@ export function useGroup(groupId: string): GroupView {
     loaded,
     cleared: clearedOf(group),
     newShares,
-    applications: group?.door?.applications ?? NO_APPLICATIONS,
+    ...doorOf(group),
     coalitions,
     carries: group?.carries ?? NO_CARRIES,
   };

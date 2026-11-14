@@ -8,6 +8,9 @@ import {
   type DoorInbox,
   heldWithoutCopies,
   holdsCopies,
+  type ReceivedCard,
+  withCards,
+  withoutCardSeeds,
   type ReceivedApplication,
   SENT_CHANGED,
   SENT_DAYS,
@@ -118,6 +121,34 @@ describe('withoutCopies and holdsCopies (#425)', () => {
     expect(holdsCopies(undefined, answered)).toBe(false);
     expect(holdsCopies(inbox, () => false)).toBe(false);
     expect(holdsCopies(withApplications(INBOX, [received('a', 1)]), () => true)).toBe(false);
+  });
+});
+
+describe('withCards and withoutCardSeeds (#426)', () => {
+  const card = (id: string, seq: number): ReceivedCard => ({
+    id,
+    seq,
+    received: 29_000_000 + seq,
+    seed: `seed-${id}`,
+  });
+
+  it('add each card once by id, in the order read, to an inbox kept before cards', () => {
+    const one = withCards(INBOX, [card('a', 1), card('b', 2), card('a', 3)]);
+    expect(one.cards?.map((held) => held.id)).toEqual(['a', 'b']);
+    const two = withCards(one, [card('b', 4), card('c', 5)]);
+    expect(two.cards?.map((held) => [held.id, held.seq])).toEqual([
+      ['a', 1],
+      ['b', 2],
+      ['c', 5],
+    ]);
+    expect(two.applications).toEqual(INBOX.applications);
+  });
+
+  it('drop the seed of each card `done` names, keeping the card, and leave an inbox without cards as it is', () => {
+    const inbox = withCards(INBOX, [card('a', 1), card('b', 2)]);
+    const kept = withoutCardSeeds(inbox, (held) => held.id === 'a');
+    expect(kept.cards).toEqual([{ id: 'a', seq: 1, received: 29_000_001 }, card('b', 2)]);
+    expect(withoutCardSeeds(INBOX, () => true)).toEqual(INBOX);
   });
 });
 

@@ -1328,6 +1328,8 @@ export const messages = {
     messageMissing: 'Say a little about why you’d like to join.',
     messageTooLong: (max: number) => `Use ${count(max)} characters or fewer.`,
     careful: 'Don’t include anything you wouldn’t want this group to read.',
+    /** On an open door, for a device in a group that may take a card (#426). */
+    proposeReconciling: 'Propose reconciling with this group',
     /** The picker under the message (#425): a checkbox per personal Document, none checked. */
     documentsLabel: 'Send some of your own Documents with this',
     documentsHint:
@@ -1362,6 +1364,21 @@ export const messages = {
     noApplications: 'No one has asked to join yet.',
     /** Over the Documents an application carries a copy of (#425). */
     documentsSent: 'Documents they sent',
+    /** Applications' reconcile cards left at the door (#426). */
+    cardsHeading: 'Groups asking to reconcile',
+    cardArrived: (day: string) => `Arrived ${day}`,
+    /** A card's heading before it has opened, or once it can't. */
+    cardUnopened: 'A reconcile card',
+    bringToVote: 'Bring it to a vote',
+    /** Read after Bring it to a vote's own words: "Bring it to a vote for Eastside Housing". */
+    forCard: (name: string) => `for ${name}`,
+    /** Read after Dismiss's own word: "Dismiss the card for Eastside Housing". */
+    cardOf: (name: string) => `the card for ${name}`,
+    /** Read after Dismiss for a card that never opened: "Dismiss the card that arrived Sat 14 Nov". */
+    cardOn: (day: string) => `the card that arrived ${day}`,
+    cardExpired: 'This card has expired.',
+    cardOffline: 'Can’t open this card right now. Check your connection, then look again.',
+    dismissCardHint: 'Dismisses it for everyone in your group.',
     askedOn: (day: string) => `Asked ${day}`,
     /** Before the inviter's name: "Invited by Ana". */
     invitedBy: 'Invited by',
@@ -2130,6 +2147,23 @@ export const messages = {
       'Only someone who takes part in this coalition and can propose there makes its card, and a coalition already three levels up can’t join another.',
     coalitionKeyWaits:
       'This coalition’s key hasn’t reached this device yet. You can make its card once it arrives.',
+    /** Propose reconciling, from another group's front door (#426). */
+    doorTitle: 'Propose reconciling',
+    /** Around the door's group, which renders in its own `<bdi>`. */
+    doorLede: {
+      before: 'This sends a card to',
+      after:
+        '. Your group votes on it here, and their members can bring it to a vote for the next 24 to 48 hours. The coalition forms only if both groups pass.',
+    },
+    doorGroupLabel: 'Your group',
+    doorGroupHint: 'It votes on this card too. Only groups where you can propose are listed.',
+    doorSubmit: 'Send the card',
+    /** Around the door's group: "Your card is at Oak St Co-op’s front door. …" */
+    doorSent: {
+      before: 'Your card is at',
+      after: '’s front door. Their members can bring it to a vote for the next 24 to 48 hours.',
+    },
+    doorBack: 'Back to the front door',
   },
   /** Opening a card and bringing it to one of your groups (#114). */
   bring: {
