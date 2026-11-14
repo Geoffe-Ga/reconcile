@@ -7,7 +7,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { newRecoveryKeys, recoveryCheck, recoveryCode } from '../crypto/recovery';
+import { newRecoveryKeys, recoveryCheck, recoveryCode, recoveryNumber } from '../crypto/recovery';
 import { approveRecovery } from '../recovery/holder';
 import { type Group, RECOVERY_CHANGED, type Store } from '../store/db';
 import type { TestDevice } from '../test/appServices';
@@ -33,13 +33,15 @@ afterEach(() => {
 async function anaWithAlert() {
   const world = await recoveryWorld(createFakeRelay());
   opened.push(...world.devices);
-  const code = recoveryCode(newRecoveryKeys());
+  const request = newRecoveryKeys();
+  const code = recoveryCode(request);
   const person = await keyOf(world.ana, world.groupId);
   await approveRecovery(world.ben.services, {
     code,
     groupId: world.groupId,
     person,
     check: recoveryCheck(code),
+    number: recoveryNumber(request.secretKey),
   });
   await world.ana.services.sync.syncOnce();
   return world;

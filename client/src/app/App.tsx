@@ -147,7 +147,7 @@ import { useGroupList, useGroups } from './useGroupList';
 import { useNow } from './useNow';
 import { usePersonalList } from './usePersonalList';
 import { chooseContacts } from '../store/recovery';
-import { approveRecovery, holdViews } from '../recovery/holder';
+import { approveRecovery, holdViews, resendRelease } from '../recovery/holder';
 import { recoverSession, startRecovery, stopRecovery } from '../recovery/request';
 import { HelpRecover } from '../screens/HelpRecover';
 import { RecoverStart } from '../screens/RecoverStart';
@@ -370,8 +370,9 @@ const wholeGroup = (group: Group): Group => group;
  * Recover with my contacts (#118), on a new device: keeps a request and
  * shows its code, shares it with fixed words and the app's address beside
  * it (the code's whole point is to reach the person's contacts), and polls
- * until a backup opens. Then it syncs and opens the picker, which asks the
- * person to choose their contacts again. Stop recovering forgets the code.
+ * until a backup opens, then asks the person whether its groups are theirs
+ * (#398). On Yes it restores them, syncs and opens the picker, which asks
+ * the person to choose their contacts again. Stop recovering forgets the code.
  */
 function RecoverScreen({ services }: { readonly services: AppServices }) {
   const start = useCallback(() => startRecovery(services), [services]);
@@ -396,6 +397,8 @@ function RecoverScreen({ services }: { readonly services: AppServices }) {
     <RecoverStart
       start={start}
       poll={session.poll}
+      confirm={session.confirm}
+      decline={session.decline}
       onShare={onShare}
       onRestored={onRestored}
       onStop={onStop}
@@ -406,7 +409,8 @@ function RecoverScreen({ services }: { readonly services: AppServices }) {
 /**
  * Help someone recover (#118), on a recovery contact's device: the shares it
  * holds, each recovery it's helping with read at the relay's minute as this
- * device estimates it, and Approve.
+ * device estimates it, Approve, and Send again for a share that went with
+ * the wrong second number (#398).
  */
 function HelpRecoverScreen({ services }: { readonly services: AppServices }) {
   const recovery = useRecovery(services.store);
@@ -419,6 +423,7 @@ function HelpRecoverScreen({ services }: { readonly services: AppServices }) {
       held={recovery.held}
       holds={holds}
       onApprove={(approval) => approveRecovery(services, approval)}
+      onResend={(resend) => resendRelease(services, resend)}
     />
   );
 }

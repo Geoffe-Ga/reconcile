@@ -17,6 +17,7 @@ import {
   recoveryChannel,
   recoveryCheck,
   recoveryCode,
+  recoveryNumber,
   sealAlert,
   sealRelease,
 } from './recovery';
@@ -31,6 +32,8 @@ interface RecoveryFile {
   readonly requestPublic: readonly number[];
   readonly code: string;
   readonly check: string;
+  /** The second number (#398), from the new device's secret key. */
+  readonly number: string;
   readonly mailbox: readonly number[];
   readonly sealKey: readonly number[];
   readonly release: {
@@ -38,6 +41,13 @@ interface RecoveryFile {
     readonly t: number;
     readonly n: number;
     readonly share: readonly number[];
+    readonly number: string;
+    readonly plaintext: readonly number[];
+    readonly box: readonly number[];
+    readonly blob: readonly number[];
+  };
+  /** A release from before #398, with no second number. */
+  readonly releaseV1: {
     readonly plaintext: readonly number[];
     readonly box: readonly number[];
     readonly blob: readonly number[];
@@ -147,6 +157,23 @@ describe('the check number', () => {
   });
 });
 
+describe('the second number (#398)', () => {
+  it('is HKDF of the new device’s secret key, read as six digits, as Python made it', () => {
+    expect(recoveryNumber(REQUEST_SECRET)).toBe(known.number);
+  });
+
+  it('is six digits for any key, and comes from the secret key, which no code carries', () => {
+    fc.assert(
+      fc.property(fc.uint8Array({ minLength: 32, maxLength: 32 }), (secretKey) => {
+        expect(recoveryNumber(secretKey)).toMatch(/^[0-9]{6}$/);
+      }),
+    );
+    // Another key, so another public key in the code, and another number.
+    expect(recoveryNumber(newKxKey())).not.toBe(known.number);
+    expect(known.code).not.toContain(known.number);
+  });
+});
+
 describe('the request mailbox', () => {
   it('derives its id and seal key from the seed alone, as Python did', () => {
     const channel = recoveryChannel(SEED);
@@ -160,16 +187,36 @@ describe('a release', () => {
     const { mailbox, key } = recoveryChannel(SEED);
     const box = xchachaSeal.open(mailbox, key, bytes(known.release.blob));
     expect(local(box ?? new Uint8Array())).toEqual(bytes(known.release.box));
-    const share = openRelease(REQUEST_SECRET, mailbox, bytes(known.release.box));
-    expect(share).toEqual({ ...SHARE, share: bytes(known.release.share) });
+    const release = openRelease(REQUEST_SECRET, mailbox, bytes(known.release.box));
+    expect(release).toEqual({ share: SHARE, number: known.number });
+    expect(text(bytes(known.release.plaintext))).toBe(
+      JSON.stringify({
+        v: 2,
+        split: SHARE.split,
+        t: SHARE.t,
+        n: SHARE.n,
+        share: base64url(SHARE.share),
+        number: known.number,
+      }),
+    );
+  });
+
+  it('refuses a release from before #398, which carries no second number', () => {
+    const { mailbox, key } = recoveryChannel(SEED);
+    const box = xchachaSeal.open(mailbox, key, bytes(known.releaseV1.blob));
+    expect(local(box ?? new Uint8Array())).toEqual(bytes(known.releaseV1.box));
+    expect(openRelease(REQUEST_SECRET, mailbox, bytes(known.releaseV1.box))).toBeNull();
   });
 
   it('seals the share so only the new device opens it, in this mailbox, in one 1,024-byte blob', () => {
     const { mailbox, key } = recoveryChannel(SEED);
-    const box = sealRelease(REQUEST_PUBLIC, mailbox, SHARE);
+    const box = sealRelease(REQUEST_PUBLIC, mailbox, SHARE, known.number);
     const blob = xchachaSeal.seal(mailbox, key, box);
     expect(blob).toHaveLength(BLOB_SIZES[0]);
-    expect(openRelease(REQUEST_SECRET, mailbox, box)).toEqual(SHARE);
+    expect(openRelease(REQUEST_SECRET, mailbox, box)).toEqual({
+      share: SHARE,
+      number: known.number,
+    });
     expect(openRelease(newKxKey(), mailbox, box)).toBeNull();
     expect(openRelease(REQUEST_SECRET, recoveryChannel(newRecoveryKeys().seed).mailbox, box)).toBe(
       null,
@@ -179,7 +226,14 @@ describe('a release', () => {
     expect(openRelease(REQUEST_SECRET, mailbox, changed)).toBeNull();
   });
 
-  it('opens to nothing but a well-shaped share', () => {
+  it('refuses to seal a second number that isn’t six digits', () => {
+    const { mailbox } = recoveryChannel(SEED);
+    for (const number of ['', '12345', '1234567', '12345a', '123 456', ' 123456']) {
+      expect(() => sealRelease(REQUEST_PUBLIC, mailbox, SHARE, number), number).toThrow(RangeError);
+    }
+  });
+
+  it('opens to nothing but version 2: a well-shaped share and a six-digit second number', () => {
     const { mailbox } = recoveryChannel(SEED);
     const good = JSON.parse(RELEASE_PLAINTEXT) as Record<string, unknown>;
     for (const plaintext of [
@@ -189,6 +243,14 @@ describe('a release', () => {
       JSON.stringify({ ...good, split: 'short' }),
       JSON.stringify({ ...good, share: base64url(new Uint8Array(33)) }),
       JSON.stringify({ ...good, share: undefined }),
+      JSON.stringify({ ...good, v: undefined }),
+      JSON.stringify({ ...good, v: 1 }),
+      JSON.stringify({ ...good, v: 3 }),
+      JSON.stringify({ ...good, number: undefined }),
+      JSON.stringify({ ...good, number: 966043 }),
+      JSON.stringify({ ...good, number: '96604' }),
+      JSON.stringify({ ...good, number: '9660430' }),
+      JSON.stringify({ ...good, number: '96604a' }),
     ]) {
       const box = sealTo(REQUEST_PUBLIC, utf8(plaintext), RECOVERY_RELEASE_INFO, utf8(mailbox));
       expect(openRelease(REQUEST_SECRET, mailbox, box), plaintext).toBeNull();

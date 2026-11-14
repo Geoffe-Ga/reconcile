@@ -1,28 +1,46 @@
 /**
  * The new device's side of recovering with contacts (#118; ADR-0043 §2,
- * ADR-0075 §4): it shows a code, polls the request mailbox, rebuilds the
- * backup key from any t shares of one split, and restores every group from
- * the relay backup, writing nothing until a backup opens. Real devices on
- * one fake relay, with every request captured.
+ * ADR-0075 §4): it shows a code and a second number, polls the request
+ * mailbox, drops each release without that number (#398), rebuilds the
+ * backup key from any t shares of one split, and asks the person whether
+ * the groups it found are theirs before it restores any, writing nothing
+ * until they say yes. Real devices on one fake relay, with every request
+ * captured.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { base64url } from '../crypto/base64url';
 import { kxPublicKeyOf } from '../crypto/box';
-import { parseRecoveryCode, recoveryChannel, recoveryCheck, sealRelease } from '../crypto/recovery';
+import { sealTo } from '../crypto/box';
+import {
+  parseRecoveryCode,
+  RECOVERY_RELEASE_INFO,
+  recoveryChannel,
+  recoveryCheck,
+  recoveryNumber,
+  sealRelease,
+} from '../crypto/recovery';
 import { backupIdFor, newScrubBlob, sealRelayBackup } from '../crypto/relayBackup';
 import { xchachaSeal } from '../crypto/seal';
-import { newSplitId, type RecoveryShare } from '../crypto/shares';
+import { newSplitId, type RecoveryShare, splitKey } from '../crypto/shares';
 import { chooseContacts, openHeldShare } from '../store/recovery';
-import { fetchRelayBackup } from '../store/relayBackup';
+import { fetchRelayBackup, startRelayBackup } from '../store/relayBackup';
 import { type TestDevice, testDevice } from '../test/appServices';
 import { local, text, utf8 } from '../test/bytes';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
+import { members } from '../test/members';
 import { groupOn, HOLD, keyOf, recoveryWorld, type RecoveryWorld } from '../test/recovery';
 import { findCanaries, keyCanaries, textCanary } from '../test/scan';
 import { approveRecovery } from './holder';
-import { MAX_SUBSETS, recoverSession, startRecovery, stopRecovery } from './request';
+import {
+  MAX_SUBSETS,
+  recoverSession,
+  type RecoverSession,
+  type ShownRequest,
+  startRecovery,
+  stopRecovery,
+} from './request';
 
 freshIndexedDBPerTest();
 
@@ -56,12 +74,22 @@ async function heldBy(world: RecoveryWorld, contact: TestDevice, groupId: string
   return share;
 }
 
-/** Puts `share` in the request mailbox for the code `shown`, as a contact's device would. */
-async function release(fake: FakeRelay, device: TestDevice, code: string, share: RecoveryShare) {
-  const parsed = parseRecoveryCode(code);
+/**
+ * Puts `share` in the request mailbox for the code `shown`, as a contact's
+ * device would, with the second number the contact typed: `shown`'s unless
+ * the test says otherwise.
+ */
+async function release(
+  fake: FakeRelay,
+  device: TestDevice,
+  shown: ShownRequest,
+  share: RecoveryShare,
+  number = shown.number,
+) {
+  const parsed = parseRecoveryCode(shown.code);
   if (parsed === null) throw new Error('Expected a code.');
   const { mailbox, key } = recoveryChannel(parsed.seed);
-  const box = sealRelease(parsed.publicKey, mailbox, share);
+  const box = sealRelease(parsed.publicKey, mailbox, share, number);
   await device.services.relay.putBlob(mailbox, xchachaSeal.seal(mailbox, key, box), 7);
   expect(fake.blobs(mailbox).length).toBeGreaterThan(0);
 }
@@ -79,11 +107,264 @@ async function anaKey(world: RecoveryWorld): Promise<Uint8Array> {
   return local(state.key);
 }
 
+/** A six-digit number that isn't `number`. */
+function otherThan(number: string): string {
+  return String((Number(number) + 1) % 1_000_000).padStart(6, '0');
+}
+
+/** How many request-mailbox GETs the relay has answered. */
+function mailboxReads(fake: FakeRelay, shown: ShownRequest): number {
+  const seed = parseRecoveryCode(shown.code)?.seed ?? new Uint8Array();
+  const { mailbox } = recoveryChannel(seed);
+  return fake.requests.filter((sent) => sent.method === 'GET' && sent.url.includes(mailbox)).length;
+}
+
+/**
+ * Mallory, who holds `code`, plants a relay backup of her own group under a
+ * key she chose, then posts two shares of that key to the request mailbox,
+ * under `split` (a new one unless named), each in two forms: as releases
+ * were before #398, and with `number` as the second number. Returns her
+ * group's id and her backup's.
+ */
+async function plantAsMallory(
+  fake: FakeRelay,
+  code: string,
+  number: string,
+  split = newSplitId(),
+): Promise<{ planted: string; backup: string }> {
+  const made = await members(fake, ['Mallory']);
+  const [mallory] = made.devices;
+  if (mallory === undefined) throw new Error('Expected Mallory’s device.');
+  opened.push(mallory);
+  await startRelayBackup(mallory.services, { newKey: true, split });
+  const key = local((await mallory.services.store.getRelayBackup())?.key ?? new Uint8Array());
+  const parsed = parseRecoveryCode(code);
+  if (parsed === null) throw new Error('Expected a code.');
+  const { mailbox, key: sealKey } = recoveryChannel(parsed.seed);
+  const shares = await splitKey(key, 3, 2);
+  for (const share of shares.slice(0, 2)) {
+    const body = { split, t: 2, n: 3, share: base64url(share) };
+    for (const plaintext of [body, { v: 2, ...body, number }]) {
+      const box = sealTo(
+        parsed.publicKey,
+        utf8(JSON.stringify(plaintext)),
+        RECOVERY_RELEASE_INFO,
+        utf8(mailbox),
+      );
+      await mallory.services.relay.putBlob(mailbox, xchachaSeal.seal(mailbox, sealKey, box), 7);
+    }
+  }
+  return { planted: made.groupId, backup: backupIdFor(key) };
+}
+
+/** The shares Ben and Dee hold for Ana in Riverside Tenants, released with `shown`'s second number. */
+async function releaseRiverside(fake: FakeRelay, world: RecoveryWorld, shown: ShownRequest) {
+  await release(fake, world.ben, shown, await heldBy(world, world.ben, world.groupId));
+  await release(fake, world.dee, shown, await heldBy(world, world.dee, world.groupId));
+}
+
+/** Polls `session` until it finds a backup, then says yes: what restoring brought back. */
+async function confirmed(session: RecoverSession) {
+  expect(await session.poll()).toMatchObject({ kind: 'found' });
+  return session.confirm();
+}
+
+/** What a device that has written nothing holds: no groups, no backup key, and its request. */
+async function untouched(fresh: TestDevice) {
+  return {
+    groups: await fresh.services.store.listGroups(),
+    key: await fresh.services.store.getRelayBackup(),
+    request: (await fresh.services.store.getRecoverRequest()) !== undefined,
+    recovered: await fresh.services.store.getRecoveredAt(),
+  };
+}
+
+const NOTHING_WRITTEN = { groups: [], key: undefined, request: true, recovered: undefined };
+
+describe('a recovery someone else holds the code to (#398)', DEVICES, () => {
+  it('restores nothing a holder of the code alone planted, never fetches it, and keeps the request', async () => {
+    const { fake, fresh, shown } = await setUp();
+    const { planted } = await plantAsMallory(fake, shown.code, otherThan(shown.number));
+
+    const session = recoverSession(fresh.services);
+    for (let pass = 0; pass < 2; pass += 1) {
+      // Her two releases with a wrong number opened, so they count; her two old-format ones don't.
+      expect(await session.poll()).toEqual({
+        kind: 'waiting',
+        shares: 0,
+        needed: null,
+        mismatched: 2,
+      });
+    }
+    expect(await fresh.services.store.getGroup(planted)).toBeUndefined();
+    expect(await untouched(fresh)).toEqual(NOTHING_WRITTEN);
+    expect(backupReads(fake)).toBe(0);
+  });
+
+  it('spends no tries on releases with the wrong number, however many come, and still recovers', async () => {
+    const { fake, world, fresh, shown } = await setUp();
+    const split = newSplitId();
+    const wrong = otherThan(shown.number);
+    // Nine shares of a 3-of-5 split would use up every try, were they combined.
+    for (let x = 1; x <= 9; x += 1) {
+      const share = Uint8Array.from({ length: 33 }, (_, i) => (i === 32 ? x : (x * 7 + i) % 256));
+      await release(fake, world.ben, shown, { split, t: 3, n: 5, share }, wrong);
+    }
+    const session = recoverSession(fresh.services);
+    expect(await session.poll()).toEqual({
+      kind: 'waiting',
+      shares: 0,
+      needed: null,
+      mismatched: 9,
+    });
+    expect(backupReads(fake)).toBe(0);
+
+    await releaseRiverside(fake, world, shown);
+    expect(await confirmed(session)).toEqual({
+      kind: 'restored',
+      groups: 2,
+      skipped: 0,
+      skippedDocuments: 0,
+    });
+    expect(backupReads(fake)).toBe(1);
+  });
+
+  it('counts a mistyped number, and takes the same share sent again with the right one', async () => {
+    const { fake, world, fresh, shown } = await setUp();
+    const ben = await heldBy(world, world.ben, world.groupId);
+    await release(fake, world.ben, shown, ben, otherThan(shown.number));
+    await release(fake, world.dee, shown, await heldBy(world, world.dee, world.groupId));
+    const session = recoverSession(fresh.services);
+    expect(await session.poll()).toEqual({
+      kind: 'waiting',
+      shares: 1,
+      needed: 2,
+      mismatched: 1,
+    });
+    expect(backupReads(fake)).toBe(0);
+
+    // The number stays the same until the recovery ends, so Ben can send again.
+    expect((await startRecovery(fresh.services)).number).toBe(shown.number);
+    await release(fake, world.ben, shown, ben);
+    expect(await confirmed(session)).toEqual({
+      kind: 'restored',
+      groups: 2,
+      skipped: 0,
+      skippedDocuments: 0,
+    });
+  });
+
+  it('asks before restoring what a contact who heard the number planted, and No keeps the request', async () => {
+    const { fake, world, fresh, shown } = await setUp();
+    // Mallory is one of Ana's contacts: she heard the number, and posts under the real split.
+    const real = await heldBy(world, world.cal, world.allotment);
+    const { planted, backup } = await plantAsMallory(fake, shown.code, shown.number, real.split);
+    const hers = () =>
+      fake.requests.filter((sent) => sent.method === 'GET' && sent.url.includes(backup)).length;
+    const session = recoverSession(fresh.services);
+    expect(await session.poll()).toEqual({ kind: 'found', groups: ['Riverside Tenants'] });
+    // Asked again, it answers the same without reading the relay.
+    const reads = mailboxReads(fake, shown);
+    expect(await session.poll()).toEqual({ kind: 'found', groups: ['Riverside Tenants'] });
+    expect(mailboxReads(fake, shown)).toBe(reads);
+    expect(await untouched(fresh)).toEqual(NOTHING_WRITTEN);
+
+    session.decline();
+    expect(await session.poll()).toMatchObject({ kind: 'waiting', shares: 2, needed: 2 });
+    expect(await fresh.services.store.getGroup(planted)).toBeUndefined();
+    expect(await untouched(fresh)).toEqual(NOTHING_WRITTEN);
+    expect(hers()).toBe(1);
+
+    // Ana's real contacts' shares still bring her back, past Mallory's in the same split.
+    await releaseRiverside(fake, world, shown);
+    expect(await session.poll()).toEqual({
+      kind: 'found',
+      groups: ['Riverside Tenants', 'Riverside Tenants'],
+    });
+    expect(await session.confirm()).toEqual({
+      kind: 'restored',
+      groups: 2,
+      skipped: 0,
+      skippedDocuments: 0,
+    });
+    expect(await fresh.services.store.getGroup(planted)).toBeUndefined();
+    const held = (await fresh.services.store.listGroups()).map(({ groupId }) => groupId);
+    expect(held.sort()).toEqual([world.groupId, world.allotment].sort());
+    expect(local((await fresh.services.store.getRelayBackup())?.key ?? new Uint8Array())).toEqual(
+      await anaKey(world),
+    );
+    // Mallory's backup was fetched once, and never again after No.
+    expect(hers()).toBe(1);
+  });
+
+  it('restores nothing when the request stops while a backup waits for an answer', async () => {
+    const { fake, world, fresh, shown } = await setUp();
+    await releaseRiverside(fake, world, shown);
+    const session = recoverSession(fresh.services);
+    expect(await session.poll()).toMatchObject({ kind: 'found' });
+
+    await stopRecovery(fresh.services);
+    expect(await session.confirm()).toEqual({ kind: 'stopped' });
+    expect(await fresh.services.store.listGroups()).toEqual([]);
+    expect(await fresh.services.store.getRelayBackup()).toBeUndefined();
+    expect(await session.poll()).toEqual({ kind: 'stopped' });
+  });
+
+  it('keeps the backup found when Yes fails, so Yes can go again', async () => {
+    const { fake, world, fresh, shown } = await setUp();
+    await releaseRiverside(fake, world, shown);
+    const { store } = fresh.services;
+    let failures = 1;
+    const session = recoverSession({
+      ...fresh.services,
+      store: {
+        ...store,
+        finishRecovery: (at: number) => {
+          if (failures === 0) return store.finishRecovery(at);
+          failures -= 1;
+          return Promise.reject(new Error('The disk is full.'));
+        },
+      },
+    });
+    expect(await session.poll()).toMatchObject({ kind: 'found' });
+
+    await expect(session.confirm()).rejects.toThrow('The disk is full.');
+    expect(await session.poll()).toEqual({
+      kind: 'found',
+      groups: ['Riverside Tenants', 'Riverside Tenants'],
+    });
+    expect(await session.confirm()).toEqual({
+      kind: 'restored',
+      groups: 2,
+      skipped: 0,
+      skippedDocuments: 0,
+    });
+    expect(await fresh.services.store.getRecoverRequest()).toBeUndefined();
+    expect(backupReads(fake)).toBe(1);
+  });
+
+  it('answers a Yes or No with nothing found as a poll would', async () => {
+    const { fresh } = await setUp();
+    const session = recoverSession(fresh.services);
+    session.decline();
+    expect(await session.confirm()).toEqual({
+      kind: 'waiting',
+      shares: 0,
+      needed: null,
+      mismatched: 0,
+    });
+    expect(await untouched(fresh)).toEqual(NOTHING_WRITTEN);
+  });
+});
+
 describe('recovering on a new device', DEVICES, () => {
-  it('shows one code and check, kept across a restart, until it stops', async () => {
+  it('shows one code, check and second number, kept across a restart, until it stops', async () => {
     const { fresh, shown, request } = await setUp();
     expect(shown.code).toMatch(/^RR1\.[A-Za-z0-9_-]{64}$/);
     expect(shown.check).toBe(recoveryCheck(shown.code));
+    // The second number comes from the secret key, which the code doesn't carry (#398).
+    expect(shown.number).toBe(recoveryNumber(request.secretKey));
+    expect(shown.number).toMatch(/^[0-9]{6}$/);
     expect(local(parseRecoveryCode(shown.code)?.seed ?? new Uint8Array())).toEqual(
       local(request.seed),
     );
@@ -95,7 +376,9 @@ describe('recovering on a new device', DEVICES, () => {
     await stopRecovery(fresh.services);
     expect(await fresh.services.store.getRecoverRequest()).toBeUndefined();
     expect(await recoverSession(fresh.services).poll()).toEqual({ kind: 'stopped' });
-    expect((await startRecovery(fresh.services)).code).not.toBe(shown.code);
+    const again = await startRecovery(fresh.services);
+    expect(again.code).not.toBe(shown.code);
+    expect(again.number).not.toBe(shown.number);
   });
 
   it('shows one code, the one it keeps, for two starts at once, as React’s StrictMode makes them', async () => {
@@ -116,7 +399,12 @@ describe('recovering on a new device', DEVICES, () => {
   it('waits for t shares, then restores Ana’s groups and keeps her backup key, through real contacts', async () => {
     const { fake, world, fresh, shown } = await setUp();
     const session = recoverSession(fresh.services);
-    expect(await session.poll()).toEqual({ kind: 'waiting', shares: 0, needed: null });
+    expect(await session.poll()).toEqual({
+      kind: 'waiting',
+      shares: 0,
+      needed: null,
+      mismatched: 0,
+    });
 
     const { ben, cal, groupId, allotment } = world;
     const approve = async (contact: TestDevice, where: string) =>
@@ -125,16 +413,28 @@ describe('recovering on a new device', DEVICES, () => {
         groupId: where,
         person: await keyOf(world.ana, where),
         check: shown.check,
+        number: shown.number,
       });
     await approve(ben, groupId);
     await approve(cal, allotment);
     fake.minute += HOLD;
     await ben.services.sync.syncOnce();
-    expect(await session.poll()).toEqual({ kind: 'waiting', shares: 1, needed: 2 });
+    expect(await session.poll()).toEqual({
+      kind: 'waiting',
+      shares: 1,
+      needed: 2,
+      mismatched: 0,
+    });
     expect(await fresh.services.store.listGroups()).toEqual([]);
     await cal.services.sync.syncOnce();
 
+    // Found, and nothing written until Ana says these are her groups (#398).
     expect(await session.poll()).toEqual({
+      kind: 'found',
+      groups: ['Riverside Tenants', 'Riverside Tenants'],
+    });
+    expect(await untouched(fresh)).toEqual(NOTHING_WRITTEN);
+    expect(await session.confirm()).toEqual({
       kind: 'restored',
       groups: 2,
       skipped: 0,
@@ -160,9 +460,8 @@ describe('recovering on a new device', DEVICES, () => {
 
   it('once recovered, choosing contacts makes a new key and overwrites the one the contacts held', async () => {
     const { fake, world, fresh, shown } = await setUp();
-    await release(fake, world.ben, shown.code, await heldBy(world, world.ben, world.groupId));
-    await release(fake, world.dee, shown.code, await heldBy(world, world.dee, world.groupId));
-    expect(await recoverSession(fresh.services).poll()).toMatchObject({ kind: 'restored' });
+    await releaseRiverside(fake, world, shown);
+    expect(await confirmed(recoverSession(fresh.services))).toMatchObject({ kind: 'restored' });
     const old = await anaKey(world);
     await fresh.services.sync.syncOnce();
 
@@ -195,10 +494,10 @@ describe('recovering on a new device', DEVICES, () => {
     const bad = await heldBy(world, world.cal, world.allotment);
     const corrupted = Uint8Array.from(bad.share);
     corrupted[0] = (corrupted[0] ?? 0) ^ 0xff;
-    await release(fake, world.cal, shown.code, { ...bad, share: corrupted });
-    for (const share of good) await release(fake, world.ben, shown.code, share);
+    await release(fake, world.cal, shown, { ...bad, share: corrupted });
+    for (const share of good) await release(fake, world.ben, shown, share);
 
-    expect(await recoverSession(fresh.services).poll()).toEqual({
+    expect(await confirmed(recoverSession(fresh.services))).toEqual({
       kind: 'restored',
       groups: 2,
       skipped: 0,
@@ -212,13 +511,14 @@ describe('recovering on a new device', DEVICES, () => {
     const { fake, world, fresh, shown } = await setUp();
     const ben = await heldBy(world, world.ben, world.groupId);
     const dee = await heldBy(world, world.dee, world.groupId);
-    await release(fake, world.ben, shown.code, ben);
-    await release(fake, world.dee, shown.code, { ...dee, split: newSplitId() });
+    await release(fake, world.ben, shown, ben);
+    await release(fake, world.dee, shown, { ...dee, split: newSplitId() });
 
     expect(await recoverSession(fresh.services).poll()).toEqual({
       kind: 'waiting',
       shares: 1,
       needed: 2,
+      mismatched: 0,
     });
     expect(backupReads(fake)).toBe(0);
     expect(await fresh.services.store.listGroups()).toEqual([]);
@@ -229,12 +529,13 @@ describe('recovering on a new device', DEVICES, () => {
     const split = newSplitId();
     for (let x = 1; x <= 2; x += 1) {
       const share = Uint8Array.from({ length: 33 }, (_, i) => (i === 32 ? x : (x * 5 + i) % 256));
-      await release(fake, world.ben, shown.code, { split, t: 3, n: 5, share });
+      await release(fake, world.ben, shown, { split, t: 3, n: 5, share });
     }
     expect(await recoverSession(fresh.services).poll()).toEqual({
       kind: 'waiting',
       shares: 2,
       needed: 3,
+      mismatched: 0,
     });
     expect(backupReads(fake)).toBe(0);
   });
@@ -251,10 +552,15 @@ describe('recovering on a new device', DEVICES, () => {
       backupIdFor(key),
       sealRelayBackup(key, utf8(JSON.stringify({ ...json, groups }))),
     );
-    await release(fake, world.ben, shown.code, await heldBy(world, world.ben, world.groupId));
-    await release(fake, world.dee, shown.code, await heldBy(world, world.dee, world.groupId));
+    await releaseRiverside(fake, world, shown);
 
-    expect(await recoverSession(fresh.services).poll()).toEqual({
+    // The planted entry isn't named, so Ana is asked only about her own groups.
+    const session = recoverSession(fresh.services);
+    expect(await session.poll()).toEqual({
+      kind: 'found',
+      groups: ['Riverside Tenants', 'Riverside Tenants'],
+    });
+    expect(await session.confirm()).toEqual({
       kind: 'restored',
       groups: 2,
       skipped: 1,
@@ -279,10 +585,9 @@ describe('recovering on a new device', DEVICES, () => {
       backupIdFor(key),
       sealRelayBackup(key, utf8(JSON.stringify({ ...json, personal }))),
     );
-    await release(fake, world.ben, shown.code, await heldBy(world, world.ben, world.groupId));
-    await release(fake, world.dee, shown.code, await heldBy(world, world.dee, world.groupId));
+    await releaseRiverside(fake, world, shown);
 
-    expect(await recoverSession(fresh.services).poll()).toEqual({
+    expect(await confirmed(recoverSession(fresh.services))).toEqual({
       kind: 'restored',
       groups: 2,
       skipped: 0,
@@ -295,11 +600,15 @@ describe('recovering on a new device', DEVICES, () => {
   it('leaves the device empty when the backup won’t open, and keeps waiting', async () => {
     const { fake, world, fresh, shown } = await setUp();
     await world.ana.services.relay.putBackup(backupIdFor(await anaKey(world)), newScrubBlob());
-    await release(fake, world.ben, shown.code, await heldBy(world, world.ben, world.groupId));
-    await release(fake, world.dee, shown.code, await heldBy(world, world.dee, world.groupId));
+    await releaseRiverside(fake, world, shown);
 
     const session = recoverSession(fresh.services);
-    expect(await session.poll()).toEqual({ kind: 'waiting', shares: 2, needed: 2 });
+    expect(await session.poll()).toEqual({
+      kind: 'waiting',
+      shares: 2,
+      needed: 2,
+      mismatched: 0,
+    });
     expect(await fresh.services.store.listGroups()).toEqual([]);
     expect(await fresh.services.store.getRelayBackup()).toBeUndefined();
     expect(await fresh.services.store.getRecoveredAt()).toBeUndefined();
@@ -314,10 +623,15 @@ describe('recovering on a new device', DEVICES, () => {
     const split = newSplitId();
     for (let x = 1; x <= 9; x += 1) {
       const share = Uint8Array.from({ length: 33 }, (_, i) => (i === 32 ? x : (x * 7 + i) % 256));
-      await release(fake, world.ben, shown.code, { split, t: 3, n: 5, share });
+      await release(fake, world.ben, shown, { split, t: 3, n: 5, share });
     }
     const session = recoverSession(fresh.services);
-    expect(await session.poll()).toEqual({ kind: 'waiting', shares: 9, needed: 3 });
+    expect(await session.poll()).toEqual({
+      kind: 'waiting',
+      shares: 9,
+      needed: 3,
+      mismatched: 0,
+    });
     await session.poll();
     expect(backupReads(fake)).toBe(MAX_SUBSETS);
   });
@@ -328,8 +642,8 @@ describe('recovering on a new device', DEVICES, () => {
       await heldBy(world, world.ben, world.groupId),
       await heldBy(world, world.dee, world.groupId),
     ];
-    for (const share of shares) await release(fake, world.ben, shown.code, share);
-    expect(await recoverSession(fresh.services).poll()).toMatchObject({ kind: 'restored' });
+    for (const share of shares) await release(fake, world.ben, shown, share);
+    expect(await confirmed(recoverSession(fresh.services))).toMatchObject({ kind: 'restored' });
 
     const canaries = [
       ...keyCanaries('the seed', local(request.seed)),

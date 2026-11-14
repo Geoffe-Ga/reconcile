@@ -67,3 +67,11 @@ Every other rule change still needs a `rules-change` Proposal at its class's bar
   - Records an offline member's device posted after the dissolve, before it read it, outlast the dissolve by as long as that device was away, and can confirm a copy restored then.
   - Both need a copy older than the relay's memory, and stay among such copies: devices that archived the group never read its mailboxes again.
 - As above, no app can stop someone who kept a copy and changes the app.
+
+## Amendment (2026-11-13, #232): A Dissolved Group's Mailboxes Expire; Nothing Deletes Them
+
+The Decision above says a dissolved group's "relay mailboxes are deleted". What shipped with #108 (#212) deletes nothing, on purpose.
+
+- **No request names them again.** Once a `dissolve` folds, each device archives the group and from then on sends and reads nothing for it. It sends no push request either: the group's registration and any nudge already scheduled lapse at the relay. Each of the group's weekly mailboxes (#110) then expires on the relay's 30-day retention ([ADR-0057](0057-environments-updates-retention.md)), within about a month of the dissolve, as [ADR-0074](0074-mvp-scope-revised.md)'s "Mailboxes after dissolution" already says. The spec's §7 Dissolve and Push say the same ([07-sync.md](../spec/phase-1/07-sync.md)).
+- **There's no route to delete one.** The relay holds no member table ([ADR-0007](0007-thin-python-relay.md)), so it can't tell who may delete a mailbox. A `DELETE` keyed by the mailbox id would let any member, or anyone holding an unexpired invite link, erase events that other devices haven't fetched yet, the `dissolve` itself included. Those devices would then hold a live group that had ended.
+- **Until then** the relay keeps what it always kept: sealed blobs it can't read. Wipe everywhere doesn't change: each device erases its own copy at its first launch a week or more after the dissolve's receipt.
