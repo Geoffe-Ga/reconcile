@@ -717,8 +717,10 @@ export interface HoldEnd {
  * A share this device holds for someone recovering on a new device (#118;
  * ADR-0043 §2, ADR-0075 §4): the `recovery-alert` it posted, whose share it
  * is (the person's key in the group), the split approved, the tag a cancel
- * names, and the code that says where the share goes. The code goes once the
- * hold ends.
+ * names, the code that says where the share goes, and the second number the
+ * person read out, which goes inside the release (#398). A stopped hold drops
+ * the code and number at once; a sent one keeps them while the relay keeps
+ * the release, so the contact can send it again with a corrected number.
  */
 export interface RecoveryHold {
   /** The alert's event id. */
@@ -729,8 +731,10 @@ export interface RecoveryHold {
   readonly split: string;
   /** The 16-byte tag sealed in the alert, which the person's cancel names. */
   readonly tag: string;
-  /** The recovery code, while the share waits to go. */
+  /** The recovery code, while the share waits to go or may go again. */
   readonly code?: string;
+  /** The second number the person read out, six digits, kept with the code (#398). */
+  readonly number?: string;
   /** When this device approved, in device ms. */
   readonly approvedAt: number;
   /** How the hold ended; absent while it holds. */
@@ -1030,8 +1034,16 @@ export interface Store
    * @throws {Error} when the group is leaving or read-only on this device.
    */
   holdShare(groupId: string, alert: Uint8Array, hold: RecoveryHold): Promise<void>;
-  /** End the hold of `alert` as `end` says, dropping its code, unless it has ended already (#118). */
+  /**
+   * End the hold of `alert` as `end` says, unless it has ended already
+   * (#118): a stopped hold drops its code and second number, and a sent one
+   * keeps them, so it can go again (#398).
+   */
   endHold(groupId: string, alert: string, end: HoldEnd): Promise<void>;
+  /** Give the sent hold of `alert` a corrected second `number`, while it has its code (#398). */
+  setHoldNumber(groupId: string, alert: string, number: string): Promise<void>;
+  /** Drop the code and second number of the ended hold of `alert` (#398). */
+  forgetHoldCode(groupId: string, alert: string): Promise<void>;
   /**
    * Keep the group's push registration once the relay has taken it, or with
    * null turn push off for the group, in one change (#99).
@@ -1488,6 +1500,20 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
           endedHold(hold, alert, end),
         );
       }),
+    setHoldNumber: (groupId, alert, number) =>
+      change(groupId, (group) => {
+        group.recoveryHolds = (group.recoveryHolds ?? []).map((hold) =>
+          hold.alert === alert && hold.ended?.kind === 'sent' && hold.code !== undefined
+            ? { ...hold, number }
+            : hold,
+        );
+      }),
+    forgetHoldCode: (groupId, alert) =>
+      change(groupId, (group) => {
+        group.recoveryHolds = (group.recoveryHolds ?? []).map((hold) =>
+          hold.alert === alert && hold.ended !== undefined ? withoutCode(hold) : hold,
+        );
+      }),
     async markBackup(groupIds, mark) {
       const tx = db.transaction(GROUPS, 'readwrite');
       const marked: string[] = [];
@@ -1903,12 +1929,23 @@ function wholeRequest(stored: StoredRecoverRequest, opened: OpenedVault | null):
   return wholeRecord(requestSealing, stored, sealedFor(opened, DEVICE, RECOVER_REQUEST));
 }
 
-/** `hold` ended as `end` says, without its code, when it is the hold of `alert` and still holds (#118). */
+/** `hold` without its code and second number (#118, #398). */
+function withoutCode(hold: RecoveryHold): RecoveryHold {
+  const bare: RecoveryHold & { code?: string; number?: string } = { ...hold };
+  delete bare.code;
+  delete bare.number;
+  return bare;
+}
+
+/**
+ * `hold` ended as `end` says, when it is the hold of `alert` and still holds
+ * (#118): without its code and number once stopped, and with them once sent,
+ * so it can go again (#398).
+ */
 function endedHold(hold: RecoveryHold, alert: string, end: HoldEnd): RecoveryHold {
   if (hold.alert !== alert || hold.ended !== undefined) return hold;
-  const ended: RecoveryHold & { code?: string } = { ...hold, ended: end };
-  delete ended.code;
-  return ended;
+  const ended = { ...hold, ended: end };
+  return end.kind === 'stopped' ? withoutCode(ended) : ended;
 }
 
 /**

@@ -6,7 +6,13 @@
  */
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { newRecoveryKeys, recoveryChannel, recoveryCheck, recoveryCode } from '../crypto/recovery';
+import {
+  newRecoveryKeys,
+  recoveryChannel,
+  recoveryCheck,
+  recoveryCode,
+  recoveryNumber,
+} from '../crypto/recovery';
 import { exportGroups, importGroups } from '../store/snapshot';
 import { type TestDevice, testDevice } from '../test/appServices';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
@@ -41,17 +47,20 @@ async function bothApprove(world: RecoveryWorld) {
   const request = newRecoveryKeys();
   const code = recoveryCode(request);
   const check = recoveryCheck(code);
+  const number = recoveryNumber(request.secretKey);
   await approveRecovery(world.ben.services, {
     code,
     groupId: world.groupId,
     person: await keyOf(world.ana, world.groupId),
     check,
+    number,
   });
   await approveRecovery(world.cal.services, {
     code,
     groupId: world.allotment,
     person: await keyOf(world.ana, world.allotment),
     check,
+    number,
   });
   return { request, mailbox: recoveryChannel(request.seed).mailbox };
 }
@@ -126,9 +135,17 @@ describe('the alert on the person’s devices', DEVICES, () => {
     opened.push(...world.devices);
     const { ana, ben, groupId } = world;
     expect(await alertsOn(ana)).toEqual([]);
-    const code = recoveryCode(newRecoveryKeys());
+    const request = newRecoveryKeys();
+    const code = recoveryCode(request);
     const person = await keyOf(ana, groupId);
-    await approveRecovery(ben.services, { code, groupId, person, check: recoveryCheck(code) });
+    const number = recoveryNumber(request.secretKey);
+    await approveRecovery(ben.services, {
+      code,
+      groupId,
+      person,
+      check: recoveryCheck(code),
+      number,
+    });
     await ana.services.sync.syncOnce();
     const [first] = await alertsOn(ana);
     expect(first).toBeDefined();
@@ -157,6 +174,7 @@ describe('the alert on the person’s devices', DEVICES, () => {
       groupId,
       person: await keyOf(ana, groupId),
       check: recoveryCheck(code),
+      number: recoveryNumber(request.secretKey),
     };
     await approveRecovery(ben.services, approval);
     await ana.services.sync.syncOnce();

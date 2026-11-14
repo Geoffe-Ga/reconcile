@@ -5,18 +5,22 @@
  * Ana, on a laptop, founds a group that Ben (a phone, dark), Cal and Dee
  * join, proposes a change, and picks Ben, Cal and Dee at 2 of 3. A fresh
  * phone, five profiles in all, opens Recover with my contacts and shows its
- * code and check. Ben approves from Settings › Help someone recover (a wrong
- * number first, which approves nothing) and so does Cal; Ana's Start and
- * group home show the alert, and she cancels it.
+ * code, its check and its second number (#398). Ben approves from Settings ›
+ * Help someone recover, typing both numbers (a wrong first number first,
+ * which approves nothing), and so does Cal; Ana's Start and group home show
+ * the alert, and she cancels it.
  *
  * The real relay's clock can't be moved and the spec adds no relay route or
  * flag, so the test moves each alert's `received` back 4,320 minutes in the
  * relay's SQLite (`node:sqlite`, as #73's spec edits it) and in Ben's and
  * Cal's IndexedDB. After the cancel, their next passes release nothing, and
- * the request mailbox stays empty. Ben and Cal then approve again, Ana lets
- * it run, and once their alerts are moved back too their devices release;
- * the fresh phone rebuilds the key, restores Ana's group and Document, asks
- * her to choose her contacts again, and votes as Ana on her Proposal.
+ * the request mailbox stays empty. Ben and Cal then approve again, Ben with
+ * a wrong second number, Ana lets it run, and once their alerts are moved
+ * back too their devices release; the fresh phone leaves Ben's share out and
+ * says so (#398). Ben sends it again with the right number, and the fresh
+ * phone rebuilds the key, asks "Are these your groups?", and on Yes restores
+ * Ana's group and Document, asks her to choose her contacts again, and votes
+ * as Ana on her Proposal.
  *
  * No request any profile sent, and nothing the stopped relay kept, holds a
  * share, the backup key, the new device's seed or key, the code, or a name,
@@ -28,7 +32,7 @@ import { DatabaseSync } from 'node:sqlite';
 
 import type { Page, Request } from '@playwright/test';
 
-import { recoveryChannel, recoveryCheck } from '../src/crypto/recovery';
+import { recoveryChannel, recoveryCheck, recoveryNumber } from '../src/crypto/recovery';
 import type { RecoveryShare } from '../src/crypto/shares';
 import {
   acceptNotice,
@@ -106,8 +110,16 @@ async function pickContacts(ana: Person, names: readonly string[]): Promise<void
   await expect(heading(page, 'Settings')).toBeVisible(SYNCED);
 }
 
-/** `contact` approves `code` from Help someone recover, with `number` read out. */
-async function approve(contact: Person, code: string, number: string): Promise<void> {
+/**
+ * `contact` approves `code` from Help someone recover, with `number` and the
+ * `second` number read out.
+ */
+async function approve(
+  contact: Person,
+  code: string,
+  number: string,
+  second: string,
+): Promise<void> {
   const { page } = contact;
   await openSettings(page);
   await page
@@ -119,8 +131,8 @@ async function approve(contact: Person, code: string, number: string): Promise<v
   await page.getByRole('button', { name: 'Continue' }).click();
   await expect(page.getByRole('radio', { name: `${NAMES.ana} (${GROUP})` })).toBeChecked();
   await expect(page.getByText(`Call ${NAMES.ana} or meet them.`, { exact: false })).toBeVisible();
-  const field = page.getByRole('textbox', { name: 'The number they read out' });
-  await field.fill(number);
+  await page.getByRole('textbox', { name: 'The first number they read out' }).fill(number);
+  await page.getByRole('textbox', { name: 'The second number they read out' }).fill(second);
   await page.getByRole('button', { name: 'Approve' }).click();
 }
 
@@ -253,7 +265,8 @@ test('a new device recovers Ana through two contacts after the wait, and her can
 
   let code = '';
   let check = '';
-  await test.step('the fresh phone shows its code and check from Recover with my contacts', async () => {
+  let second = '';
+  await test.step('the fresh phone shows its code and both numbers from Recover with my contacts', async () => {
     const { page } = fresh;
     await page.goto('/');
     await acceptNotice(fresh);
@@ -266,9 +279,12 @@ test('a new device recovers Ana through two contacts after the wait, and her can
     await expect(page.getByText(`${check.slice(0, 3)} ${check.slice(3)}`)).toBeVisible();
     await expect(
       page.getByText(
-        'Send this code to your recovery contacts, then call them and read them this number.',
+        'Send this code to your recovery contacts, then call them and read them both numbers.',
       ),
     ).toBeVisible();
+    // The second number, as Ana reads it off the screen (#398).
+    second = (await page.getByRole('definition').nth(1).textContent()) ?? '';
+    expect(second).toMatch(/^[0-9]{3} [0-9]{3}$/);
     await expect(page.getByText('Waiting for your contacts.')).toBeVisible();
     await expectAccessible(fresh, 'Recover with your contacts');
   });
@@ -279,21 +295,23 @@ test('a new device recovers Ana through two contacts after the wait, and her can
   expect(seed).toHaveLength(16);
   expect(secretKey).toHaveLength(32);
   const { mailbox } = recoveryChannel(seed);
+  // It comes from the new device's secret key, which the code doesn't carry.
+  expect(second.replace(' ', '')).toBe(recoveryNumber(secretKey));
 
   await test.step('a wrong number approves nothing; Ben and Cal approve with the right one', async () => {
     const wrong = String((Number(check) + 1) % 1_000_000).padStart(6, '0');
-    await approve(ben, code, wrong);
+    await approve(ben, code, wrong, second);
     await expect(ben.page.getByText(/That number doesn’t match this code/)).toBeVisible();
     await expectAccessible(ben, 'Help someone recover, a wrong number');
     await expect(holdsOf(ben)).toHaveCount(0);
-    await ben.page.getByRole('textbox', { name: 'The number they read out' }).fill(check);
+    await ben.page.getByRole('textbox', { name: 'The first number they read out' }).fill(check);
     await ben.page.getByRole('button', { name: 'Approve' }).click();
     await expect(holdsOf(ben)).toContainText(
       new RegExp(`^Holding ${NAMES.ana}’s share until .+\\. Open Reconcile after then`),
       SYNCED,
     );
     await expectAccessible(ben, 'Help someone recover, holding');
-    await approve(cal, code, check);
+    await approve(cal, code, check, second);
     await expect(holdsOf(cal)).toContainText(`Holding ${NAMES.ana}’s share until`, SYNCED);
   });
 
@@ -338,10 +356,11 @@ test('a new device recovers Ana through two contacts after the wait, and her can
     await expect(fresh.page.getByText('Waiting for your contacts.')).toBeVisible();
   });
 
-  await test.step('they approve again; once the wait has passed, the fresh phone restores Ana', async () => {
-    await approve(ben, code, check);
+  await test.step('they approve again, Ben with a wrong second number, and their shares go after the wait', async () => {
+    const mistyped = String((Number(second.replace(' ', '')) + 1) % 1_000_000).padStart(6, '0');
+    await approve(ben, code, check, mistyped);
     await expect(holdsOf(ben)).toContainText(`Holding ${NAMES.ana}’s share until`, SYNCED);
-    await approve(cal, code, check);
+    await approve(cal, code, check, second);
     await expect(holdsOf(cal)).toContainText(`Holding ${NAMES.ana}’s share until`, SYNCED);
     // Both new alerts are on both contacts' devices before they move.
     for (const contact of [ben, cal]) {
@@ -351,17 +370,47 @@ test('a new device recovers Ana through two contacts after the wait, and her can
     expect(await moveAlertsBack(cal.page, moved, HOLD)).toEqual(seqs);
     moveRelayBack(relay.db, seqs, HOLD);
     moved.push(...seqs);
-    for (const contact of [ben, cal]) {
-      await expect(holdsOf(contact)).toContainText(
-        `${NAMES.ana}’s share went to their new device.`,
-        SYNCED,
-      );
-    }
+    const went = `${NAMES.ana}’s share went to their new device with the second number`;
+    await expect(holdsOf(ben)).toContainText(
+      `${went} ${mistyped.slice(0, 3)} ${mistyped.slice(3)}.`,
+      SYNCED,
+    );
+    await expect(holdsOf(cal)).toContainText(`${went} ${second}.`, SYNCED);
     expect(await mailboxRecords(fresh.page, mailbox)).toBe(2);
+    // The fresh phone leaves Ben's out, counts it, and restores nothing (#398).
     const { page } = fresh;
-    await expect(heading(page, 'Choose recovery contacts')).toBeVisible(SYNCED);
+    await expect(page.getByText('1 of 2 shares have arrived.')).toBeVisible(SYNCED);
     await expect(
-      page.getByText(/^You’re back in\. Choose your recovery contacts again/),
+      page.getByText(/^A share came with a different second number, so it was left out\./),
+    ).toBeVisible();
+    expect(await storedGroups(page)).toEqual([]);
+    await expectAccessible(fresh, 'Recover with your contacts, a share left out');
+  });
+
+  await test.step('Ben sends his again with the right number; the fresh phone asks, and restores Ana on Yes', async () => {
+    const { page } = ben;
+    await holdsOf(ben).getByRole('button', { name: 'Send it again with another number' }).click();
+    const field = page.getByRole('textbox', { name: 'The second number they read out' });
+    await expect(field).toBeFocused();
+    await expectAccessible(ben, 'Help someone recover, sending again');
+    await field.fill(second);
+    await page.getByRole('button', { name: 'Send again' }).click();
+    await expect(page.getByText('Sent again.')).toBeVisible(SYNCED);
+    await expect(holdsOf(ben)).toContainText(
+      `${NAMES.ana}’s share went to their new device with the second number ${second}.`,
+    );
+    expect(await mailboxRecords(fresh.page, mailbox)).toBe(3);
+
+    const recovering = fresh.page;
+    // Nothing is restored until Ana says these are her groups (#398).
+    const question = recovering.getByRole('region', { name: 'Are these your groups?' });
+    await expect(question.getByRole('listitem')).toHaveText([GROUP], SYNCED);
+    expect(await storedGroups(recovering)).toEqual([]);
+    await expectAccessible(fresh, 'Are these your groups?');
+    await question.getByRole('button', { name: 'Yes, restore them' }).click();
+    await expect(heading(recovering, 'Choose recovery contacts')).toBeVisible(SYNCED);
+    await expect(
+      recovering.getByText(/^You’re back in\. Choose your recovery contacts again/),
     ).toBeVisible();
     await expectAccessible(fresh, 'the picker, after a recovery');
   });

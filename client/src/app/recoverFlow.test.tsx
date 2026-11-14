@@ -2,14 +2,15 @@
  * Recovering with contacts (#118) through the whole app, on devices that
  * share one fake relay: Ben approves from Settings › Help someone recover;
  * Ana's Start and group home show the alert and cancel it; and a fresh
- * device recovers from Start, then opens the picker asking Ana to choose
- * her contacts again.
+ * device recovers from Start, asks whether the groups it found are hers
+ * (#398), and on Yes opens the picker asking Ana to choose her contacts
+ * again.
  */
 import { waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { newRecoveryKeys, recoveryCheck, recoveryCode } from '../crypto/recovery';
+import { newRecoveryKeys, recoveryCheck, recoveryCode, recoveryNumber } from '../crypto/recovery';
 import { approveRecovery } from '../recovery/holder';
 import { type TestDevice, testDevice } from '../test/appServices';
 import { axeViolations } from '../test/axe';
@@ -50,7 +51,8 @@ describe('recovering with contacts through the app', { timeout: 60_000 }, () => 
     const fake = createFakeRelay();
     const world = await recoveryWorld(fake);
     opened.push(...world.devices);
-    const code = recoveryCode(newRecoveryKeys());
+    const request = newRecoveryKeys();
+    const code = recoveryCode(request);
     const user = userEvent.setup();
 
     go('#/settings');
@@ -67,6 +69,10 @@ describe('recovering with contacts through the app', { timeout: 60_000 }, () => 
     await user.type(
       app.getByRole('textbox', { name: messages.helpRecover.numberLabel }),
       recoveryCheck(code),
+    );
+    await user.type(
+      app.getByRole('textbox', { name: messages.helpRecover.secondLabel }),
+      recoveryNumber(request.secretKey),
     );
     await user.click(app.getByRole('button', { name: messages.helpRecover.approve }));
     const holds = await app.findByRole('list', { name: messages.helpRecover.heldHeading }, SYNCED);
@@ -119,6 +125,11 @@ describe('recovering with contacts through the app', { timeout: 60_000 }, () => 
     expect(code).toMatch(/^RR1\./);
     const check = recoveryCheck(code);
     expect(app.getByText(`${check.slice(0, 3)} ${check.slice(3)}`)).toBeVisible();
+    // The second number, read off the screen as Ana would read it out (#398).
+    const [, second] = app.getAllByRole('definition');
+    const number = second?.textContent ?? '';
+    const kept = await fresh.services.store.getRecoverRequest();
+    expect(number.replace(' ', '')).toBe(recoveryNumber(kept?.secretKey ?? new Uint8Array(32)));
     expect(await axeViolations()).toEqual([]);
 
     for (const [contact, groupId] of [
@@ -126,11 +137,26 @@ describe('recovering with contacts through the app', { timeout: 60_000 }, () => 
       [world.dee, world.groupId],
     ] as const) {
       const person = await keyOf(world.ana, groupId);
-      await approveRecovery(contact.services, { code, groupId, person, check });
+      await approveRecovery(contact.services, { code, groupId, person, check, number });
     }
     fake.minute += HOLD;
     await world.ben.services.sync.syncOnce();
     await world.dee.services.sync.syncOnce();
+
+    // Nothing is restored until Ana says these are her groups (#398).
+    const question = await app.findByRole(
+      'region',
+      { name: messages.recover.foundHeading },
+      SYNCED,
+    );
+    expect(
+      within(question)
+        .getAllByRole('listitem')
+        .map((line) => line.textContent),
+    ).toEqual(['Riverside Tenants', 'Riverside Tenants']);
+    expect(await fresh.services.store.listGroups()).toEqual([]);
+    expect(await axeViolations()).toEqual([]);
+    await user.click(within(question).getByRole('button', { name: messages.recover.yes }));
 
     expect(await app.findByText(messages.recovery.recovered, {}, SYNCED)).toBeVisible();
     expect(window.location.hash).toBe('#/recovery');
