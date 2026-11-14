@@ -7,9 +7,11 @@
  * Pasting or typing never opens anything: the bar says what the text is
  * (`linkKind`) in one row, and Enter or a tap on the row opens it through
  * the link's own page. Then the bar empties and lets go of focus. A damaged
- * link, or anything that isn't a Reconcile link, gets one line instead. The
- * bar keeps no history and suggests nothing: a list of the links someone
- * opened would be a list of the groups they were invited to.
+ * link, or anything that isn't a Reconcile link, gets one line instead. A
+ * linking or recovery code gets one line pointing to the screen that takes
+ * it, and the field empties at once: the bar never passes, prefills or keeps
+ * a code. The bar keeps no history and suggests nothing: a list of the links
+ * someone opened would be a list of the groups they were invited to.
  *
  * Cmd+L or Ctrl+L puts the cursor in it with its text selected, from
  * anywhere, and so does `/` outside a field. Escape empties it, and a second
