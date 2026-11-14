@@ -15,11 +15,14 @@
  *    It locks nothing until the groups have a way back (#389): on a device
  *    with no group yet it closes at once without an answer, and so does
  *    choosing recovery contacts from it, so it comes back at a later launch.
- * 5. **The app**, with any invite link still in hand.
+ * 5. **The app**, with any invite, card or follow link still in hand.
  *
- * It wraps the whole app, so every later screen sits behind it. An invite
- * link opened while any step shows leaves the address bar at once and waits
- * in memory (spec §9: secrets stay after `#`, and not even there for long).
+ * It wraps the whole app, so every later screen sits behind it. An invite, a
+ * reconcile card's or a follow link opened while any step shows leaves the
+ * address bar at once and waits in memory (spec §9: secrets stay after `#`,
+ * and not even there for long; `heldLinks.ts`, #280). The install guide
+ * offers it to copy into the installed app, which on iOS keeps storage of
+ * its own and opens at its start, so nothing else could carry it there.
  * Once the notice is accepted, at that moment and at each launch after, the
  * app asks the browser to keep its data (ADR-0029).
  */
@@ -35,7 +38,7 @@ import { PasskeyOffer } from '../screens/PasskeyOffer';
 import { PilotNotice } from '../screens/PilotNotice';
 import { UnlockScreen } from '../screens/UnlockScreen';
 import type { InviteLookup } from './actions';
-import { parseInvitePayload } from './invite';
+import { HELD_LINKS, heldLinkOf, heldRoute } from './heldLinks';
 import type { DeviceLock, Passkey } from './passkey';
 import type { SaveBackupProps } from './SaveBackup';
 import { parseRoute, replaceRoute } from './router';
@@ -56,7 +59,10 @@ export interface FirstRunServices {
 
 /** What the app opens with. */
 export interface OpenedApp {
-  /** The seed of an invite link first run took out of the address bar, for Join. */
+  /**
+   * The seed of an invite, card or follow link first run took out of the
+   * address bar, for the page the address bar now names (#280).
+   */
   readonly heldSeed: Uint8Array | null;
   /** What the browser said about keeping the data, or null until it answers. */
   readonly persistence: Persistence | null;
@@ -82,13 +88,18 @@ export interface FirstRunGateProps extends FirstRunServices {
   readonly children: (opened: OpenedApp) => ReactNode;
 }
 
-/** How the page was opened, read from its `#join/{seed}` or `#door/{address}` route. */
+/**
+ * How the page was opened, read from its `#door/{address}` route or a held
+ * link's: `#join/{seed}`, `#reconcile/{seed}` or `#follow/{seed}` (#280).
+ */
 function arrivalFrom(hash: string): Arrival {
   const route = parseRoute(hash);
   if (route.name === 'door') return { kind: 'door', payload: route.payload };
-  if (route.name !== 'join' || route.payload === null) return { kind: 'plain' };
-  const seed = parseInvitePayload(route.payload);
-  return seed === null ? { kind: 'damaged' } : { kind: 'invite', seed };
+  const link = heldLinkOf(route);
+  const payload = 'payload' in route ? route.payload : null;
+  if (link === null || payload === null) return { kind: 'plain' };
+  const seed = HELD_LINKS[link].read(payload);
+  return seed === null ? { kind: 'damaged', link } : { kind: link, seed };
 }
 
 /** What first run holds: how the page was opened, and a count that moves with each new link. */
@@ -98,20 +109,21 @@ interface Held {
 }
 
 /**
- * Takes an invite's secret out of the address bar. The guide clears the
+ * Takes a held link's secret out of the address bar. The guide clears the
  * whole address, since this browser never opens the app; under the notice,
- * Join's route stays, so the app opens there with the invite in hand. A
- * front door's link holds no secret (#121), so it stays, and the app opens
- * at the door once the notice is accepted.
+ * the link's own page stays (Join, Bring a card or Follow), so the app opens
+ * there with the seed in hand. A front door's link holds no secret (#121),
+ * so it stays, and the app opens at the door once the notice is accepted.
  */
 function release(arrival: Arrival, open: boolean): void {
   if (arrival.kind === 'door') return;
   if (!open) window.history.replaceState(null, '', '/');
-  else if (arrival.kind !== 'plain') replaceRoute({ name: 'join', payload: null });
+  else if (arrival.kind === 'damaged') replaceRoute(heldRoute(arrival.link));
+  else if (arrival.kind !== 'plain') replaceRoute(heldRoute(arrival.kind));
 }
 
 /**
- * The invite first run holds while it shows the guide or the notice: the one
+ * The link first run holds while it shows the guide or the notice: the one
  * the page opened with, or a newer one opened in the same window, as an
  * in-app browser may do. Each leaves the address bar as soon as it's read.
  */
@@ -254,7 +266,7 @@ export function FirstRunGate(props: FirstRunGateProps) {
         />
       );
     case 'app': {
-      const heldSeed = steps.gatedAtLaunch && arrival.kind === 'invite' ? arrival.seed : null;
+      const heldSeed = steps.gatedAtLaunch && 'seed' in arrival ? arrival.seed : null;
       return children({ heldSeed, persistence });
     }
   }
