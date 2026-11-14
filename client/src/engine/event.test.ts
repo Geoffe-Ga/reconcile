@@ -13,6 +13,7 @@ import {
   type EventInput,
   eventId,
   fromBase64url,
+  type GenesisBody,
   isAddProposal,
   isCoalitionGenesis,
   isDissolveProposal,
@@ -1713,6 +1714,28 @@ describe('coalitions (#100)', () => {
     const founded = group?.event.type === 'genesis' ? group.event.body : null;
     expect(founded !== null && isCoalitionGenesis(founded)).toBe(false);
   });
+
+  it('reads a genesis as a coalition’s by its kind’s value, never by the field being there (#258)', () => {
+    const group = { name: 'G', founder: 'A', documents: DOCS };
+    // A group genesis body built in code, as one could be once GenesisBody gains a field called
+    // kind: it founds a group, whatever that field holds.
+    const kinded = (kind: unknown) => ({ ...group, kind }) as unknown as GenesisBody;
+    expect(isCoalitionGenesis(kinded('group'))).toBe(false);
+    expect(isCoalitionGenesis(kinded(undefined))).toBe(false);
+    expect(isCoalitionGenesis(kinded('Coalition'))).toBe(false);
+    // The control: a coalition's genesis, as the parser reads it, still founds a coalition.
+    const parsed = parseEvent(json(envelope('genesis', COALITION, { group: '' })));
+    const genesis = parsed?.event.type === 'genesis' ? parsed.event.body : null;
+    expect(genesis !== null && isCoalitionGenesis(genesis)).toBe(true);
+  });
+
+  it.each([['group'], ['Coalition'], [null], [1], [{ kind: 'coalition' }]])(
+    'still reads no genesis at all whose kind is %j, so the fold takes such a record as it always has (#258)',
+    (kind) => {
+      const body = { ...COALITION, founder: 'A', kind };
+      expect(parseEvent(json(envelope('genesis', body, { group: '' })))).toBeNull();
+    },
+  );
 
   it('keeps a genesis’s commitment to the room’s inner, 32 bytes in canonical base64url (#371)', () => {
     const parsed = parseEvent(json(envelope('genesis', { ...COALITION, commit: INNER })));
