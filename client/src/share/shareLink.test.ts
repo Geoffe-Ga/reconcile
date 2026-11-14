@@ -14,16 +14,17 @@ import { xchachaSeal } from '../crypto/seal';
 import { shareChannelOf, signShareRecord } from '../crypto/share';
 import { newSigningKeys } from '../crypto/sign';
 import { createRelay } from '../net/relay';
-import type { Store } from '../store/db';
+import type { Group, Store } from '../store/db';
 import { openStore, VaultLocked } from '../store/db';
 import { mailboxAt } from '../store/mailbox';
 import type { PersonalDocument, ShareState } from '../store/personal';
 import { exportGroups, importGroups } from '../store/snapshot';
-import { TEST_NOW, TEST_ORIGIN } from '../test/appServices';
+import { TEST_MINUTE, TEST_NOW, TEST_ORIGIN } from '../test/appServices';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { encodeCopy, type ShareCopy } from './copy';
 import {
+  heardRelay,
   keepSharesAlive,
   keepSharing,
   parseShareLink,
@@ -43,6 +44,8 @@ import {
 freshIndexedDBPerTest();
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** A day in relay minutes (#347). */
+const DAY = 1440;
 const PASSPHRASE = 'a long walk to the river';
 const CHEAP = 4;
 
@@ -183,7 +186,7 @@ describe('share links', () => {
 
 describe('startSharing', () => {
   it('makes a fresh seed and keypair, and posts the first copy, sealed and padded, to their own mailbox for 30 days', async () => {
-    const fake = createFakeRelay();
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
     const { store, services } = await owner(fake);
 
     const link = await sharedLink(services);
@@ -197,7 +200,7 @@ describe('startSharing', () => {
       base64url(link.seed),
       base64url(link.publicKey),
     ]);
-    expect(kept && [kept.n, kept.lastPostedAt, kept.pending]).toEqual([1, TEST_NOW, false]);
+    expect(kept && [kept.n, kept.postedAt, kept.pending]).toEqual([1, TEST_MINUTE, false]);
     expect(await readShare(reader(fake), link)).toEqual({
       kind: 'shown',
       title: 'Me',
@@ -206,7 +209,7 @@ describe('startSharing', () => {
   });
 
   it('posts the text normalized, as Preview shows it, and leaves the stored text as typed', async () => {
-    const fake = createFakeRelay();
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
     const { store, services } = await owner(fake);
 
     const link = await sharedLink(services, statement({ text: 'Real.  \r\n\r\n\r\n\r\nWords.' }));
@@ -216,7 +219,7 @@ describe('startSharing', () => {
   });
 
   it('gives two shares of one Document unrelated seeds, mailboxes and keys, none of them a group’s', async () => {
-    const fake = createFakeRelay();
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
     const { store, services } = await owner(fake);
     const signing = newSigningKeys();
     await store.addGroup({
@@ -254,7 +257,7 @@ describe('startSharing', () => {
   });
 
   it('keeps nothing and copies nothing when the relay can’t be reached', async () => {
-    const fake = createFakeRelay();
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
     const { store, services } = await owner(fake);
     await store.savePersonal(statement());
     fake.offline = true;
@@ -265,7 +268,7 @@ describe('startSharing', () => {
   });
 
   it('refuses a Document whose record would be over 64,000 bytes before any request', async () => {
-    const fake = createFakeRelay();
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
     const { store, services } = await owner(fake);
     await store.savePersonal(statement({ text: 'x'.repeat(MAX_RECORD_BYTES) }));
 
@@ -276,7 +279,7 @@ describe('startSharing', () => {
   });
 
   it('says a Document the device doesn’t hold is missing, with no request', async () => {
-    const fake = createFakeRelay();
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
     const { services } = await owner(fake);
 
     expect(await startSharing(services, statement().id)).toEqual({ kind: 'missing' });
@@ -284,7 +287,7 @@ describe('startSharing', () => {
   });
 
   it('hands back the same link for a Document already shared, posting nothing more', async () => {
-    const fake = createFakeRelay();
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
     const { services } = await owner(fake);
     const link = await sharedLink(services);
 
@@ -297,7 +300,7 @@ describe('startSharing', () => {
 
 describe('readShare', () => {
   it('ignores a copy posted by someone who only has the link', async () => {
-    const fake = createFakeRelay();
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
     const { services } = await owner(fake);
     const link = await sharedLink(services, statement({ title: 'Me', text: 'Real.\n' }));
 
@@ -307,7 +310,7 @@ describe('readShare', () => {
   });
 
   it('ignores a tombstone posted by someone who only has the link', async () => {
-    const fake = createFakeRelay();
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
     const { services } = await owner(fake);
     const link = await sharedLink(services);
 
@@ -317,7 +320,7 @@ describe('readShare', () => {
   });
 
   it('doesn’t roll back when an older genuine copy is posted again after a newer one', async () => {
-    const fake = createFakeRelay();
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
     const { store, services } = await owner(fake);
     const link = await sharedLink(services);
     const [older] = blobsOf(fake, link);
@@ -335,7 +338,7 @@ describe('readShare', () => {
   });
 
   it('shows the later of two copies with the same n', async () => {
-    const fake = createFakeRelay();
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
     const { store, services } = await owner(fake);
     const link = await sharedLink(services);
     const share = (await store.getPersonal(statement().id))?.share;
@@ -349,7 +352,7 @@ describe('readShare', () => {
   });
 
   it('shows the not-shared line after a tombstone', async () => {
-    const fake = createFakeRelay();
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
     const { services } = await owner(fake);
     const link = await sharedLink(services);
 
@@ -359,7 +362,7 @@ describe('readShare', () => {
   });
 
   it('keeps a tombstone final, even under a copy with a higher n', async () => {
-    const fake = createFakeRelay();
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
     const { store, services } = await owner(fake);
     const link = await sharedLink(services);
     const share = (await store.getPersonal(statement().id))?.share;
@@ -373,7 +376,7 @@ describe('readShare', () => {
   });
 
   it('skips a blob with one flipped byte, and the next good copy still shows', async () => {
-    const fake = createFakeRelay();
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
     const { store, services } = await owner(fake);
     const link = await sharedLink(services);
     const share = (await store.getPersonal(statement().id))?.share;
@@ -397,7 +400,7 @@ describe('readShare', () => {
   });
 
   it('skips blobs that hold no copy: another mailbox’s, a record that isn’t JSON, a copy of format 2', async () => {
-    const fake = createFakeRelay();
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
     const { store, services } = await owner(fake);
     const link = await sharedLink(services);
     const share = (await store.getPersonal(statement().id))?.share;
@@ -437,7 +440,7 @@ describe('readShare', () => {
   });
 
   it('reads every page of a full mailbox, so a copy after 100 others still shows', async () => {
-    const fake = createFakeRelay();
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
     const { store, services } = await owner(fake);
     const link = await sharedLink(services);
     const channel = shareChannelOf(link.seed);
@@ -453,7 +456,7 @@ describe('readShare', () => {
   });
 
   it('shows the not-shared line for an empty mailbox, and for one holding no valid copy', async () => {
-    const fake = createFakeRelay();
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
     const link: ShareLink = {
       seed: new Uint8Array(32).fill(3),
       publicKey: newSigningKeys().publicKey,
@@ -465,7 +468,7 @@ describe('readShare', () => {
   });
 
   it('only ever names the share’s mailbox to the relay, and only reads', async () => {
-    const fake = createFakeRelay();
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
     const { services } = await owner(fake);
     const link = await sharedLink(services);
     fake.requests.length = 0;
@@ -479,7 +482,7 @@ describe('readShare', () => {
   });
 
   it('rejects when the relay can’t be reached, so the page can say so', async () => {
-    const fake = createFakeRelay();
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
     const { services } = await owner(fake);
     const link = await sharedLink(services);
     fake.offline = true;
@@ -490,7 +493,7 @@ describe('readShare', () => {
 
 describe('postCopy', () => {
   it('counts on from the highest copy in the mailbox that verifies, not a forged one', async () => {
-    const fake = createFakeRelay();
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
     const { store, services } = await owner(fake);
     const link = await sharedLink(services);
     await postForged(fake, link, { v: 1, n: 99, title: 'Me', text: 'Forged.\n' });
@@ -503,7 +506,7 @@ describe('postCopy', () => {
   });
 
   it('counts on from its own last number when the relay has lost every copy, as a fresh relay has', async () => {
-    const fake = createFakeRelay();
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
     const { store, services } = await owner(fake);
     const link = await sharedLink(services);
     await postCopy(services, statement().id);
@@ -517,7 +520,7 @@ describe('postCopy', () => {
   });
 
   it('posts after an older backup is restored with a number above every copy, and the page shows it', async () => {
-    const fake = createFakeRelay();
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
     const { store, services } = await owner(fake);
     const link = await sharedLink(services);
     const { file } = await exportGroups(store, PASSPHRASE, CHEAP);
@@ -537,7 +540,7 @@ describe('postCopy', () => {
   });
 
   it('finds the tombstone once the person keeps a share restored from a backup made before Stop sharing, drops it and posts nothing', async () => {
-    const fake = createFakeRelay();
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
     const { store, services } = await owner(fake);
     const link = await sharedLink(services);
     const { file } = await exportGroups(store, PASSPHRASE, CHEAP);
@@ -556,7 +559,7 @@ describe('postCopy', () => {
   });
 
   it('leaves the share pending and the page as it was when the relay is down', async () => {
-    const fake = createFakeRelay();
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
     const { store, services } = await owner(fake);
     const link = await sharedLink(services);
     await store.savePersonal(statement({ text: 'Offline edit.\n' }));
@@ -565,13 +568,13 @@ describe('postCopy', () => {
     expect(await postCopy(services, statement().id)).toBe('failed');
 
     const share = (await store.getPersonal(statement().id))?.share;
-    expect(share && [share.n, share.lastPostedAt, share.pending]).toEqual([1, TEST_NOW, true]);
+    expect(share && [share.n, share.postedAt, share.pending]).toEqual([1, TEST_MINUTE, true]);
     fake.offline = false;
     expect(await shownText(fake, link)).toBe('Real.\n');
   });
 
   it('sets pending on any failed post, even one with no edit to send', async () => {
-    const fake = createFakeRelay();
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
     const { store, services } = await owner(fake);
     await sharedLink(services);
     fake.offline = true;
@@ -582,7 +585,7 @@ describe('postCopy', () => {
   });
 
   it('marks pending, and posts nothing, once the Document has grown too large to share', async () => {
-    const fake = createFakeRelay();
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
     const { store, services } = await owner(fake);
     const link = await sharedLink(services);
     await store.savePersonal(statement({ text: 'x'.repeat(MAX_RECORD_BYTES) }));
@@ -600,7 +603,7 @@ describe('postCopy', () => {
   });
 
   it('keeps pending set when the Document changed while its copy was posting', async () => {
-    const fake = createFakeRelay();
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
     const { store, services } = await owner(fake);
     await sharedLink(services);
     const put = services.relay.putBlob;
@@ -624,7 +627,7 @@ describe('postCopy', () => {
   });
 
   it('does nothing for a Document that isn’t shared, or isn’t on the device', async () => {
-    const fake = createFakeRelay();
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
     const { store, services } = await owner(fake);
     await store.savePersonal(statement());
 
@@ -634,7 +637,7 @@ describe('postCopy', () => {
   });
 
   it('posts one copy at a time for one Document, so two posts never share a number', async () => {
-    const fake = createFakeRelay();
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
     const { store, services } = await owner(fake);
     const link = await sharedLink(services);
     await store.savePersonal(statement({ text: 'Both.\n' }));
@@ -662,7 +665,7 @@ describe('postCopy', () => {
 
 describe('postEdits', () => {
   it('posts a copy when an edit waits for the link, and nothing when none does', async () => {
-    const fake = createFakeRelay();
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
     const { store, services } = await owner(fake);
     const link = await sharedLink(services);
 
@@ -679,7 +682,7 @@ describe('postEdits', () => {
   });
 
   it('does nothing for a Document that isn’t shared', async () => {
-    const fake = createFakeRelay();
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
     const { store, services } = await owner(fake);
     await store.savePersonal(statement());
 
@@ -690,7 +693,7 @@ describe('postEdits', () => {
 
 describe('one post at a time', () => {
   it('runs the next post for a Document after one that threw', async () => {
-    const fake = createFakeRelay();
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
     const { store, services } = await owner(fake);
     const link = await sharedLink(services);
     await store.savePersonal(statement({ text: 'After the failure.\n' }));
@@ -712,7 +715,7 @@ describe('one post at a time', () => {
 
 describe('stopSharing', () => {
   it('posts a tombstone, drops the share state and keeps the Document', async () => {
-    const fake = createFakeRelay();
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
     const { store, services } = await owner(fake);
     const link = await sharedLink(services);
 
@@ -727,7 +730,7 @@ describe('stopSharing', () => {
   });
 
   it('changes nothing offline, and says so', async () => {
-    const fake = createFakeRelay();
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
     const { store, services } = await owner(fake);
     const link = await sharedLink(services);
     fake.offline = true;
@@ -740,7 +743,7 @@ describe('stopSharing', () => {
   });
 
   it('posts no second tombstone for a share another copy of this device already stopped', async () => {
-    const fake = createFakeRelay();
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
     const { store, services } = await owner(fake);
     const link = await sharedLink(services);
     const { file } = await exportGroups(store, PASSPHRASE, CHEAP);
@@ -755,7 +758,7 @@ describe('stopSharing', () => {
   });
 
   it('is done already for a Document that isn’t shared', async () => {
-    const fake = createFakeRelay();
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
     const { store, services } = await owner(fake);
     await store.savePersonal(statement());
 
@@ -766,37 +769,44 @@ describe('stopSharing', () => {
 
 describe('keepSharesAlive', () => {
   it('posts again a share last posted 20 days ago, and not one posted 19 days ago', async () => {
-    const fake = createFakeRelay();
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
     const { store, services, clock } = await owner(fake);
     const link = await sharedLink(services);
     expect(REFRESH_AFTER_DAYS).toBe(20);
 
     clock.now = TEST_NOW + 19 * DAY_MS;
+    fake.minute = TEST_MINUTE + 19 * DAY;
     await keepSharesAlive(services);
     expect(blobsOf(fake, link)).toHaveLength(1);
 
     clock.now = TEST_NOW + 20 * DAY_MS;
+    fake.minute = TEST_MINUTE + 20 * DAY;
     await keepSharesAlive(services);
     expect(blobsOf(fake, link)).toHaveLength(2);
     const share = (await store.getPersonal(statement().id))?.share;
-    expect(share && [share.n, share.lastPostedAt, share.pending]).toEqual([
+    expect(share && [share.n, share.postedAt, share.pending]).toEqual([
       2,
-      TEST_NOW + 20 * DAY_MS,
+      TEST_MINUTE + 20 * DAY,
       false,
     ]);
   });
 
   it('posts a share last posted just under 30 days ago, and pauses one posted 30 days ago, which may have been stopped elsewhere (#339)', async () => {
-    const fake = createFakeRelay();
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
     const { services, clock } = await owner(fake);
     expect(SHARE_TTL_DAYS).toBe(30);
     const older = await sharedLink(services);
-    clock.now = TEST_NOW + 1;
+    fake.minute += 1;
     const other = statement({ id: 'T3RoZXIgc3RhdGVtZW50IQ', title: 'Other' });
     const newer = await sharedLink(services, other);
     clock.now = TEST_NOW + SHARE_TTL_DAYS * DAY_MS;
+    fake.minute = TEST_MINUTE + SHARE_TTL_DAYS * DAY;
 
-    expect(await keepSharesAlive(services)).toEqual([[other.id, 'posted']]);
+    // The launch reads both, in Personal's order: the relay's minute refreshes the newer and pauses the older.
+    expect(await keepSharesAlive(services)).toEqual([
+      [other.id, 'posted'],
+      [statement().id, 'paused'],
+    ]);
     expect(await postCopy(services, statement().id)).toBe('paused');
 
     expect(blobsOf(fake, older)).toHaveLength(1);
@@ -804,7 +814,7 @@ describe('keepSharesAlive', () => {
   });
 
   it('posts an edit made while the relay was down at the next run, and clears pending', async () => {
-    const fake = createFakeRelay();
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
     const { store, services } = await owner(fake);
     const link = await sharedLink(services);
     await store.savePersonal(statement({ text: 'Written offline.\n' }));
@@ -820,7 +830,7 @@ describe('keepSharesAlive', () => {
   });
 
   it('leaves alone a Document that isn’t shared, and goes on past a share that fails', async () => {
-    const fake = createFakeRelay();
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
     const { store, services } = await owner(fake);
     await sharedLink(services);
     const other = statement({ id: 'T3RoZXIgc3RhdGVtZW50IQ', title: 'Other' });
@@ -847,24 +857,36 @@ describe('pauseOf', () => {
     secretKey: new Uint8Array(32).fill(2),
     publicKey: new Uint8Array(32).fill(3),
     n: 3,
-    lastPostedAt: TEST_NOW,
+    postedAt: TEST_MINUTE,
     pending: false,
   };
-  const lifetime = SHARE_TTL_DAYS * DAY_MS;
+  const lifetime = SHARE_TTL_DAYS * DAY;
 
-  it('is null for a share last posted under 30 days ago, and idle from 30 days on (#339)', () => {
-    expect(pauseOf(live, TEST_NOW + lifetime - 1)).toBeNull();
-    expect(pauseOf(live, TEST_NOW + lifetime)).toBe('idle');
-    expect(pauseOf({ ...live, pending: true }, TEST_NOW + lifetime + DAY_MS)).toBe('idle');
+  it('is null for a share last posted under 30 relay days ago, and idle from 30 days on (#339, #347)', () => {
+    expect(pauseOf(live, TEST_MINUTE + lifetime - 1)).toBeNull();
+    expect(pauseOf(live, TEST_MINUTE + lifetime)).toBe('idle');
+    expect(pauseOf({ ...live, pending: true }, TEST_MINUTE + lifetime + DAY)).toBe('idle');
+  });
+
+  it('takes the later of the minute the device heard and the share’s own last read (#347)', () => {
+    const read = { ...live, seenAt: TEST_MINUTE + lifetime };
+    expect(pauseOf(read, null)).toBe('idle');
+    expect(pauseOf(read, TEST_MINUTE)).toBe('idle');
+    expect(pauseOf({ ...live, seenAt: TEST_MINUTE + 1 }, TEST_MINUTE + lifetime)).toBe('idle');
+  });
+
+  it('is null with no relay minute to measure by, or a time from before #347, which its next read measures', () => {
+    expect(pauseOf(live, null)).toBeNull();
+    expect(pauseOf({ ...live, postedAt: 'unmeasured' }, TEST_MINUTE + 10 * lifetime)).toBeNull();
   });
 
   it('says restored for a share a restore paused, however recently it was posted (#328)', () => {
-    expect(pauseOf({ ...live, paused: true }, TEST_NOW)).toBe('restored');
-    expect(pauseOf({ ...live, paused: true }, TEST_NOW + lifetime)).toBe('restored');
+    expect(pauseOf({ ...live, paused: true }, TEST_MINUTE)).toBe('restored');
+    expect(pauseOf({ ...live, paused: true }, TEST_MINUTE + lifetime)).toBe('restored');
   });
 
   it('is null for a share never posted, whose link no one could have opened', () => {
-    expect(pauseOf({ ...live, lastPostedAt: null }, TEST_NOW + lifetime)).toBeNull();
+    expect(pauseOf({ ...live, postedAt: null }, TEST_MINUTE + lifetime)).toBeNull();
   });
 });
 
@@ -888,7 +910,7 @@ describe('a device whose keys are locked with a passkey (#255)', () => {
   }
 
   it('posts nothing, starts nothing and stops nothing, saying it’s locked', async () => {
-    const fake = createFakeRelay();
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
     const { link, services, store } = await lockedOwner(fake);
     await store.savePersonal({ ...statement({ id: 'T3RoZXIgc3RhdGVtZW50IQ' }), title: 'Other' });
     const requests = fake.requests.length;
@@ -908,7 +930,7 @@ describe('a device whose keys are locked with a passkey (#255)', () => {
   });
 
   it('fails with any other error the lock check meets, sending nothing', async () => {
-    const fake = createFakeRelay();
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
     const { services } = await owner(fake);
     const broken = new Error('IndexedDB refused.');
     const failing: OwnerServices = {
@@ -924,7 +946,7 @@ describe('a device whose keys are locked with a passkey (#255)', () => {
   });
 
   it('posts, then stops, with the share’s keys from the vault once unlocked', async () => {
-    const fake = createFakeRelay();
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
     const { link, services, store } = await lockedOwner(fake);
     expect(await store.unlock(KEY)).toBe(true);
 
@@ -932,5 +954,196 @@ describe('a device whose keys are locked with a passkey (#255)', () => {
     expect(await shownText(fake, link)).toBe('Edited.\n');
     expect(await stopSharing(services, statement().id)).toBe('stopped');
     expect(await readShare(reader(fake), link)).toEqual({ kind: 'gone' });
+  });
+});
+
+describe('a share measured on the relay’s clock (#347)', () => {
+  it('keeps a share another device stopped paused, posting nothing, once the tombstone lapsed on the relay’s clock, though the device clock was moved back', async () => {
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
+    const a = await owner(fake, 'a');
+    const link = await sharedLink(a.services);
+    // Device B holds the same share, as after a restore its person kept, and stops it a day later.
+    const { file } = await exportGroups(a.store, PASSPHRASE, CHEAP);
+    const b = await owner(fake, 'b');
+    await importGroups(b.store, file, PASSPHRASE);
+    fake.minute += DAY;
+    expect(await keepSharing(b.services, statement().id)).toBe('posted');
+    expect(await stopSharing(b.services, statement().id)).toBe('stopped');
+    // The relay lets the stop's tombstone lapse; device A's clock is moved back to its own post.
+    fake.minute += (SHARE_TTL_DAYS + 2) * DAY;
+    expect(blobsOf(fake, link)).toEqual([]);
+    a.clock.now = TEST_NOW;
+    await a.store.savePersonal(statement({ text: 'Written after the stop.\n' }));
+    const before = puts(fake).length;
+
+    // The launch reads the mailbox, and the relay's minute says 30 days: paused, nothing sent.
+    expect(await keepSharesAlive(a.services)).toEqual([[statement().id, 'paused']]);
+    // From then on the share reads paused, so leaving the editor or posting sends nothing either.
+    expect(await postEdits(a.services, statement().id)).toBe('paused');
+    expect(await postCopy(a.services, statement().id)).toBe('paused');
+    expect(await keepSharesAlive(a.services)).toEqual([]);
+
+    expect(puts(fake)).toHaveLength(before);
+    expect(blobsOf(fake, link)).toEqual([]);
+    const share = (await a.store.getPersonal(statement().id))?.share;
+    expect(share && pauseOf(share, null)).toBe('idle');
+  });
+
+  it('stamps each post with the relay’s minute, whatever the device clock says', async () => {
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
+    const { store, services, clock } = await owner(fake);
+    clock.now = TEST_NOW - 400 * DAY_MS;
+    await sharedLink(services);
+    expect((await store.getPersonal(statement().id))?.share?.postedAt).toBe(fake.minute);
+
+    fake.minute += 3 * DAY;
+    await store.savePersonal(statement({ text: 'Edited.\n' }));
+    expect(await postEdits(services, statement().id)).toBe('posted');
+    const share = (await store.getPersonal(statement().id))?.share;
+    expect(share && [share.postedAt, share.seenAt]).toEqual([fake.minute, fake.minute]);
+  });
+
+  it('pauses a share last posted 30 relay days ago, and posts one posted just under, whatever the device clock', async () => {
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
+    const { store, services, clock } = await owner(fake);
+    const link = await sharedLink(services);
+    const posted = fake.minute;
+    clock.now = TEST_NOW + 365 * DAY_MS;
+
+    fake.minute = posted + SHARE_TTL_DAYS * DAY - 1;
+    await store.savePersonal(statement({ text: 'Day 29.\n' }));
+    expect(await postEdits(services, statement().id)).toBe('posted');
+
+    clock.now = TEST_NOW - 365 * DAY_MS;
+    fake.minute += SHARE_TTL_DAYS * DAY;
+    await store.savePersonal(statement({ text: 'Day 59.\n' }));
+    expect(await postEdits(services, statement().id)).toBe('paused');
+    expect(await shownText(fake, link)).toBe('Day 29.\n');
+  });
+
+  it('refreshes at 20 relay days, looking only once the device clock says so, and posts nothing the relay says is early', async () => {
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
+    const { services, clock } = await owner(fake);
+    const link = await sharedLink(services);
+    const posted = fake.minute;
+
+    // The device clock runs ahead: it looks, but the relay says 19 days, so nothing goes.
+    clock.now = TEST_NOW + 25 * DAY_MS;
+    fake.minute = posted + 19 * DAY;
+    const gets = fake.requests.length;
+    expect(await keepSharesAlive(services)).toEqual([[statement().id, 'fresh']]);
+    expect(fake.requests.length).toBe(gets + 1);
+    expect(blobsOf(fake, link)).toHaveLength(1);
+
+    fake.minute = posted + REFRESH_AFTER_DAYS * DAY;
+    expect(await keepSharesAlive(services)).toEqual([[statement().id, 'posted']]);
+    expect(blobsOf(fake, link)).toHaveLength(2);
+  });
+
+  it('doesn’t look at all while neither the device clock nor anything heard from the relay says 20 days', async () => {
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
+    const { services, clock } = await owner(fake);
+    await sharedLink(services);
+    clock.now = TEST_NOW + 19 * DAY_MS;
+    fake.minute += 25 * DAY;
+    const before = fake.requests.length;
+
+    expect(await keepSharesAlive(services)).toEqual([]);
+    expect(fake.requests).toHaveLength(before);
+  });
+
+  /** Marks Document `id`'s share as a store from before #347 left it: its time unmeasured. */
+  async function unmeasured(store: Store, id = statement().id): Promise<void> {
+    await store.updateShare(id, (held) =>
+      held.share === undefined ? undefined : { ...held.share, postedAt: 'unmeasured' },
+    );
+  }
+
+  it('measures a share kept before #347 from the relay’s own receipt of its last copy, never the device clock', async () => {
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
+    const { store, services, clock } = await owner(fake);
+    const link = await sharedLink(services);
+    await unmeasured(store);
+    clock.now = TEST_NOW - 400 * DAY_MS;
+
+    // 10 relay days on, the launch looks, finds its copy, and keeps that minute: not due yet.
+    fake.minute = TEST_MINUTE + 10 * DAY;
+    expect(await keepSharesAlive(services)).toEqual([[statement().id, 'fresh']]);
+    let share = (await store.getPersonal(statement().id))?.share;
+    expect(share && [share.postedAt, share.seenAt]).toEqual([TEST_MINUTE, TEST_MINUTE + 10 * DAY]);
+    expect(blobsOf(fake, link)).toHaveLength(1);
+
+    await unmeasured(store);
+    fake.minute = TEST_MINUTE + 25 * DAY;
+    expect(await keepSharesAlive(services)).toEqual([[statement().id, 'posted']]);
+    share = (await store.getPersonal(statement().id))?.share;
+    expect(share?.postedAt).toBe(TEST_MINUTE + 25 * DAY);
+  });
+
+  it('pauses a share kept before #347 whose last copy the relay let lapse, posting nothing', async () => {
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
+    const { store, services, clock } = await owner(fake);
+    const link = await sharedLink(services);
+    await unmeasured(store);
+    await store.savePersonal(statement({ text: 'Edited long after.\n' }));
+    clock.now = TEST_NOW;
+    fake.minute = TEST_MINUTE + (SHARE_TTL_DAYS + 2) * DAY;
+    const before = puts(fake).length;
+
+    expect(await postEdits(services, statement().id)).toBe('paused');
+
+    expect(puts(fake)).toHaveLength(before);
+    const share = (await store.getPersonal(statement().id))?.share;
+    expect(share && pauseOf(share, null)).toBe('idle');
+    expect(share?.postedAt).toBe(fake.minute - SHARE_TTL_DAYS * DAY);
+    expect(await shownText(fake, link)).toBeNull();
+  });
+
+  it('times Keep sharing on an unmeasured share made offline by the latest minute the device heard', async () => {
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
+    const { store, services } = await owner(fake);
+    await sharedLink(services);
+    await unmeasured(store);
+    const heard = TEST_MINUTE + 3 * DAY;
+    const withGroups = {
+      ...services,
+      store: { ...store, listGroups: () => Promise.resolve([{ relayNow: heard } as Group]) },
+    };
+    fake.offline = true;
+
+    expect(await keepSharing(withGroups, statement().id)).toBe('failed');
+
+    const share = (await store.getPersonal(statement().id))?.share;
+    expect(share && [share.postedAt, share.pending]).toEqual([heard, true]);
+  });
+
+  it('counts Keep sharing from the relay’s minute, so the next post goes though the device clock was moved back', async () => {
+    const fake = createFakeRelay({ minute: TEST_MINUTE });
+    const { store, services, clock } = await owner(fake);
+    const link = await sharedLink(services);
+    fake.minute += (SHARE_TTL_DAYS + 5) * DAY;
+    await store.savePersonal(statement({ text: 'Back again.\n' }));
+    expect(await postEdits(services, statement().id)).toBe('paused');
+
+    clock.now = TEST_NOW - 30 * DAY_MS;
+    expect(await keepSharing(services, statement().id)).toBe('posted');
+    expect((await store.getPersonal(statement().id))?.share?.postedAt).toBe(fake.minute);
+    expect(await shownText(fake, link)).toBe('Back again.\n');
+  });
+});
+
+describe('heardRelay (#347)', () => {
+  /** A store whose groups last heard `minutes`, each a relay minute or null before a sync. */
+  function heardFrom(minutes: readonly (number | null)[]) {
+    const groups = minutes.map((relayNow) => ({ relayNow }) as Group);
+    return { store: { listGroups: () => Promise.resolve(groups) } } as unknown as ShareServices;
+  }
+
+  it('is the latest relay minute among the groups, or null before any synced', async () => {
+    expect(await heardRelay(heardFrom([]))).toBeNull();
+    expect(await heardRelay(heardFrom([null, null]))).toBeNull();
+    expect(await heardRelay(heardFrom([29_000_005, null, 29_000_009, 29_000_001]))).toBe(
+      29_000_009,
+    );
   });
 });

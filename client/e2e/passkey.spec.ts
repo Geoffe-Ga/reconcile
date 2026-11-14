@@ -486,8 +486,9 @@ test('with PRF, the keys live only in the vault, and the passkey unlocks voting 
     expect(anas.backupFields).toEqual([
       ['checkedDay', 'digest', 'tooLarge', 'uploaded', 'uploadedAt', 'uploadedGroups'],
     ]);
-    // Her statement keeps its share's mark, and her application what Your groups shows (#255, #265).
-    expect(anas.shareFields).toEqual([['lastPostedAt', 'n', 'pending']]);
+    // Her statement keeps its share's mark, timed on the relay's clock (#347), and her application
+    // what Your groups shows (#255, #265).
+    expect(anas.shareFields).toEqual([['n', 'pending', 'postedAt', 'seenAt']]);
     expect(anas.sentFields).toEqual([['door', 'groupName', 'id', 'sentAt']]);
   });
 

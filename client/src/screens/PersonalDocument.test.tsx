@@ -16,6 +16,7 @@ import { shareChannelOf } from '../crypto/share';
 import { MAX_RECORD_BYTES } from '../crypto/record';
 import { createRelay } from '../net/relay';
 import {
+  keepSharesAlive,
   parseShareLink,
   readShare,
   SHARE_TTL_DAYS,
@@ -1201,7 +1202,8 @@ describe('PersonalDocument, a share this device hasn’t posted to for 30 days (
   /**
    * Ana's statement, shared by link from this device, which then isn't
    * opened for 30 days: another device may have stopped the share meanwhile,
-   * and its tombstone lapsed. Hands back the link.
+   * and its tombstone lapsed. The days pass on the relay's clock too, and
+   * the launch's read of the mailbox finds them (#347). Hands back the link.
    */
   async function idle(): Promise<string> {
     await store.savePersonal(STATEMENT);
@@ -1214,6 +1216,8 @@ describe('PersonalDocument, a share this device hasn’t posted to for 30 days (
     const started = await startSharing(services, ID);
     if (started.kind !== 'shared') throw new Error(`Expected a share, not ${started.kind}.`);
     clock += SHARE_TTL_DAYS * DAY_MS;
+    relay.minute += SHARE_TTL_DAYS * 1440;
+    expect(await keepSharesAlive(services)).toEqual([[ID, 'paused']]);
     return shareLinkOf(ORIGIN, started.link);
   }
 

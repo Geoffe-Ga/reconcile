@@ -479,7 +479,7 @@ describe('a removal beside a shared personal Document (#105)', () => {
       seed: new Uint8Array(32).fill(4),
       ...newSigningKeys(),
       n: 2,
-      lastPostedAt: TS,
+      postedAt: 29_000_000,
       pending: false,
     };
     await device.store.updateShare(statement.id, () => share);

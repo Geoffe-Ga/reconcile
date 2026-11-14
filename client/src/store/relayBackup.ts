@@ -116,7 +116,7 @@ export interface RelayBackupServices {
     Pick<Store, 'getRelayBackup' | 'setRelayBackupKey' | 'updateRelayBackup' | 'retireRelayBackup'>;
   /** The relay's backup routes: a GET before each upload (#247), then the PUT. */
   readonly relay: Pick<Relay, 'putBackup' | 'getBackup'>;
-  /** The device clock in milliseconds: when an upload succeeded, and whether a share's link may still open. */
+  /** The device clock in milliseconds: when an upload succeeded, as Settings shows it. */
   readonly now: () => number;
 }
 
@@ -166,10 +166,11 @@ interface Planned {
   readonly tags: readonly string[];
 }
 
-/** What an upload's plan needs besides the two copies: the state, the clock, and what this device holds. */
+/** What an upload's plan needs besides the two copies: the state, the relay's clock, and what this device holds. */
 interface PlanContext {
   readonly state: Uploader;
-  readonly now: number;
+  /** The latest relay minute among this device's groups, or null before any synced (#347). */
+  readonly relayNow: number | null;
   /** The id of every group and coalition entry this device holds, in any state (#327). */
   readonly held: ReadonlySet<string>;
 }
@@ -178,8 +179,11 @@ interface PlanContext {
 export interface MergeContext {
   /** Every Document id this device held at an upload: one only the relay copy now holds, it deleted. */
   readonly uploaded: ReadonlySet<string>;
-  /** The device clock in milliseconds, for whether a share's link may still open. */
-  readonly now: number;
+  /**
+   * The latest relay minute this device has heard, for whether a share's
+   * link may still open (#347), or null before any: then it may.
+   */
+  readonly relayNow: number | null;
 }
 
 /**
@@ -225,7 +229,7 @@ async function uploadUnlessChanging(
     await stopRetired(services, state.key);
     return;
   }
-  await upload(services, state, merged(own, onRelay, { state, now: services.now(), held }));
+  await upload(services, state, merged(own, onRelay, { state, relayNow: relayNowOf(own), held }));
 }
 
 /**
@@ -277,7 +281,7 @@ export async function refreshRelayBackup(services: RelayBackupServices): Promise
     await stopRetired(services, state.key);
     return;
   }
-  const planned = merged(own, onRelay, { state, now: services.now(), held });
+  const planned = merged(own, onRelay, { state, relayNow: relayNowOf(own), held });
   const digest = digestOf(planned.copy);
   if (digest === state.digest && holdsAlready(onRelay, planned.copy)) {
     await services.store.updateRelayBackup(state.key, {
@@ -332,13 +336,13 @@ async function readRelay(relay: Pick<Relay, 'getBackup'>, key: Uint8Array): Prom
  * the copy's groups as its own the same way, so it carries none on its first
  * upload, as before.
  */
-function merged(own: Snapshot, onRelay: Live, { state, now, held }: PlanContext): Planned {
+function merged(own: Snapshot, onRelay: Live, { state, relayNow, held }: PlanContext): Planned {
   const mine = own.personal.map((document) => document.id);
   const tags = groupTags(own, onRelay, state);
   if (onRelay.kind !== 'copy') return { copy: own, mine, tags };
   const uploaded = new Set(state.uploaded ?? onRelay.personal.map((document) => document.id));
   const left = new Set(state.uploadedGroups ?? onRelay.groups.map(tagOf(state.key)));
-  const personal = mergePersonal(own.personal, onRelay.personal, { uploaded, now });
+  const personal = mergePersonal(own.personal, onRelay.personal, { uploaded, relayNow });
   const carried = carriedGroups(onRelay.groups, { held, left, key: state.key });
   return { copy: { ...own, personal, carried }, mine, tags };
 }
@@ -440,8 +444,11 @@ function sameIds(
  * - one both hold takes the later edit, a tie keeping this device's, as a
  *   restore does (`keepsHeldCopy`), with this device's share by link (#105)
  *   if it has one, else the relay copy's while its link may still open
- *   (`mayStillOpen`), each marked pending when the words it carries changed
- *   (`keptShare`), as a restore marks one (`restoredCopy`).
+ *   (`mayStillOpen`) on the relay's clock as this device last heard it,
+ *   `relayNow` (#347), or when nothing says it can't, as with no relay minute
+ *   heard or a share whose time is unmeasured, each marked pending when the
+ *   words it carries changed (`keptShare`), as a restore marks one
+ *   (`restoredCopy`).
  *
  * A share in the relay copy on a Document this device holds unshared may be
  * a linked device's live link, which a restore must bring back so it can be
@@ -453,13 +460,13 @@ function sameIds(
 export function mergePersonal(
   own: readonly PersonalDocument[],
   relay: readonly PersonalDocument[],
-  { uploaded, now }: MergeContext,
+  { uploaded, relayNow }: MergeContext,
 ): PersonalDocument[] {
   const held = new Map(own.map((document) => [document.id, document]));
   const kept = new Map(held);
   for (const theirs of relay) {
     const mine = held.get(theirs.id);
-    if (mine !== undefined) kept.set(theirs.id, unionCopy(mine, theirs, now));
+    if (mine !== undefined) kept.set(theirs.id, unionCopy(mine, theirs, relayNow));
     else if (!uploaded.has(theirs.id)) kept.set(theirs.id, theirs);
   }
   return [...kept.values()].sort(byCreation);
@@ -469,10 +476,10 @@ export function mergePersonal(
 function unionCopy(
   mine: PersonalDocument,
   theirs: PersonalDocument,
-  now: number,
+  relayNow: number | null,
 ): PersonalDocument {
   const words = textOf(keepsHeldCopy(mine, theirs) ? mine : theirs);
-  const live = theirs.share !== undefined && mayStillOpen(theirs.share, now);
+  const live = theirs.share !== undefined && mayStillOpen(theirs.share, relayNow);
   const share = keptShare(mine.share === undefined && live ? theirs : mine, words);
   return share === undefined ? words : { ...words, share };
 }
@@ -509,10 +516,20 @@ async function relayCopy(services: RelayBackupServices): Promise<Snapshot> {
   return copy;
 }
 
-/** The relay's UTC day by the latest `relayNow` among the copy's groups, or null before any synced. */
-function relayDayOf({ groups }: Snapshot): number | null {
+/**
+ * The latest relay minute among the copy's groups, or null before any
+ * synced: the relay's clock as this device last heard it, which no change
+ * to the device clock moves (#347).
+ */
+function relayNowOf({ groups }: Snapshot): number | null {
   const latest = Math.max(...groups.map((group) => group.relayNow ?? -1));
-  return latest < 0 ? null : Math.floor(latest / DAY_MINUTES);
+  return latest < 0 ? null : latest;
+}
+
+/** The relay's UTC day by the latest `relayNow` among the copy's groups, or null before any synced. */
+function relayDayOf(copy: Snapshot): number | null {
+  const latest = relayNowOf(copy);
+  return latest === null ? null : Math.floor(latest / DAY_MINUTES);
 }
 
 /** The SHA-256 of `bytes`, in hex. */

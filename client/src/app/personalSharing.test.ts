@@ -7,8 +7,8 @@ import { describe, expect, it } from 'vitest';
 
 import { xchachaSeal } from '../crypto/seal';
 import { createRelay } from '../net/relay';
-import { VaultLocked } from '../store/db';
-import type { PersonalEntry } from '../store/personal';
+import { type Group, VaultLocked } from '../store/db';
+import type { PersonalDocument, PersonalEntry } from '../store/personal';
 import { createFakeRelay } from '../test/fakeRelay';
 import { personalSharing, type SharingServices } from './personalSharing';
 
@@ -19,8 +19,11 @@ const ENTRY: PersonalEntry = {
   text: 'Real.\n',
   createdAt: 1,
   updatedAt: 1,
-  share: { n: 2, lastPostedAt: 3, pending: true },
+  share: { n: 2, postedAt: 29_000_003, pending: true },
 };
+
+/** Thirty days in relay minutes: a share last posted that long ago is idle (#339, #347). */
+const TTL_MINUTES = 30 * 1440;
 
 /** Sharing on a store whose whole read fails with `failure`, and whose entries are `entries`. */
 function sharingWith(failure: Error, entries: readonly PersonalEntry[]) {
@@ -30,6 +33,7 @@ function sharingWith(failure: Error, entries: readonly PersonalEntry[]) {
     updateShare: () => Promise.reject(failure),
     requireUnlocked: () => Promise.reject(failure),
     listPersonalEntries: () => Promise.resolve([...entries]),
+    listGroups: () => Promise.reject(failure),
   };
   const services: SharingServices = {
     store,
@@ -53,7 +57,7 @@ describe('personalSharing.read', () => {
   it('reads a share a restore paused as paused while the keys are locked, so no choice is offered (#328)', async () => {
     const paused: PersonalEntry = {
       ...ENTRY,
-      share: { n: 2, lastPostedAt: 3, pending: false, paused: true },
+      share: { n: 2, postedAt: 29_000_003, pending: false, paused: true },
     };
 
     expect(await sharingWith(new VaultLocked(), [paused]).read(ID)).toEqual({
@@ -61,6 +65,54 @@ describe('personalSharing.read', () => {
       pending: false,
       paused: 'restored',
     });
+  });
+
+  it('reads a share idle while the keys are locked from its own last read of the relay’s clock (#347)', async () => {
+    const read: PersonalEntry = {
+      ...ENTRY,
+      share: { n: 2, postedAt: 29_000_003, pending: false, seenAt: 29_000_003 + TTL_MINUTES },
+    };
+
+    expect(await sharingWith(new VaultLocked(), [read]).read(ID)).toEqual({
+      link: null,
+      pending: false,
+      paused: 'idle',
+    });
+  });
+
+  it('measures an open share by the relay minute its groups last heard, never the device clock (#347)', async () => {
+    const document: PersonalDocument = {
+      ...ENTRY,
+      share: {
+        seed: new Uint8Array(32).fill(1),
+        secretKey: new Uint8Array(32).fill(2),
+        publicKey: new Uint8Array(32).fill(3),
+        n: 2,
+        postedAt: 29_000_003,
+        pending: false,
+      },
+    };
+    const heardAt = (relayNow: number) =>
+      personalSharing({
+        store: {
+          getPersonal: () => Promise.resolve(document),
+          listPersonal: () => Promise.resolve([document]),
+          updateShare: () => Promise.resolve(undefined),
+          requireUnlocked: () => Promise.resolve(),
+          listPersonalEntries: () => Promise.resolve([ENTRY]),
+          listGroups: () => Promise.resolve([{ relayNow } as Group]),
+        },
+        relay: createRelay({ fetch: createFakeRelay().fetch }),
+        seal: xchachaSeal,
+        // The device clock says a year later: it plays no part.
+        now: () => 1_800_000_000_000,
+        origin: 'https://reconcile.test',
+        share: undefined,
+        copyText: () => Promise.resolve(),
+      });
+
+    expect((await heardAt(29_000_003 + TTL_MINUTES - 1).read(ID))?.paused).toBeNull();
+    expect((await heardAt(29_000_003 + TTL_MINUTES).read(ID))?.paused).toBe('idle');
   });
 
   it('reads none when the Document has no share by the time it looks', async () => {

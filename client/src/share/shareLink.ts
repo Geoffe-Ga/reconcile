@@ -23,6 +23,19 @@
  * launch for a share last posted {@link REFRESH_AFTER_DAYS} or more days ago,
  * or one with an edit still to post.
  *
+ * Every one of those days is the relay's (#347), as the governance log's
+ * are: a tombstone lapses on the relay's clock, so a device clock moved back
+ * must never make a share look recently posted. A post's time is the relay
+ * minute the read of its mailbox gave just before it, and each decision to
+ * post, a refresh's 20 days and an idle share's 30 alike, is taken on the
+ * minute that same read gave. Decisions made with no read of their own, what
+ * Personal and the editor show and whether a launch looks at a share at all,
+ * take the latest minute the device has heard from the relay
+ * ({@link heardRelay}): a lower bound, made only of the relay's own
+ * readings, which the device clock can't move back. The device clock only
+ * picks when a launch looks; the relay's minute decides whether anything
+ * goes.
+ *
  * A share a restore brought back is paused (#328, `restoredCopy`): a
  * tombstone lasts only as long as the relay keeps it, so a backup made before
  * Stop sharing, restored once that has lapsed, would otherwise post the
@@ -32,9 +45,10 @@
  * only a tombstone.
  *
  * A share this device hasn't posted to for the tombstone's whole lifetime,
- * {@link SHARE_TTL_DAYS} days, is paused the same way (#339, `pauseOf`):
- * another device holding the same share may have stopped it, and the
- * tombstone that said so may have lapsed. Keep sharing starts its days again.
+ * {@link SHARE_TTL_DAYS} days on the relay's clock, is paused the same way
+ * (#339, `pauseOf`): another device holding the same share may have stopped
+ * it, and the tombstone that said so may have lapsed. Keep sharing starts
+ * its days again.
  *
  * On a device whose keys are locked with a passkey, a share's seed and keys
  * wait in the vault (#255), so nothing here posts, starts or stops a share
@@ -46,13 +60,16 @@ import type { Seal } from '../crypto/seal';
 import { newShareSeed, openShareRecord, shareChannelOf, signShareRecord } from '../crypto/share';
 import { newSigningKeys } from '../crypto/sign';
 import { normalizeAtomText } from '../engine/atomText';
+import { DAY_MINUTES } from '../engine/rules';
 import type { Relay, RelayRecord } from '../net/relay';
 import { type Store, VaultLocked } from '../store/db';
 import {
   type PersonalDocument,
+  type PostedAt,
   resumedShare,
   type ShareMark,
   type ShareState,
+  UNMEASURED,
 } from '../store/personal';
 import {
   COPY_VERSION,
@@ -69,7 +86,14 @@ export const SHARE_TTL_DAYS = 30;
 /** A share last posted this many days ago is posted again at launch, well inside {@link SHARE_TTL_DAYS}. */
 export const REFRESH_AFTER_DAYS = 20;
 
-const DAY_MS = 24 * 60 * 60 * 1000;
+/** {@link SHARE_TTL_DAYS} in relay minutes (#347). */
+const TTL_MINUTES = SHARE_TTL_DAYS * DAY_MINUTES;
+
+/** {@link REFRESH_AFTER_DAYS} in relay minutes (#347). */
+const REFRESH_MINUTES = REFRESH_AFTER_DAYS * DAY_MINUTES;
+
+/** A device millisecond's minute: what a launch compares with a post's relay minute, only to pick when to look (#347). */
+const MINUTE_MS = 60_000;
 
 /** What a link names: the share's seed and the public key whose copies count. */
 export interface ShareLink {
@@ -79,12 +103,21 @@ export interface ShareLink {
   readonly publicKey: Uint8Array;
 }
 
-/** What sharing reaches: the device's personal Documents, the relay, the seal and the device clock. */
+/**
+ * What sharing reaches: the device's personal Documents, its groups' relay
+ * minutes (#347), the relay, the seal and the device clock.
+ */
 export interface ShareServices {
-  readonly store: Pick<Store, 'getPersonal' | 'listPersonal' | 'updateShare' | 'requireUnlocked'>;
+  readonly store: Pick<
+    Store,
+    'getPersonal' | 'listPersonal' | 'updateShare' | 'requireUnlocked' | 'listGroups'
+  >;
   readonly relay: Pick<Relay, 'putBlob' | 'getBlobs'>;
   readonly seal: Seal;
-  /** The device clock in milliseconds: when a copy was last posted. */
+  /**
+   * The device clock in milliseconds. It only picks when a launch looks at a
+   * share (#347): every decision to post is the relay's clock.
+   */
   readonly now: () => number;
 }
 
@@ -110,10 +143,21 @@ export type StartOutcome =
 /**
  * How one post went: posted; too large to share, or failed to reach the
  * relay, both leaving the share pending; stopped, when the mailbox already
- * held a tombstone; unshared, when there was nothing to post; or paused,
- * when the share waits for the person ({@link pauseOf}), so nothing went.
+ * held a tombstone; unshared, when there was nothing to post; paused, when
+ * the share waits for the person ({@link pauseOf}), so nothing went; or
+ * fresh, when a launch looked and the relay's clock said the share's
+ * refresh isn't due yet (#347), so nothing went.
  */
-export type PostOutcome = 'posted' | 'too-large' | 'failed' | 'stopped' | 'unshared' | 'paused';
+export type PostOutcome =
+  'posted' | 'too-large' | 'failed' | 'stopped' | 'unshared' | 'paused' | 'fresh';
+
+/**
+ * Why a post runs (#347): an edit to send, which goes unless the share is
+ * idle; a launch's refresh, which goes only once the relay's clock says
+ * {@link REFRESH_AFTER_DAYS} days, or for an edit; or the person's Keep
+ * sharing, which goes whatever the share's days, since the person chose.
+ */
+type PostReason = 'edit' | 'refresh' | 'keep';
 
 /**
  * Why nothing goes to a share's link until the person chooses: a restore
@@ -190,10 +234,17 @@ export function parseShareLink(text: string): ShareLink | null {
   return parseSharePayload(fragment);
 }
 
-/** One copy the link's key signed, with the seq the relay gave its blob. */
+/** One copy the link's key signed, with the seq the relay gave its blob and the relay minute it arrived. */
 interface FoundCopy {
   readonly seq: number;
+  readonly received: number;
   readonly copy: ShareCopy;
+}
+
+/** A read of a share's mailbox (#347): every copy its key signed, and the relay's minute at the read. */
+interface MailboxRead {
+  readonly found: readonly FoundCopy[];
+  readonly now: number;
 }
 
 /**
@@ -207,21 +258,18 @@ function copiesIn(
   records: readonly RelayRecord[],
 ): readonly FoundCopy[] {
   const { mailbox, key } = shareChannelOf(link.seed);
-  return records.flatMap(({ seq, data }) => {
+  return records.flatMap(({ seq, received, data }) => {
     const record = seal.open(mailbox, key, data);
     const bytes = record && openShareRecord(record, link.publicKey);
     const copy = bytes && parseCopy(bytes);
-    return copy ? [{ seq, copy }] : [];
+    return copy ? [{ seq, received, copy }] : [];
   });
 }
 
-/** Every copy the link's key signed in its mailbox, reading every page. */
-async function readCopies(
-  { relay, seal }: ShareReader,
-  link: ShareLink,
-): Promise<readonly FoundCopy[]> {
+/** Every copy the link's key signed in its mailbox, reading every page, and the relay's minute (#347). */
+async function readMailbox({ relay, seal }: ShareReader, link: ShareLink): Promise<MailboxRead> {
   const page = await relay.getBlobs(shareChannelOf(link.seed).mailbox, 0);
-  return copiesIn(seal, link, page.records);
+  return { found: copiesIn(seal, link, page.records), now: page.now };
 }
 
 /** Whether `found` holds a tombstone: then the share has stopped, whatever came after. */
@@ -237,7 +285,7 @@ function hasStopped(found: readonly FoundCopy[]): boolean {
  * @throws {Error} when the relay can't be reached or answers wrongly.
  */
 export async function readShare(reader: ShareReader, link: ShareLink): Promise<SharedView> {
-  const found = await readCopies(reader, link);
+  const { found } = await readMailbox(reader, link);
   if (hasStopped(found)) return { kind: 'gone' };
   let latest: FoundCopy | undefined;
   for (const candidate of found) {
@@ -266,21 +314,18 @@ function sameShare(held: ShareState | undefined, share: ShareState): held is Sha
 }
 
 /**
- * Reads the mailbox, then posts `body` as the next copy: numbered one past
- * the highest `n` there that the share's key signed, or its own last `n`,
- * whichever is higher. Returns the number it posted under, or `'stopped'`
- * with no post when the mailbox already holds a tombstone.
+ * Posts `body` as the next copy after `found`, a read of the mailbox:
+ * numbered one past the highest `n` there that the share's key signed, or
+ * its own last `n`, whichever is higher. Returns the number it posted under.
  *
  * @throws {Error} when the relay can't be reached or refuses the post.
  */
-async function postNext(
+async function putNext(
   services: ShareServices,
   share: ShareState,
+  found: readonly FoundCopy[],
   body: CopyWords | { readonly stopped: true },
-): Promise<number | 'stopped'> {
-  const link = linkOf(share);
-  const found = await readCopies(services, link);
-  if (hasStopped(found)) return 'stopped';
+): Promise<number> {
   const n = found.reduce((highest, { copy }) => Math.max(highest, copy.n), share.n) + 1;
   const copy: ShareCopy = { v: COPY_VERSION, n, ...body };
   // `fitsShare` has checked the words at the largest n, so the record is at most 64,000 bytes.
@@ -288,6 +333,24 @@ async function postNext(
   const { mailbox, key } = shareChannelOf(share.seed);
   await services.relay.putBlob(mailbox, services.seal.seal(mailbox, key, record), SHARE_TTL_DAYS);
   return n;
+}
+
+/**
+ * Reads the mailbox, then posts `body` as the next copy ({@link putNext}).
+ * Returns the number it posted under and the relay's minute at the read,
+ * which stamps the post (#347), or `'stopped'` with no post when the mailbox
+ * already holds a tombstone.
+ *
+ * @throws {Error} when the relay can't be reached or refuses the post.
+ */
+async function postNext(
+  services: ShareServices,
+  share: ShareState,
+  body: CopyWords | { readonly stopped: true },
+): Promise<{ readonly n: number; readonly at: number } | 'stopped'> {
+  const read = await readMailbox(services, linkOf(share));
+  if (hasStopped(read.found)) return 'stopped';
+  return { n: await putNext(services, share, read.found, body), at: read.now };
 }
 
 /** The tasks for each Document, chained, so one runs at a time and two posts never share an `n`. */
@@ -337,7 +400,8 @@ async function dropShare(services: ShareServices, id: string, share: ShareState)
 
 /**
  * The share as kept after copy `n` of `posted`'s words went out: numbered
- * `n`, stamped now, and still pending only if the Document changed meanwhile.
+ * `n`, stamped with `at`, the relay minute the read before it gave (#347),
+ * and still pending only if the Document changed meanwhile.
  */
 function postedAs(
   held: PersonalDocument,
@@ -346,42 +410,125 @@ function postedAs(
   at: number,
 ): ShareState {
   const changed = held.title !== posted.title || held.text !== posted.text;
-  return { ...share, lastPostedAt: at, pending: changed };
+  return { ...share, postedAt: at, seenAt: at, pending: changed };
+}
+
+/**
+ * When `share` was last posted on the relay's clock, as `found` measures it
+ * (#347): its own `postedAt`, a relay minute or null for never; or, for an
+ * unmeasured share, the relay's receipt of the copy it posted last, numbered
+ * its `n`, the earliest if two devices raced to it. With that copy gone, the
+ * relay let it lapse, so the share's last post is older than
+ * {@link SHARE_TTL_DAYS} days by the read's `now`: then `now` less those days,
+ * the latest minute it could have arrived at, which reads idle, as it is.
+ */
+function measuredPost(share: ShareState, { found, now }: MailboxRead): number | null {
+  if (share.postedAt !== UNMEASURED) return share.postedAt;
+  const own = found.filter(({ copy }) => copy.n === share.n).map(({ received }) => received);
+  return own.length === 0 ? now - TTL_MINUTES : Math.min(...own);
+}
+
+/**
+ * What the relay's clock says of posting `share` for `reason`, at the read
+ * `read` (#347): idle once its last post, measured ({@link measuredPost}), is
+ * {@link SHARE_TTL_DAYS} days old, since its link may have been stopped
+ * elsewhere (#339); fresh for a refresh with no edit to send before
+ * {@link REFRESH_AFTER_DAYS} days; else post. A share never posted has no
+ * link anyone could open, so it posts. Keep sharing posts whatever the days.
+ */
+function verdictOn(
+  share: ShareState,
+  read: MailboxRead,
+  reason: PostReason,
+): 'post' | 'idle' | 'fresh' {
+  const posted = measuredPost(share, read);
+  if (reason === 'keep' || posted === null) return 'post';
+  const age = read.now - posted;
+  if (age >= TTL_MINUTES) return 'idle';
+  return reason === 'refresh' && !share.pending && age < REFRESH_MINUTES ? 'fresh' : 'post';
+}
+
+/**
+ * Keeps what a read of `share`'s mailbox that posted nothing found (#347):
+ * the relay's minute, so a pause it showed still shows, and an unmeasured
+ * share's measured post time, so it's measured once.
+ */
+async function noteRead(
+  services: ShareServices,
+  id: string,
+  share: ShareState,
+  read: MailboxRead,
+): Promise<void> {
+  const postedAt = measuredPost(share, read);
+  await services.store.updateShare(id, (held) =>
+    sameShare(held.share, share) ? { ...held.share, postedAt, seenAt: read.now } : held.share,
+  );
+}
+
+/**
+ * Posts the words of `document`, whose share is `share`, for `reason`, once
+ * a read of the mailbox finds no tombstone and the relay's clock says to
+ * ({@link verdictOn}, #347).
+ */
+async function postRead(
+  services: ShareServices,
+  document: PersonalDocument,
+  share: ShareState,
+  reason: PostReason,
+): Promise<PostOutcome> {
+  const { id } = document;
+  const read = await readMailbox(services, linkOf(share)).catch(() => null);
+  if (read === null) {
+    await markPending(services, id, share);
+    return 'failed';
+  }
+  if (hasStopped(read.found)) {
+    await dropShare(services, id, share);
+    return 'stopped';
+  }
+  const verdict = verdictOn(share, read, reason);
+  if (verdict !== 'post') {
+    await noteRead(services, id, share, read);
+    return verdict === 'idle' ? 'paused' : 'fresh';
+  }
+  const n = await putNext(services, share, read.found, wordsOf(document)).catch(() => null);
+  if (n === null) {
+    await markPending(services, id, share);
+    return 'failed';
+  }
+  await services.store.updateShare(id, (held) =>
+    sameShare(held.share, share)
+      ? postedAs(held, { ...held.share, n }, document, read.now)
+      : held.share,
+  );
+  return 'posted';
 }
 
 /**
  * Posts the latest copy of Document `id`, if it is shared and not paused
- * ({@link pauseOf}). A Document that has grown too large, or a relay that
- * can't be reached, leaves the share pending for `keepSharesAlive`; a
- * tombstone already in the mailbox drops the share and posts nothing.
+ * ({@link pauseOf}), for `reason` ({@link PostReason}). Whether it goes is
+ * the relay's clock, read in the same request that finds any tombstone
+ * (#347): a share idle by then is paused with nothing sent, and a refresh
+ * the relay says isn't due sends nothing. A Document that has grown too
+ * large, or a relay that can't be reached, leaves the share pending for
+ * `keepSharesAlive`; a tombstone already in the mailbox drops the share and
+ * posts nothing.
  */
-export function postCopy(services: ShareServices, id: string): Promise<PostOutcome> {
+export function postCopy(
+  services: ShareServices,
+  id: string,
+  reason: PostReason = 'edit',
+): Promise<PostOutcome> {
   return inTurn(id, async () => {
     const document = await services.store.getPersonal(id);
     const share = document?.share;
     if (document === undefined || share === undefined) return 'unshared';
-    if (pauseOf(share, services.now()) !== null) return 'paused';
-    const words = wordsOf(document);
-    if (!fitsShare(words)) {
+    if (reason !== 'keep' && pauseOf(share, await heardRelay(services)) !== null) return 'paused';
+    if (!fitsShare(wordsOf(document))) {
       await markPending(services, id, share);
       return 'too-large';
     }
-    const n = await postNext(services, share, words).catch(() => null);
-    if (n === null) {
-      await markPending(services, id, share);
-      return 'failed';
-    }
-    if (n === 'stopped') {
-      await dropShare(services, id, share);
-      return 'stopped';
-    }
-    const at = services.now();
-    await services.store.updateShare(id, (held) =>
-      sameShare(held.share, share)
-        ? postedAs(held, { ...held.share, n }, document, at)
-        : held.share,
-    );
-    return 'posted';
+    return postRead(services, document, share, reason);
   });
 }
 
@@ -419,16 +566,15 @@ export function startSharing(services: ShareServices, id: string): Promise<Start
       secretKey: keys.secretKey,
       publicKey: keys.publicKey,
       n: 0,
-      lastPostedAt: null,
+      postedAt: null,
       pending: true,
     };
     // No one else holds a fresh seed, so its mailbox can't hold a tombstone.
-    const n = await postNext(services, fresh, words).catch(() => null);
-    if (typeof n !== 'number') return { kind: 'failed' };
-    const at = services.now();
+    const posted = await postNext(services, fresh, words).catch(() => null);
+    if (posted === null || posted === 'stopped') return { kind: 'failed' };
     const kept = await services.store.updateShare(
       id,
-      (held) => held.share ?? postedAs(held, { ...fresh, n }, document, at),
+      (held) => held.share ?? postedAs(held, { ...fresh, n: posted.n }, document, posted.at),
     );
     return kept?.share === undefined
       ? { kind: 'missing' }
@@ -437,23 +583,38 @@ export function startSharing(services: ShareServices, id: string): Promise<Start
 }
 
 /**
+ * When Keep sharing counts `share` as posted (#339, #347): the latest relay
+ * minute the device has heard, `heard`, or the share's own read, whichever
+ * is later, never earlier than its last post. Having heard nothing at all,
+ * its time stays as it was.
+ */
+function keptAt(share: ShareState, heard: number | null): PostedAt {
+  const latest = latestOf(heard, share.seenAt ?? null);
+  if (latest === null) return share.postedAt;
+  return typeof share.postedAt === 'number' ? Math.max(share.postedAt, latest) : latest;
+}
+
+/**
  * Keep sharing for Document `id`, once its share is paused ({@link pauseOf}):
- * records the person's choice, then posts the latest copy, which still reads
- * the mailbox first, so a tombstone there drops the share and nothing goes.
- * The choice counts as a post towards the share's {@link SHARE_TTL_DAYS}
- * days (#339), so a post that fails leaves the share pending and the next
- * launch sends it, unless that launch is so late that the share is idle
- * again. A Document that isn't shared is left alone. While the device's
- * keys are locked (#255), nothing is kept or sent, and the share stays
- * paused.
+ * records the person's choice, then posts the latest copy whatever its days,
+ * which still reads the mailbox first, so a tombstone there drops the share
+ * and nothing goes. The post is stamped with the relay's minute (#347). The
+ * choice counts as a post towards the share's {@link SHARE_TTL_DAYS} days
+ * (#339), at the latest relay minute the device has heard ({@link keptAt}),
+ * so a post that fails leaves the share pending and the next launch sends
+ * it, unless the relay's clock then says the share is idle again. A
+ * Document that isn't shared is left alone. While the device's keys are
+ * locked (#255), nothing is kept or sent, and the share stays paused.
  */
 export async function keepSharing(services: ShareServices, id: string): Promise<KeepOutcome> {
   if (await isLocked(services)) return 'locked';
-  const at = services.now();
+  const heard = await heardRelay(services);
   const kept = await services.store.updateShare(id, (held) =>
-    held.share === undefined ? undefined : { ...resumedShare(held.share), lastPostedAt: at },
+    held.share === undefined
+      ? undefined
+      : { ...resumedShare(held.share), postedAt: keptAt(held.share, heard) },
   );
-  return kept?.share === undefined ? 'unshared' : postCopy(services, id);
+  return kept?.share === undefined ? 'unshared' : postCopy(services, id, 'keep');
 }
 
 /**
@@ -477,58 +638,96 @@ export function stopSharing(services: ShareServices, id: string): Promise<StopOu
   });
 }
 
-/**
- * Whether `share`'s link may still open at `now`: its last copy went out, or
- * the person kept sharing (#339), less than {@link SHARE_TTL_DAYS} days ago,
- * so the relay may still keep it.
- * A share never posted has no link anyone could open. The relay backup's
- * merge asks it of a share it can't tell from one this device stopped
- * (#247).
- */
-export function mayStillOpen(share: Pick<ShareState, 'lastPostedAt'>, now: number): boolean {
-  return share.lastPostedAt !== null && now - share.lastPostedAt < SHARE_TTL_DAYS * DAY_MS;
+/** The later of two relay minutes, either of which may be unknown (null). */
+function latestOf(a: number | null, b: number | null): number | null {
+  if (a === null) return b;
+  return b === null ? a : Math.max(a, b);
 }
 
 /**
- * Why `share` waits for the person at `now`, or null while posts may go to
- * its link: `'restored'` while a restore has it paused (#328), else `'idle'`
- * once this device's last post to it is {@link SHARE_TTL_DAYS} or more days
- * old, so its link may no longer open ({@link mayStillOpen}; #339). A
- * tombstone lasts only as long as the relay keeps it, so by then another
- * device holding the share may have stopped it with nothing left to say so.
- * `now` is the device clock, which stamped the post. A share never posted
- * has no link anyone could open.
+ * The latest relay minute the device has heard (#347): the latest `relayNow`
+ * among its groups and coalitions, each a reading of the relay's own clock
+ * from a sync, or null before any synced. It lags the relay, never leads
+ * it, and no change to the device clock moves it.
  */
-export function pauseOf(share: ShareMark, now: number): SharePause | null {
+export async function heardRelay(services: Pick<ShareServices, 'store'>): Promise<number | null> {
+  const groups = await services.store.listGroups();
+  return groups.reduce<number | null>((latest, group) => latestOf(latest, group.relayNow), null);
+}
+
+/**
+ * Whether `share`'s link may still open at relay minute `relayNow`: its last
+ * copy went out, or the person kept sharing (#339), less than
+ * {@link SHARE_TTL_DAYS} days ago on the relay's clock (#347), so the relay
+ * may still keep it. A share never posted has no link anyone could open.
+ * One whose time is unmeasured, or with no relay minute to measure it by,
+ * may: nothing says otherwise. The relay backup's merge asks it of a share
+ * it can't tell from one this device stopped (#247).
+ */
+export function mayStillOpen(
+  share: Pick<ShareState, 'postedAt'>,
+  relayNow: number | null,
+): boolean {
+  const { postedAt } = share;
+  if (postedAt === null) return false;
+  if (postedAt === UNMEASURED || relayNow === null) return true;
+  return relayNow - postedAt < TTL_MINUTES;
+}
+
+/**
+ * Why `share` waits for the person, or null while posts may go to its link:
+ * `'restored'` while a restore has it paused (#328), else `'idle'` once this
+ * device's last post to it is {@link SHARE_TTL_DAYS} or more days old on the
+ * relay's clock, so its link may no longer open ({@link mayStillOpen}; #339,
+ * #347). A tombstone lasts only as long as the relay keeps it, so by then
+ * another device holding the share may have stopped it with nothing left to
+ * say so. The relay's clock is the later of `relayNow`, the latest minute
+ * the device has heard ({@link heardRelay}), and the share's own last read
+ * (`seenAt`), so a pause a read found shows even with no group to sync. A
+ * share never posted has no link anyone could open, and an unmeasured one
+ * is measured at its next read.
+ */
+export function pauseOf(share: ShareMark, relayNow: number | null): SharePause | null {
   if (share.paused === true) return 'restored';
-  return share.lastPostedAt !== null && !mayStillOpen(share, now) ? 'idle' : null;
+  const heard = latestOf(relayNow, share.seenAt ?? null);
+  return share.postedAt !== null && !mayStillOpen(share, heard) ? 'idle' : null;
 }
 
 /**
- * Whether `share` needs posting at launch: an edit to post, never posted, or
- * posted {@link REFRESH_AFTER_DAYS} or more days ago, and never while it
- * waits for the person ({@link pauseOf}).
+ * Whether a launch looks at `share` (#347), never while it waits for the
+ * person ({@link pauseOf}): with an edit to post, never posted, unmeasured,
+ * or last posted {@link REFRESH_AFTER_DAYS} or more days ago by the later of
+ * `heard` and the device clock's `minute`. The device clock only picks when
+ * to look: the read then decides on the relay's own minute whether a
+ * refresh goes (`verdictOn`). A clock moved back looks later, so a share it
+ * leaves to lapse pauses, the safe side; one moved forward looks early, and
+ * the relay says not yet.
  */
-function isDue(share: ShareState, now: number): boolean {
-  if (pauseOf(share, now) !== null) return false;
-  if (share.pending || share.lastPostedAt === null) return true;
-  return now - share.lastPostedAt >= REFRESH_AFTER_DAYS * DAY_MS;
+function isDue(share: ShareState, heard: number | null, minute: number): boolean {
+  if (pauseOf(share, heard) !== null) return false;
+  const { postedAt } = share;
+  if (share.pending || typeof postedAt !== 'number') return true;
+  return Math.max(heard ?? postedAt, minute) - postedAt >= REFRESH_MINUTES;
 }
 
 /**
  * Posts the latest copy of every shared Document that is pending or due, one
  * after another, at app start, so a share that stays on outlives the relay's
- * 30-day retention. A paused share ({@link pauseOf}) waits for the person.
- * Returns each one's id and how its post went.
+ * 30-day retention: each one {@link isDue} picks is read, and its refresh
+ * goes once the relay's clock says so (#347). A paused share ({@link pauseOf})
+ * waits for the person. Returns each one looked at, and how its post went.
  */
 export async function keepSharesAlive(
   services: ShareServices,
 ): Promise<(readonly [string, PostOutcome])[]> {
   const documents = await services.store.listPersonal();
-  const now = services.now();
+  const heard = await heardRelay(services);
+  const minute = Math.floor(services.now() / MINUTE_MS);
   const outcomes: (readonly [string, PostOutcome])[] = [];
   for (const { id, share } of documents) {
-    if (share !== undefined && isDue(share, now)) outcomes.push([id, await postCopy(services, id)]);
+    if (share !== undefined && isDue(share, heard, minute)) {
+      outcomes.push([id, await postCopy(services, id, 'refresh')]);
+    }
   }
   return outcomes;
 }

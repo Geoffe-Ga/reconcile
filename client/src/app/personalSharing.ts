@@ -11,6 +11,7 @@
  * the vault (#255), so its editor reads it as on with no link.
  */
 import {
+  heardRelay,
   keepSharing,
   pauseOf,
   postEdits,
@@ -84,13 +85,13 @@ export type SharingServices = ShareServices &
   };
 
 /**
- * A share as its editor shows it at `now`: `link`, or null while the
- * device's keys are locked (#255), whether an edit waits, and why it's
- * paused, if it is ({@link pauseOf}), read from its mark, so a paused share
- * reads paused either way (#328, #339).
+ * A share as its editor shows it at relay minute `relayNow` (#347): `link`,
+ * or null while the device's keys are locked (#255), whether an edit waits,
+ * and why it's paused, if it is ({@link pauseOf}), read from its mark, so a
+ * paused share reads paused either way (#328, #339).
  */
-function viewOf(mark: ShareMark, link: string | null, now: number): ShareView {
-  return { link, pending: mark.pending, paused: pauseOf(mark, now) };
+function viewOf(mark: ShareMark, link: string | null, relayNow: number | null): ShareView {
+  return { link, pending: mark.pending, paused: pauseOf(mark, relayNow) };
 }
 
 /** Sharing by link on `services`. */
@@ -101,13 +102,15 @@ export function personalSharing(services: SharingServices): PersonalSharing {
     async read(id) {
       try {
         const share = (await services.store.getPersonal(id))?.share;
-        return share === undefined ? null : viewOf(share, linkOf(share), services.now());
+        if (share === undefined) return null;
+        return viewOf(share, linkOf(share), await heardRelay(services));
       } catch (error) {
         if (!(error instanceof VaultLocked)) throw error;
-        // Only a shared Document's read needs the vault: its mark says it's on (#255).
+        // Only a shared Document's read needs the vault: its mark says it's on (#255). The
+        // groups' relay minutes wait in it too, so the mark's own last read measures it (#347).
         const entries = await services.store.listPersonalEntries();
         const mark = entries.find((entry) => entry.id === id)?.share;
-        return mark === undefined ? null : viewOf(mark, null, services.now());
+        return mark === undefined ? null : viewOf(mark, null, null);
       }
     },
     async start(id) {

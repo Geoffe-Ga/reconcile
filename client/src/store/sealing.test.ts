@@ -19,7 +19,7 @@ const REPLY_KEY = new Uint8Array(32).fill(0x65);
 const INVITE = new Uint8Array(32).fill(0x66);
 
 const WORDS = { id: 'doc-1', title: 'Mine', text: 'Kind.', createdAt: 1, updatedAt: 2 };
-const MARK = { n: 3, lastPostedAt: 9, pending: false };
+const MARK = { n: 3, postedAt: 29_000_009, pending: false };
 
 /** A Document shared by link, whole. */
 const SHARED: PersonalDocument = {

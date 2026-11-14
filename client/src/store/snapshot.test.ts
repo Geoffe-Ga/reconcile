@@ -846,7 +846,7 @@ const SHARE: ShareState = {
   secretKey: SHARE_KEYS.secretKey,
   publicKey: SHARE_KEYS.publicKey,
   n: 2,
-  lastPostedAt: 1_762_000_600_000,
+  postedAt: 29_366_676,
   pending: true,
 };
 
@@ -902,9 +902,12 @@ describe('a shared Document in a backup (#105)', () => {
     );
   });
 
-  it('spells the share’s bytes in base64url, and carries nothing else of it', async () => {
+  it('spells the share’s bytes in base64url, and carries nothing else of it, not its relay reading', async () => {
     const device = await openStore('ana');
     await keepShared(device);
+    await device.updateShare(canaryStatement().id, (held) =>
+      held.share === undefined ? undefined : { ...held.share, seenAt: 29_400_000 },
+    );
 
     const json = JSON.parse(text(await snapshotOf(device))) as {
       personal: Record<string, unknown>[];
@@ -918,7 +921,7 @@ describe('a shared Document in a backup (#105)', () => {
           secretKey: base64url(SHARE.secretKey),
           publicKey: base64url(SHARE.publicKey),
           n: 2,
-          lastPostedAt: 1_762_000_600_000,
+          postedAt: 29_366_676,
           pending: true,
         },
       },
@@ -931,14 +934,42 @@ describe('a shared Document in a backup (#105)', () => {
     await device.updateShare(canaryStatement().id, () => ({
       ...SHARE,
       n: 0,
-      lastPostedAt: null,
+      postedAt: null,
     }));
 
     const snapshot = decodeSnapshot(await snapshotOf(device));
 
-    expect(snapshot?.personal[0]?.share?.lastPostedAt).toBe(null);
+    expect(snapshot?.personal[0]?.share?.postedAt).toBe(null);
     expect(snapshot?.personal[0]?.share?.n).toBe(0);
   });
+
+  it.each([
+    [
+      'a post time in device ms reads as unmeasured, never as a relay minute',
+      1_762_000_600_000,
+      'unmeasured',
+    ],
+    ['no post time stays never posted', null, null],
+  ] as const)(
+    'reads a share from a file made before #347: %s',
+    async (_name, lastPostedAt, postedAt) => {
+      const device = await openStore('ana');
+      await keepShared(device);
+      const json = JSON.parse(text(await snapshotOf(device))) as {
+        personal: { share: Record<string, unknown> }[];
+      };
+      const personal = json.personal.map(({ share, ...document }) => {
+        const old: Record<string, unknown> = { ...share, lastPostedAt };
+        delete old.postedAt;
+        return { ...document, share: old };
+      });
+
+      const snapshot = decodeSnapshot(utf8(JSON.stringify({ ...json, personal })));
+
+      expect(snapshot?.personal[0]?.share?.postedAt).toBe(postedAt);
+      expect(snapshot?.skippedDocuments).toBe(0);
+    },
+  );
 
   const shareBreakings: readonly (readonly [
     string,
@@ -953,7 +984,16 @@ describe('a shared Document in a backup (#105)', () => {
     ],
     ['a secret key that isn’t text', (share) => ({ ...share, secretKey: 7 })],
     ['a negative n', (share) => ({ ...share, n: -1 })],
-    ['a fractional post time', (share) => ({ ...share, lastPostedAt: 1.5 })],
+    ['a fractional post time', (share) => ({ ...share, postedAt: 1.5 })],
+    ['a post time that is any other word', (share) => ({ ...share, postedAt: 'later' })],
+    [
+      'a fractional post time from before #347',
+      (share) => {
+        const old: Record<string, unknown> = { ...share, lastPostedAt: 1.5 };
+        delete old.postedAt;
+        return old;
+      },
+    ],
     ['a pending that isn’t true or false', (share) => ({ ...share, pending: 'yes' })],
   ];
 

@@ -66,6 +66,13 @@ const DESKTOP = {
 export const TEST_NOW = 1_762_650_000_000;
 
 /**
+ * {@link TEST_NOW}'s minute: where a fake relay starts when a test needs the
+ * relay's clock and the device's to agree, as they do on a device whose
+ * clock is right (#347).
+ */
+export const TEST_MINUTE = Math.floor(TEST_NOW / 60_000);
+
+/**
  * Opens device `name` on `fake`. The sync loop never polls; actions run it
  * once. `clock` is the device clock, fixed at {@link TEST_NOW} unless a test
  * moves it. Copy invite link hands `copyText` a promise of the link, as the

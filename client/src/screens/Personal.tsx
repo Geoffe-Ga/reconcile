@@ -12,8 +12,12 @@ export interface PersonalProps {
   readonly documents: readonly PersonalEntry[];
   /** The id a new Document opens at; nothing is stored under it until its first save. */
   readonly newId: string;
-  /** The device clock in ms: a share it hasn't posted to for 30 days is paused (#339). */
-  readonly now: number;
+  /**
+   * The latest relay minute the device has heard, or null before any: a
+   * share this device hasn't posted to for 30 days on the relay's clock is
+   * paused (#339, #347), never on the device's.
+   */
+  readonly relayNow: number | null;
   /**
    * Whether the device keeps a relay backup key (#97), whose sealed copy
    * carries every personal Document, or null until the store has said: then
@@ -61,12 +65,13 @@ const PAUSED_LINE: Readonly<Record<SharePause, string>> = {
 };
 
 /**
- * The line under a Document's title on Personal at `now`: shared by link
- * (#105), or paused after a restore (#328) or 30 days with no post (#339).
+ * The line under a Document's title on Personal at relay minute `relayNow`:
+ * shared by link (#105), or paused after a restore (#328) or 30 days with no
+ * post on the relay's clock (#339, #347).
  */
-function shareLine({ share }: PersonalEntry, now: number): { readonly line?: string } {
+function shareLine({ share }: PersonalEntry, relayNow: number | null): { readonly line?: string } {
   if (share === undefined) return {};
-  const pause = pauseOf(share, now);
+  const pause = pauseOf(share, relayNow);
   return { line: pause === null ? messages.personal.sharedLine : PAUSED_LINE[pause] };
 }
 
@@ -74,14 +79,18 @@ function shareLine({ share }: PersonalEntry, now: number): { readonly line?: str
 function DocumentList({
   documents,
   newId,
-  now,
-}: Pick<PersonalProps, 'documents' | 'newId' | 'now'>) {
+  relayNow,
+}: Pick<PersonalProps, 'documents' | 'newId' | 'relayNow'>) {
   return (
     <div className="stack">
       <ul className="card-list">
         {documents.map((document) => (
           <li key={document.id}>
-            <DocumentCard id={document.id} title={document.title} {...shareLine(document, now)} />
+            <DocumentCard
+              id={document.id}
+              title={document.title}
+              {...shareLine(document, relayNow)}
+            />
           </li>
         ))}
       </ul>
@@ -107,7 +116,7 @@ function DocumentList({
  * (#248). It's the tab bar's Me (#423), so Settings is a quiet link at its
  * end, as on Start.
  */
-export function Personal({ documents, newId, now, relayBackup }: PersonalProps) {
+export function Personal({ documents, newId, relayNow, relayBackup }: PersonalProps) {
   const { personal } = messages;
   return (
     <main className="shell">
@@ -117,7 +126,7 @@ export function Personal({ documents, newId, now, relayBackup }: PersonalProps) 
       {documents.length === 0 ? (
         <DocumentCard id={newId} title={personal.missionTitle} line={personal.missionPrompt} />
       ) : (
-        <DocumentList documents={documents} newId={newId} now={now} />
+        <DocumentList documents={documents} newId={newId} relayNow={relayNow} />
       )}
       {relayBackup === null ? null : <p className="caption">{privacyLine(relayBackup)}</p>}
       <div>

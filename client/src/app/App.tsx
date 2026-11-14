@@ -157,7 +157,7 @@ import { GroupServicesContext, type GroupView, useCoalitionList, useGroup } from
 import { useGroupList, useGroups } from './useGroupList';
 import { useNow } from './useNow';
 import { usePasskeyState } from './usePasskeyState';
-import { usePersonalList } from './usePersonalList';
+import { useHeardRelay, usePersonalList } from './usePersonalList';
 import { DiscoverScreen } from './DiscoverScreen';
 import { chooseContacts } from '../store/recovery';
 import { approveRecovery, holdViews, resendRelease } from '../recovery/holder';
@@ -479,16 +479,17 @@ function HelpRecoverScreen({ services }: { readonly services: AppServices }) {
 
 /**
  * Personal (#93): this device's personal Documents, and the id a new one
- * opens at, at the device time that says which shares wait for the person (#339).
+ * opens at, at the relay minute that says which shares wait for the person
+ * (#339, #347).
  */
 function PersonalScreen({ services }: { readonly services: AppServices }) {
   const documents = usePersonalList(services.store);
   const relayBackup = useKeepsRelayBackup(services.store);
-  const now = useNow(services.now);
+  const relayNow = useHeardRelay(services.store);
   // One id per visit: nothing is stored under it until that Document's first save.
   const [newId] = useState(newPersonalId);
   return documents === null ? null : (
-    <Personal documents={documents} newId={newId} now={now} relayBackup={relayBackup} />
+    <Personal documents={documents} newId={newId} relayNow={relayNow} relayBackup={relayBackup} />
   );
 }
 

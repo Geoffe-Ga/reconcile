@@ -1069,7 +1069,7 @@ describe('the schema, from each version a device may hold (v1 → v2 → v3 → 
   });
 });
 
-/** A share by link (#105) on {@link statement}, as #105's app at version 4 kept it. */
+/** A share by link (#105) on {@link statement}, timed on the relay's clock (#347). */
 function sharedStatement(): PersonalDocument & { share: ShareState } {
   const keys = newSigningKeys();
   const share: ShareState = {
@@ -1077,10 +1077,29 @@ function sharedStatement(): PersonalDocument & { share: ShareState } {
     secretKey: keys.secretKey,
     publicKey: keys.publicKey,
     n: 3,
-    lastPostedAt: 1_762_650_100_000,
+    postedAt: 29_377_501,
     pending: false,
   };
   return { ...statement, share };
+}
+
+/**
+ * `shared` as #105's app kept it, before #347: its post time in device ms,
+ * as `lastPostedAt`.
+ */
+function legacyShared(shared = sharedStatement()): Record<string, unknown> {
+  const { share, ...document } = shared;
+  const old: Record<string, unknown> = { ...share, lastPostedAt: 1_762_650_100_000 };
+  delete old.postedAt;
+  return { ...document, share: old };
+}
+
+/** The share fields IndexedDB holds for `id`, read straight from the database. */
+async function storedShareFields(id: string): Promise<string[]> {
+  const database = await openDB('reconcile');
+  const record = (await database.get('personal', id)) as { share?: object } | undefined;
+  database.close();
+  return Object.keys(record?.share ?? {}).sort();
 }
 
 /** `document` with its share's bytes as plain lists, so arrays IndexedDB cloned compare equal. */
@@ -1120,7 +1139,7 @@ describe('a share by link through each upgrade (#105, beside #97’s version 5)'
     expect(await schemaOf('reconcile')).toEqual(CURRENT_SCHEMA);
   });
 
-  it('upgrades a version 4 Document holding #105’s share to 5, keeping the share whole', async () => {
+  it('upgrades a version 4 Document holding #105’s share to 5, keeping the share whole, its device time read as unmeasured (#347)', async () => {
     const shared = sharedStatement();
     const old = await openDB('reconcile', 4, {
       upgrade(database) {
@@ -1128,18 +1147,45 @@ describe('a share by link through each upgrade (#105, beside #97’s version 5)'
         database.createObjectStore('personal', { keyPath: 'id' });
       },
     });
-    await old.put('personal', shared);
+    await old.put('personal', legacyShared(shared));
     old.close();
 
     const store = await openStore();
 
-    expect((await store.listPersonal()).map(plainShare)).toEqual([plainShare(shared)]);
+    const unmeasured = { ...shared, share: { ...shared.share, postedAt: 'unmeasured' as const } };
+    expect((await store.listPersonal()).map(plainShare)).toEqual([plainShare(unmeasured)]);
+    expect((await store.listPersonalEntries())[0]?.share?.postedAt).toBe('unmeasured');
     // The editor's save keeps it, and a share the store kept stays one it can stop.
     await store.savePersonal({ ...statement, text: 'Edited after the upgrade.\n' });
     expect((await store.getPersonal(statement.id))?.share?.pending).toBe(true);
     expect(await store.getRelayBackup()).toBeUndefined();
     store.close();
     expect(await schemaOf('reconcile')).toEqual(CURRENT_SCHEMA);
+  });
+
+  it('reads a share an app before #347 kept at this version as unmeasured, and writes it back in relay minutes at its next change', async () => {
+    const first = await openStore();
+    first.close();
+    const database = await openDB('reconcile');
+    await database.put('personal', legacyShared());
+    database.close();
+    expect(await storedShareFields(statement.id)).toContain('lastPostedAt');
+
+    const store = await openStore();
+    expect((await store.getPersonal(statement.id))?.share?.postedAt).toBe('unmeasured');
+    await store.updateShare(statement.id, (held) =>
+      held.share === undefined ? undefined : { ...held.share, postedAt: 29_400_000 },
+    );
+    store.close();
+
+    expect(await storedShareFields(statement.id)).toEqual([
+      'n',
+      'pending',
+      'postedAt',
+      'publicKey',
+      'secretKey',
+      'seed',
+    ]);
   });
 
   it('opens version 5 as it stands, a shared Document and the relay backup key both kept', async () => {

@@ -452,7 +452,7 @@ describe('a dissolve beside personal Documents (#93)', () => {
       seed: new Uint8Array(32).fill(4),
       ...newSigningKeys(),
       n: 2,
-      lastPostedAt: TS,
+      postedAt: 29_000_000,
       pending: false,
     };
     await store.updateShare(statement.id, () => share);

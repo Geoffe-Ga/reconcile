@@ -32,7 +32,9 @@
  * link (#96) takes `withoutShares`. #93 added them without a new format number,
  * so a format 1 file may hold them or not: one from before #93 has no
  * `personal` field, and reads as holding no personal Documents. A file from
- * before #105 holds no shares.
+ * before #105 holds no shares. A share's post time is a relay minute since
+ * #347, with no new format number: a file from before it holds the device's
+ * own time, which reads as unmeasured (`shareIn`).
  *
  * A coalition's entry (#114) goes in beside the groups once its genesis is
  * back, and one kept by following its link (#124) says so with `following:
@@ -106,6 +108,7 @@ import {
   isShareState,
   type PersonalDocument,
   type PersonalText,
+  postedAtIn,
   type ShareState,
   textOf,
 } from './personal';
@@ -284,15 +287,19 @@ export function withoutShares(snapshot: Snapshot): Snapshot {
   return { ...snapshot, personal: snapshot.personal.map(textOf) };
 }
 
-/** A share by link (#105) as the backup's JSON holds it: its bytes in unpadded base64url. */
+/**
+ * A share by link (#105) as the backup's JSON holds it: its bytes in
+ * unpadded base64url, and its post time on the relay's clock (#347), never
+ * the `seenAt` reading or the `paused` flag, which are this device's own.
+ */
 function shareJson(share: ShareState) {
-  const { seed, secretKey, publicKey, n, lastPostedAt, pending } = share;
+  const { seed, secretKey, publicKey, n, postedAt, pending } = share;
   return {
     seed: base64url(seed),
     secretKey: base64url(secretKey),
     publicKey: base64url(publicKey),
     n,
-    lastPostedAt,
+    postedAt,
     pending,
   };
 }
@@ -678,7 +685,12 @@ function documentIn(value: unknown): PersonalDocument | null {
   return isPersonalDocument(document) ? document : null;
 }
 
-/** A share by link in `value` (#105), or null when any part of it doesn't check out. */
+/**
+ * A share by link in `value` (#105), or null when any part of it doesn't
+ * check out. Its post time is `postedAt`, on the relay's clock (#347); a file
+ * from before #347 holds `lastPostedAt` in device ms instead, which reads as
+ * unmeasured (`postedAtIn`), so nothing reads a device's time as the relay's.
+ */
 function shareIn(value: unknown): ShareState | null {
   if (!isObject(value)) return null;
   const share = {
@@ -686,7 +698,7 @@ function shareIn(value: unknown): ShareState | null {
     secretKey: keyIn(value.secretKey),
     publicKey: keyIn(value.publicKey),
     n: value.n,
-    lastPostedAt: value.lastPostedAt,
+    postedAt: postedAtIn(value),
     pending: value.pending,
   };
   return isShareState(share) ? share : null;

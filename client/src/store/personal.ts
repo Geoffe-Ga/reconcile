@@ -51,8 +51,15 @@ export interface ShareState {
   readonly publicKey: Uint8Array;
   /** The `n` of the last copy this device posted, or 0 before the first. */
   readonly n: number;
-  /** When this device last posted a copy or the person kept sharing (#339), in device ms, or null if never. */
-  readonly lastPostedAt: number | null;
+  /** When this device last posted a copy or the person kept sharing (#339), on the relay's clock ({@link PostedAt}). */
+  readonly postedAt: PostedAt;
+  /**
+   * The latest relay minute a read of the share's mailbox gave this device
+   * (#347), so a pause the relay's clock showed there still shows once it's
+   * read no more. Absent before the first read. A per-device reading: no
+   * backup carries it.
+   */
+  readonly seenAt?: number;
   /** Whether the link may show less than the Document holds: an edit not posted yet, or a post that failed. */
   readonly pending: boolean;
   /**
@@ -62,6 +69,21 @@ export interface ShareState {
    */
   readonly paused?: true;
 }
+
+/**
+ * When a share was last posted, or kept (#339), on the relay's clock (#347):
+ * the relay minute the read of its mailbox gave just before this device's
+ * last post, or before the person kept sharing; null if never posted; or
+ * `'unmeasured'` for a share kept before #347, whose time the device took
+ * from its own clock, which nothing on the relay backs. The next read of its
+ * mailbox measures it from the relay's own receipt of the copy this device
+ * posted last (`shareLink.ts`), so no device time is ever read as the
+ * relay's.
+ */
+export type PostedAt = number | null | 'unmeasured';
+
+/** The post time of a share kept before #347, or of one whose time doesn't check out ({@link PostedAt}). */
+export const UNMEASURED = 'unmeasured';
 
 /** One personal Document, as the device keeps it and a backup file carries it. */
 export interface PersonalDocument {
@@ -205,16 +227,48 @@ function isFlagged({ pending, paused }: Record<string, unknown>): boolean {
   return typeof pending === 'boolean' && (paused === undefined || paused === true);
 }
 
+/** Whether `value` is a share's post time (#347): a whole relay minute, null, or unmeasured. */
+export function isPostedAt(value: unknown): value is PostedAt {
+  return value === null || value === UNMEASURED || isTime(value);
+}
+
+/**
+ * A share's post time as a record from before #347 kept it (`lastPostedAt`,
+ * in device ms): never posted stays null, and a time becomes unmeasured, to
+ * be measured on the relay's clock at the next read of its mailbox. Anything
+ * else isn't one, and the share doesn't check out.
+ */
+function legacyPostedAt(value: unknown): PostedAt | undefined {
+  if (value === null) return null;
+  return isTime(value) ? UNMEASURED : undefined;
+}
+
+/**
+ * A share's post time as `share` holds it (#347): its `postedAt`, or one
+ * from before #347 read as {@link legacyPostedAt} does; undefined when it
+ * holds neither that checks out.
+ */
+export function postedAtIn(share: Record<string, unknown>): PostedAt | undefined {
+  if ('postedAt' in share) return isPostedAt(share.postedAt) ? share.postedAt : undefined;
+  return legacyPostedAt(share.lastPostedAt);
+}
+
+/** Whether `seenAt` is absent or a whole relay minute (#347). */
+function isSeen(seenAt: unknown): boolean {
+  return seenAt === undefined || isTime(seenAt);
+}
+
 /**
  * Whether `value` is a share the device can keep (#105): a 32-byte seed, a
  * keypair whose public key is its secret key's own, a whole `n` from 0 up,
- * a whole post time or null, and its flags (`isFlagged`).
+ * a post time on the relay's clock ({@link isPostedAt}, #347), any relay
+ * minute its mailbox gave, and its flags (`isFlagged`).
  */
 export function isShareState(value: unknown): value is ShareState {
   if (typeof value !== 'object' || value === null) return false;
   const share = value as Record<string, unknown>;
-  const { seed, secretKey, publicKey, n, lastPostedAt } = share;
-  const counted = isTime(n) && (lastPostedAt === null || isTime(lastPostedAt));
+  const { seed, secretKey, publicKey, n, postedAt, seenAt } = share;
+  const counted = isTime(n) && isPostedAt(postedAt) && isSeen(seenAt);
   if (!counted || !isFlagged(share)) return false;
   return isKey(seed) && isKey(secretKey) && isKey(publicKey) && isKeypair(secretKey, publicKey);
 }
@@ -313,11 +367,25 @@ export function byCreation(a: PersonalText, b: PersonalText): number {
 
 /**
  * A share's mark: everything it says but its keys, its pause included, so a
- * share a restore brought back stays paused under a vault too (#328).
+ * share a restore brought back stays paused under a vault too (#328). It is
+ * the one place a stored share is read, whole or as its mark, so a record
+ * from before #347, whose post time was in device ms, reads here as
+ * unmeasured ({@link postedAtIn}), and is written back in the new shape at
+ * its next change. One that holds no post time that checks out reads as
+ * unmeasured too, so it waits on the relay's clock rather than posting.
  */
 function markOf(share: ShareMark): ShareMark {
-  const { n, lastPostedAt, pending } = share;
-  return { n, lastPostedAt, pending, ...(share.paused === true && { paused: true }) };
+  const { n, pending, seenAt } = share;
+  // Null is a post time, never posted, so only a missing or broken one reads as unmeasured.
+  const read = postedAtIn(share);
+  const postedAt = read === undefined ? UNMEASURED : read;
+  return {
+    n,
+    postedAt,
+    pending,
+    ...(seenAt === undefined ? {} : { seenAt }),
+    ...(share.paused === true && { paused: true }),
+  };
 }
 
 /** `document` as Personal and the editor show it: its words and times, and its share's mark. */
