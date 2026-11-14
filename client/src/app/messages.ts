@@ -131,13 +131,31 @@ export const messages = {
     otherApp: 'If you opened this inside another app, open it in Safari first.',
     steps: ['Tap Share, or tap ••• and then Share.', 'Choose Add to Home Screen, then tap Add.'],
     open: 'Open Reconcile from your Home Screen.',
-    openToJoin:
-      'Open Reconcile from your Home Screen and paste your invite link into the bar at the top.',
+    /** The last step with a link held to copy (#76, #280), by its kind: where to paste it. */
+    openToPaste: {
+      invite:
+        'Open Reconcile from your Home Screen and paste your invite link into the bar at the top.',
+      card: 'Open Reconcile from your Home Screen and paste your card link into the bar at the top.',
+      follow:
+        'Open Reconcile from your Home Screen and paste your follow link into the bar at the top.',
+    },
     why: 'Safari can clear a website’s data after a week without a visit, so on iPhone and iPad Reconcile runs from your Home Screen.',
-    inviteHeading: 'Your invite',
-    inviteLabel: 'Your invite link',
-    inviteHint: 'Copy it now, then paste it into Reconcile once it’s on your Home Screen.',
-    copyInvite: 'Copy invite link',
+    /**
+     * A link held to copy into the installed app, by its kind (#280): the
+     * section's heading when it shows no preview, as the link bar names the
+     * kind, its field and its button.
+     */
+    held: {
+      invite: { heading: 'Your invite', label: 'Your invite link', copy: 'Copy invite link' },
+      card: { heading: 'A reconcile card', label: 'Your card link', copy: 'Copy card link' },
+      follow: {
+        heading: 'A coalition to follow',
+        label: 'Your follow link',
+        copy: 'Copy follow link',
+      },
+    },
+    /** Under every held link's field. */
+    heldHint: 'Copy it now, then paste it into Reconcile once it’s on your Home Screen.',
     appLabel: 'Reconcile’s address',
     appHint: 'To open Reconcile in Safari, copy this and paste it into Safari’s address bar.',
     copyApp: 'Copy link',
