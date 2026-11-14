@@ -221,9 +221,12 @@ describe('two linked devices and one relay backup (#247)', () => {
     await nextDay(fake, laptop);
 
     // The later copy holds no share, so it keeps the phone's, marked pending; restored, it's paused (#328).
+    // No backup carries the phone's own reading of the relay's clock (#347), so it comes back without one.
+    const { seenAt, ...carried } = phoneShare ?? {};
+    expect(seenAt).toBeDefined();
     const restored = await restoredFrom(fake, key);
     const held = await restored.services.store.getPersonal(STATEMENT.id);
-    expect(held).toEqual({ ...edited, share: { ...phoneShare, pending: true, paused: true } });
+    expect(held).toEqual({ ...edited, share: { ...carried, pending: true, paused: true } });
     expect(local(held?.share?.seed ?? new Uint8Array())).toEqual(local(link.seed));
     expect(await stopSharing(restored.services, STATEMENT.id)).toBe('stopped');
     expect(await readShare(phone.services, link)).toEqual({ kind: 'gone' });
