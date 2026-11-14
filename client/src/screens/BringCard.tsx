@@ -13,7 +13,7 @@ import { messages } from '../app/messages';
 import type { CardGroup, CardLookup, FoundCard } from '../app/reconcile';
 import { replaceRoute } from '../app/router';
 import { BackLink, Field, PageHeader } from '../app/ui';
-import { parseCardPayload } from '../coalition/card';
+import { type Card, parseCardPayload } from '../coalition/card';
 
 /** Props for {@link BringCard}. */
 export interface BringCardProps {
@@ -63,23 +63,31 @@ function Offline({ onRetry }: { readonly onRetry: () => void }) {
   );
 }
 
+/** Props for {@link CardPreview}. */
+export interface CardPreviewProps {
+  readonly card: Pick<Card, 'seat' | 'title' | 'atoms'>;
+  /** The statement title's heading level: 2 on Bring a card, 4 in Applications' rows (#426). */
+  readonly level: 2 | 4;
+}
+
 /**
  * The card as plain text: who it's from, then its statement's title and
  * sections. Every word came from another group's device, so none of it is
- * read as Markdown or HTML, and each sits in its own `<bdi>`.
+ * read as Markdown or HTML, and each sits in its own `<bdi>`. Applications
+ * shows a card left at the door the same way (#426).
  */
-function CardText({ found }: { readonly found: FoundCard }) {
-  const { card } = found;
+export function CardPreview({ card, level }: CardPreviewProps) {
+  const Title = level === 2 ? 'h2' : 'h4';
   return (
-    <div className="card invite-preview">
+    <>
       <p className="invite-from">
         {bring.from} <bdi>{card.seat.name}</bdi>
       </p>
       <div className="invite-document">
         <p className="eyebrow">{bring.statementLabel}</p>
-        <h2 className="heading-2">
+        <Title className="heading-2">
           <bdi>{card.title}</bdi>
-        </h2>
+        </Title>
         <div className="card-statement">
           {card.atoms.map((atom, index) => (
             // Sections are numbered by position; the same text may appear twice.
@@ -89,14 +97,26 @@ function CardText({ found }: { readonly found: FoundCard }) {
           ))}
         </div>
       </div>
+    </>
+  );
+}
+
+/** The card as Bring a card shows it: {@link CardPreview} on a card of its own. */
+function CardText({ found }: { readonly found: FoundCard }) {
+  return (
+    <div className="card invite-preview">
+      <CardPreview card={found.card} level={2} />
     </div>
   );
 }
 
-interface PickerProps {
+/** Props for {@link GroupPicker}. */
+export interface PickerProps {
   readonly groups: readonly CardGroup[];
   readonly value: string;
   readonly onChange: (groupId: string) => void;
+  /** The label and hint, in place of Bring a card's own: Propose reconciling's at a door (#426). */
+  readonly words?: { readonly label: string; readonly hint: string };
 }
 
 /**
@@ -104,13 +124,17 @@ interface PickerProps {
  * chosen to start, and each coalition this person takes part in that may take
  * it (#122), marked as one.
  */
-function GroupPicker({ groups, value, onChange }: PickerProps) {
+export function GroupPicker({ groups, value, onChange, words }: PickerProps) {
   const both = groups.some((group) => group.kind === 'coalition');
+  const own = both
+    ? { label: bring.groupOrCoalitionLabel, hint: bring.groupOrCoalitionHint }
+    : { label: bring.groupLabel, hint: bring.groupHint };
+  const { label, hint } = words ?? own;
   return (
     <RadioGroup className="level-group" value={value} onChange={onChange} isRequired>
-      <Label className="field-label">{both ? bring.groupOrCoalitionLabel : bring.groupLabel}</Label>
+      <Label className="field-label">{label}</Label>
       <Text slot="description" className="field-hint">
-        {both ? bring.groupOrCoalitionHint : bring.groupHint}
+        {hint}
       </Text>
       <div className="level-options">
         {groups.map((group) => (

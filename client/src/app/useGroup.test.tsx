@@ -239,6 +239,7 @@ describe('useGroup', () => {
       cleared: null,
       newShares: [],
       applications: [],
+      cards: [],
       coalitions: [],
       carries: [],
     });

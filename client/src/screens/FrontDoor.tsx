@@ -38,8 +38,10 @@ import {
   parseDoorPayload,
   readDoor,
 } from '../door/page';
+import type { CardGroup, CardValues } from '../app/reconcile';
 import { nfcLength } from '../engine/text';
 import type { PersonalText } from '../store/personal';
+import { type DoorCardStep, ReconcileAtDoor } from './ReconcileCard';
 
 /** A personal Document the picker offers (#425): its id for the checkbox, and the words a copy carries. */
 export type PersonalChoice = Pick<PersonalText, 'id' | 'title' | 'text'>;
@@ -60,6 +62,18 @@ export interface FrontDoorProps {
   ) => Promise<'sent' | 'failed'>;
   /** This device's personal Documents, oldest first, which the form offers to send a copy of (#425). */
   readonly documents: readonly PersonalChoice[];
+  /**
+   * This device's groups that may propose reconciling with the door's group
+   * (#426): none for a device in no group, and never the door's own.
+   */
+  readonly cardGroups: readonly CardGroup[];
+  /** Propose reconciling's Submit: queues the group's reconcile Proposal; its post leaves the card here. */
+  readonly onMakeCard: (
+    address: Uint8Array,
+    page: OpenPage,
+    groupId: string,
+    values: CardValues,
+  ) => Promise<DoorCardStep>;
 }
 
 /** Where the page has got to: reading it, what it shows, or unable to reach the relay. */
@@ -277,27 +291,58 @@ export function DoorExcerpt({ page }: { readonly page: OpenPage }) {
   );
 }
 
-interface OpenProps {
+interface OpenProps extends Pick<
+  FrontDoorProps,
+  'onApply' | 'documents' | 'cardGroups' | 'onMakeCard'
+> {
   readonly address: Uint8Array;
   readonly page: OpenPage;
   readonly asked: boolean;
-  readonly onApply: FrontDoorProps['onApply'];
-  readonly documents: readonly PersonalChoice[];
 }
 
-/** An open door: the group's name, its excerpt, then the form, or what this device already sent. */
-function Open({ address, page, asked, onApply, documents }: OpenProps) {
+/**
+ * An open door: the group's name, its excerpt, Propose reconciling with this
+ * group for a device with a group that may (#426), then the form, or what
+ * this device already sent.
+ */
+function Open(props: OpenProps) {
+  const { address, page, asked, onApply, documents, cardGroups, onMakeCard } = props;
   const heading = useId();
   const [sent, setSent] = useState(false);
+  const [reconciling, setReconciling] = useState(false);
   const onSend = async (values: ApplyValues) => {
     const outcome = await onApply(address, page, values);
     if (outcome === 'sent') setSent(true);
     return outcome;
   };
+  if (reconciling) {
+    return (
+      <ReconcileAtDoor
+        doorName={page.name}
+        groups={cardGroups}
+        onMake={(groupId, values) => onMakeCard(address, page, groupId, values)}
+        onBack={() => {
+          setReconciling(false);
+        }}
+      />
+    );
+  }
   return (
     <main className="shell">
       <PageHeader eyebrow={door.eyebrow} title={page.name} pageTitle={door.pageTitle} />
       <DoorExcerpt page={page} />
+      {cardGroups.length === 0 ? null : (
+        <div className="row">
+          <Button
+            className="button button-secondary"
+            onPress={() => {
+              setReconciling(true);
+            }}
+          >
+            {door.proposeReconciling}
+          </Button>
+        </div>
+      )}
       <section className="stack door-ask" aria-labelledby={heading}>
         <h2 id={heading} className="heading-3">
           {door.askHeading}
@@ -340,13 +385,15 @@ function useDoor(address: Uint8Array | null, reader: DoorReader, key: string): P
  * address names, as plain text in `<bdi>`, never a member's name, then the
  * form to ask to join: the name to use, why, a copy of any personal
  * Documents the person checks (#425), and a caution, with no contact
- * field. Its page is only what the group's devices posted under the door's
+ * field. A device in a group that may take a card also gets Propose
+ * reconciling with this group, which opens the card's form (#426). Its page is only what the group's devices posted under the door's
  * key, read again on each visit; a closed door, or one with no page, reads
  * "This front door is closed." with no form. A device that already asked
  * here says so instead of the form. The tab's title never carries the
  * group's name.
  */
-export function FrontDoor({ payload, reader, asked, onApply, documents }: FrontDoorProps) {
+export function FrontDoor(props: FrontDoorProps) {
+  const { payload, reader, asked, onApply, documents, cardGroups, onMakeCard } = props;
   const address = useMemo(() => parseDoorPayload(payload), [payload]);
   const [attempt, setAttempt] = useState(0);
   const phase = useDoor(address, reader, `${payload} ${String(attempt)}`);
@@ -373,6 +420,8 @@ export function FrontDoor({ payload, reader, asked, onApply, documents }: FrontD
           asked={asked(payload)}
           onApply={onApply}
           documents={documents}
+          cardGroups={cardGroups}
+          onMakeCard={onMakeCard}
         />
       );
   }

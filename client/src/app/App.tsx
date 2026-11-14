@@ -8,13 +8,13 @@ import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react
 
 import { apply, type ApplyValues, forgetJoined } from '../door/apply';
 import { sendInvite } from '../door/inbox';
-import type { OpenPage } from '../door/page';
+import { type OpenPage, parseDoorPayload } from '../door/page';
 import { can, type Level } from '../engine/capabilities';
 import type { GroupState, Proposal } from '../engine/fold';
 import { removedFrom } from '../engine/removal';
 import { ownBallot } from '../engine/ownBallot';
 import { isPriority } from '../engine/priority';
-import { Applications } from '../screens/Applications';
+import { Applications, type DoorCards } from '../screens/Applications';
 import { GroupChangeLog } from '../screens/ChangeLog';
 import { Composer, type ComposeOutcome } from '../screens/Composer';
 import { CreateGroup, type CreateOutcome } from '../screens/CreateGroup';
@@ -33,7 +33,7 @@ import {
 } from '../screens/GroupStatus';
 import { BringCard } from '../screens/BringCard';
 import { Join } from '../screens/Join';
-import { type CardStep, ReconcileCard } from '../screens/ReconcileCard';
+import { type CardStep, type DoorCardStep, ReconcileCard } from '../screens/ReconcileCard';
 import { LinkNewDevice } from '../screens/LinkNewDevice';
 import { LinkThisDevice } from '../screens/LinkThisDevice';
 import { NewDocumentComposer } from '../screens/NewDocumentComposer';
@@ -96,6 +96,7 @@ import {
   admitCard,
   bringCard,
   broughtTo,
+  type CardGroup,
   type CardValues,
   type FoundCard,
   lookupCard,
@@ -104,6 +105,13 @@ import {
   takePart,
 } from './reconcile';
 import type { Scores } from './Ballot';
+import {
+  bringDoorCard,
+  cardGroupsAt,
+  closeDoorCard,
+  type DoorTarget,
+  makeDoorCard,
+} from './doorCards';
 import { FirstRunGuide } from './FirstRunGuide';
 import {
   addVersion,
@@ -234,9 +242,52 @@ function StartScreen(props: StartScreenProps) {
 }
 
 /**
+ * The groups on this device that may propose reconciling at the door
+ * `payload` names (#426), read once per door; none until the store answers,
+ * or for a link that doesn't parse.
+ */
+function useCardGroups(services: AppServices, payload: string): readonly CardGroup[] {
+  const [answer, setAnswer] = useState<{ payload: string; groups: readonly CardGroup[] } | null>(
+    null,
+  );
+  useEffect(() => {
+    const address = parseDoorPayload(payload);
+    if (address === null) return;
+    let live = true;
+    cardGroupsAt(services, address).then(
+      (groups) => {
+        if (live) setAnswer({ payload, groups });
+      },
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [services, payload]);
+  return answer?.payload === payload ? answer.groups : NO_CARD_GROUPS;
+}
+
+/** No groups to propose reconciling from: one shared empty list, so it never looks changed. */
+const NO_CARD_GROUPS: readonly CardGroup[] = [];
+
+/** Propose reconciling's Submit at a door (#426): the card made, its post leaving it at the door. */
+async function makeCardAt(
+  services: AppServices,
+  door: DoorTarget,
+  groupId: string,
+  values: CardValues,
+): Promise<DoorCardStep> {
+  const made = await makeDoorCard(services, groupId, values, door);
+  return made.outcome === 'too-large'
+    ? { kind: 'too-large' }
+    : { kind: 'queued', proposalId: made.proposalId, post: made.post };
+}
+
+/**
  * A group's front door (#121): its page, and Send, which keeps its reply key
  * on this device, offering a copy of any of this device's personal
- * Documents (#425), which it reads without a key.
+ * Documents (#425), which it reads without a key, and Propose reconciling
+ * with this group for a device in a group that may (#426).
  */
 function DoorScreen({
   services,
@@ -247,6 +298,12 @@ function DoorScreen({
 }) {
   const sent = useSentApplications(services.store);
   const documents = usePersonalList(services.store);
+  const cardGroups = useCardGroups(services, payload);
+  const onMakeCard = useCallback(
+    (address: Uint8Array, page: OpenPage, groupId: string, values: CardValues) =>
+      makeCardAt(services, { address, page }, groupId, values),
+    [services],
+  );
   const asked = useCallback(
     (address: string) => (sent ?? []).some((application) => application.door === address),
     [sent],
@@ -263,6 +320,8 @@ function DoorScreen({
       asked={asked}
       onApply={onApply}
       documents={documents}
+      cardGroups={cardGroups}
+      onMakeCard={onMakeCard}
     />
   );
 }
@@ -640,8 +699,35 @@ interface GroupScreenProps {
 }
 
 /**
+ * The reconcile cards at `groupId`'s door (#426): those this device read,
+ * less any it has queued a close of, how one opens, and Bring it to a vote,
+ * which opens the group's new Proposal, and Dismiss, both closing it for
+ * every member.
+ */
+function doorCardsFor(services: AppServices, groupId: string, group: GroupView): DoorCards {
+  const closing = new Set(
+    group.pending.flatMap(({ event }) =>
+      event.type === 'door-card-closed' ? [event.body.card] : [],
+    ),
+  );
+  return {
+    held: group.cards.filter((card) => !closing.has(card.id)),
+    lookup: (seed) => lookupCard(services, seed),
+    onBring: async (card, found, yourName) => {
+      const proposalId = await bringDoorCard(services, groupId, card, found, yourName);
+      navigate({ name: 'proposal', groupId, proposalId });
+      return true;
+    },
+    onDismiss: async (card) => {
+      await closeDoorCard(services, groupId, card);
+    },
+  };
+}
+
+/**
  * The front door's Applications for group home (#121), while the door is
- * open in effect and this member may invite; otherwise none.
+ * open in effect and this member may invite; otherwise none. Its reconcile
+ * cards come with it (#426).
  */
 function applicationsFor(services: AppServices, group: GroupView & { state: GroupState; me: Me }) {
   const { state, me } = group;
@@ -665,6 +751,7 @@ function applicationsFor(services: AppServices, group: GroupView & { state: Grou
           held === undefined ? held : dismissed(held, id),
         )
       }
+      cards={doorCardsFor(services, groupId, group)}
     />
   );
 }
