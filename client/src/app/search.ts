@@ -29,6 +29,8 @@ export interface SearchRecord {
   readonly at: number;
   /** Where opening it goes. */
   readonly route: Route;
+  /** A section's Atom id: its Document opens scrolled to it. */
+  readonly section?: string;
 }
 
 /** A piece of a snippet: marked when it's a word the query matched. */
