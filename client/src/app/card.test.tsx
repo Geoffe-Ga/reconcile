@@ -6,7 +6,7 @@
  */
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { base64url, fromBase64url } from '../crypto/base64url';
 import { newCardSeed } from '../crypto/card';
@@ -29,6 +29,7 @@ import { type Canary, findCanaries, keyCanaries, textCanary } from '../test/scan
 import { App } from './App';
 import { messages } from './messages';
 import { bringCard } from './reconcile';
+import type { WebShare } from './share';
 
 freshIndexedDBPerTest();
 
@@ -107,6 +108,33 @@ describe('Reconcile with another group', SLOW, () => {
     const proposal = fold(group?.log ?? [], null).proposals.at(-1);
     expect(proposal?.target.kind).toBe('reconcile');
     expect(proposal?.title).toBe('Reconcile into Eastside Housing');
+  });
+
+  it('shares the made card’s link alone through the device’s share sheet (#424)', async () => {
+    const user = userEvent.setup();
+    const fake = createFakeRelay();
+    const { ana, riverside } = await twoGroups(fake);
+    const share = vi.fn<WebShare>(() => Promise.resolve());
+    window.history.replaceState(null, '', `#/g/${riverside}/reconcile`);
+    render(<App services={{ ...ana.services, share }} />);
+
+    await user.type(
+      await screen.findByRole('textbox', { name: 'The coalition’s name' }),
+      'Eastside Housing',
+    );
+    await user.type(
+      screen.getByRole('textbox', { name: 'Its first statement' }),
+      'Everyone has a home.',
+    );
+    await user.type(screen.getByRole('textbox', { name: 'Why' }), 'We share a landlord.');
+    await user.type(screen.getByRole('textbox', { name: 'Your name in the coalition' }), 'Ana E.');
+    await user.click(screen.getByRole('button', { name: 'Make the card' }));
+    const link = await screen.findByRole('textbox', { name: 'Card link' });
+    await user.click(screen.getByRole('button', { name: messages.linkShare.button }));
+
+    expect(share.mock.calls).toEqual([[{ url: (link as HTMLInputElement).value }]]);
+    expect(ana.copied).toEqual([]);
+    expect(await screen.findByText(messages.linkShare.shared)).toBeVisible();
   });
 
   it('shows no link, and offers Try again, when the relay can’t take the card', async () => {

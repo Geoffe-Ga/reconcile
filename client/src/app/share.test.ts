@@ -11,6 +11,7 @@ import {
   downloadFile,
   type FileTargets,
   saveFile,
+  shareLink,
   shareOrCopy,
   type WebShare,
 } from './share';
@@ -151,6 +152,46 @@ describe('shareOrCopy', () => {
     expect(
       await shareOrCopy({ text: 'A vote is open.', url: URL_ }, { share: undefined, copyText }),
     ).toBe('blocked');
+  });
+});
+
+describe('shareLink (#424)', () => {
+  const CARD = 'https://reconcile.test/#reconcile/abc';
+
+  it('hands Web Share the link alone: no title and no text, so nothing names a group', async () => {
+    const share = vi.fn<WebShare>(() => Promise.resolve());
+    const copyText = vi.fn(() => Promise.resolve());
+
+    expect(await shareLink(CARD, { share, copyText })).toBe('shared');
+
+    expect(share.mock.calls).toEqual([[{ url: CARD }]]);
+    expect(copyText).not.toHaveBeenCalled();
+  });
+
+  it('copies the link alone when the browser has no Web Share', async () => {
+    const copyText = vi.fn(() => Promise.resolve());
+    expect(await shareLink(CARD, { share: undefined, copyText })).toBe('copied');
+    expect(copyText.mock.calls).toEqual([[CARD]]);
+  });
+
+  it('copies the link when Web Share refuses it, as without a user’s tap', async () => {
+    const share = vi.fn(() => Promise.reject(new DOMException('No tap', 'NotAllowedError')));
+    const copyText = vi.fn(() => Promise.resolve());
+    expect(await shareLink(CARD, { share, copyText })).toBe('copied');
+    expect(copyText.mock.calls).toEqual([[CARD]]);
+  });
+
+  it('does nothing when someone closes the sheet: no copy, and cancelled', async () => {
+    const share = vi.fn(() => Promise.reject(new DOMException('Share canceled', 'AbortError')));
+    const copyText = vi.fn(() => Promise.resolve());
+    expect(await shareLink(CARD, { share, copyText })).toBe('cancelled');
+    expect(copyText).not.toHaveBeenCalled();
+  });
+
+  it('says so when Web Share refuses and copying is blocked too', async () => {
+    const share = vi.fn(() => Promise.reject(new TypeError('Not shareable')));
+    const copyText = vi.fn(() => Promise.reject(new Error('blocked')));
+    expect(await shareLink(CARD, { share, copyText })).toBe('blocked');
   });
 });
 
