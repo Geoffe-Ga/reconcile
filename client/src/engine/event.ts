@@ -720,6 +720,16 @@ export interface DoorInvitedBody {
 }
 
 /**
+ * Closes a reconcile card that reached the group's front door (#426): a
+ * member brought it to a vote or dismissed it, so no device shows it again.
+ * `card` is the SHA-256 of the card's sealed inbox blob, in unpadded
+ * base64url, kept as written: the fold checks it (frontDoor.ts).
+ */
+export interface DoorCardClosedBody {
+  readonly card: string;
+}
+
+/**
  * Records a Proposal's Discord thread (#123): `url` is the link to the
  * forum thread the author's device opened with the Proposal's first notice.
  * Both are kept as written: the fold checks them (chatPosts.ts).
@@ -962,6 +972,7 @@ export interface EventBodies {
   readonly 'removal-response': RemovalResponseBody;
   readonly remove: RemoveBody;
   readonly 'door-invited': DoorInvitedBody;
+  readonly 'door-card-closed': DoorCardClosedBody;
   readonly 'group-result': GroupResultBody;
   readonly message: MessageBody;
   readonly 'room-wrap': RoomWrapBody;
@@ -1620,6 +1631,10 @@ function parseDoorInvited(body: Json): DoorInvitedBody | null {
   return isString(body.application) ? { application: body.application } : null;
 }
 
+function parseDoorCardClosed(body: Json): DoorCardClosedBody | null {
+  return isString(body.card) ? { card: body.card } : null;
+}
+
 /** The only keys a group-result may carry, so nothing else crosses group lines (#100). */
 const RESULT_KEYS = ['motion', 'result', 'seat'];
 
@@ -1830,8 +1845,8 @@ function withKeyBody(head: Head, type: unknown, body: Json): GroupEvent | null {
 
 /**
  * {@link withBody} for #115's `removal-response` and `remove`, #100's
- * `group-result`, #111's `result`, #121's `door-invited`, #125's `message`
- * and #313's `room-wrap`.
+ * `group-result`, #111's `result`, #121's `door-invited`, #426's
+ * `door-card-closed`, #125's `message` and #313's `room-wrap`.
  */
 function withNewerBody(head: Head, type: unknown, body: Json): GroupEvent | null {
   switch (type) {
@@ -1845,6 +1860,8 @@ function withNewerBody(head: Head, type: unknown, body: Json): GroupEvent | null
       return attach(parseResult(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'door-invited':
       return attach(parseDoorInvited(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'door-card-closed':
+      return attach(parseDoorCardClosed(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'message':
       return attach(parseMessage(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'room-wrap':

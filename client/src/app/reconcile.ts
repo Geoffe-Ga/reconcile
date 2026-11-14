@@ -252,17 +252,28 @@ export async function makeCard(
 
 /**
  * Posts `card`'s envelope to a fresh card mailbox, kept {@link CARD_TTL_DAYS}
- * day, and returns its link only once every PUT has succeeded.
+ * day, and returns its seed only once every PUT has succeeded: what a card
+ * link carries, or a front door's inbox (#426).
  *
- * @throws {Error} when the relay can't be reached; no link exists then.
+ * @throws {Error} when the relay can't be reached.
  */
-export async function postCard(services: Services, card: Card, origin: string): Promise<string> {
+export async function postCardSeed(services: Services, card: Card): Promise<Uint8Array> {
   const seed = newCardSeed();
   const channel = cardChannelOf(seed);
   for (const blob of sealCard(services.seal, channel, card)) {
     await services.relay.putBlob(channel.mailbox, blob, CARD_TTL_DAYS);
   }
-  return cardLink(origin, seed);
+  return seed;
+}
+
+/**
+ * Posts `card`'s envelope as {@link postCardSeed} does, and returns its link
+ * only once every PUT has succeeded.
+ *
+ * @throws {Error} when the relay can't be reached; no link exists then.
+ */
+export async function postCard(services: Services, card: Card, origin: string): Promise<string> {
+  return cardLink(origin, await postCardSeed(services, card));
 }
 
 /**

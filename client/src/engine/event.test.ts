@@ -837,6 +837,9 @@ describe('parseEvent', () => {
     ['door-invited without an application', 'door-invited', {}],
     ['door-invited with a numeric application', 'door-invited', { application: 7 }],
     ['door-invited with a null application', 'door-invited', { application: null }],
+    ['door-card-closed without a card', 'door-card-closed', {}],
+    ['door-card-closed with a numeric card', 'door-card-closed', { card: 7 }],
+    ['door-card-closed with a null card', 'door-card-closed', { card: null }],
     ['chat-thread without a Proposal', 'chat-thread', { url: 'https://discord.com/channels/1/2' }],
     ['chat-thread without a URL', 'chat-thread', { proposal: 'p' }],
     ['chat-thread with a numeric URL', 'chat-thread', { proposal: 'p', url: 7 }],
@@ -1320,6 +1323,19 @@ describe('parseEvent', () => {
       author: ANA,
       ts: 1,
       body: { application: 'a1' },
+    });
+  });
+
+  it('reads a door-card-closed as its card, kept as written, dropping unknown keys (#426)', () => {
+    const body = { card: 'c1', name: 'Riverside', seed: 'x' };
+    const parsed = parseEvent(json(envelope('door-card-closed', body)));
+    expect(parsed?.event).toEqual({
+      v: 1,
+      type: 'door-card-closed',
+      group: 'g1',
+      author: ANA,
+      ts: 1,
+      body: { card: 'c1' },
     });
   });
 

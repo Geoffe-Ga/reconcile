@@ -114,6 +114,26 @@ export interface ReceivedApplication {
   readonly dismissed?: true;
 }
 
+/**
+ * A reconcile card another group left at the front door (#426), as a
+ * member's device read it from the inbox. Only its seed travels; the card
+ * itself waits in its own mailbox for 24 to 48 hours.
+ */
+export interface ReceivedCard {
+  /** The SHA-256 of its sealed blob, in unpadded base64url: what a `door-card-closed` names. */
+  readonly id: string;
+  /** Its place in the relay's order. */
+  readonly seq: number;
+  /** The relay minute it arrived. */
+  readonly received: number;
+  /**
+   * The card's 32-byte seed in unpadded base64url, which opens it: dropped
+   * once the card is closed or surely gone from the relay, so the device
+   * keeps it no longer than it can be brought to a vote.
+   */
+  readonly seed?: string;
+}
+
 /** A group's front-door inbox as this device last read it. */
 export interface DoorInbox {
   /** The inbox mailbox id it was read from: a new door's inbox starts afresh. */
@@ -124,6 +144,8 @@ export interface DoorInbox {
   readonly instance: string | null;
   /** Every application read, oldest first, by id. */
   readonly applications: readonly ReceivedApplication[];
+  /** Every reconcile card read (#426), oldest first, by id; none on an inbox kept before. */
+  readonly cards?: readonly ReceivedCard[];
 }
 
 /** The applications sent store's side of the device's store. */
@@ -150,6 +172,37 @@ export function withApplications(
     return true;
   });
   return { ...inbox, applications: [...inbox.applications, ...fresh] };
+}
+
+/** `inbox` with `cards` added (#426), each once by id, in the order read. */
+export function withCards(inbox: DoorInbox, cards: readonly ReceivedCard[]): DoorInbox {
+  const held = inbox.cards ?? [];
+  const known = new Set(held.map((card) => card.id));
+  const fresh = cards.filter((card) => {
+    if (known.has(card.id)) return false;
+    known.add(card.id);
+    return true;
+  });
+  return { ...inbox, cards: [...held, ...fresh] };
+}
+
+/**
+ * `inbox` with the seed dropped from each card `done` names (#426): closed by
+ * a member, or surely gone from the relay. The cards stay, so none is read
+ * in again.
+ */
+export function withoutCardSeeds(
+  inbox: DoorInbox,
+  done: (card: ReceivedCard) => boolean,
+): DoorInbox {
+  if (inbox.cards === undefined) return inbox;
+  return {
+    ...inbox,
+    cards: inbox.cards.map((card) => {
+      const { seed, ...kept } = card;
+      return seed === undefined || !done(card) ? card : kept;
+    }),
+  };
 }
 
 /** `application` without the copy of Documents it carried (#425). */

@@ -31,7 +31,8 @@ import {
   sealPadded,
 } from '../crypto/door';
 import { signEvent } from '../engine/event';
-import { type DoorInviteState, inviteFor, mayRecordInvite } from '../engine/frontDoor';
+import type { GroupState } from '../engine/fold';
+import { cardClosedFor, inviteFor, mayRecordInvite } from '../engine/frontDoor';
 import type { FrontDoor } from '../engine/optIns';
 import type { Relay, RelayPage } from '../net/relay';
 import {
@@ -39,12 +40,16 @@ import {
   heldWithoutCopies,
   holdsCopies,
   type ReceivedApplication,
+  type ReceivedCard,
   withApplications,
+  withCards,
+  withoutCardSeeds,
   withoutCopies,
 } from '../store/applications';
 import type { Store } from '../store/db';
 import { foldGroup } from '../store/expiry';
 import { parseApplication } from './apply';
+import { cardGoneAt, cardsIn } from './card';
 import { addressOf } from './page';
 
 /** How long the relay keeps a reply: 2 days, as the invite it carries lasts 1 to 2 (#73). */
@@ -88,18 +93,36 @@ function applicationsIn(
   });
 }
 
+/** What tidying the inbox reads of the group: its invites, its closed cards and its relay minute. */
+export type DoorDone = Pick<GroupState, 'doorInvites' | 'doorCardsClosed' | 'at'>;
+
 /** Whether an invite has folded for application `id` in `state`: it's answered. */
-function answeredIn(state: Pick<DoorInviteState, 'doorInvites'>): (id: string) => boolean {
+function answeredIn(state: DoorDone): (id: string) => boolean {
   return (id) => inviteFor(state, id) !== undefined;
+}
+
+/**
+ * Whether a card is done with in `state` (#426): a member closed it, or the
+ * relay has surely dropped it by the group's relay minute.
+ */
+function cardDoneIn(state: DoorDone): (card: ReceivedCard) => boolean {
+  return (card) =>
+    cardClosedFor(state, card.id) !== undefined || state.at >= cardGoneAt(card.received);
+}
+
+/** `inbox` without what `state` says is done with: answered copies and spent cards' seeds. */
+function tidied(inbox: DoorInbox, state: DoorDone): DoorInbox {
+  return withoutCardSeeds(withoutCopies(inbox, answeredIn(state)), cardDoneIn(state));
 }
 
 /**
  * Reads the door's inbox after the cursor this device holds for it, and
  * keeps each new application. A door whose inbox differs from the one held,
  * after a rotation, starts afresh; a relay instance the device hasn't seen is
- * read again from the start, and applications already held stay, once each.
- * Each application `state` holds an invite for keeps no copy of Documents
- * (#425).
+ * read again from the start, and applications and cards already held stay,
+ * once each. Each application `state` holds an invite for keeps no copy of
+ * Documents (#425), and each card it closed or the relay dropped no seed
+ * (#426).
  *
  * @throws {Error} when the relay can't be reached or answers wrongly.
  */
@@ -107,7 +130,7 @@ export async function readInbox(
   services: InboxServices,
   groupId: string,
   door: FrontDoor,
-  state: Pick<DoorInviteState, 'doorInvites'>,
+  state: DoorDone,
 ): Promise<void> {
   const { inbox } = doorChannelsOf(addressOf(door));
   const held = (await services.store.getGroup(groupId))?.door;
@@ -116,29 +139,40 @@ export async function readInbox(
   if (start.instance !== null && page.instance !== start.instance) {
     page = await services.relay.getBlobs(inbox, 0);
   }
-  const found = applicationsIn(page, inbox, fromBase64url(door.box));
+  const boxSecret = fromBase64url(door.box);
+  const found = applicationsIn(page, inbox, boxSecret);
+  const cards = cardsIn(page, inbox, boxSecret);
   const cursor = page.records.at(-1)?.seq ?? start.cursor;
   await services.store.updateInbox(groupId, (current) => {
     const base = current?.inbox === inbox ? current : fresh(inbox);
     const read = withApplications({ ...base, cursor, instance: page.instance }, found);
-    return withoutCopies(read, answeredIn(state));
+    return tidied(withCards(read, cards), state);
   });
+}
+
+/** Whether `held` keeps anything `state` says is done with: an answered copy or a spent card's seed. */
+function holdsDone(held: DoorInbox | undefined, state: DoorDone): boolean {
+  const spent = cardDoneIn(state);
+  const seeds = (held?.cards ?? []).some((card) => card.seed !== undefined && spent(card));
+  return seeds || holdsCopies(held, answeredIn(state));
 }
 
 /**
  * Deletes the copy of Documents from each application `state` holds an
- * invite for (#425), with no request, and writes nothing when there's none.
+ * invite for (#425), and the seed of each card it closed or the relay
+ * dropped (#426), with no request, writing nothing when there's none.
  * `held` is the inbox the device holds for `groupId`.
  */
 export async function forgetAnswered(
   store: Pick<Store, 'updateInbox'>,
   groupId: string,
   held: DoorInbox | undefined,
-  state: Pick<DoorInviteState, 'doorInvites'>,
+  state: DoorDone,
 ): Promise<void> {
-  const answered = answeredIn(state);
-  if (!holdsCopies(held, answered)) return;
-  await store.updateInbox(groupId, (current) => heldWithoutCopies(current, answered));
+  if (!holdsDone(held, state)) return;
+  await store.updateInbox(groupId, (current) =>
+    current === undefined ? current : tidied(current, state),
+  );
 }
 
 /**

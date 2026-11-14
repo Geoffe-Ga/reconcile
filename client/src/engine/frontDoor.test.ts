@@ -8,7 +8,13 @@ import { LEVELS } from './capabilities';
 import { parseRecord } from './event';
 import { EXPIRES_WITH_BALLOTS, expiringProposal, resultFor } from './expiry';
 import { fold } from './fold';
-import { inviteFor, isApplicationId, mayRecordInvite } from './frontDoor';
+import {
+  cardClosedFor,
+  inviteFor,
+  isApplicationId,
+  mayCloseCard,
+  mayRecordInvite,
+} from './frontDoor';
 
 /** The follower level, which reads but doesn't invite, by place, so no level id is spelled out here. */
 const [FOLLOWING, VOTING] = LEVELS;
@@ -193,5 +199,67 @@ describe('a cleared “open a front door” Proposal (#111)', () => {
     expect(event?.type).toBe('door-invited');
     expect(event === null || event === undefined ? 'missing' : expiringProposal(event)).toBeNull();
     expect(EXPIRES_WITH_BALLOTS).not.toContain('door-invited');
+  });
+});
+
+describe('door-card-closed: a card from the front door brought to a vote or dismissed (#426)', () => {
+  const C1 = application(0xc1);
+  const C2 = application(0xc2);
+
+  it('lets anyone who may propose close one, the door open or not, once per card', () => {
+    const log = opened(DOOR, { levels: { Cal: VOTING } });
+    expect(mayCloseCard(log.state(), authorOf('ben'), C1)).toBe(true);
+    // A Collaborator may invite but not propose, and closing a card speaks for the group.
+    expect(mayCloseCard(log.state(), authorOf('cal'), C1)).toBe(false);
+    const first = log.doorCardClosed('Ben', C1);
+    log.minute += 1;
+    const second = log.doorCardClosed('Ana', C1);
+    const other = log.doorCardClosed('Ana', C2);
+    const state = log.state();
+    expect(state.doorCardsClosed).toEqual([
+      {
+        id: first,
+        seq: expect.any(Number) as number,
+        received: state.at - 1,
+        by: authorOf('ben'),
+        card: C1,
+      },
+      {
+        id: other,
+        seq: expect.any(Number) as number,
+        received: state.at,
+        by: authorOf('ana'),
+        card: C2,
+      },
+    ]);
+    expect(state.ignored.map((record) => record.id)).toEqual([second]);
+    expect(cardClosedFor(state, C1)?.by).toBe(authorOf('ben'));
+    expect(cardClosedFor(state, application(0xff))).toBeUndefined();
+    expect(mayCloseCard(state, authorOf('ana'), C1)).toBe(false);
+  });
+
+  it('ignores one from a Collaborator, a follower, a newcomer or no member, or naming no SHA-256', () => {
+    const log = groupLog({
+      members: ['Ben', 'Cal', 'Dan'],
+      levels: { Cal: VOTING, Dan: FOLLOWING },
+      newcomers: ['Dee'],
+    });
+    const ignored = [
+      log.doorCardClosed('Cal', C1),
+      log.doorCardClosed('Dan', C1),
+      log.doorCardClosed('Dee', C1),
+      log.doorCardClosed('Zed', C1),
+      log.doorCardClosed('Ben', 'not-a-card'),
+    ];
+    const state = log.state();
+    expect(state.doorCardsClosed).toEqual([]);
+    expect(state.ignored.map((record) => record.id)).toEqual(ignored);
+    // With no front door ever opened, a proposer still closes one: nothing else hangs on it.
+    log.doorCardClosed('Ben', C1);
+    expect(log.state().doorCardsClosed.map((closed) => closed.card)).toEqual([C1]);
+  });
+
+  it('expires nothing with ballots: a closed card stays closed', () => {
+    expect(EXPIRES_WITH_BALLOTS).not.toContain('door-card-closed');
   });
 });
