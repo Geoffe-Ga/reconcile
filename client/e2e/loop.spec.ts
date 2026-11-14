@@ -7,7 +7,8 @@
  *
  * axe checks every screen they settle on, and any CSP violation in any page
  * fails the test. Nothing here moves time: everyone scores, so the vote
- * closes early.
+ * closes early. Last, C opens Discover from the tab bar on a phone, and axe
+ * checks it in both themes (#423).
  */
 import { type Locator, type Page } from '@playwright/test';
 
@@ -38,6 +39,8 @@ const PEOPLE = [
   'Cal, invited by Ana, Co-Creator',
 ];
 const PROPOSAL = 'Later quiet hours on weekends';
+/** A phone's viewport, for Discover's last look (#423). */
+const PHONE = { width: 390, height: 844 };
 const NEW_TEXT = 'Quiet hours start at 10pm, and at 11pm on Fridays and Saturdays.';
 
 /** Joins from Join's form, at Join's preselected level unless `level` names another, then waits for Group home. */
@@ -256,5 +259,24 @@ test('three members propose, vote and see the Update', async ({ openProfile }) =
 
   await test.step('the vote closes early, and all three show the new section', async () => {
     for (const person of [ana, ben, cal]) await expectUpdate(person);
+  });
+
+  await test.step('C opens Discover from the tab bar on a phone, in both themes', async () => {
+    const { page } = cal;
+    await page.setViewportSize(PHONE);
+    await page.goto('/#/');
+    await expect(heading(page, 'Your groups')).toBeVisible();
+    const tabs = page.getByRole('navigation', { name: 'Main' });
+    await tabs.getByRole('link', { name: 'Discover' }).click();
+    await expect(heading(page, 'Discover')).toBeVisible();
+    await expect(tabs.getByRole('link', { name: 'Discover' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    await expect(page.getByRole('textbox', { name: 'Card or link' })).toBeVisible();
+    for (const colorScheme of ['dark', 'light'] as const) {
+      await page.emulateMedia({ colorScheme });
+      await expectAccessible(cal, `Discover on a phone, ${colorScheme}`);
+    }
   });
 });
