@@ -42,7 +42,8 @@
 }
 
 .steady > *,
-.steady::after {
+.steady::after,
+.steady[data-room-alt]::before {
   grid-area: 1 / 1;
 }
 
@@ -51,6 +52,16 @@
 .steady::after {
   order: -1;
   content: attr(data-room);
+  visibility: hidden;
+}
+
+/* Where the words can say either of two longest things, `data-room-alt`
+ * keeps the other's room in the same cell, so the wider wins whatever its
+ * glyphs (#417). Made only with the attribute, so a box with one room keeps
+ * its baseline as above. */
+.steady[data-room-alt]::before {
+  order: -1;
+  content: attr(data-room-alt);
   visibility: hidden;
 }
 
