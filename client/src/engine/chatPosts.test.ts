@@ -271,7 +271,7 @@ describe('a Proposal’s Discord thread link (#123)', () => {
   });
 });
 
-describe('mayRecordThread and threadFor: who records a Proposal’s thread (#123)', () => {
+describe('mayRecordThread and threadFor: who records a Proposal’s thread (#123, #245)', () => {
   /** The bot on, Ben's edit, and Cal's winning claim of its opening. */
   function opened() {
     const log = botOn();
@@ -298,7 +298,7 @@ describe('mayRecordThread and threadFor: who records a Proposal’s thread (#123
     expect(mayRecordThread(state, authorOf('cal'), edit)).toBe(false);
   });
 
-  it('lets nobody else record it, nor anyone before an open claim has won', () => {
+  it('lets nobody else record it, nor anyone before any claim has won', () => {
     const log = botOn();
     const edit = log.propose('Ben');
     expect(mayRecordThread(log.state(), authorOf('ben'), edit)).toBe(false);
@@ -309,14 +309,37 @@ describe('mayRecordThread and threadFor: who records a Proposal’s thread (#123
     expect(mayRecordThread(log.state(), authorOf('cal'), 'no-such-proposal')).toBe(false);
   });
 
-  it('lets nobody record one from a winning claim of a later moment', () => {
+  it('lets the winner of a later moment’s claim record it while none is kept, and nobody else (#245)', () => {
     const log = botOn();
     const edit = log.propose('Ben', { window: 3 });
     // A 3-day vote is closing from its second day, and nobody claimed its opening.
     log.minute += 2 * DAY_MINUTES;
     log.chatPosted('Cal', edit, 'closing');
     expect(claimFor(log.state(), edit, 'closing')?.by).toBe(authorOf('cal'));
+    expect(mayRecordThread(log.state(), authorOf('cal'), edit)).toBe(true);
+    for (const name of ['ana', 'ben', 'zed']) {
+      expect(mayRecordThread(log.state(), authorOf(name), edit)).toBe(false);
+    }
+
+    log.chatThread('Cal', edit, THREAD_URL);
+    // Its result's winner posts into the kept thread, and records none of their own.
+    log.minute += DAY_MINUTES;
+    log.chatPosted('Ana', edit, 'result');
+    expect(claimFor(log.state(), edit, 'result')?.by).toBe(authorOf('ana'));
+    expect(mayRecordThread(log.state(), authorOf('ana'), edit)).toBe(false);
+    expect(threadFor(log.state(), edit)?.by).toBe(authorOf('cal'));
+  });
+
+  it('lets the opening’s winner record it when a later moment’s winner hasn’t yet, and then no one (#245)', () => {
+    const { log, edit } = opened();
+    log.minute += 6 * DAY_MINUTES;
+    log.chatPosted('Ana', edit, 'closing');
+    // Cal won the opening and Ana the closing: either may record the thread, the first kept.
+    expect(mayRecordThread(log.state(), authorOf('cal'), edit)).toBe(true);
+    expect(mayRecordThread(log.state(), authorOf('ana'), edit)).toBe(true);
+    log.chatThread('Ana', edit, THREAD_URL);
     expect(mayRecordThread(log.state(), authorOf('cal'), edit)).toBe(false);
+    expect(threadFor(log.state(), edit)?.by).toBe(authorOf('ana'));
   });
 
   it('lets the open claimant record nothing while the bot is narrowed, off, or they have left or are suspended', () => {
@@ -334,7 +357,7 @@ describe('mayRecordThread and threadFor: who records a Proposal’s thread (#123
     expect(mayRecordThread(suspended.log.state(), authorOf('cal'), suspended.edit)).toBe(false);
   });
 
-  it('keeps at most one thread per Proposal, from its open claimant, with a valid link, however records arrive', () => {
+  it('keeps at most one thread per Proposal, from a member who won one of its claims, with a valid link, however records arrive', () => {
     const who = fc.constantFrom('Ana', 'Ben', 'Cal', 'Zed');
     const link = fc.oneof(
       fc
