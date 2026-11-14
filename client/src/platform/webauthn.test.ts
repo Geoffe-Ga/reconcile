@@ -286,6 +286,8 @@ describe('through passkey setup and unlock, on a real store (#95)', () => {
       signingKey: new Uint8Array(32).fill(2),
       me: { author: 'author-sol', name: CANARY.name },
     });
+    // A way back, so a passkey may seal (#389): contacts chosen on another device, by their split.
+    await store.setRelayBackupKey(new Uint8Array(32).fill(5), 'split-chosen-elsewhere');
     const deps = { store, webauthn: webAuthn(authenticator.calls), platform: ANDROID, rpId: RP_ID };
     return { store, deps, authenticator, passkey: passkeyOn(deps) };
   }

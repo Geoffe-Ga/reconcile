@@ -8,6 +8,7 @@ import { holdPresses } from '../app/holdPresses';
 import { messages } from '../app/messages';
 import type { Protection } from '../app/passkey';
 import { PasskeySetup } from '../app/PasskeySetup';
+import { hasRecoveryPath, type RecoveryPath } from '../app/recoveryPath';
 import { RestoreBackup, type RestoreBackupProps } from '../app/RestoreBackup';
 import { routeHref } from '../app/router';
 import { SaveBackup } from '../app/SaveBackup';
@@ -56,10 +57,13 @@ export interface RecoveryProps {
 
 /**
  * Settings' passkey section (#95): the keys are locked with a passkey, a
- * passkey can be set up, or this device can't protect them with one.
+ * passkey can be set up, or this device can't protect them with one; and the
+ * groups' way back if the passkey ever stops unlocking them (#389).
  */
 export interface SettingsPasskey {
   readonly state: 'locked' | 'offered' | 'unavailable';
+  /** The groups' way back: setup shows only with one, and a lock without one asks for one. */
+  readonly path: RecoveryPath;
   /** Tap 1: makes the passkey. */
   readonly onCreate: () => Promise<Uint8Array>;
   /** Tap 2: locks the keys with it when it can. */
@@ -286,16 +290,45 @@ function NotifySection({ notify }: { readonly notify: NotifyProps }) {
 }
 
 /**
+ * Keys locked with a passkey (#95): one line saying so. Where the groups have
+ * no way back (#389), as on a device locked before that rule, they stay
+ * locked, and a notice asks for a backup file or recovery contacts above.
+ */
+function LockedPasskey({ path }: { readonly path: RecoveryPath }) {
+  const words = messages.passkey;
+  return (
+    <div className="stack">
+      <p className="lede">{words.locked}</p>
+      {hasRecoveryPath(path) || path === 'empty' ? null : (
+        <p className="notice passkey-no-way-back">{words.lockedNoWayBack}</p>
+      )}
+    </div>
+  );
+}
+
+/**
  * Lock with a passkey (#95): what it does and the two-tap setup, or one line
  * saying the keys are locked, or that this device can't protect them. The
- * passkey can't be turned off yet (deferred past the MVP). Save a backup sits
- * on this same screen, so the no-PRF line links nowhere, and its one primary
+ * passkey can't be turned off yet (deferred past the MVP). Setup shows only
+ * once the groups have a way back (#389); before that, one line sends the
+ * person to Save a backup and Recovery contacts above. Save a backup sits on
+ * this same screen, so the no-PRF line links nowhere, and its one primary
  * action is Make a backup file, so this button is secondary.
  */
 function PasskeySection({ passkey }: { readonly passkey: SettingsPasskey }) {
   const words = messages.passkey;
-  if (passkey.state === 'locked') return <p className="lede">{words.locked}</p>;
+  if (passkey.state === 'locked') return <LockedPasskey path={passkey.path} />;
   if (passkey.state === 'unavailable') return <p className="lede">{words.noPrf}</p>;
+  if (!hasRecoveryPath(passkey.path)) {
+    return (
+      <div className="stack">
+        <p className="lede">{words.lede}</p>
+        <p className="lede">
+          {passkey.path === 'empty' ? words.settingsEmpty : words.settingsGate}
+        </p>
+      </div>
+    );
+  }
   return (
     <div className="stack">
       <p className="lede">{words.lede}</p>

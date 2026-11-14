@@ -11,3 +11,17 @@
 .passkey-ended:focus {
   outline: none;
 }
+
+/*
+ * A way back first (#389): Save a backup's form inside the offer, at the
+ * lede's measure, so its fields line up with Settings' own.
+ */
+.passkey-gate {
+  max-width: 34em;
+}
+
+/* In a stack, the gap spaces the notice; its own top margin would double it. */
+.stack > .notice.passkey-no-way-back {
+  max-width: 34em;
+  margin-block-start: 0;
+}

@@ -108,6 +108,24 @@ describe('PasskeySetup', () => {
     expect(await axeViolations()).toEqual([]);
   });
 
+  it('says nothing was locked when the groups had no way back, linking to Save a backup where asked (#389)', async () => {
+    const { user, onEnd } = setup({
+      onProtect: vi.fn(() => Promise.resolve<Protection>('no-recovery')),
+      linkBackup: true,
+    });
+
+    await user.click(screen.getByRole('button', { name: passkey.create }));
+    await user.click(await screen.findByRole('button', { name: passkey.confirm }));
+
+    expect(await screen.findByText(passkey.noRecovery)).toHaveFocus();
+    expect(screen.getByRole('link', { name: passkey.saveBackup })).toHaveAttribute(
+      'href',
+      '#/settings',
+    );
+    expect(onEnd).toHaveBeenCalledWith('no-recovery');
+    expect(await axeViolations()).toEqual([]);
+  });
+
   it('links nowhere from the no-PRF line in Settings, which holds Save a backup itself', async () => {
     const { user } = setup({ onProtect: vi.fn(() => Promise.resolve<Protection>('no-prf')) });
 

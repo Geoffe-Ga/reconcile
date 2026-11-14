@@ -12,6 +12,7 @@ import type { InviteLookup } from './actions';
 import { FirstRunGate, type OpenedApp } from './FirstRunGate';
 import { messages } from './messages';
 import type { DeviceLock, Passkey, Protection } from './passkey';
+import type { RecoveryPath } from './recoveryPath';
 
 const ORIGIN = 'https://reconcile.example';
 
@@ -71,6 +72,8 @@ interface Options {
   readonly passkeyAvailable?: boolean;
   /** Whether this device answered the passkey offer. */
   readonly offerAnswered?: boolean;
+  /** The groups' way back, which the offer reads first (#389); a backup file unless named. */
+  readonly path?: RecoveryPath;
   /** What Restore on the unlock screen does. */
   readonly restore?: DeviceLock['restore'];
 }
@@ -109,8 +112,13 @@ function setup(options: Options = {}) {
   const passkey: Passkey = {
     available: options.passkeyAvailable ?? false,
     isProtected: () => Promise.resolve(false),
+    recoveryPath: () => Promise.resolve(options.path ?? 'backup'),
     create: () => Promise.resolve(Uint8Array.of(1)),
     protect: () => Promise.resolve<Protection>('protected'),
+  };
+  const backup = {
+    onMake: () => Promise.reject(new Error('unused')),
+    onSave: () => Promise.resolve('downloaded' as const),
   };
   const onErase = vi.fn(() => Promise.resolve());
   const passkeyOffer = memoryOffer(options.offerAnswered ?? false, events);
@@ -134,6 +142,7 @@ function setup(options: Options = {}) {
       readDoor={() => Promise.resolve({ kind: 'closed' })}
       lock={lock}
       passkey={passkey}
+      backup={backup}
       passkeyOffer={passkeyOffer}
       onErase={onErase}
     >
@@ -304,6 +313,8 @@ describe('FirstRunGate with a front door’s link (#121)', () => {
 
 const offerHeading = () =>
   screen.queryByRole('heading', { level: 1, name: messages.passkey.title });
+/** The offer, once it has read the groups' way back (#389). */
+const offered = () => screen.findByRole('heading', { level: 1, name: messages.passkey.title });
 const unlockHeading = () =>
   screen.queryByRole('heading', { level: 1, name: messages.unlock.title });
 
@@ -313,18 +324,42 @@ describe('FirstRunGate and the passkey offer (#95)', () => {
 
     await user.click(screen.getByRole('button', { name: 'I understand' }));
 
-    expect(offerHeading()).toBeVisible();
+    expect(await offered()).toBeVisible();
     expect(app).not.toHaveBeenCalled();
     await user.click(screen.getByRole('button', { name: messages.passkey.notNow }));
     expect(appHeading()).toBeVisible();
     expect(events.filter((event) => event !== 'persist')).toEqual(['accept', 'answer']);
   });
 
-  it('offers it at the next launch to a device that accepted the notice before passkeys came', () => {
+  it('offers it at the next launch to a device that accepted the notice before passkeys came', async () => {
     setup({ accepted: true, passkeyAvailable: true });
 
-    expect(offerHeading()).toBeVisible();
+    expect(await offered()).toBeVisible();
     expect(appHeading()).not.toBeInTheDocument();
+  });
+
+  it('shows the offer at once on a device with no group yet, and Continue answers nothing (#389)', async () => {
+    const { user, events } = setup({ passkeyAvailable: true, path: 'empty' });
+
+    await user.click(screen.getByRole('button', { name: 'I understand' }));
+    // In the same commit as the notice goes, as e2e's first run reads it.
+    expect(offerHeading()).toBeVisible();
+    await user.click(await screen.findByRole('button', { name: messages.passkey.continue }));
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'The app' })).toBeVisible();
+    expect(events).not.toContain('answer');
+  });
+
+  it('asks for a way back first, and opens recovery contacts without an answer (#389)', async () => {
+    const { user, events } = setup({ accepted: true, passkeyAvailable: true, path: 'none' });
+
+    expect(await offered()).toBeVisible();
+    expect(screen.getByText(messages.passkey.gate)).toBeVisible();
+    await user.click(screen.getByRole('link', { name: messages.passkey.gateContacts }));
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'The app' })).toBeVisible();
+    expect(window.location.hash).toBe('#/recovery');
+    expect(events).not.toContain('answer');
   });
 
   it('doesn’t offer it again once answered', () => {
@@ -353,6 +388,7 @@ describe('FirstRunGate and the passkey offer (#95)', () => {
 
     await user.click(screen.getByRole('button', { name: 'I understand' }));
     expect(window.location.hash).toBe('#/join');
+    await offered();
     await user.click(screen.getByRole('button', { name: messages.passkey.notNow }));
 
     expect(opened.at(-1)?.heldSeed).toEqual(invite);

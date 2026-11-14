@@ -24,6 +24,7 @@ function setup(props: Partial<SettingsProps> = {}) {
     onErase: vi.fn(() => new Promise<void>(() => undefined)),
     passkey: {
       state: 'offered',
+      path: 'backup',
       onCreate: vi.fn(() => Promise.resolve(Uint8Array.of(1))),
       onProtect: vi.fn(() => Promise.resolve('protected' as const)),
     },
@@ -88,16 +89,66 @@ describe('Settings', () => {
   });
 
   it('says the keys are locked with a passkey, offering nothing to turn it off', async () => {
-    setup({ passkey: { state: 'locked', onCreate: vi.fn(), onProtect: vi.fn() } });
+    setup({
+      passkey: { state: 'locked', path: 'contacts', onCreate: vi.fn(), onProtect: vi.fn() },
+    });
     const section = screen.getByRole('region', { name: 'Lock with a passkey' });
 
     expect(section).toHaveTextContent(messages.passkey.locked);
+    expect(section).not.toHaveTextContent(messages.passkey.lockedNoWayBack);
     expect(within(section).queryByRole('button')).not.toBeInTheDocument();
     expect(await axeViolations()).toEqual([]);
   });
 
+  it('keeps keys locked before #389 locked, and asks for a way back where they have none (#389)', async () => {
+    setup({ passkey: { state: 'locked', path: 'none', onCreate: vi.fn(), onProtect: vi.fn() } });
+    const section = screen.getByRole('region', { name: 'Lock with a passkey' });
+
+    expect(within(section).getByText(messages.passkey.locked)).toBeVisible();
+    const notice = within(section).getByText(messages.passkey.lockedNoWayBack);
+    expect(notice).toHaveClass('notice');
+    // Nothing unlocks or unseals here: the person saves a file or chooses contacts above.
+    expect(within(section).queryByRole('button')).not.toBeInTheDocument();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('asks for a way back before a passkey, sending the person to the sections above (#389)', async () => {
+    setup({
+      passkey: { state: 'offered', path: 'none', onCreate: vi.fn(), onProtect: vi.fn() },
+    });
+    const section = screen.getByRole('region', { name: 'Lock with a passkey' });
+
+    expect(within(section).getByText(messages.passkey.lede)).toBeVisible();
+    expect(within(section).getByText(messages.passkey.settingsGate)).toBeVisible();
+    expect(within(section).queryByRole('button')).not.toBeInTheDocument();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('says a passkey waits for a group, on a device with none (#389)', () => {
+    setup({
+      hasGroups: false,
+      passkey: { state: 'offered', path: 'empty', onCreate: vi.fn(), onProtect: vi.fn() },
+    });
+    const section = screen.getByRole('region', { name: 'Lock with a passkey' });
+
+    expect(within(section).getByText(messages.passkey.settingsEmpty)).toBeVisible();
+    expect(within(section).queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  it('offers the passkey once recovery contacts are a way back (#389)', () => {
+    setup({
+      passkey: { state: 'offered', path: 'contacts', onCreate: vi.fn(), onProtect: vi.fn() },
+    });
+    const section = screen.getByRole('region', { name: 'Lock with a passkey' });
+
+    expect(within(section).getByRole('button', { name: 'Make a passkey' })).toBeVisible();
+    expect(within(section).queryByText(messages.passkey.settingsGate)).not.toBeInTheDocument();
+  });
+
   it('says plainly where a passkey can’t protect the keys, offering no setup', async () => {
-    setup({ passkey: { state: 'unavailable', onCreate: vi.fn(), onProtect: vi.fn() } });
+    setup({
+      passkey: { state: 'unavailable', path: 'none', onCreate: vi.fn(), onProtect: vi.fn() },
+    });
     const section = screen.getByRole('region', { name: 'Lock with a passkey' });
 
     expect(section).toHaveTextContent(

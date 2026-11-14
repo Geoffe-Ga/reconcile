@@ -5,12 +5,13 @@
  * outside first run, so anyone can read it in any browser without a notice,
  * an install or a key.
  */
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 
 import { readDoor } from '../door/page';
 import { SharedPage } from '../screens/SharedPage';
 import { lookupInvite } from './actions';
 import { App } from './App';
+import { type BackupToSave, makeBackup, saveBackup } from './backup';
 import { FirstRunGate, type FirstRunServices } from './FirstRunGate';
 import { useRoute } from './router';
 import type { AppServices } from './services';
@@ -28,6 +29,13 @@ export function Root({ services, firstRun }: RootProps) {
   const route = useRoute();
   const lookup = useCallback((seed: Uint8Array) => lookupInvite(services, seed), [services]);
   const read = useCallback((address: Uint8Array) => readDoor(services, address), [services]);
+  const backup = useMemo(
+    () => ({
+      onMake: (passphrase: string) => makeBackup(services, passphrase),
+      onSave: (file: BackupToSave) => saveBackup(services, file),
+    }),
+    [services],
+  );
   if (route.name === 'shared') return <SharedPage payload={route.payload} reader={services} />;
   return (
     <FirstRunGate
@@ -37,6 +45,7 @@ export function Root({ services, firstRun }: RootProps) {
       lookup={lookup}
       readDoor={read}
       passkey={services.passkey}
+      backup={backup}
       onErase={services.erase}
     >
       {({ heldSeed, persistence }) => (

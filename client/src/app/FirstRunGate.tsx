@@ -12,6 +12,9 @@
  * 4. **The passkey offer** (#95), once, where a passkey can lock the keys
  *    and this device hasn't answered it yet: right after the notice on a new
  *    device, and at the next launch on one that accepted the notice before.
+ *    It locks nothing until the groups have a way back (#389): on a device
+ *    with no group yet it closes at once without an answer, and so does
+ *    choosing recovery contacts from it, so it comes back at a later launch.
  * 5. **The app**, with any invite link still in hand.
  *
  * It wraps the whole app, so every later screen sits behind it. An invite
@@ -34,6 +37,7 @@ import { UnlockScreen } from '../screens/UnlockScreen';
 import type { InviteLookup } from './actions';
 import { parseInvitePayload } from './invite';
 import type { DeviceLock, Passkey } from './passkey';
+import type { SaveBackupProps } from './SaveBackup';
 import { parseRoute, replaceRoute } from './router';
 
 /** What first run reads and records on this device, built once by `main.tsx`. */
@@ -70,6 +74,8 @@ export interface FirstRunGateProps extends FirstRunServices {
   readonly readDoor: (address: Uint8Array) => Promise<DoorView>;
   /** Passkey setup, for the offer (#95). */
   readonly passkey: Passkey;
+  /** Save a backup's making and saving, for the offer's way back (#389). */
+  readonly backup: Pick<SaveBackupProps, 'onMake' | 'onSave'>;
   /** Erases all of Reconcile's data on this device, for the unlock screen (#95). */
   readonly onErase: () => Promise<void>;
   /** The app, once first run is through. */
@@ -204,6 +210,9 @@ function useSteps(props: FirstRunGateProps, open: boolean) {
       passkeyOffer.answer();
       setOffering(false);
     },
+    skipOffer: () => {
+      setOffering(false);
+    },
   };
 }
 
@@ -236,7 +245,14 @@ export function FirstRunGate(props: FirstRunGateProps) {
         <UnlockScreen onUnlock={steps.unlock} onRestore={steps.restore} onErase={props.onErase} />
       );
     case 'offer':
-      return <PasskeyOffer passkey={props.passkey} onDone={steps.answerOffer} />;
+      return (
+        <PasskeyOffer
+          passkey={props.passkey}
+          backup={props.backup}
+          onDone={steps.answerOffer}
+          onSkip={steps.skipOffer}
+        />
+      );
     case 'app': {
       const heldSeed = steps.gatedAtLaunch && arrival.kind === 'invite' ? arrival.seed : null;
       return children({ heldSeed, persistence });
