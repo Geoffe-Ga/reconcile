@@ -172,6 +172,7 @@ function HomeScreen({ services, coalitionId }: Omit<GateProps, 'children'>) {
             onTakePart={(name) => ready.onTakePart(takePartGroup(ready), name)}
             makeFollowLink={() => shareFollowLink(services, entryId, services.origin)}
             copyText={services.copyText}
+            sharing={services}
             onUnfollow={() => unfollowAndLeave(services, entryId)}
           />
         );
@@ -359,6 +360,7 @@ function ReconcileReady({ services, ready, coalitionId }: ReconcileReadyProps) {
       coalitionId={coalitionId}
       onMake={onMake}
       copyText={services.copyText}
+      sharing={services}
     />
   );
 }

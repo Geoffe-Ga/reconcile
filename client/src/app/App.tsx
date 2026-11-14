@@ -739,6 +739,7 @@ function Coalitions({ services, group }: { services: AppServices; group: ReadyGr
         postCard(services, await admitCard(services, entryId, groupId), services.origin)
       }
       copyText={services.copyText}
+      sharing={services}
     />
   );
 }
@@ -759,6 +760,7 @@ function ReconcileScreen({ services, groupId }: GroupScreenProps) {
           groupName={state.name}
           onMake={onMake}
           copyText={services.copyText}
+          sharing={services}
         />
       )}
     </GroupGate>

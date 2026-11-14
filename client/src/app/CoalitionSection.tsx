@@ -6,6 +6,7 @@ import { CopyLink } from './CopyLink';
 import { messages } from './messages';
 import { ResultMismatch } from './ResultMismatch';
 import { routeHref } from './router';
+import type { SharePort } from './share';
 import { Field } from './ui';
 
 /** Props for {@link CoalitionSection}. */
@@ -21,6 +22,8 @@ export interface CoalitionSectionProps {
   readonly makeCardLink: (entryId: string) => Promise<string>;
   /** Puts text on the clipboard; rejects when the browser blocks it. */
   readonly copyText: (text: string) => Promise<void>;
+  /** Where a made card's Share sends its link (#424): the device's share sheet, or the clipboard. */
+  readonly sharing: SharePort;
 }
 
 const { coalitions } = messages;
@@ -119,14 +122,15 @@ type CardStatus =
 interface AnotherProps {
   readonly makeCardLink: () => Promise<string>;
   readonly copyText: CoalitionSectionProps['copyText'];
+  readonly sharing: SharePort;
 }
 
 /**
  * Make a card for another group: once the relay holds it, its link with Copy
- * and the warning about who can read it, as Reconcile with another group
- * shows one.
+ * and Share (#424) and the warning about who can read it, as Reconcile with
+ * another group shows one.
  */
-function AnotherGroup({ makeCardLink, copyText }: AnotherProps) {
+function AnotherGroup({ makeCardLink, copyText, sharing }: AnotherProps) {
   const [status, setStatus] = useState<CardStatus>({ kind: 'idle' });
   const lede = useId();
   if (status.kind === 'made') {
@@ -139,6 +143,7 @@ function AnotherGroup({ makeCardLink, copyText }: AnotherProps) {
           button={messages.card.copy}
           primary={false}
           copyText={copyText}
+          sharing={sharing}
         />
       </div>
     );
@@ -297,6 +302,7 @@ function Row({ row, props }: RowProps) {
         <AnotherGroup
           makeCardLink={() => props.makeCardLink(row.entryId)}
           copyText={props.copyText}
+          sharing={props.sharing}
         />
       ) : null}
       <ReconcileCoalition row={row} />
