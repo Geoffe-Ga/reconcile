@@ -15,6 +15,15 @@
  *   inbox ({@link DoorInbox}) on the group's own record, so Leave deletes them
  *   with the group and an archive drops them (#77, #108). Dismiss hides one
  *   on this device only.
+ *
+ * An application may carry a copy of personal Documents the applicant chose
+ * (#425; ADR-0077 §3): only their titles and text. It sits on the member's
+ * device beside the name and message, so a passkey-locked device keeps it
+ * as the rest of the application, on the group's record, which a locked
+ * store hands back only once unlocked, and the vault keeps keys alone. Each
+ * device deletes the copy once the application is dismissed there
+ * ({@link dismissed}) or answered ({@link withoutCopies}): the name and
+ * message stay, so the same application is never read in again.
  */
 
 import type { Sealing } from './sealing';
@@ -77,6 +86,14 @@ export const replySealing: Sealing<SentApplication, StoredSent> = {
   },
 };
 
+/** One personal Document as an application carries a copy of it (#425): its title and text, nothing else. */
+export interface ApplicationDocument {
+  /** 1 to 120 code points, not blank. */
+  readonly title: string;
+  /** The text as the applicant wrote it, Markdown and all: every screen shows it as plain text. */
+  readonly text: string;
+}
+
 /** An application a member's device read from its group's inbox. */
 export interface ReceivedApplication {
   /** The SHA-256 of its sealed blob, in unpadded base64url: what a `door-invited` names. */
@@ -91,6 +108,8 @@ export interface ReceivedApplication {
   readonly message: string;
   /** Where an invite goes: the applicant's reply seed and key, each in unpadded base64url. */
   readonly reply: { readonly seed: string; readonly key: string };
+  /** The copy of personal Documents it carried (#425), until it's dismissed or answered. */
+  readonly documents?: readonly ApplicationDocument[];
   /** Set once someone dismissed it on this device. */
   readonly dismissed?: true;
 }
@@ -133,12 +152,55 @@ export function withApplications(
   return { ...inbox, applications: [...inbox.applications, ...fresh] };
 }
 
-/** `inbox` with the application `id` dismissed on this device. */
+/** `application` without the copy of Documents it carried (#425). */
+function withoutCopy(application: ReceivedApplication): ReceivedApplication {
+  const { documents, ...kept } = application;
+  return documents === undefined ? application : kept;
+}
+
+/**
+ * `inbox` with the application `id` dismissed on this device, and the copy
+ * of Documents it carried deleted (#425).
+ */
 export function dismissed(inbox: DoorInbox, id: string): DoorInbox {
   return {
     ...inbox,
     applications: inbox.applications.map((application) =>
-      application.id === id ? { ...application, dismissed: true } : application,
+      application.id === id ? { ...withoutCopy(application), dismissed: true } : application,
     ),
   };
+}
+
+/**
+ * `inbox` with the copy of Documents deleted from each application
+ * `answered` names (#425): an invite folded for it. The applications stay.
+ */
+export function withoutCopies(inbox: DoorInbox, answered: (id: string) => boolean): DoorInbox {
+  return {
+    ...inbox,
+    applications: inbox.applications.map((application) =>
+      answered(application.id) ? withoutCopy(application) : application,
+    ),
+  };
+}
+
+/**
+ * {@link withoutCopies} of the inbox the device holds, as a store edit gets
+ * it: one it no longer holds stays absent.
+ */
+export function heldWithoutCopies(
+  inbox: DoorInbox | undefined,
+  answered: (id: string) => boolean,
+): DoorInbox | undefined {
+  return inbox === undefined ? inbox : withoutCopies(inbox, answered);
+}
+
+/** Whether `inbox` still holds a copy of Documents for any application `answered` names. */
+export function holdsCopies(
+  inbox: DoorInbox | undefined,
+  answered: (id: string) => boolean,
+): boolean {
+  return (inbox?.applications ?? []).some(
+    (application) => application.documents !== undefined && answered(application.id),
+  );
 }

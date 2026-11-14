@@ -1,5 +1,5 @@
 import { useId, useState } from 'react';
-import { Button, VisuallyHidden } from 'react-aria-components';
+import { Button, Disclosure, DisclosurePanel, VisuallyHidden } from 'react-aria-components';
 
 import { formatDay } from '../app/format';
 import { messages } from '../app/messages';
@@ -7,7 +7,7 @@ import { minuteIso } from '../app/time';
 import type { GroupState } from '../engine/fold';
 import { inviteFor, mayRecordInvite } from '../engine/frontDoor';
 import { displayName } from '../engine/names';
-import type { ReceivedApplication } from '../store/applications';
+import type { ApplicationDocument, ReceivedApplication } from '../store/applications';
 
 /** How 'Send an invite' went. */
 export type InviteOutcome = 'sent' | 'failed' | 'missing';
@@ -53,12 +53,44 @@ function InvitedBy({ state, by }: { readonly state: GroupState; readonly by: str
 }
 
 /**
+ * The Documents an application carries a copy of (#425; ADR-0077 §3), under
+ * "Documents they sent": each a disclosure, its title the toggle, then its
+ * text as the applicant wrote it, plain and pre-wrapped in `<bdi>`, so
+ * Markdown and addresses stay text, never formatting or links. A copy
+ * carries no id and the list never reorders, so each keeps its place as its
+ * key.
+ */
+function SentDocuments({ documents }: { readonly documents: readonly ApplicationDocument[] }) {
+  const label = useId();
+  return (
+    <div className="application-documents" role="group" aria-labelledby={label}>
+      <p id={label} className="eyebrow">
+        {door.documentsSent}
+      </p>
+      {documents.map(({ title, text }, place) => (
+        <Disclosure key={place} className="reads-as application-document">
+          <Button slot="trigger" className="reads-as-toggle">
+            <bdi>{title}</bdi>
+          </Button>
+          <DisclosurePanel>
+            <p className="application-document-text">
+              <bdi>{text}</bdi>
+            </p>
+          </DisclosurePanel>
+        </Disclosure>
+      ))}
+    </div>
+  );
+}
+
+/**
  * One application: the name and message as plain text in `<bdi>`, the day it
- * arrived, who invited them once the log says so, and Send an invite, while
- * this member may record it, and Dismiss.
+ * arrived, the Documents it carries a copy of (#425), who invited them once
+ * the log says so, and Send an invite, while this member may record it, and
+ * Dismiss.
  */
 function ApplicationCard({ state, me, application, onInvite, onDismiss }: CardProps) {
-  const { id, name, message, received } = application;
+  const { id, name, message, received, documents = [] } = application;
   const [sending, setSending] = useState<Sending>('idle');
   const hint = useId();
   const invite = inviteFor(state, id);
@@ -89,6 +121,7 @@ function ApplicationCard({ state, me, application, onInvite, onDismiss }: CardPr
           <bdi>{message}</bdi>
         </p>
       )}
+      {documents.length === 0 ? null : <SentDocuments documents={documents} />}
       {invite === undefined ? null : <InvitedBy state={state} by={invite.by} />}
       <div className="row application-actions">
         {offer ? (

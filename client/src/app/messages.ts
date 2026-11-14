@@ -1328,6 +1328,12 @@ export const messages = {
     messageMissing: 'Say a little about why you’d like to join.',
     messageTooLong: (max: number) => `Use ${count(max)} characters or fewer.`,
     careful: 'Don’t include anything you wouldn’t want this group to read.',
+    /** The picker under the message (#425): a checkbox per personal Document, none checked. */
+    documentsLabel: 'Send some of your own Documents with this',
+    documentsHint:
+      'This group’s members will read the ones you check. Another group you send them to could recognize the same words.',
+    documentsTooMany: (max: number) => `Send up to ${count(max)} Documents with one request.`,
+    documentsTooLong: 'That’s more than one request can carry. Choose fewer or shorter Documents.',
     send: 'Send',
     failed: 'Your request didn’t go. Check your connection, then try again.',
     /** Around the group's name: "Sent. If someone in Riverside Tenants invites you, it shows on Your groups." */
@@ -1354,6 +1360,8 @@ export const messages = {
     applicationsLede:
       'People who asked to join at your front door. Only your group’s devices can read these.',
     noApplications: 'No one has asked to join yet.',
+    /** Over the Documents an application carries a copy of (#425). */
+    documentsSent: 'Documents they sent',
     askedOn: (day: string) => `Asked ${day}`,
     /** Before the inviter's name: "Invited by Ana". */
     invitedBy: 'Invited by',
@@ -1384,13 +1392,13 @@ export const messages = {
     lede: 'Documents of your own. Nobody votes on them: you change them whenever you like.',
     /** Personal's line on where Documents go, while the device keeps no relay backup key. */
     privacy:
-      'They stay on this device. Nothing here is sent to the relay or to your groups, unless you share one by link. A backup file you save includes them.',
+      'They stay on this device. Nothing here is sent to the relay or to your groups, unless you share one by link or send one with a request to join. A backup file you save includes them.',
     /** In place of privacy once the device keeps a relay backup key (#97, #248): its sealed copy carries them. */
     privacyRelayBackup:
       'They stay on this device. Nothing here goes to your groups. A backup file you save includes them, and so does your sealed relay backup.',
     /** The editor's line on where its Document goes, while the device keeps no relay backup key. */
     documentPrivacy:
-      'This stays on this device. Nothing here is sent to the relay or to your groups. A backup file you save includes it.',
+      'This stays on this device. Nothing here is sent to the relay or to your groups, unless you send it with a request to join. A backup file you save includes it.',
     /** In place of documentPrivacy once the device keeps a relay backup key (#97, #248). */
     documentPrivacyRelayBackup:
       'This stays on this device. Nothing here goes to your groups. A backup file you save includes it, and so does your sealed relay backup.',

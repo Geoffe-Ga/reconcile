@@ -233,7 +233,11 @@ function StartScreen(props: StartScreenProps) {
   );
 }
 
-/** A group's front door (#121): its page, and Send, which keeps its reply key on this device. */
+/**
+ * A group's front door (#121): its page, and Send, which keeps its reply key
+ * on this device, offering a copy of any of this device's personal
+ * Documents (#425), which it reads without a key.
+ */
 function DoorScreen({
   services,
   payload,
@@ -242,6 +246,7 @@ function DoorScreen({
   readonly payload: string;
 }) {
   const sent = useSentApplications(services.store);
+  const documents = usePersonalList(services.store);
   const asked = useCallback(
     (address: string) => (sent ?? []).some((application) => application.door === address),
     [sent],
@@ -251,8 +256,14 @@ function DoorScreen({
       apply(services, address, page, values),
     [services],
   );
-  return sent === null ? null : (
-    <FrontDoor payload={payload} reader={services} asked={asked} onApply={onApply} />
+  return sent === null || documents === null ? null : (
+    <FrontDoor
+      payload={payload}
+      reader={services}
+      asked={asked}
+      onApply={onApply}
+      documents={documents}
+    />
   );
 }
 

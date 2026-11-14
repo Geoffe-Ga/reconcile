@@ -66,6 +66,13 @@ export const REPLY_INFO = 'reconcile/v1/door-reply-box';
 /** The bytes before a padded box's plaintext: its 4-byte length. */
 const LENGTH_BYTES = 4;
 
+/**
+ * The largest plaintext a padded box carries: the largest blob, 65,536
+ * bytes, less the box's 72 and the frame's 4-byte length, so 65,460. What an
+ * application may hold is measured against it (#425).
+ */
+export const MAX_PADDED_PLAINTEXT = Math.max(...BLOB_SIZES) - BOX_OVERHEAD - LENGTH_BYTES;
+
 /** A door's two secrets, as the proposer's device draws them. */
 export interface DoorSecrets {
   /** The Ed25519 secret key (RFC 8032 seed) the page is signed with. */

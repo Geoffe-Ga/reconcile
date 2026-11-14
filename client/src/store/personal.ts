@@ -10,7 +10,7 @@
  * rest of the database. Nothing here touches the network, and no group's
  * record carries it.
  *
- * The one deliberate exception is a share by link (#105), which the person
+ * One deliberate exception is a share by link (#105), which the person
  * turns on for one Document: its {@link ShareState} sits on that Document's
  * record, so a backup carries it, and `src/share/shareLink.ts` posts the
  * Document's latest version, signed and sealed, to a mailbox of the share's
@@ -25,6 +25,11 @@
  * Stop sharing, and once the relay's tombstone has lapsed nothing there would
  * say so. So nothing posts to a paused share's link until the person keeps
  * it on that Document (`keepSharing`), or stops it.
+ *
+ * The other is a copy sent with a request to join at a front door (#425):
+ * only when the person checks the Document on that form, and only its title
+ * and text, sealed inside the application (`src/door/apply.ts`). Nothing on
+ * the Document's record changes, and the device keeps no copy of what went.
  */
 import { base64url, fromBase64url } from '../crypto/base64url';
 import { publicKeyOf } from '../crypto/sign';
