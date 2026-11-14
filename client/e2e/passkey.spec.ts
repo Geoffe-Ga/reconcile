@@ -11,8 +11,11 @@
  *   relay. She shares a statement by link (#105) and keeps an application
  *   she sent at a front door (#121), planted as #121 kept one, and the scan
  *   finds both's keys in her IndexedDB, as the control. She locks her keys
- *   from Settings, and Ben locks his from the offer after the notice, before
- *   he joins. Then neither device's IndexedDB holds a signing key,
+ *   from Settings, where her restored file is her way back (#389). Ben meets
+ *   the offer after the notice with no group yet, which says it waits, and
+ *   continues; he joins, and at the next launch the offer asks him for a
+ *   backup file first, saves it in the same step, and only then locks his
+ *   keys. Then neither device's IndexedDB holds a signing key,
  *   encryption key (#98), group secret, relay backup key, share seed, share
  *   signing or public key (#255), or reply seed, reply key or invite seed
  *   (#265) outside the vault, as raw bytes or base64url, and no group,
@@ -25,8 +28,9 @@
  *   and Erase; unlocking brings back voting, Settings reads the relay
  *   backup's line again, her statement shows the same link and stops, Your
  *   groups shows the application's invite, and Ben's tally counts Ana's vote.
- * - Without PRF, Cal's keys stay plain and the no-PRF line shows, with Save a
- *   backup, and a reload opens the app with no unlock screen.
+ * - Without PRF, Cal founds a group, saves a backup file in the offer at the
+ *   next launch, then his keys stay plain and the no-PRF line shows, with
+ *   Save a backup, and a reload opens the app with no unlock screen.
  *
  * axe checks every new screen. WebKit has no virtual authenticator (Playwright
  * offers CDP's WebAuthn domain in Chromium only), so the passkey steps skip
@@ -290,6 +294,36 @@ async function lockKeys(person: Person, screen: string): Promise<void> {
   await expectAccessible(person, `${screen}, keys locked`);
 }
 
+/**
+ * In the passkey offer's way back (#389), `person` saves a backup file under
+ * the passphrase, through the download path, and the offer says it's saved.
+ */
+async function saveInOffer(person: Person): Promise<void> {
+  const { page } = person;
+  const gate = page.getByRole('region', { name: 'First, a way back to your groups' });
+  await expect(gate).toBeVisible();
+  await expectAccessible(person, 'Passkey offer, a way back first');
+  await gate.getByLabel('Passphrase', { exact: true }).fill(PASSPHRASE);
+  await gate.getByLabel('Passphrase again').fill(PASSPHRASE);
+  await gate.getByRole('button', { name: 'Make a backup file' }).click();
+  await Promise.all([
+    page.waitForEvent('download'),
+    gate.getByRole('button', { name: 'Save the file' }).click(),
+  ]);
+  await expect(page.getByText(/^Your backup file is saved\./)).toBeVisible();
+  await expect(gate).toBeHidden();
+}
+
+/** The offer on a profile with no group yet (#389): it says it waits, and Continue answers nothing. */
+async function continueWithNoGroup(person: Person, screen: string): Promise<void> {
+  const { page } = person;
+  await expect(heading(page, PASSKEY_OFFER)).toBeVisible();
+  await expect(page.getByText(/You’re in no group yet, so Reconcile asks again/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Make a passkey' })).toHaveCount(0);
+  await expectAccessible(person, screen);
+  await page.getByRole('button', { name: 'Continue' }).click();
+}
+
 /** Opens Settings from Start. */
 async function openSettings(page: Page): Promise<void> {
   await page.goto('/#/');
@@ -337,6 +371,7 @@ test('with PRF, the keys live only in the vault, and the passkey unlocks voting 
   await ana.page.context().addInitScript(noFileSharing);
   const backupKey = randomBytes(32);
   const ben = await openProfile('Ben', { baseURL: origin, viewport: { width: 390, height: 844 } });
+  await ben.page.context().addInitScript(noFileSharing);
   const anaKey = await addAuthenticator(ana.page, true);
   await addAuthenticator(ben.page, true);
 
@@ -403,19 +438,23 @@ test('with PRF, the keys live only in the vault, and the passkey unlocks voting 
     await lockKeys(ana, 'Settings');
   });
 
-  await test.step('Ben locks his keys from the offer after the notice, then joins', async () => {
-    await ben.page.goto(invite);
+  await test.step('Ben meets the offer with no group, joins, then saves a backup file in it and locks his keys', async () => {
+    const { page } = ben;
+    await page.goto(invite);
     await acceptNotice(ben, { passkey: true });
-    await expect(heading(ben.page, PASSKEY_OFFER)).toBeVisible();
-    await expectAccessible(ben, 'Passkey offer');
+    await continueWithNoGroup(ben, 'Passkey offer, no group yet');
+    await expect(heading(page, GROUP)).toBeVisible();
+    await page.getByRole('textbox', { name: 'Your name' }).fill('Ben');
+    await page.getByRole('button', { name: 'Join group' }).click();
+    await expect(page.getByRole('region', { name: 'People', exact: true })).toContainText('Ana');
+    // The next launch offers it again, with a way back first (#389).
+    await page.goto('/');
+    await expect(heading(page, PASSKEY_OFFER)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Make a passkey' })).toHaveCount(0);
+    await saveInOffer(ben);
     await lockKeys(ben, 'Passkey offer');
-    await ben.page.getByRole('button', { name: 'Continue' }).click();
-    await expect(heading(ben.page, GROUP)).toBeVisible();
-    await ben.page.getByRole('textbox', { name: 'Your name' }).fill('Ben');
-    await ben.page.getByRole('button', { name: 'Join group' }).click();
-    await expect(ben.page.getByRole('region', { name: 'People', exact: true })).toContainText(
-      'Ana',
-    );
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await expect(heading(page, 'Your groups')).toBeVisible();
   });
 
   await test.step('neither IndexedDB holds a key or secret outside the vault', async () => {
@@ -575,12 +614,26 @@ test('without PRF, the keys stay as they were, and the app says so plainly', asy
   baseURL,
 }) => {
   const cal = await openProfile('Cal', { baseURL: localhostOf(baseURL), colorScheme: 'dark' });
+  await cal.page.context().addInitScript(noFileSharing);
   await addAuthenticator(cal.page, false);
   const { page } = cal;
 
-  await test.step('the offer makes a passkey, and the second tap finds no PRF', async () => {
+  await test.step('the offer waits for a group, so Cal continues and founds one', async () => {
     await page.goto('/');
     await acceptNotice(cal, { passkey: true });
+    await continueWithNoGroup(cal, 'Passkey offer, no group yet');
+    await foundGroup(page, {
+      name: GROUP,
+      title: 'Plot rules',
+      atoms: ['Water at dawn.'],
+      founder: 'Cal',
+    });
+  });
+
+  await test.step('the next launch asks for a backup file first, then the second tap finds no PRF', async () => {
+    await page.goto('/');
+    await expect(heading(page, PASSKEY_OFFER)).toBeVisible();
+    await saveInOffer(cal);
     await page.getByRole('button', { name: 'Make a passkey' }).click();
     await page.getByRole('button', { name: 'Confirm your passkey' }).click();
     await expect(
@@ -596,13 +649,7 @@ test('without PRF, the keys stay as they were, and the app says so plainly', asy
     await page.getByRole('button', { name: 'Continue' }).click();
   });
 
-  await test.step('a group founded after keeps its keys plain, with no vault', async () => {
-    await foundGroup(page, {
-      name: GROUP,
-      title: 'Plot rules',
-      atoms: ['Water at dawn.'],
-      founder: 'Cal',
-    });
+  await test.step('the group keeps its keys plain, with no vault', async () => {
     const held = await onlyGroup(page);
     expect(held.signingKey).toHaveLength(32);
     expect(held.secret).toHaveLength(32);

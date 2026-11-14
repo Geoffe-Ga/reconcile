@@ -6,12 +6,17 @@
  * {@link Passkey.create} makes the passkey, and {@link Passkey.protect} asks
  * it once for PRF output on a fresh 32-byte salt. That second answer decides,
  * once: the keys are sealed only when it is 32 bytes, the user was verified,
- * and `prfTrusted` holds for this device (`platform/prfPolicy.ts`). Then the
- * vault key derives from it (`crypto/keyVault.ts`) and the store seals the
- * device's keys under it (`Store.sealKeys`), deleting the plain copies in the
- * same transaction.
+ * `prfTrusted` holds for this device (`platform/prfPolicy.ts`), and the
+ * groups have a way back if the passkey ever stops unlocking them: recovery
+ * contacts, or a saved backup file of every group (`recoveryPath.ts`, #389).
+ * Then the vault key derives from it (`crypto/keyVault.ts`) and the store
+ * seals the device's keys under it (`Store.sealKeys`), deleting the plain
+ * copies in the same transaction.
  * Otherwise nothing is sealed and the keys stay as they are. Either way the
- * PRF output is zeroed.
+ * PRF output is zeroed. Screens ask for the way back before the first tap
+ * ({@link Passkey.recoveryPath}); the second tap reads it again only after
+ * the passkey has answered, so no store read comes between the tap and its
+ * one WebAuthn call.
  *
  * **Launch** ({@link openDeviceLock}): a device whose keys aren't locked
  * opens at once: the dissolved archives' sweep (#108), then the sync loop,
@@ -33,12 +38,20 @@ import { sweepArchives } from '../store/archive';
 import type { Store } from '../store/db';
 import { replaceWithBackup, type RestoredFile } from '../store/snapshot';
 import type { Sync } from '../store/sync';
+import { hasRecoveryPath, readRecoveryPath, type RecoveryPath } from './recoveryPath';
 
 /** What passkey setup and unlock run on. */
 export interface PasskeyDeps {
   readonly store: Pick<
     Store,
-    'readVault' | 'sealKeys' | 'unlock' | 'replaceGroups' | 'adoptRelayBackupKey'
+    | 'readVault'
+    | 'sealKeys'
+    | 'unlock'
+    | 'replaceGroups'
+    | 'adoptRelayBackupKey'
+    | 'listGroups'
+    | 'getRecoveryPlan'
+    | 'getRelayBackup'
   >;
   /** The browser's WebAuthn, or undefined where it has none. */
   readonly webauthn: WebAuthn | undefined;
@@ -48,8 +61,11 @@ export interface PasskeyDeps {
   readonly rpId: string;
 }
 
-/** How setup ended: the keys are locked with the passkey, or it can't protect them. */
-export type Protection = 'protected' | 'no-prf';
+/**
+ * How setup ended: the keys are locked with the passkey, it can't protect
+ * them, or the groups had no way back, so nothing was locked (#389).
+ */
+export type Protection = 'protected' | 'no-prf' | 'no-recovery';
 
 /** Passkey setup, for the offer after the pilot notice and for Settings. */
 export interface Passkey {
@@ -58,6 +74,11 @@ export interface Passkey {
   /** Whether this device's keys are locked with a passkey. */
   isProtected(): Promise<boolean>;
   /**
+   * The groups' way back if the passkey ever stops unlocking them (#389):
+   * setup locks nothing without one.
+   */
+  recoveryPath(): Promise<RecoveryPath>;
+  /**
    * Tap 1: makes the passkey and returns its credential id.
    *
    * @throws {PasskeyUnanswered} when no passkey was made.
@@ -65,7 +86,7 @@ export interface Passkey {
   create(): Promise<Uint8Array>;
   /**
    * Tap 2: asks the passkey once for PRF output, and seals the device's keys
-   * (`Store.sealKeys`) when it qualifies.
+   * (`Store.sealKeys`) when it qualifies and the groups have a way back.
    *
    * @throws {PasskeyUnanswered} when the passkey didn't answer; nothing changes.
    */
@@ -100,6 +121,7 @@ export function passkeyOn(deps: PasskeyDeps): Passkey {
   return {
     available: webauthn !== undefined && trusted,
     isProtected: async () => (await store.readVault()) !== null,
+    recoveryPath: () => readRecoveryPath(store),
     create: async () => required(webauthn).createCredential(rpId),
     async protect(credentialId) {
       const prfSalt = newPrfSalt();
@@ -107,6 +129,8 @@ export function passkeyOn(deps: PasskeyDeps): Passkey {
       if (prf === null) return 'no-prf';
       try {
         if (!trusted) return 'no-prf';
+        // Read after the passkey answers: a read before it could cost iOS the tap.
+        if (!hasRecoveryPath(await readRecoveryPath(store))) return 'no-recovery';
         await sealUnder(store, credentialId, prf, prfSalt);
         return 'protected';
       } finally {
