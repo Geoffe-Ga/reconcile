@@ -80,6 +80,17 @@ describe('LinkBar', () => {
     expect(await axeViolations()).toEqual([]);
   });
 
+  it('holds its live region only while it has focus, so a page’s own stays the only one', async () => {
+    const { user } = setup();
+    expect(screen.queryByRole('status')).toBeNull();
+
+    await user.click(bar());
+    expect(screen.getByRole('status')).toHaveTextContent('');
+
+    await user.click(note());
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
   it('says what a pasted invite is in one row, and opens nothing until Enter', async () => {
     const { user, onOpen, onPanelChange } = setup();
     const link = inviteLink(ORIGIN, newInviteSeed());

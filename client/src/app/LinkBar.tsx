@@ -331,6 +331,8 @@ function spokenOf(view: View | null): string {
 
 /** Props for {@link Overlay}. */
 interface OverlayProps {
+  /** True while the bar has focus: its live region exists only then, so a page's own stays the only one. */
+  readonly live: boolean;
   readonly view: View | null;
   readonly expanded: ReadonlySet<Shelf>;
   readonly onOpen: () => void;
@@ -344,7 +346,7 @@ function ViewPanel({
   expanded,
   onOpen,
   onResult,
-}: Omit<OverlayProps, 'view' | 'onDismiss'> & { readonly view: View }) {
+}: Omit<OverlayProps, 'view' | 'onDismiss' | 'live'> & { readonly view: View }) {
   if ('read' in view) return <Panel read={view.read} onOpen={onOpen} />;
   if (view.results.length === 0) {
     return (
@@ -365,12 +367,14 @@ function ViewPanel({
 }
 
 /** The panel under the pill and the scrim behind it, while the bar has focus and text. */
-function Overlay({ view, onDismiss, ...rest }: OverlayProps) {
+function Overlay({ live, view, onDismiss, ...rest }: OverlayProps) {
   return (
     <>
-      <div role="status" className="visually-hidden">
-        {spokenOf(view)}
-      </div>
+      {live ? (
+        <div role="status" className="visually-hidden">
+          {spokenOf(view)}
+        </div>
+      ) : null}
       {view === null ? null : (
         <>
           <div className="link-bar-panel">
@@ -512,6 +516,7 @@ export function LinkBar(props: LinkBarProps) {
             onSubmit={onSubmit}
           />
           <Overlay
+            live={inside}
             view={view}
             expanded={expanded}
             onOpen={open}
