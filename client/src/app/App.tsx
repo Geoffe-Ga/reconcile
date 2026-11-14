@@ -40,7 +40,6 @@ import { NewDocumentComposer } from '../screens/NewDocumentComposer';
 import { MoveComposer } from '../screens/MoveComposer';
 import type { OptIn } from '../engine/optIns';
 import { OptInComposer, type OptInOutcome } from '../screens/OptInComposer';
-import { Discover } from '../screens/Discover';
 import { Personal } from '../screens/Personal';
 import { PersonalDocument } from '../screens/PersonalDocument';
 import { PriorityComposer } from '../screens/PriorityComposer';
@@ -151,6 +150,7 @@ import { useGroupList, useGroups } from './useGroupList';
 import { useNow } from './useNow';
 import { usePasskeyState } from './usePasskeyState';
 import { usePersonalList } from './usePersonalList';
+import { DiscoverScreen } from './DiscoverScreen';
 import { chooseContacts } from '../store/recovery';
 import { approveRecovery, holdViews, resendRelease } from '../recovery/holder';
 import { recoverSession, startRecovery, stopRecovery } from '../recovery/request';
@@ -1471,7 +1471,7 @@ function PlainScreen(props: PlainScreenProps) {
     case 'personal':
       return <PersonalScreen services={services} />;
     case 'discover':
-      return <Discover />;
+      return <DiscoverScreen store={services.store} />;
     case 'personalDocument':
       // Keyed by id, so another Document starts its editor afresh.
       return <PersonalDocumentScreen key={route.id} services={services} id={route.id} />;
