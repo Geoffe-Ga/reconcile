@@ -178,3 +178,57 @@ export async function onlyGroup(page: Page): Promise<StoredGroup> {
   }
   return group;
 }
+
+/**
+ * Everything each object store of the app's IndexedDB on `page` holds, by
+ * the store's name, read with no hook into the app: every key, string and
+ * byte array of every record, end to end, so a scan finds any text a record
+ * keeps (#425).
+ */
+export async function storedBytes(page: Page): Promise<Record<string, Buffer>> {
+  const read = await page.evaluate(async () => {
+    const request = <T>(asking: IDBRequest<T>): Promise<T> =>
+      new Promise((resolve, reject) => {
+        asking.onsuccess = () => {
+          resolve(asking.result);
+        };
+        asking.onerror = () => {
+          reject(asking.error ?? new Error('IndexedDB refused the request.'));
+        };
+      });
+    const walk = (value: unknown, into: number[][]): void => {
+      if (ArrayBuffer.isView(value)) {
+        into.push(Array.from(new Uint8Array(value.buffer, value.byteOffset, value.byteLength)));
+      } else if (Array.isArray(value)) {
+        for (const item of value) walk(item, into);
+      } else if (typeof value === 'object' && value !== null) {
+        for (const [key, item] of Object.entries(value)) {
+          walk(key, into);
+          walk(item, into);
+        }
+      } else {
+        into.push(Array.from(new TextEncoder().encode(String(value))));
+      }
+    };
+    const db = await request(indexedDB.open('reconcile'));
+    try {
+      const stores: Record<string, number[][]> = {};
+      for (const name of Array.from(db.objectStoreNames)) {
+        const parts: number[][] = [];
+        const store = db.transaction(name).objectStore(name);
+        walk(await request(store.getAllKeys()), parts);
+        walk(await request(store.getAll()), parts);
+        stores[name] = parts;
+      }
+      return stores;
+    } finally {
+      db.close();
+    }
+  });
+  return Object.fromEntries(
+    Object.entries(read).map(([name, parts]) => [
+      name,
+      Buffer.concat(parts.flatMap((part) => [Buffer.from(part), Buffer.of(0)])),
+    ]),
+  );
+}

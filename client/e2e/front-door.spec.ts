@@ -11,6 +11,12 @@
  * says the group invited her and leads into Join, after which she waits for
  * vouches like any newcomer.
  *
+ * Kim first writes a personal Document with a canary in it (#425), and the
+ * form offers it unchecked; she checks it, and it shows in Ana's
+ * Applications as a disclosure, its text plain in Newsreader. Once the
+ * invite is sent, no profile's IndexedDB holds it, but Kim's own Document,
+ * the control, and no request or stopped-relay file carries it readable.
+ *
  * Every request the four browsers send is captured: none carries the
  * group's secret, a member's name or key, the door's secrets, Kim's reply
  * seed or key, or her words, in any spelling, while the door's inbox and the
@@ -39,7 +45,7 @@ import {
   scan,
   textCanary,
 } from './support/scan';
-import { derive, onlyGroup, storedGroups, storedLogs } from './support/stored';
+import { derive, onlyGroup, storedBytes, storedGroups, storedLogs } from './support/stored';
 
 /** A random tag, so no two runs plant the same canaries. */
 const TAG = randomBytes(6).toString('hex');
@@ -50,6 +56,10 @@ const APPLICANT = `Kim${TAG}`;
 const MESSAGE = `I live at number 12 and fix bikes on Sundays, canary ${TAG}.`;
 const EXCERPT = 'We keep rents fair and homes safe on Riverside Ave.';
 const PHONE = { width: 390, height: 844 };
+/** Kim's personal Document (#425): its title, and a canary line in Markdown with an address. */
+const DOC_TITLE = `Stand${TAG}`;
+const DOC_WORDS = `Fair rents for every tenant, canary-doc ${TAG}.`;
+const DOC_TEXT = `# ${DOC_WORDS}\n\nSee [our list](https://rent.example) and https://rent.example.`;
 
 /** Keeps every request `page` sends from now on. */
 function capture(page: Page, into: Request[]): void {
@@ -154,6 +164,20 @@ function sentApplication(
   });
 }
 
+/** Kim's Document's canaries: its title, and its canary line (#425). */
+const docCanaries: Canary[] = [
+  textCanary('Document title', DOC_TITLE),
+  textCanary('Document text', DOC_WORDS),
+];
+
+/** The object stores of `person`'s IndexedDB that hold any of Kim's Document's canaries. */
+async function heldBy(person: Person): Promise<string[]> {
+  const stores = await storedBytes(person.page);
+  return Object.entries(stores)
+    .filter(([name, bytes]) => findIn(bytes, name, docCanaries).length > 0)
+    .map(([name]) => name);
+}
+
 test('a group opens its front door by vote, and a stranger asks, is invited and joins', async ({
   openProfile,
   relay,
@@ -223,10 +247,19 @@ test('a group opens its front door by vote, and a stranger asks, is invited and 
   const kim = await openProfile(APPLICANT, { viewport: PHONE });
   capture(kim.page, requests);
 
-  await test.step('Kim opens the link, accepts the notice, and reads the page: no member’s name', async () => {
+  await test.step('Kim first writes a personal Document, with a canary in it', async () => {
+    const { page } = kim;
+    await page.goto('/#/me');
+    await acceptNotice(kim);
+    await page.getByRole('link', { name: /My mission statement/ }).click();
+    await page.getByRole('textbox', { name: 'Title' }).fill(DOC_TITLE);
+    await page.getByRole('textbox', { name: 'Text' }).fill(DOC_TEXT);
+    await expect(page.getByText('Saved on this device.')).toBeVisible();
+  });
+
+  await test.step('Kim opens the link and reads the page: no member’s name', async () => {
     const { page } = kim;
     await page.goto(link);
-    await acceptNotice(kim);
     await expect(heading(page, GROUP)).toBeVisible();
     await expect(page.getByText(EXCERPT)).toBeVisible();
     await expect(page).toHaveTitle('Front door · Reconcile');
@@ -236,7 +269,7 @@ test('a group opens its front door by vote, and a stranger asks, is invited and 
     await expectAccessible(kim, 'Front door');
   });
 
-  await test.step('she asks to join, with no contact field, and the page says what comes next', async () => {
+  await test.step('she asks to join, with no contact field, sends her Document, and the page says what comes next', async () => {
     const { page } = kim;
     await expect(page.getByRole('textbox')).toHaveCount(2);
     await page.getByRole('textbox', { name: 'Name you’d like to use' }).fill(APPLICANT);
@@ -244,6 +277,16 @@ test('a group opens its front door by vote, and a stranger asks, is invited and 
     await expect(
       page.getByText('Don’t include anything you wouldn’t want this group to read.'),
     ).toBeVisible();
+    const picker = page.getByRole('group', { name: 'Send some of your own Documents with this' });
+    await expect(
+      picker.getByText(
+        'This group’s members will read the ones you check. Another group you send them to could recognize the same words.',
+      ),
+    ).toBeVisible();
+    const box = picker.getByRole('checkbox', { name: DOC_TITLE });
+    await expect(box).not.toBeChecked();
+    await picker.getByText(DOC_TITLE).click();
+    await expect(box).toBeChecked();
     await expectAccessible(kim, 'Front door form, filled');
     await page.getByRole('button', { name: 'Send' }).click();
     await expect(page.getByRole('status')).toHaveText(
@@ -252,13 +295,35 @@ test('a group opens its front door by vote, and a stranger asks, is invited and 
     await expectAccessible(kim, 'Front door, sent');
   });
 
-  await test.step('her request reaches Ana’s Applications, and Ana sends an invite', async () => {
+  await test.step('her request reaches Ana’s Applications, her Document under it as plain text', async () => {
     const { page } = ana;
     await page.getByRole('link', { name: GROUP }).click();
     const applications = page.getByRole('region', { name: 'Applications' });
     await expect(applications.getByText(MESSAGE)).toBeVisible({ timeout: 15_000 });
     await expect(applications.getByText(APPLICANT, { exact: true })).toBeVisible();
     await expectAccessible(ana, 'Applications');
+    const sentWith = applications.getByRole('group', { name: 'Documents they sent' });
+    const toggle = sentWith.getByRole('button', { name: DOC_TITLE });
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await toggle.click();
+    const words = sentWith.locator('.application-document-text');
+    await expect(words).toHaveText(DOC_TEXT, { useInnerText: true });
+    await expect(words).toHaveCSS('white-space', 'pre-wrap');
+    await expect(words).toHaveCSS('font-family', /Newsreader/);
+    await expect(sentWith.getByRole('link')).toHaveCount(0);
+    await expect(sentWith.getByRole('heading')).toHaveCount(0);
+    await expectAccessible(ana, 'Applications, a Document open');
+  });
+
+  await test.step('Ana’s and Ben’s devices hold the copy until it’s answered', async () => {
+    for (const person of [ana, ben]) {
+      await expect.poll(async () => heldBy(person), { timeout: 20_000 }).toEqual(['groups']);
+    }
+  });
+
+  await test.step('Ana sends an invite', async () => {
+    const { page } = ana;
+    const applications = page.getByRole('region', { name: 'Applications' });
     await applications.getByRole('button', { name: `Send an invite to ${APPLICANT}` }).click();
     await expect(
       applications.getByText('Invite sent. It waits 2 days for their device.'),
@@ -303,6 +368,14 @@ test('a group opens its front door by vote, and a stranger asks, is invited and 
     await expect(page.getByRole('region', { name: 'Asked to join' })).toHaveCount(0);
   });
 
+  await test.step('once the invite is sent, no profile’s IndexedDB holds her Document but her own', async () => {
+    for (const person of [ana, ben, cal]) {
+      await expect.poll(async () => heldBy(person), { timeout: 20_000 }).toEqual([]);
+    }
+    // The control: the scan reads Kim's own copy, in Personal, and nothing else of hers.
+    expect(await heldBy(kim)).toEqual(['personal']);
+  });
+
   const address = Buffer.from(new URL(link).hash.slice('#door/'.length), 'base64url');
   const inbox = derive(address, 'reconcile/v1/door-inbox').toString('base64url');
   const secrets = await doorSecrets(ana.page);
@@ -311,6 +384,7 @@ test('a group opens its front door by vote, and a stranger asks, is invited and 
   const textCanaries = [
     textCanary('application message', MESSAGE),
     textCanary('applicant name', APPLICANT),
+    ...docCanaries,
     ...Object.entries(NAMES).map(([who, name]) => textCanary(`${who}'s name`, name)),
   ];
 

@@ -448,7 +448,7 @@ describe('PersonalDocument', () => {
     expect(await screen.findByRole('link', { name: /Personal/ })).toHaveAttribute('href', '#/me');
     expect(
       screen.getByText(
-        'This stays on this device. Nothing here is sent to the relay or to your groups. A backup file you save includes it.',
+        'This stays on this device. Nothing here is sent to the relay or to your groups, unless you send it with a request to join. A backup file you save includes it.',
       ),
     ).toBeVisible();
   });

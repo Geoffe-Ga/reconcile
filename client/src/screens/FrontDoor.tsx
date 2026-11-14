@@ -7,13 +7,30 @@ import {
   useRef,
   useState,
 } from 'react';
-import { Button, Form, Link } from 'react-aria-components';
+import {
+  Button,
+  CheckboxButton,
+  CheckboxField,
+  CheckboxGroup,
+  Form,
+  Label,
+  Link,
+  Text,
+} from 'react-aria-components';
 
 import { holdPresses } from '../app/holdPresses';
 import { messages } from '../app/messages';
 import { routeHref } from '../app/router';
 import { Field, PageHeader } from '../app/ui';
-import { type ApplyValues, MESSAGE_MAX, NAME_MAX } from '../door/apply';
+import {
+  type ApplyValues,
+  documentCopies,
+  DOCUMENTS_MAX,
+  type DocumentsProblem,
+  documentsProblem,
+  MESSAGE_MAX,
+  NAME_MAX,
+} from '../door/apply';
 import {
   type DoorReader,
   type DoorView,
@@ -22,6 +39,10 @@ import {
   readDoor,
 } from '../door/page';
 import { nfcLength } from '../engine/text';
+import type { PersonalText } from '../store/personal';
+
+/** A personal Document the picker offers (#425): its id for the checkbox, and the words a copy carries. */
+export type PersonalChoice = Pick<PersonalText, 'id' | 'title' | 'text'>;
 
 /** Props for {@link FrontDoor}. */
 export interface FrontDoorProps {
@@ -37,6 +58,8 @@ export interface FrontDoorProps {
     page: OpenPage,
     values: ApplyValues,
   ) => Promise<'sent' | 'failed'>;
+  /** This device's personal Documents, oldest first, which the form offers to send a copy of (#425). */
+  readonly documents: readonly PersonalChoice[];
 }
 
 /** Where the page has got to: reading it, what it shows, or unable to reach the relay. */
@@ -107,23 +130,89 @@ function Sent(props: {
 
 interface ApplyFormProps {
   readonly onSend: (values: ApplyValues) => Promise<'sent' | 'failed'>;
+  readonly documents: readonly PersonalChoice[];
 }
 
-/** The form: the name to use, why, the caution, and Send. One send at a time. */
-function ApplyForm({ onSend }: ApplyFormProps) {
+/** The form-error line a choice of Documents gets, by what's wrong with it. */
+const PROBLEM: Readonly<Record<DocumentsProblem, string>> = {
+  'too-many': door.documentsTooMany(DOCUMENTS_MAX),
+  'too-long': door.documentsTooLong,
+};
+
+interface DocumentPickerProps {
+  readonly documents: readonly PersonalChoice[];
+  readonly chosen: readonly string[];
+  readonly onChange: (chosen: string[]) => void;
+  readonly problem: DocumentsProblem | null;
+}
+
+/**
+ * "Send some of your own Documents with this" (#425; ADR-0077 §3): a
+ * checkbox per personal Document, its title in `<bdi>`, none checked to
+ * start, with one line saying who reads them, and the one `form-error` line
+ * while the choice is too many or too long to go. Nothing for someone with
+ * no personal Documents.
+ */
+function DocumentPicker({ documents, chosen, onChange, problem }: DocumentPickerProps) {
+  const error = useId();
+  if (documents.length === 0) return null;
+  return (
+    <CheckboxGroup
+      className="door-documents"
+      value={[...chosen]}
+      onChange={onChange}
+      isInvalid={problem !== null}
+      {...(problem === null ? {} : { 'aria-describedby': error })}
+    >
+      <Label className="field-label">{door.documentsLabel}</Label>
+      <Text slot="description" className="door-careful">
+        {door.documentsHint}
+      </Text>
+      <ul className="door-documents-list">
+        {documents.map(({ id, title }) => (
+          <li key={id}>
+            <CheckboxField value={id}>
+              <CheckboxButton className="checkbox">
+                <span className="checkbox-box" aria-hidden="true" />
+                <bdi>{title}</bdi>
+              </CheckboxButton>
+            </CheckboxField>
+          </li>
+        ))}
+      </ul>
+      {problem === null ? null : (
+        <p id={error} role="alert" className="form-error">
+          {PROBLEM[problem]}
+        </p>
+      )}
+    </CheckboxGroup>
+  );
+}
+
+/** The copy the chosen Documents send, in the order Personal lists them, as Send seals it. */
+function chosenCopies(documents: readonly PersonalChoice[], chosen: readonly string[]) {
+  return documentCopies(documents.filter(({ id }) => chosen.includes(id)));
+}
+
+/** The form: the name to use, why, any Documents to send, the caution, and Send. One send at a time. */
+function ApplyForm({ onSend, documents }: ApplyFormProps) {
   const [name, setName] = useState('');
   const [message, setMessage] = useState('');
+  const [chosen, setChosen] = useState<readonly string[]>([]);
   const [running, setRunning] = useState(false);
   const [failed, setFailed] = useState(false);
   const busy = useRef(false);
+  const copies = chosenCopies(documents, chosen);
+  const problem = documentsProblem(copies);
   const submit = (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
     // A press React Aria delivers late, or a second press, finds it busy (#190).
-    if (busy.current) return;
+    if (busy.current || problem !== null) return;
     busy.current = true;
     setRunning(true);
     setFailed(false);
-    void onSend({ name, message }).then((outcome) => {
+    const values = { name, message, ...(copies.length === 0 ? {} : { documents: copies }) };
+    void onSend(values).then((outcome) => {
       if (outcome === 'sent') return;
       busy.current = false;
       setRunning(false);
@@ -151,6 +240,12 @@ function ApplyForm({ onSend }: ApplyFormProps) {
         validate={checkMessage}
         value={message}
         onChange={setMessage}
+      />
+      <DocumentPicker
+        documents={documents}
+        chosen={chosen}
+        onChange={setChosen}
+        problem={problem}
       />
       <p className="door-careful">{door.careful}</p>
       {failed ? (
@@ -187,10 +282,11 @@ interface OpenProps {
   readonly page: OpenPage;
   readonly asked: boolean;
   readonly onApply: FrontDoorProps['onApply'];
+  readonly documents: readonly PersonalChoice[];
 }
 
 /** An open door: the group's name, its excerpt, then the form, or what this device already sent. */
-function Open({ address, page, asked, onApply }: OpenProps) {
+function Open({ address, page, asked, onApply, documents }: OpenProps) {
   const heading = useId();
   const [sent, setSent] = useState(false);
   const onSend = async (values: ApplyValues) => {
@@ -211,7 +307,7 @@ function Open({ address, page, asked, onApply }: OpenProps) {
         ) : asked ? (
           <Sent name={page.name} parts={door.asked} />
         ) : (
-          <ApplyForm onSend={onSend} />
+          <ApplyForm onSend={onSend} documents={documents} />
         )}
       </section>
     </main>
@@ -242,14 +338,15 @@ function useDoor(address: Uint8Array | null, reader: DoorReader, key: string): P
 /**
  * A group's front door (`#door/{address}`; ADR-0038, #121): the page its
  * address names, as plain text in `<bdi>`, never a member's name, then the
- * form to ask to join: the name to use, why, and a caution, with no contact
+ * form to ask to join: the name to use, why, a copy of any personal
+ * Documents the person checks (#425), and a caution, with no contact
  * field. Its page is only what the group's devices posted under the door's
  * key, read again on each visit; a closed door, or one with no page, reads
  * "This front door is closed." with no form. A device that already asked
  * here says so instead of the form. The tab's title never carries the
  * group's name.
  */
-export function FrontDoor({ payload, reader, asked, onApply }: FrontDoorProps) {
+export function FrontDoor({ payload, reader, asked, onApply, documents }: FrontDoorProps) {
   const address = useMemo(() => parseDoorPayload(payload), [payload]);
   const [attempt, setAttempt] = useState(0);
   const phase = useDoor(address, reader, `${payload} ${String(attempt)}`);
@@ -269,6 +366,14 @@ export function FrontDoor({ payload, reader, asked, onApply }: FrontDoorProps) {
     case 'offline':
       return <Notice title={door.offlineTitle} line={door.offline} onRetry={retry} />;
     case 'open':
-      return <Open address={address} page={phase.page} asked={asked(payload)} onApply={onApply} />;
+      return (
+        <Open
+          address={address}
+          page={phase.page}
+          asked={asked(payload)}
+          onApply={onApply}
+          documents={documents}
+        />
+      );
   }
 }

@@ -9,7 +9,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { messages } from '../app/messages';
 import { base64url } from '../crypto/base64url';
 import { xchachaSeal } from '../crypto/seal';
-import type { ApplyValues } from '../door/apply';
+import { type ApplyValues, DOCUMENTS_MAX, DOCUMENTS_MAX_BYTES } from '../door/apply';
 import { CLOSED } from '../door/keeper';
 import { addressOf, type OpenPage, publishPage } from '../door/page';
 import { createRelay } from '../net/relay';
@@ -30,7 +30,20 @@ const PAGE: OpenPage = {
   box: base64url(new Uint8Array(32).fill(9)),
 };
 
+/** Personal Documents as the device lists them (#425): the statement first, as it was written first. */
+const STATEMENT = {
+  id: 'AAAAAAAAAAAAAAAAAAAAAA',
+  title: 'What I stand for',
+  text: 'Fair rents.',
+  createdAt: 1,
+  updatedAt: 1,
+};
+const BIKES = { ...STATEMENT, id: 'BBBBBBBBBBBBBBBBBBBBBB', title: 'Bikes', text: 'I fix them.' };
+const GARDEN = { ...STATEMENT, id: 'CCCCCCCCCCCCCCCCCCCCCC', title: 'Garden', text: 'Beans.' };
+const NOTES = { ...STATEMENT, id: 'DDDDDDDDDDDDDDDDDDDDDD', title: '<b>Notes</b>', text: 'n' };
+
 interface Options {
+  readonly documents?: readonly (typeof STATEMENT)[];
   readonly page?: OpenPage | typeof CLOSED | null;
   readonly payload?: string;
   readonly asked?: boolean;
@@ -57,6 +70,7 @@ async function setup(options: Options = {}) {
       reader={reader}
       asked={asked}
       onApply={onApply}
+      documents={options.documents ?? []}
     />,
   );
   return { user: userEvent.setup(), onApply, asked, fake };
@@ -162,6 +176,129 @@ describe('FrontDoor: an open door', () => {
     );
     expect(screen.queryByRole('textbox')).toBeNull();
     expect(asked).toHaveBeenCalledWith(PAYLOAD);
+  });
+});
+
+describe('FrontDoor: sending personal Documents with it (#425)', () => {
+  /** The picker's group, once the page shows. */
+  async function picker() {
+    return screen.findByRole('group', { name: door.documentsLabel });
+  }
+
+  /** Kim fills both fields, ready to Send. */
+  async function fill(user: ReturnType<typeof userEvent.setup>) {
+    await screen.findByRole('heading', { level: 1, name: 'Riverside Tenants' });
+    await type(user, door.nameLabel, 'Kim');
+    await type(user, door.messageLabel, 'Hello.');
+  }
+
+  it('offers each personal Document under the message, none checked, says who reads them, and passes axe', async () => {
+    await setup({ documents: [STATEMENT, NOTES] });
+    const group = await picker();
+    const boxes = within(group).getAllByRole('checkbox');
+    expect(boxes.map((box) => box.closest('label')?.textContent)).toEqual([
+      'What I stand for',
+      '<b>Notes</b>',
+    ]);
+    for (const box of boxes) expect(box).not.toBeChecked();
+    expect(within(group).getByText('<b>Notes</b>').tagName).toBe('BDI');
+    expect(document.querySelector('b')).toBeNull();
+    expect(group).toHaveAccessibleDescription(door.documentsHint);
+    expect(door.documentsHint).toBe(
+      'This group’s members will read the ones you check. Another group you send them to could recognize the same words.',
+    );
+    const message = screen.getByRole('textbox', { name: door.messageLabel });
+    const careful = screen.getByText(door.careful);
+    // Under the message, above the caution and Send.
+    expect(message.compareDocumentPosition(group) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(group.compareDocumentPosition(careful) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('sends the checked ones’ titles and text alone, in the order Personal lists them', async () => {
+    const { user, onApply } = await setup({ documents: [STATEMENT, BIKES, GARDEN] });
+    await fill(user);
+    const group = await picker();
+    await user.click(within(group).getByRole('checkbox', { name: 'Garden' }));
+    await user.click(within(group).getByRole('checkbox', { name: 'What I stand for' }));
+    expect(await axeViolations()).toEqual([]);
+    await user.click(screen.getByRole('button', { name: door.send }));
+    const [[, , values]] = onApply.mock.calls as [[Uint8Array, OpenPage, ApplyValues]];
+    expect(values).toEqual({
+      name: 'Kim',
+      message: 'Hello.',
+      documents: [
+        { title: 'What I stand for', text: 'Fair rents.' },
+        { title: 'Garden', text: 'Beans.' },
+      ],
+    });
+  });
+
+  it('sends none when none is checked, as an application without documents', async () => {
+    const { user, onApply } = await setup({ documents: [STATEMENT] });
+    await fill(user);
+    await user.click(screen.getByRole('button', { name: door.send }));
+    const [[, , values]] = onApply.mock.calls as [[Uint8Array, OpenPage, ApplyValues]];
+    expect(values).toEqual({ name: 'Kim', message: 'Hello.' });
+  });
+
+  it('shows someone with no personal Documents nothing new', async () => {
+    await setup({ documents: [] });
+    await screen.findByRole('heading', { level: 1, name: 'Riverside Tenants' });
+    expect(screen.queryByRole('group', { name: door.documentsLabel })).toBeNull();
+    expect(screen.queryByRole('checkbox')).toBeNull();
+    expect(screen.queryByText(door.documentsHint)).toBeNull();
+  });
+
+  it('refuses Documents over the cap at the form with one form-error line, and sends nothing', async () => {
+    const long = { ...BIKES, text: 'x'.repeat(DOCUMENTS_MAX_BYTES) };
+    const { user, onApply } = await setup({ documents: [STATEMENT, long] });
+    await fill(user);
+    const group = await picker();
+    await user.click(within(group).getByRole('checkbox', { name: 'Bikes' }));
+    const line = await screen.findByRole('alert');
+    expect(line).toHaveTextContent(door.documentsTooLong);
+    expect(line).toHaveClass('form-error');
+    await user.click(screen.getByRole('button', { name: door.send }));
+    expect(onApply).not.toHaveBeenCalled();
+    expect(document.querySelectorAll('.form-error')).toHaveLength(1);
+    expect(await axeViolations()).toEqual([]);
+    await user.click(within(group).getByRole('checkbox', { name: 'Bikes' }));
+    expect(screen.queryByRole('alert')).toBeNull();
+    await user.click(within(group).getByRole('checkbox', { name: 'What I stand for' }));
+    await user.click(screen.getByRole('button', { name: door.send }));
+    expect(onApply).toHaveBeenCalledTimes(1);
+  });
+
+  it('measures the copy Send seals: each title and text in NFC, which can grow past the cap', async () => {
+    // U+0958 takes 3 bytes, and NFC makes it two code points of 3 bytes each.
+    const grows = { ...BIKES, text: '\u0958'.repeat(10_000) };
+    expect(new TextEncoder().encode(grows.text).length).toBeLessThan(DOCUMENTS_MAX_BYTES);
+    const cafe = { ...GARDEN, title: 'Cafe\u0301', text: 'Cafe\u0301 beans.' };
+    const { user, onApply } = await setup({ documents: [grows, cafe] });
+    await fill(user);
+    const group = await picker();
+    await user.click(within(group).getByRole('checkbox', { name: 'Bikes' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(door.documentsTooLong);
+    await user.click(within(group).getByRole('checkbox', { name: 'Bikes' }));
+    await user.click(within(group).getByRole('checkbox', { name: 'Cafe\u0301' }));
+    await user.click(screen.getByRole('button', { name: door.send }));
+    const [[, , values]] = onApply.mock.calls as [[Uint8Array, OpenPage, ApplyValues]];
+    expect(values.documents).toEqual([{ title: 'Café', text: 'Café beans.' }]);
+  });
+
+  it('refuses a fourth Document at the form with one form-error line', async () => {
+    const { user, onApply } = await setup({ documents: [STATEMENT, BIKES, GARDEN, NOTES] });
+    await fill(user);
+    const group = await picker();
+    for (const box of within(group).getAllByRole('checkbox')) await user.click(box);
+    const tooMany = door.documentsTooMany(DOCUMENTS_MAX);
+    expect(await screen.findByRole('alert')).toHaveTextContent(tooMany);
+    expect(tooMany).toBe('Send up to 3 Documents with one request.');
+    await user.click(screen.getByRole('button', { name: door.send }));
+    expect(onApply).not.toHaveBeenCalled();
+    expect(document.querySelectorAll('.form-error')).toHaveLength(1);
   });
 });
 

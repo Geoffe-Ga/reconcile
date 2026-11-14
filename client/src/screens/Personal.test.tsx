@@ -86,7 +86,7 @@ describe('Personal', () => {
     ).toBeVisible();
     expect(
       screen.getByText(
-        'They stay on this device. Nothing here is sent to the relay or to your groups, unless you share one by link. A backup file you save includes them.',
+        'They stay on this device. Nothing here is sent to the relay or to your groups, unless you share one by link or send one with a request to join. A backup file you save includes them.',
       ),
     ).toBeVisible();
     expect(screen.getByRole('link', { name: /Your groups/ })).toHaveAttribute('href', '#/');
