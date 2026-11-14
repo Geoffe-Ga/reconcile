@@ -6,8 +6,9 @@
  * Tap 2's answer decides, once, whether the keys are locked with the passkey
  * (`passkey.ts`). A cancelled or failed tap decides nothing: it says so and
  * the same tap can be tried again. Once it has ended, one plain line says
- * how, and takes focus. Where the passkey can't protect the keys, the line
- * links to Save a backup, unless the screen already holds it (Settings).
+ * how, and takes focus. Where the passkey can't protect the keys, or the
+ * groups had no way back so nothing was locked (#389), the line links to
+ * Save a backup, unless the screen already holds it (Settings).
  */
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { Button, Link } from 'react-aria-components';
@@ -60,7 +61,14 @@ interface EndedProps {
   readonly onBackup: (() => void) | undefined;
 }
 
-/** How setup ended, in one line that takes focus, with Save a backup after the no-PRF line. */
+/** The line for how setup ended. */
+const ENDED: Readonly<Record<Protection, string>> = {
+  protected: messages.passkey.locked,
+  'no-prf': messages.passkey.noPrf,
+  'no-recovery': messages.passkey.noRecovery,
+};
+
+/** How setup ended, in one line that takes focus, with Save a backup after a line that locked nothing. */
 function Ended({ protection, linkBackup, onBackup }: EndedProps) {
   const line = useRef<HTMLParagraphElement>(null);
   useEffect(() => {
@@ -70,7 +78,7 @@ function Ended({ protection, linkBackup, onBackup }: EndedProps) {
   return (
     <div className="stack">
       <p ref={line} tabIndex={-1} className="lede passkey-ended">
-        {locked ? messages.passkey.locked : messages.passkey.noPrf}
+        {ENDED[protection]}
       </p>
       {!locked && linkBackup ? (
         <p>

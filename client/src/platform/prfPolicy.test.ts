@@ -1,7 +1,8 @@
 /**
- * ADR-0030's one version check (#95): PRF isn't trusted on iOS or iPadOS
- * 18.0–18.3, nor on an Apple touch device whose version can't be read.
- * Everywhere else the passkey's own answer decides (ADR-0042).
+ * ADR-0030's one version check (#95, #389): PRF isn't trusted on iOS or
+ * iPadOS 18.0–18.3, in Safari 18.0–18.3 on a Mac, nor on an Apple touch
+ * device whose version can't be read. Everywhere else the passkey's own
+ * answer decides (ADR-0042).
  */
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
@@ -25,6 +26,13 @@ const iphone = (major: number, minor: number): Device =>
     `iPhone; CPU iPhone OS ${String(major)}_${String(minor)} like Mac OS X`,
     `Version/${String(major)}.${String(minor)} Mobile/15E148 Safari/604.1`,
   );
+
+/** Safari on a Mac, no touch screen: the frozen `10_15_7`, and Safari's own `Version/`. */
+const macSafari = (version: string): Device =>
+  ua('Macintosh; Intel Mac OS X 10_15_7', `Version/${version} Safari/605.1.15`, 0);
+
+/** Another browser on a Mac, which names no Safari version. */
+const macBrowser = (tail: string): Device => ua('Macintosh; Intel Mac OS X 10_15_7', tail, 0);
 
 /** An iPad asking for desktop sites: a Mac's user agent, a touch screen, Safari's `Version/`. */
 const ipadDesktop = (version: string): Device =>
@@ -80,10 +88,51 @@ describe('prfTrusted', () => {
     expect(prfTrusted(ua('iPhone; CPU like Mac OS X', 'Mobile/15E148'))).toBe(false);
   });
 
-  it('is true on a Mac, whose frozen version it never reads', () => {
-    expect(
-      prfTrusted(ua('Macintosh; Intel Mac OS X 10_15_7', 'Version/18.2 Safari/605.1.15', 0)),
-    ).toBe(true);
+  describe('on a Mac (#389)', () => {
+    it.each(['18.0', '18.1', '18.2', '18.3', '18.3.1'])('is false in Safari %s', (version) => {
+      expect(prfTrusted(macSafari(version))).toBe(false);
+    });
+
+    it.each(['17.0', '17.6', '18.4', '18.6', '26.0', '26.1'])('is true in Safari %s', (version) => {
+      expect(prfTrusted(macSafari(version))).toBe(true);
+    });
+
+    it.each([
+      ['Chrome', '(KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36'],
+      ['Edge', '(KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36 Edg/138.0.0.0'],
+      ['Firefox', 'Gecko/20100101 Firefox/141.0'],
+      ['Opera', 'Chrome/138.0.0.0 Safari/537.36 OPR/120.0.0.0'],
+    ])('is true in %s, which names no Safari version', (_name, tail) => {
+      expect(prfTrusted(macBrowser(tail))).toBe(true);
+    });
+
+    it('reads a Safari version only beside Safari’s own token', () => {
+      // Another browser that names a Version/ token is still not Safari.
+      expect(prfTrusted(macBrowser('Version/18.2 Chrome/138.0.0.0 Safari/537.36'))).toBe(true);
+      expect(prfTrusted(macBrowser('Version/18.2 Firefox/141.0'))).toBe(true);
+    });
+
+    it('is false from 18.0 to 18.3 exactly, for any version Safari reports', () => {
+      fc.assert(
+        fc.property(
+          fc.integer({ min: 0, max: 40 }),
+          fc.integer({ min: 0, max: 9 }),
+          (major, minor) => {
+            const buggy = major === 18 && minor <= 3;
+            expect(prfTrusted(macSafari(`${String(major)}.${String(minor)}`))).toBe(!buggy);
+          },
+        ),
+        // Each edge, every run, beside the random ones.
+        {
+          examples: [
+            [18, 0],
+            [18, 3],
+            [18, 4],
+            [17, 9],
+          ],
+        },
+      );
+    });
   });
 
   it.each([
