@@ -203,9 +203,6 @@ describe('choosing recovery contacts through the app', { timeout: 30_000 }, () =
     expect(settings.getByRole('checkbox', { name: 'Ben' })).toBeChecked();
     expect(settings.getByRole('checkbox', { name: 'Dee' })).toBeChecked();
     expect(settings.queryByRole('checkbox', { name: 'Cal' })).toBeNull();
-    // The page's own status, not the link bar's (#444).
-    expect(within(settings.getByRole('main')).getByRole('status')).toHaveTextContent(
-      '2 of 3 picked.',
-    );
+    expect(settings.getByRole('status')).toHaveTextContent('2 of 3 picked.');
   });
 });

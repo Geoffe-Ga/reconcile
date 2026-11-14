@@ -294,19 +294,24 @@ function shownRead(inside: boolean, pointer: CodeKind | null, text: string): Lin
 
 /** The panel under the pill and the scrim behind it, while the bar has focus and text. */
 function Overlay({
+  live,
   read,
   onOpen,
   onDismiss,
 }: {
+  /** True while the bar has focus: its live region exists only then, so a page's own stays the only one. */
+  readonly live: boolean;
   readonly read: LinkKind | null;
   readonly onOpen: () => void;
   readonly onDismiss: () => void;
 }) {
   return (
     <>
-      <div role="status" className="visually-hidden">
-        {announcementOf(read)}
-      </div>
+      {live ? (
+        <div role="status" className="visually-hidden">
+          {announcementOf(read)}
+        </div>
+      ) : null}
       {read === null ? null : (
         <>
           <div className="link-bar-panel">
@@ -383,7 +388,7 @@ export function LinkBar(props: LinkBarProps) {
             onKeyDown={onKeyDown}
             onSubmit={onSubmit}
           />
-          <Overlay read={read} onOpen={open} onDismiss={dismiss} />
+          <Overlay live={inside} read={read} onOpen={open} onDismiss={dismiss} />
         </Autocomplete>
       </div>
     </div>
