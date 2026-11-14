@@ -46,6 +46,28 @@ export const messages = {
     /** Ends a quotation that leaves words out, as in "Shared spaces are cleaned every…". */
     ellipsis: '…',
   },
+  /** The tab bar (#423; ADR-0077 §7): the app's three places, a glyph and a word each. */
+  tabs: {
+    /** The bar's name as a landmark. */
+    label: 'Main',
+    groups: 'Groups',
+    discover: 'Discover',
+    me: 'Me',
+  },
+  /** Discover (#423; ADR-0077 §6): reading across groups, and the field that opens a card or link. */
+  discover: {
+    pageTitle: 'Discover',
+    title: 'Discover',
+    /** The empty state's one sentence, until the shelf (ADR-0077 §1) has entries to show. */
+    empty: 'Dispatches that groups put on the public shelf will show up here.',
+    openHeading: 'Open a card or link',
+    openLabel: 'Card or link',
+    openHint:
+      'Paste an invite link, a reconcile card, a coalition’s follow link or a group’s front door link.',
+    open: 'Open',
+    /** For anything none of those reads; it never repeats the text. */
+    badLink: 'This isn’t a link Reconcile can open. Check you copied all of it.',
+  },
   start: {
     pageTitle: 'Your groups',
     title: 'Your groups',
@@ -1301,6 +1323,8 @@ export const messages = {
     missionTitle: 'My mission statement',
     missionPrompt: 'What do you stand for, and what are you working toward?',
     newDocument: 'New document',
+    /** Personal's quiet link to Settings, which the tab bar's Me reaches through it (#423). */
+    settings: 'Settings',
     documentPageTitle: 'Personal Document',
     eyebrow: 'Personal',
     untitled: 'Untitled',

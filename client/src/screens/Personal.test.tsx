@@ -92,6 +92,15 @@ describe('Personal', () => {
     expect(screen.getByRole('link', { name: /Your groups/ })).toHaveAttribute('href', '#/');
   });
 
+  it('reaches Settings from a quiet link at its end, as the tab bar’s Me (#423)', async () => {
+    render(<Personal documents={DOCUMENTS} newId={NEW_ID} now={NOW} relayBackup={false} />);
+
+    const settings = screen.getByRole('link', { name: 'Settings' });
+    expect(settings).toHaveAttribute('href', '#/settings');
+    expect(settings).toHaveClass('forward-link');
+    expect(await axeViolations()).toEqual([]);
+  });
+
   it('says the sealed relay backup has them too once the device keeps one, and nothing until it knows (#248)', async () => {
     const { privacy, privacyRelayBackup } = messages.personal;
     const { rerender } = render(

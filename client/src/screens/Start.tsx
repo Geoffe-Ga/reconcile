@@ -1,10 +1,8 @@
 import { type ReactNode, type SyntheticEvent, useId } from 'react';
 import { Button, Form, Link } from 'react-aria-components';
 
-import { parseInviteLink } from '../app/invite';
-import { parseCardLink } from '../coalition/card';
-import { parseFollowLink } from '../coalition/follow';
 import { messages } from '../app/messages';
+import { OpenLink, type OpenLinkWords } from '../app/OpenLink';
 import { RestoreBackup, type RestoreBackupProps } from '../app/RestoreBackup';
 import { routeHref } from '../app/router';
 import { formatDay } from '../app/time';
@@ -103,31 +101,17 @@ function PersonalCard() {
 }
 
 /**
- * M2-03's expired-or-damaged line for anything that is neither an invite
- * link, a reconcile card's (#114) nor a follow link (#124). It never repeats
- * the text.
+ * Start's paste field (#423 shares it with Discover): an invite, a reconcile
+ * card (#114) or a follow link (#124), and M2-03's expired-or-damaged line for
+ * anything else. A front door link has its own field here (#121).
  */
-function checkInvite(text: string): string | null {
-  const readers = [parseInviteLink, parseCardLink, parseFollowLink];
-  return readers.every((read) => read(text) === null) ? messages.join.badLink : null;
-}
-
-/**
- * Opens whatever link `text` is: an invite (spec §3), a reconcile card
- * (#114) or a follow link (#124), each by its own handler; a handler Start
- * wasn't given leaves its link unopened.
- */
-function openPasted(
-  text: string,
-  open: Pick<StartProps, 'onOpenInvite' | 'onOpenCard' | 'onOpenFollow'>,
-): void {
-  const seed = parseInviteLink(text);
-  if (seed !== null) open.onOpenInvite(seed);
-  const card = parseCardLink(text);
-  if (card !== null) open.onOpenCard?.(card);
-  const follow = parseFollowLink(text);
-  if (follow !== null) open.onOpenFollow?.(follow);
-}
+const INVITE_WORDS: OpenLinkWords = {
+  heading: messages.start.inviteHeading,
+  label: messages.start.inviteLabel,
+  hint: messages.start.inviteHint,
+  button: messages.start.openInvite,
+  badLink: messages.join.badLink,
+};
 
 /**
  * "Following" (#124): each coalition this device follows, its name over its
@@ -320,13 +304,6 @@ function RecoverSection() {
 export function Start(props: StartProps) {
   const { groups, requests = [], onOpenInvite, onOpenDoor } = props;
   const { persistence = null, onRestore, alert } = props;
-  const inviteHeading = useId();
-
-  const openInvite = (event: SyntheticEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const value = new FormData(event.currentTarget).get('invite');
-    openPasted(typeof value === 'string' ? value : '', props);
-  };
 
   return (
     <main className="shell">
@@ -353,24 +330,13 @@ export function Start(props: StartProps) {
       <Following following={props.following} />
       {requests.length === 0 ? null : <Requests requests={requests} onOpenInvite={onOpenInvite} />}
       <PersonalCard />
-      <section className="stack" aria-labelledby={inviteHeading}>
-        <h2 id={inviteHeading} className="heading-3">
-          {messages.start.inviteHeading}
-        </h2>
-        <Form className="form" onSubmit={openInvite}>
-          <Field
-            name="invite"
-            label={messages.start.inviteLabel}
-            hint={messages.start.inviteHint}
-            autoComplete="off"
-            isRequired
-            validate={checkInvite}
-          />
-          <Button type="submit" className="button button-secondary">
-            {messages.start.openInvite}
-          </Button>
-        </Form>
-      </section>
+      <OpenLink
+        words={INVITE_WORDS}
+        name="invite"
+        onOpenInvite={onOpenInvite}
+        onOpenCard={props.onOpenCard}
+        onOpenFollow={props.onOpenFollow}
+      />
       {onOpenDoor === undefined ? null : <DoorSection onOpenDoor={onOpenDoor} />}
       {onRestore === undefined ? null : <RestoreSection onRestore={onRestore} />}
       <LinkSection />
