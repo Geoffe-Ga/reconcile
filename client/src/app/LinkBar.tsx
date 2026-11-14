@@ -25,6 +25,7 @@ import {
   Autocomplete,
   Button,
   Input,
+  type Key,
   Link,
   ListBox,
   ListBoxItem,
@@ -35,6 +36,9 @@ import { clipboardReader, isTouch, type ReadClipboard } from '../platform/clipbo
 import { type CodeKind, type LinkKind, linkKind, type OpenableLink } from './linkKind';
 import { messages } from './messages';
 import { type Route, routeHref } from './router';
+import { search, type SearchRecord, type SearchResult } from './search';
+import { SearchResults } from './SearchResults';
+import { moreOf, type Shelf, shelvesOf } from './searchShelves';
 
 const words = messages.linkBar;
 
@@ -48,6 +52,10 @@ export interface LinkBarProps {
   readonly readClipboard?: ReadClipboard | null;
   /** Whether this is a touch device, where an empty, focused bar offers Paste. */
   readonly touch?: boolean;
+  /** What this device holds for search (#445), built in memory; none by default. */
+  readonly records?: readonly SearchRecord[];
+  /** Opens a search result, at its own page. */
+  readonly onGo?: (record: SearchRecord) => void;
 }
 
 /** Whether `target` takes typing of its own, so `/` belongs to it. */
@@ -285,32 +293,77 @@ function openable(read: LinkKind | null): OpenableLink | null {
   return read !== null && 'payload' in read ? read : null;
 }
 
-/** What the panel shows: nothing without focus; a code's pointer; else what the text is, if any. */
-function shownRead(inside: boolean, pointer: CodeKind | null, text: string): LinkKind | null {
+/**
+ * What the panel shows: a link's read (a link, a code, a damaged link, or a
+ * link to another site), or search results for plain words (#445).
+ */
+type View = { readonly read: LinkKind } | { readonly results: readonly SearchResult[] };
+
+/** Text that's meant as a link: an address with a scheme, or a fragment. Words that aren't are a search. */
+const LINK_LIKE = /(?:^|\s)(?:[a-z][a-z\d+.-]*:\/\/|#\S)/iu;
+
+/** What the panel shows: nothing without focus or text; a code's pointer; a link's read; else a search. */
+function viewOf(
+  inside: boolean,
+  pointer: CodeKind | null,
+  text: string,
+  records: readonly SearchRecord[],
+): View | null {
   if (!inside) return null;
-  if (pointer !== null) return { kind: pointer };
-  return text.trim() === '' ? null : linkKind(text);
+  if (pointer !== null) return { read: { kind: pointer } };
+  if (text.trim() === '') return null;
+  const read = linkKind(text);
+  return read.kind === 'not-a-link' && !LINK_LIKE.test(text)
+    ? { results: search(records, text) }
+    : { read };
+}
+
+/** What the live region says of `view`: how many results or rows show, or the panel's one line. */
+function spokenOf(view: View | null): string {
+  if (view === null) return '';
+  if ('read' in view) return announcementOf(view.read);
+  return view.results.length === 0 ? messages.search.nothing : words.results(view.results.length);
+}
+
+/** Props for {@link Overlay}. */
+interface OverlayProps {
+  readonly view: View | null;
+  readonly expanded: ReadonlySet<Shelf>;
+  readonly onOpen: () => void;
+  readonly onResult: (key: Key) => void;
+  readonly onDismiss: () => void;
+}
+
+/** What the panel holds for `view`. */
+function ViewPanel({
+  view,
+  expanded,
+  onOpen,
+  onResult,
+}: Omit<OverlayProps, 'view' | 'onDismiss'> & { readonly view: View }) {
+  if ('read' in view) return <Panel read={view.read} onOpen={onOpen} />;
+  if (view.results.length === 0) {
+    return (
+      <>
+        <p className="link-bar-line">{messages.search.nothing}</p>
+        <p className="link-bar-line link-bar-scope">{messages.search.scope}</p>
+      </>
+    );
+  }
+  return <SearchResults results={view.results} expanded={expanded} onAction={onResult} />;
 }
 
 /** The panel under the pill and the scrim behind it, while the bar has focus and text. */
-function Overlay({
-  read,
-  onOpen,
-  onDismiss,
-}: {
-  readonly read: LinkKind | null;
-  readonly onOpen: () => void;
-  readonly onDismiss: () => void;
-}) {
+function Overlay({ view, onDismiss, ...rest }: OverlayProps) {
   return (
     <>
       <div role="status" className="visually-hidden">
-        {announcementOf(read)}
+        {spokenOf(view)}
       </div>
-      {read === null ? null : (
+      {view === null ? null : (
         <>
           <div className="link-bar-panel">
-            <Panel read={read} onOpen={onOpen} />
+            <ViewPanel view={view} {...rest} />
           </div>
           <div className="link-bar-scrim" data-testid="link-bar-scrim" onPointerDown={onDismiss} />
         </>
@@ -319,26 +372,40 @@ function Overlay({
   );
 }
 
+/** No records: a search finds nothing until the app hands the bar what the device holds. */
+const NO_RECORDS: readonly SearchRecord[] = [];
+
+/** No eyebrow shows all its rows yet. */
+const NONE_EXPANDED: ReadonlySet<Shelf> = new Set();
+
+/** The search results `view` shows, if any. */
+function resultsOf(view: View | null): readonly SearchResult[] {
+  return view !== null && 'results' in view ? view.results : [];
+}
+
 /** The pill, the panel under it while it has focus and text, and the scrim behind them. */
 export function LinkBar(props: LinkBarProps) {
   const { onOpen, onPanelChange, readClipboard = clipboardReader(), touch = isTouch() } = props;
+  const { records = NO_RECORDS, onGo } = props;
   const input = useRef<HTMLInputElement>(null);
   const bar = useRef<HTMLDivElement>(null);
   const [text, setText] = useState('');
   // A pasted code's kind: the bar points to where the code goes, and keeps none of it.
   const [pointer, setPointer] = useState<CodeKind | null>(null);
   const { inside, handBack, forget } = useFocusInside(bar, input, setPointer);
+  const [expanded, setExpanded] = useState<ReadonlySet<Shelf>>(NONE_EXPANDED);
   const take = (value: string) => {
     const { kind } = linkKind(value);
     const code = kind === 'linking-code' || kind === 'recovery-code' ? kind : null;
     setPointer(code);
     setText(code === null ? value : '');
+    setExpanded(NONE_EXPANDED);
   };
   const paste = usePaste(readClipboard, touch && inside && text === '', input, take);
   useShortcut(input);
 
-  const read = shownRead(inside, pointer, text);
-  const shown = read !== null;
+  const view = viewOf(inside, pointer, text, records);
+  const shown = view !== null;
   useEffect(() => {
     onPanelChange?.(shown);
   }, [shown, onPanelChange]);
@@ -355,21 +422,45 @@ export function LinkBar(props: LinkBarProps) {
     setPointer(null);
     handBack();
   };
-  const open = () => {
-    const link = openable(read);
-    if (link === null) return;
+  /** Empties the bar and lets go of focus, then hands `go` on. */
+  const leaveFor = (go: () => void) => {
     setText('');
+    setExpanded(NONE_EXPANDED);
     forget();
     letGo(input.current);
-    onOpen(link);
+    go();
     // A tap's press ends by putting focus back in the field (React Aria's virtual focus), so let go once more after it.
     window.setTimeout(() => {
       letGo(input.current);
     }, 0);
   };
+  const open = () => {
+    const link = view !== null && 'read' in view ? openable(view.read) : null;
+    if (link !== null) {
+      leaveFor(() => {
+        onOpen(link);
+      });
+    }
+  };
+  const goTo = (record: SearchRecord | undefined) => {
+    if (record !== undefined) {
+      leaveFor(() => {
+        onGo?.(record);
+      });
+    }
+  };
+  const onResult = (key: Key) => {
+    const shelf = moreOf(key);
+    if (shelf !== null) setExpanded(new Set([...expanded, shelf]));
+    else goTo(resultsOf(view).find((result) => result.record.id === key)?.record);
+  };
   const onSubmit = () => {
-    // A row with the keyboard's virtual focus opens through the list; else Enter opens the one row.
-    if (input.current?.hasAttribute('aria-activedescendant') !== true) open();
+    // A row with the keyboard's virtual focus opens through the list; else Enter opens the first.
+    if (input.current?.hasAttribute('aria-activedescendant') === true) return;
+    // The first row as it shows: the first eyebrow's first.
+    const first = shelvesOf(resultsOf(view), expanded).at(0)?.rows.at(0);
+    if (first === undefined) open();
+    else goTo(first.record);
   };
 
   return (
@@ -383,7 +474,13 @@ export function LinkBar(props: LinkBarProps) {
             onKeyDown={onKeyDown}
             onSubmit={onSubmit}
           />
-          <Overlay read={read} onOpen={open} onDismiss={dismiss} />
+          <Overlay
+            view={view}
+            expanded={expanded}
+            onOpen={open}
+            onResult={onResult}
+            onDismiss={dismiss}
+          />
         </Autocomplete>
       </div>
     </div>

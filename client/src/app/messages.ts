@@ -81,6 +81,20 @@ export const messages = {
   },
   /** Search on this device (#445), from the link bar. */
   search: {
+    /** The results' name as a list. */
+    results: 'Results',
+    /** Each kind of result's eyebrow, in the order they show. */
+    shelves: {
+      groups: 'Groups',
+      documents: 'Documents',
+      proposals: 'Proposals',
+      dispatches: 'Dispatches',
+      yours: 'Yours',
+      places: 'Go to',
+    },
+    showAll: (count: number) => `Show all ${String(count)}`,
+    nothing: 'Nothing on this device matches.',
+    scope: 'Search covers only what this device holds.',
     /** The app's own places, by the names search finds them by. */
     places: {
       start: 'Your groups',
