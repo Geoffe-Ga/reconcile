@@ -310,6 +310,39 @@ describe('a recovery someone else holds the code to (#398)', DEVICES, () => {
     expect(await session.poll()).toEqual({ kind: 'stopped' });
   });
 
+  it('keeps the backup found when Yes fails, so Yes can go again', async () => {
+    const { fake, world, fresh, shown } = await setUp();
+    await releaseRiverside(fake, world, shown);
+    const { store } = fresh.services;
+    let failures = 1;
+    const session = recoverSession({
+      ...fresh.services,
+      store: {
+        ...store,
+        finishRecovery: (at: number) => {
+          if (failures === 0) return store.finishRecovery(at);
+          failures -= 1;
+          return Promise.reject(new Error('The disk is full.'));
+        },
+      },
+    });
+    expect(await session.poll()).toMatchObject({ kind: 'found' });
+
+    await expect(session.confirm()).rejects.toThrow('The disk is full.');
+    expect(await session.poll()).toEqual({
+      kind: 'found',
+      groups: ['Riverside Tenants', 'Riverside Tenants'],
+    });
+    expect(await session.confirm()).toEqual({
+      kind: 'restored',
+      groups: 2,
+      skipped: 0,
+      skippedDocuments: 0,
+    });
+    expect(await fresh.services.store.getRecoverRequest()).toBeUndefined();
+    expect(backupReads(fake)).toBe(1);
+  });
+
   it('answers a Yes or No with nothing found as a poll would', async () => {
     const { fresh } = await setUp();
     const session = recoverSession(fresh.services);

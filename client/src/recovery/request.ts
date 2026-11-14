@@ -48,7 +48,6 @@
  * a new device may make at the offer after the pilot notice or during the
  * wait (`store/recoverRequest.ts`).
  */
-import { BackupUnreadable } from '../crypto/backup';
 import { base64url } from '../crypto/base64url';
 import { kxPublicKeyOf } from '../crypto/box';
 import {
@@ -127,7 +126,11 @@ export type RecoverStep =
 /** A recovery in progress on this device's screen: each poll reads the mailbox once. */
 export interface RecoverSession {
   readonly poll: () => Promise<RecoverStep>;
-  /** Yes, these are my groups (#398): restores the backup found, and ends the recovery. */
+  /**
+   * Yes, these are my groups (#398): restores the backup found, and ends the
+   * recovery. With none found, it answers as a poll would; when the store
+   * can't keep it, it rejects and keeps the backup found, so Yes can go again.
+   */
   readonly confirm: () => Promise<RecoverStep>;
   /**
    * No, they aren't (#398): forgets the backup found, opens it no more this
@@ -283,19 +286,16 @@ async function findWith(
  * its groups and personal Documents (`importSnapshot`, from the relay), less
  * any group entry (#336) or personal Document (#351) that doesn't check out,
  * which it counts, then the key with its split (#272), and the mark that
- * this device was recovered, which takes the request's place. Null when it
- * no longer reads.
+ * this device was recovered, which takes the request's place. `findWith`
+ * already read the same bytes, so they read again.
+ *
+ * @throws {Error} when the store can't keep them.
  */
-async function restoreFound(services: RecoverServices, found: Found): Promise<Restored | null> {
-  try {
-    const restored = await importSnapshot(services.store, found.plaintext, 'relay');
-    await services.store.adoptRelayBackupKey(found.key, found.split);
-    await services.store.finishRecovery(services.now());
-    return restored;
-  } catch (error) {
-    if (error instanceof BackupUnreadable) return null;
-    throw error;
-  }
+async function restoreFound(services: RecoverServices, found: Found): Promise<Restored> {
+  const restored = await importSnapshot(services.store, found.plaintext, 'relay');
+  await services.store.adoptRelayBackupKey(found.key, found.split);
+  await services.store.finishRecovery(services.now());
+  return restored;
 }
 
 /**
@@ -402,14 +402,10 @@ export function recoverSession(services: RecoverServices): RecoverSession {
       drop();
       return { kind: 'stopped' };
     }
-    try {
-      const restored = await restoreFound(services, held);
-      if (restored !== null) return { kind: 'restored', ...restored };
-      declined.add(held.id);
-    } finally {
-      if (found === held) drop();
-    }
-    return poll();
+    // A failure keeps the backup found, so Yes can go again: its subset has been tried.
+    const restored = await restoreFound(services, held);
+    if (found === held) drop();
+    return { kind: 'restored', ...restored };
   };
 
   const decline = (): void => {

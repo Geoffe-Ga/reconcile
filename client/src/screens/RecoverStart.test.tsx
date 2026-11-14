@@ -190,10 +190,10 @@ describe('RecoverStart', () => {
     });
   });
 
-  it('goes back to waiting when Yes finds the backup no longer reads', async () => {
+  it('leaves the question when Yes finds the recovery already ended, as another tab would', async () => {
     const props = renderStart({
       poll: vi.fn(() => Promise.resolve(FOUND)),
-      confirm: vi.fn(() => Promise.resolve(WAITING)),
+      confirm: vi.fn(() => Promise.resolve<RecoverStep>({ kind: 'stopped' })),
     });
     await userEvent
       .setup()
