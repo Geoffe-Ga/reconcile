@@ -18,7 +18,7 @@ const LINK = 'https://reconcile.test/#follow/abc';
 const { coalitions } = messages;
 const WORDS = {
   warning: coalitions.shareWarning,
-  button: coalitions.share,
+  button: coalitions.copyFollowLink,
   field: coalitions.shareField,
   making: coalitions.sharing,
   failed: coalitions.shareFailed,
@@ -58,7 +58,7 @@ function renderShareLink(overrides: Partial<ShareLinkProps> = {}) {
 }
 
 const shareButton = () => screen.getByRole('button', { name: messages.linkShare.button });
-const copyButton = () => screen.getByRole('button', { name: coalitions.share });
+const copyButton = () => screen.getByRole('button', { name: coalitions.copyFollowLink });
 
 /** Lets every pending promise and the renders they cause finish. */
 const settle = () =>

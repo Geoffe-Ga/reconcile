@@ -1478,14 +1478,31 @@ a[data-focus-visible] {
   overflow-wrap: anywhere;
 }
 
-/* "From Ana · Mon 16 Nov": a name or a Proposal's title can be long, so it wraps. */
+/* "From Ana · Mon 16 Nov": a name or a Proposal's title can be long, so it
+ * wraps. It's text, not a flex row (#453), so "· <date>" waits on the
+ * sender's last line, or takes its last word down with it: no line starts
+ * with the dot. */
 .dispatch-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0 var(--space-2);
   color: var(--muted);
   font: var(--type-caption);
   overflow-wrap: anywhere;
+}
+
+/* "· <date>", which never wraps inside. */
+.dispatch-when {
+  white-space: nowrap;
+}
+
+/* The space either side of the dot that the flex row's gap gave. */
+.dispatch-separator {
+  margin-inline: var(--space-2);
+}
+
+/* A word joiner (U+2060), so no line breaks before the dot, even after a name
+ * in a script that may break between any two letters. It's generated, so the
+ * line's text stays as it was. */
+.dispatch-separator::before {
+  content: '\2060';
 }
 
 /* Plain text, never Markdown or links: line breaks and spaces show as typed. */

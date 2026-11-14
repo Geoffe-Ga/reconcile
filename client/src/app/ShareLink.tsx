@@ -1,7 +1,7 @@
 /**
  * Make a link and copy it, with what the link exposes said beside the button
- * (ADR-0053): Copy invite link on Group home (spec §9, #73) and Share a
- * follow link on a coalition's home (#124).
+ * (ADR-0053): Copy invite link on Group home (spec §9, #73) and Copy a
+ * follow link on a coalition's home (#124, #456).
  *
  * Each press makes a new link: the clipboard write starts at the press and
  * waits for the link, so the browser still counts it as the tap's, and the

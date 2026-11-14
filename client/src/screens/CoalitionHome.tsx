@@ -200,10 +200,10 @@ function Dispatches({ view, state }: { readonly view: CoalitionHomeView; state: 
   );
 }
 
-/** Share a follow link's words, with what the link exposes beside it (#124; ADR-0053). */
+/** Copy a follow link's words, with what the link exposes beside it (#124; ADR-0053). */
 const SHARE_WORDS = {
   warning: coalitions.shareWarning,
-  button: coalitions.share,
+  button: coalitions.copyFollowLink,
   field: coalitions.shareField,
   making: coalitions.sharing,
   failed: coalitions.shareFailed,
@@ -306,7 +306,7 @@ function FollowerHome(props: CoalitionHomeProps) {
  * The coalition home (#120): Take part first for whoever may, then its open
  * Proposals, its Dispatches (#124), those risen from below among them (#126),
  * its Documents, its Decided list, its
- * member groups and, for a participant, Share a follow link (#124). Someone
+ * member groups and, for a participant, Copy a follow link (#124). Someone
  * who only follows it reads {@link FollowerHome} instead.
  */
 export function CoalitionHome(props: CoalitionHomeProps) {
