@@ -52,6 +52,7 @@ const FOUND: FoundGroup = {
   epoch: 0,
   token: { by: 'a'.repeat(43), sig: 'b'.repeat(86) },
   cleared: [],
+  coalitions: [],
   page: { records: testGroup().records, cursor: 1, relayNow: 29_000_100, instance: 'relay' },
 };
 

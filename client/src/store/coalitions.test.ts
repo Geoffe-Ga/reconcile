@@ -25,12 +25,14 @@ import { sealSeatSecrets } from '../crypto/innerSeal';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { authorOf, signedAs, testKeys } from '../test/keys';
 import {
+  carriedCoalitions,
   coalitionKeys,
   dropCoalitionsOf,
   ensureEntries,
   foldWithCoalitions,
   heldCoalitions,
   holdings,
+  keepCarried,
   misstatesSeat,
   newEntry,
   outsideFor,
@@ -934,4 +936,123 @@ describe('retiring the coalitions a removed group alone held (#115, #122)', () =
       [c, d].sort(),
     );
   });
+});
+
+describe('a coalition’s log in its group’s invite (#279)', () => {
+  /**
+   * Group A reconciled into C, formed with B, and C reconciled into D by its
+   * sealed motion: every log, by name, and each coalition's secret. Coalition F
+   * is one A never reached, as one this device follows by its link.
+   */
+  function nested() {
+    const logs = new NestedLogs();
+    logs.group('A', R, ['ana']);
+    logs.reconcileInto('A', R + 1, 'ana', 'C', 'A', NESTED_STATEMENTS.C);
+    const at = logs.formedIn('C', R + 2, [['A'], ['B']], ['cal', 'dee'], NESTED_STATEMENTS.C);
+    logs.sealedInto('C', at, 'cal', 'D', NESTED_STATEMENTS.D);
+    logs.coalitionIn('D', at + 1, [['C', 2], ['E']], NESTED_STATEMENTS.D);
+    logs.coalitionIn('F', R + 2, [['X'], ['Y']], COALITION_STATEMENT);
+    const carried = (name: string) => ({
+      secret: fromBase64url(testSecret(name)),
+      entries: logs.logs[name] ?? [],
+    });
+    return { logs, carried };
+  }
+
+  /** Keeps coalition `name`'s entry on `store`, with `records` as its log and, when `following`, followed by link. */
+  async function keepEntry(
+    store: Store,
+    name: string,
+    records: readonly LogRecord[],
+    following = false,
+  ) {
+    const entry = newEntry(fromBase64url(testSecret(name)), following ? { following: true } : {});
+    await store.addGroup(entry);
+    if (records.length > 0) {
+      const pull = { records: [...records], relayNow: R + 100, instance: 'i', lastSyncAt: 1 };
+      await store.applyPull(entry.groupId, pull, eventIdOf);
+    }
+    return entry.groupId;
+  }
+
+  /** The secrets of `carried`, in base64url, to compare. */
+  const secretsOf = (carried: readonly { readonly secret: Uint8Array }[]) =>
+    carried.map((each) => base64url(each.secret));
+
+  /** Each coalition entry on `store`, by entry id, with how many records its log holds. */
+  async function entriesOn(store: Store) {
+    const entries = await store.listCoalitions();
+    return Object.fromEntries(entries.map((entry) => [entry.groupId, entry.log.length]));
+  }
+
+  const READ = { relayNow: R + 200, instance: 'i', lastSyncAt: 2 };
+
+  it('carries the log of each coalition the group reaches, nearest first, and none it doesn’t', async () => {
+    const store = await device();
+    const { logs, carried } = nested();
+    await keepGroup(store, 'A', 'ana', logs.logs.A ?? []);
+    await keepEntry(store, 'F', logs.logs.F ?? [], true);
+    await keepEntry(store, 'D', logs.logs.D ?? []);
+    await keepEntry(store, 'C', logs.logs.C ?? []);
+    const group = await store.getGroup('A');
+    if (group === undefined) throw new Error('Expected group A.');
+
+    const sent = await carriedCoalitions(store, group);
+    expect(secretsOf(sent)).toEqual(secretsOf([carried('C'), carried('D')]));
+    expect(sent.map((each) => each.entries.length)).toEqual([
+      logs.logs.C?.length,
+      logs.logs.D?.length,
+    ]);
+  });
+
+  it('carries none whose log is still empty', async () => {
+    const store = await device();
+    const { logs, carried } = nested();
+    await keepGroup(store, 'A', 'ana', logs.logs.A ?? []);
+    await keepEntry(store, 'C', logs.logs.C ?? []);
+    await keepEntry(store, 'D', []);
+    const group = await store.getGroup('A');
+    if (group === undefined) throw new Error('Expected group A.');
+    expect(secretsOf(await carriedCoalitions(store, group))).toEqual(secretsOf([carried('C')]));
+  });
+
+  it('keeps on a newcomer’s device each carried coalition the group reaches, nested ones through those below, and no other', async () => {
+    const store = await device();
+    const { logs, carried } = nested();
+    await keepGroup(store, 'A', 'ana', logs.logs.A ?? []);
+
+    await keepCarried(store, 'A', [carried('F'), carried('D'), carried('C')], READ);
+    const id = (name: string) => deriveCoalitionEntryId(fromBase64url(testSecret(name)));
+    expect(await entriesOn(store)).toEqual({
+      [id('C')]: logs.logs.C?.length,
+      [id('D')]: logs.logs.D?.length,
+    });
+    const c = await store.getGroup(id('C'));
+    expect(c === undefined ? null : fold(c.log, c.relayNow).coalition?.status).toBe('formed');
+  });
+
+  it('merges a carried log into an entry the device already keeps, adding only what it lacks', async () => {
+    const store = await device();
+    const { logs, carried } = nested();
+    const c = logs.logs.C ?? [];
+    await keepGroup(store, 'A', 'ana', logs.logs.A ?? []);
+    const entry = await keepEntry(store, 'C', c.slice(0, 1));
+
+    await keepCarried(store, 'A', [carried('C')], READ);
+    const kept = await store.getGroup(entry);
+    expect(kept?.log.map((record) => record.seq)).toEqual(c.map((record) => record.seq));
+  });
+
+  it.each(['removed', 'dissolved'] as const)(
+    'keeps nothing for a group the device holds as a %s archive (#278, #405)',
+    async (reason) => {
+      const store = await device();
+      const { logs, carried } = nested();
+      await keepGroup(store, 'A', 'ana', logs.logs.A ?? []);
+      await store.markArchived('A', reason);
+
+      await keepCarried(store, 'A', [carried('C'), carried('D')], READ);
+      expect(await store.listCoalitions()).toEqual([]);
+    },
+  );
 });
