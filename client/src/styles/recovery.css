@@ -156,3 +156,76 @@
 .recover-wait {
   max-width: 37em;
 }
+
+/*
+ * The two numbers the person reads out (#398), in the linking number's card:
+ * each named in an eyebrow over its digits, side by side where there's room
+ * and stacked on a phone.
+ */
+.recover-numbers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-8);
+  margin: 0;
+  padding-block-start: var(--space-2);
+}
+
+/* Why the second number matters, without a lone last word. */
+.recover-numbers + .caption {
+  text-wrap: pretty;
+}
+
+.recover-numbers dd {
+  margin: 0;
+}
+
+/* The shares that came with another second number sit under the live line, as one status. */
+.recover-status {
+  gap: var(--space-2);
+}
+
+/*
+ * "Are these your groups?" (#398): the names a backup holds, one per line, on
+ * a surface card with a hairline border, as the picker's groups. A name is
+ * whatever its owner typed, so it may need to break anywhere.
+ */
+.recover-found {
+  display: grid;
+  gap: var(--space-2);
+  max-width: 30rem;
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--ink);
+  font: var(--type-ui);
+  list-style: none;
+  overflow-wrap: anywhere;
+}
+
+.recover-found-none {
+  color: var(--body);
+  font: var(--type-ui);
+}
+
+/* After No, what to do next: a notice, which the shell's gap spaces. */
+.shell > .notice.recover-declined {
+  max-width: 34em;
+  margin-block-start: 0;
+}
+
+/*
+ * Help someone recover (#398): a sent share's line, then Send it again under
+ * it. Its parts take the line's width, so the quiet button keeps its own
+ * width and its words line up with the line's.
+ */
+.recover-hold {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.recover-resend {
+  width: 100%;
+  max-width: 30rem;
+}
