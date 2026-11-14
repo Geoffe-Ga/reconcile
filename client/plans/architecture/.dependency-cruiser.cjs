@@ -10,17 +10,19 @@ module.exports = {
     {
       name: 'core-stays-framework-free',
       comment:
-        'engine/, crypto/, store/, invite/, link/, share/, door/, coalition/ and recovery/ are plain TypeScript so they outlive any UI framework and can be tested against protocol vectors.',
+        'engine/, crypto/, store/, invite/, link/, share/, door/, coalition/, recovery/ and discover/ are plain TypeScript so they outlive any UI framework and can be tested against protocol vectors.',
       severity: 'error',
-      from: { path: '^src/(engine|crypto|store|invite|link|share|door|coalition|recovery)/' },
+      from: {
+        path: '^src/(engine|crypto|store|invite|link|share|door|coalition|recovery|discover)/',
+      },
       to: { path: ['^src/(app|ui|screens)/', 'node_modules/(react|react-dom|react-aria-components)/'] },
     },
     {
       name: 'engine-does-no-io',
       comment:
-        'The engine is pure: it folds the records sync hands it and never reaches the network itself (spec §2, #63).',
+        'The engine is pure: it folds the records sync hands it and never reaches the network itself (spec §2, #63). So is kinship in src/discover: it reads what the device already holds, and no text, term or score leaves the device (ADR-0077 §4, #428).',
       severity: 'error',
-      from: { path: '^src/engine/' },
+      from: { path: '^src/(engine|discover)/' },
       to: { path: '^src/net/' },
     },
     {
