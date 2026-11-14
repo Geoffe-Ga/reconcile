@@ -402,6 +402,8 @@ describe('LinkBar: search (#445)', () => {
 
     const results = screen.getByRole('listbox', { name: 'Results' });
     expect(within(results).getAllByRole('group')).toHaveLength(3);
+    // The panel scrolls when the results run long, so Tab can reach it.
+    expect(screen.getByRole('region', { name: 'Search results' })).toHaveAttribute('tabindex', '0');
     expect(within(results).getByText('Documents')).toBeVisible();
     expect(within(results).getByText('Proposals')).toBeVisible();
     expect(within(results).getByText('Yours')).toBeVisible();

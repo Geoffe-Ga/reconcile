@@ -83,6 +83,8 @@ export const messages = {
   search: {
     /** The results' name as a list. */
     results: 'Results',
+    /** The panel's name, as a region Tab can reach to scroll the results. */
+    panel: 'Search results',
     /** Each kind of result's eyebrow, in the order they show. */
     shelves: {
       groups: 'Groups',

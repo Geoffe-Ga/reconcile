@@ -367,6 +367,16 @@ function ViewPanel({
   );
 }
 
+/**
+ * Results can run longer than the panel, which then scrolls; their rows
+ * take only the keyboard's virtual focus, so the panel itself is a named
+ * region Tab can reach, to scroll by keyboard (WCAG 2.1.1).
+ */
+function scrollerProps(view: View) {
+  if (!('results' in view) || view.results.length === 0) return {};
+  return { role: 'region', 'aria-label': messages.search.panel, tabIndex: 0 } as const;
+}
+
 /** The panel under the pill and the scrim behind it, while the bar has focus and text. */
 function Overlay({ live, view, onDismiss, ...rest }: OverlayProps) {
   return (
@@ -378,7 +388,7 @@ function Overlay({ live, view, onDismiss, ...rest }: OverlayProps) {
       ) : null}
       {view === null ? null : (
         <>
-          <div className="link-bar-panel">
+          <div className="link-bar-panel" {...scrollerProps(view)}>
             <ViewPanel view={view} {...rest} />
           </div>
           <div className="link-bar-scrim" data-testid="link-bar-scrim" onPointerDown={onDismiss} />
