@@ -65,11 +65,11 @@ interface Options {
 }
 
 function setup(state: GroupState, held: readonly ReceivedCard[], options: Options = {}) {
-  const lookup = vi.fn((_seed: Uint8Array) =>
+  const lookup = vi.fn<DoorCards['lookup']>(() =>
     Promise.resolve(options.lookup?.(state) ?? { kind: 'found' as const, found: foundFor(state) }),
   );
-  const onBring = vi.fn((_card: string, _found: FoundCard, _name: string) => Promise.resolve(true));
-  const onDismiss = vi.fn((_card: string) => Promise.resolve());
+  const onBring = vi.fn<DoorCards['onBring']>(() => Promise.resolve(true));
+  const onDismiss = vi.fn<DoorCards['onDismiss']>(() => Promise.resolve());
   const cards: DoorCards = { held, lookup, onBring, onDismiss };
   document.title = 'Your group · Reconcile';
   render(

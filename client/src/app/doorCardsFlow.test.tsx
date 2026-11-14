@@ -42,13 +42,11 @@ async function sync(device: TestDevice): Promise<void> {
   await act(() => device.services.sync.syncOnce());
 }
 
-/** Ben and Dee's group with its front door open by both their votes, and Ana's Eastside Hall. */
-async function aDoor(fake: FakeRelay) {
-  const { groupId, devices } = await members(fake, ['Ben', 'Dee']);
-  opened.push(...devices);
-  const [ben, dee] = devices;
-  if (ben === undefined || dee === undefined) throw new Error('Expected Ben and Dee.');
-  const proposed = await proposeRules(ben.services, groupId, {
+/** `voters` open `groupId`'s front door, the first proposing, every one scoring it 4. */
+async function openDoorBy(voters: readonly TestDevice[], groupId: string) {
+  const [first] = voters;
+  if (first === undefined) throw new Error('Expected a voter.');
+  const proposed = await proposeRules(first.services, groupId, {
     optIn: 'frontDoor',
     value: newFrontDoor(false),
     title: 'Open a front door',
@@ -56,16 +54,27 @@ async function aDoor(fake: FakeRelay) {
     narrow: false,
   });
   if (proposed.outcome !== 'proposed') throw new Error('Expected a Proposal.');
-  for (const device of [ben, dee]) {
+  const proposal = proposed.proposalId;
+  for (const device of voters) {
     await sync(device);
-    const scores = { [proposed.proposalId]: 4 as const };
-    await castBallot(device.services, groupId, { proposal: proposed.proposalId, scores, note: '' });
+    const scores = { [proposal]: 4 as const };
+    await castBallot(device.services, groupId, { proposal, scores, note: '' });
     await sync(device);
   }
-  for (const device of [ben, dee]) await sync(device);
-  const group = await ben.services.store.getGroup(groupId);
+  for (const device of voters) await sync(device);
+  const group = await first.services.store.getGroup(groupId);
   const door = fold(group?.log ?? [], group?.relayNow ?? null).rules.optIns.frontDoor;
   if (!isFrontDoor(door)) throw new Error('Expected an open front door.');
+  return door;
+}
+
+/** Ben and Dee's group with its front door open by both their votes, and Ana's Eastside Hall. */
+async function aDoor(fake: FakeRelay) {
+  const { groupId, devices } = await members(fake, ['Ben', 'Dee']);
+  opened.push(...devices);
+  const [ben, dee] = devices;
+  if (ben === undefined || dee === undefined) throw new Error('Expected Ben and Dee.');
+  const door = await openDoorBy([ben, dee], groupId);
   const ana = await testDevice(fake, 'ana');
   opened.push(ana);
   const eastside = await found(ana, 'Eastside Hall', 'Ana');

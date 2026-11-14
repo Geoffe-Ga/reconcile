@@ -157,7 +157,7 @@ describe('FrontDoor: Propose reconciling with this group (#426)', () => {
   });
 
   it('says when the card didn’t go, keeps the Proposal, and sends it again on Try again', async () => {
-    const sending = held<void>();
+    const sending = held<undefined>();
     const post = vi.fn(() => sending.promise);
     const { user } = await setup([RIVERSIDE], {
       step: { kind: 'queued', proposalId: 'p-1', post },
