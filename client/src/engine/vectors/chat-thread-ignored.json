@@ -2,7 +2,7 @@
   "kind": "fold",
   "vectors": [
     {
-      "name": "chat-thread-ignored: a chat-thread from a member who didn’t make the winning open claim is ignored even when it comes first, and so is one for a URL off discord.com, past the thread id, over http:, with short ids, for a Proposal the log doesn’t hold, or whose URL isn’t text; the open claimant’s valid one after them all holds",
+      "name": "chat-thread-ignored: a chat-thread from a member who made no winning claim for the Proposal is ignored even when it comes first, and so is one for a URL off discord.com, past the thread id, over http:, with short ids, for a Proposal the log doesn’t hold, or whose URL isn’t text; the open claimant’s valid one after them all holds",
       "records": [
         {
           "seq": 1,

@@ -123,6 +123,7 @@ reconcile/
 ├── docs/adr/             # Accepted architecture decisions
 ├── docs/prompts/         # Working prompts (local only, gitignored)
 ├── docs/spec/            # Specifications (phase-1-spec.md feeds spec-decomposition)
+├── docs/spec/phase-1/    # One file per spec section: edit the section's file, not the index phase-1-spec.md
 ├── plans/                # Working implementation plans
 ├── client/               # TypeScript PWA (see client/CLAUDE.md)
 ├── reconcile/            # Python package: the blind mailbox relay (reconcile/relay/, ADR-0028)

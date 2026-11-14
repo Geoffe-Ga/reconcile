@@ -2049,10 +2049,10 @@ function versionTextFits(proposal: OpenProposal, text: string): boolean {
 
 /**
  * Keeps a Proposal's Discord thread (#123) when its author may record it at
- * its receipt (chatPosts.ts): a member who isn't suspended and made the
- * Proposal's winning `open` claim, the bot on in effect, and no thread kept
- * for it yet, with a link of the one form the fold accepts. The first valid
- * `chat-thread` per Proposal in relay order wins.
+ * its receipt (chatPosts.ts): a member who isn't suspended and made one of
+ * the Proposal's winning claims, any moment's (#245), the bot on in effect,
+ * and no thread kept for it yet, with a link of the one form the fold
+ * accepts. The first valid `chat-thread` per Proposal in relay order wins.
  */
 function applyChatThread(draft: Draft, body: ChatThreadBody, author: string, at: Receipt): boolean {
   const { proposal, url } = body;

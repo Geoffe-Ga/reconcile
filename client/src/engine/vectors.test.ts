@@ -749,7 +749,8 @@ describe('vector files', () => {
     'chat-thread-ignored',
     'chat-thread-narrowed',
     'chat-thread-off',
-  ])('include the Discord thread vector "%s" (#123)', (name) => {
+    'chat-thread-later-claim',
+  ])('include the Discord thread vector "%s" (#123, #245)', (name) => {
     expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
   });
 

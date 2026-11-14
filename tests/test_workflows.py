@@ -6,6 +6,9 @@ the repository can read its variables. So a token must only ever come from
 
 Every job also names its own ``timeout-minutes``. Without one, a hung job runs
 to GitHub's six-hour limit, and every minute of it is billed.
+
+The docs graph builds nightly and on demand, never on a merge to ``main`` (the
+founder's choice on 2026-11-14).
 """
 
 from __future__ import annotations
@@ -31,6 +34,9 @@ VARS_READ = re.compile(
 # GitHub-hosted runners stop any job at 360 minutes, so a longer timeout means nothing.
 MAX_TIMEOUT = 360
 EXPRESSION = re.compile(r"^\$\{\{.+\}\}$", re.DOTALL)
+GRAPH_DOCS = WORKFLOWS / "graph-docs.yml"
+# GitHub delays, and under load drops, schedules at the top of the hour.
+BUSY_MINUTES = (0, 30)
 
 
 def _strings(node: Any) -> Iterator[str]:
@@ -83,6 +89,13 @@ def _timeout_problems(text: str) -> list[str]:
     return problems
 
 
+def _triggers(path: Path) -> dict[str, Any]:
+    """A workflow's ``on:`` block. YAML 1.1 reads a bare ``on`` key as True."""
+    workflow = yaml.safe_load(path.read_text(encoding="utf-8"))
+    triggers: dict[str, Any] = workflow["on"] if "on" in workflow else workflow[True]
+    return triggers
+
+
 def test_workflow_files_exist() -> None:
     """The parametrized checks below have files to run over."""
     assert WORKFLOWS / "ralph-recap.yml" in WORKFLOW_FILES
@@ -115,6 +128,23 @@ def test_timeout_guard_flags_a_missing_or_unusable_timeout(
 ) -> None:
     """No timeout, a zero, more than the runner allows, or a non-number is caught."""
     assert _timeout_problems(f"jobs:\n  build:\n    {job}\n") == [problem]
+
+
+def test_docs_graph_builds_nightly_and_on_demand_never_on_a_push() -> None:
+    """A merge to main starts no docs build; a dispatch can still force a full one."""
+    triggers = _triggers(GRAPH_DOCS)
+    assert sorted(triggers) == ["schedule", "workflow_dispatch"]
+    assert "full_rebuild" in triggers["workflow_dispatch"]["inputs"]
+
+
+def test_docs_graph_runs_once_a_day_off_the_busy_minutes() -> None:
+    """One daily cron, at a set minute and hour other than :00 or :30."""
+    schedule = _triggers(GRAPH_DOCS)["schedule"]
+    assert len(schedule) == 1, schedule
+    minute, hour, *days = schedule[0]["cron"].split()
+    assert days == ["*", "*", "*"]
+    assert hour.isdigit() and 0 <= int(hour) <= 23
+    assert minute.isdigit() and int(minute) not in BUSY_MINUTES
 
 
 @pytest.mark.parametrize(
