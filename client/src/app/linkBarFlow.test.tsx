@@ -5,9 +5,9 @@
  * held it; the page under its panel is inert; and once a link opens,
  * nothing on the device keeps what was pasted.
  */
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { cardLink } from '../coalition/card';
 import { newCardSeed } from '../crypto/card';
@@ -17,10 +17,11 @@ import { doorLinkOf } from '../door/page';
 import { shareLinkOf } from '../share/shareLink';
 import type { TestDevice } from '../test/appServices';
 import { axeViolations } from '../test/axe';
-import { closeAll, open, SLOW } from '../test/coalitionDevices';
+import { closeAll, found, open, SLOW } from '../test/coalitionDevices';
 import { createFakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { containsBytes, scanDb } from '../test/scanDb';
+import { createGroup } from './actions';
 import { App } from './App';
 import { inviteLink } from './invite';
 import { messages } from './messages';
@@ -171,6 +172,58 @@ describe('the link bar in the app', SLOW, () => {
     );
     expect(kept.join('\n')).not.toContain(body);
     expect(fake.requests).toEqual([]);
+  });
+
+  it('finds a section of one group from another group’s page, writing and sending nothing while typing, and opens its Document there (#445)', async () => {
+    const user = userEvent.setup();
+    const fake = createFakeRelay();
+    const ben = await open(fake, 'ben');
+    const created = await createGroup(ben.services, {
+      groupName: 'Riverside Tenants',
+      yourName: 'Ben',
+      chat: null,
+      documents: [
+        { title: 'House rules', text: 'Quiet hours start at ten.\n\nBins go out on Tuesday.' },
+      ],
+    });
+    if (created.outcome !== 'created') throw new Error('Expected a group.');
+    await ben.services.sync.syncOnce();
+    const riverside = created.groupId;
+    const oak = await found(ben, 'Oak St', 'Ben');
+    const scrolled: string[] = [];
+    Object.defineProperty(Element.prototype, 'scrollIntoView', {
+      configurable: true,
+      value(this: Element) {
+        // React Aria scrolls its own options too; only sections count here.
+        if (this.id.startsWith('section-')) scrolled.push(this.id);
+      },
+    });
+    opening(ben, `#/g/${oak}`);
+    expect(await heading('Oak St')).toBeVisible();
+    const requests = fake.requests.length;
+    const proto = IDBObjectStore.prototype;
+    const writes = [vi.spyOn(proto, 'put'), vi.spyOn(proto, 'add'), vi.spyOn(proto, 'delete')];
+
+    await user.click(bar());
+    await user.keyboard('bins tuesday');
+
+    const results = await screen.findByRole('listbox', { name: 'Results' });
+    const [row] = within(results).getAllByRole('option');
+    expect(row).toHaveTextContent('Riverside Tenants');
+    expect(fake.requests).toHaveLength(requests);
+    for (const write of writes) expect(write).not.toHaveBeenCalled();
+    vi.restoreAllMocks();
+
+    await user.keyboard('{Enter}');
+
+    expect(await heading('House rules')).toBeVisible();
+    expect(window.location.hash).toMatch(new RegExp(`^#/g/${riverside}/doc/`, 'u'));
+    expect(bar()).toHaveValue('');
+    await waitFor(() => {
+      expect(scrolled).toHaveLength(1);
+    });
+    expect(document.getElementById(scrolled[0] ?? '')).toHaveTextContent('Bins go out on Tuesday.');
+    Reflect.deleteProperty(Element.prototype, 'scrollIntoView');
   });
 
   it('isn’t on a shared page, which stands outside the app', async () => {

@@ -79,6 +79,34 @@ export const messages = {
     /** How many rows show, said politely as they change. */
     results: (count: number) => (count === 1 ? '1 result' : `${String(count)} results`),
   },
+  /** Search on this device (#445), from the link bar. */
+  search: {
+    /** The results' name as a list. */
+    results: 'Results',
+    /** The panel's name, as a region Tab can reach to scroll the results. */
+    panel: 'Search results',
+    /** Each kind of result's eyebrow, in the order they show. */
+    shelves: {
+      groups: 'Groups',
+      documents: 'Documents',
+      proposals: 'Proposals',
+      dispatches: 'Dispatches',
+      yours: 'Yours',
+      places: 'Go to',
+    },
+    showAll: (count: number) => `Show all ${String(count)}`,
+    nothing: 'Nothing on this device matches.',
+    scope: 'Search covers only what this device holds.',
+    /** The app's own places, by the names search finds them by. */
+    places: {
+      start: 'Your groups',
+      discover: 'Discover',
+      personal: 'Personal',
+      settings: 'Settings',
+      recovery: 'Recovery contacts',
+      create: 'Create a group',
+    },
+  },
   /** The tab bar (#423; ADR-0077 §7): the app's three places, a glyph and a word each. */
   tabs: {
     /** The bar's name as a landmark. */

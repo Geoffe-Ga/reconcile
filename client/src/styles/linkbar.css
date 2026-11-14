@@ -173,3 +173,66 @@
   inset: 0;
   background: var(--scrim);
 }
+
+/* Search results (#445): under eyebrows, each row its title, one line of its text, and where it's from. */
+.link-bar-panel {
+  max-height: calc(100dvh - 7rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.search-shelf + .search-shelf {
+  margin-top: var(--space-2);
+}
+
+.search-eyebrow {
+  display: block;
+  padding: var(--space-2) var(--space-3) var(--space-1);
+}
+
+.search-row {
+  display: grid;
+  align-items: start;
+  justify-content: stretch;
+  gap: 2px;
+  padding-block: var(--space-2);
+}
+
+.search-row > * {
+  min-width: 0;
+}
+
+.search-title {
+  color: var(--ink);
+  font: var(--type-ui);
+}
+
+/* One line, its matched words marked by weight and underline, never by color alone. */
+.search-snippet {
+  overflow: hidden;
+  color: var(--body);
+  font: var(--type-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-snippet strong {
+  font-weight: 650;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.search-from {
+  color: var(--muted);
+  font: var(--type-caption);
+}
+
+.search-more {
+  color: var(--primary);
+}
+
+.link-bar-scope {
+  padding-top: 0;
+  color: var(--muted);
+  font: var(--type-caption);
+}

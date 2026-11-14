@@ -54,7 +54,10 @@ import type { SeatNumber } from '../engine/stewards';
 import type { GuideRecord } from '../platform/guide';
 import type { Persistence } from '../platform/persist';
 import { Start, type StartFollowing, type StartRequest } from '../screens/Start';
+import { aimAt } from './aimedSection';
 import { LinkBar } from './LinkBar';
+import type { SearchRecord } from './search';
+import { loadSearchRecords } from './searchLoad';
 import type { OpenableLink } from './linkKind';
 import { openPasted } from './openPasted';
 import { TabBar } from './TabBar';
@@ -1564,6 +1567,12 @@ function Screen({ route, services, heldSeed, holdSeed, persistence, guide }: Scr
   );
 }
 
+/** Opens a search result at its own page, a section's Document scrolled to it (#445). */
+function goToResult(record: SearchRecord): void {
+  if (record.section !== undefined) aimAt(record.section);
+  navigate(record.route);
+}
+
 /**
  * The current route's screen, with the store and sync loop provided to
  * `useGroup`, in the app's frame: the link bar at the top (#444), the page
@@ -1585,6 +1594,8 @@ export function App({ services, initialSeed = null, persistence = null }: AppPro
   const openLink = useCallback((link: OpenableLink) => {
     openPasted(link, holdSeed);
   }, []);
+  // Search reads what this device holds, afresh each time the bar takes focus (#445).
+  const loadRecords = useCallback(() => loadSearchRecords(services.store), [services.store]);
   const screen = (
     <Screen
       route={route}
@@ -1601,7 +1612,12 @@ export function App({ services, initialSeed = null, persistence = null }: AppPro
         screen
       ) : (
         <div className="app-frame">
-          <LinkBar onOpen={openLink} onPanelChange={setBarOpen} />
+          <LinkBar
+            onOpen={openLink}
+            onPanelChange={setBarOpen}
+            loadRecords={loadRecords}
+            onGo={goToResult}
+          />
           <div className="app-page" inert={barOpen}>
             {screen}
           </div>
