@@ -2,7 +2,7 @@
  * Small building blocks the screens share, on React Aria Components (ADR-0022)
  * and styled from DESIGN.md tokens in src/styles/app.css.
  */
-import { type ReactNode, useEffect, useId, useRef } from 'react';
+import { type ReactNode, useEffect, useId, useLayoutEffect, useRef } from 'react';
 import {
   FieldError,
   Input,
@@ -48,7 +48,8 @@ export function PageHeader({
   children,
 }: PageHeaderProps) {
   const heading = useRef<HTMLHeadingElement>(null);
-  useEffect(() => {
+  // In the same commit as the page, so the tab's title never lags the screen it names.
+  useLayoutEffect(() => {
     document.title = messages.app.pageTitle(pageTitle);
   }, [pageTitle]);
   useEffect(() => {
