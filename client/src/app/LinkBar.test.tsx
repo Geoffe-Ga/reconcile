@@ -401,10 +401,7 @@ describe('LinkBar: search (#445)', () => {
     await user.keyboard('quiet');
 
     const results = screen.getByRole('listbox', { name: 'Results' });
-    const groups = within(results).getAllByRole('group');
-    expect(
-      groups.map((group) => group.getAttribute('aria-label') ?? group.textContent?.split('\n')[0]),
-    ).toHaveLength(3);
+    expect(within(results).getAllByRole('group')).toHaveLength(3);
     expect(within(results).getByText('Documents')).toBeVisible();
     expect(within(results).getByText('Proposals')).toBeVisible();
     expect(within(results).getByText('Yours')).toBeVisible();
@@ -451,6 +448,21 @@ describe('LinkBar: search (#445)', () => {
     expect(screen.getAllByRole('option')).toHaveLength(1);
     expect(screen.getByRole('option')).toHaveTextContent('An invite');
     expect(screen.queryByRole('listbox', { name: 'Results' })).toBeNull();
+  });
+
+  it('points at no row once the rows are gone, so the field never names one that isn’t there', async () => {
+    const { user } = setup({ records: RECORDS });
+
+    await user.click(bar());
+    await user.keyboard('bins');
+    expect(bar()).toHaveAttribute('aria-activedescendant');
+    await user.keyboard('{Escape}');
+
+    expect(screen.queryByRole('listbox')).toBeNull();
+    expect(bar()).not.toHaveAttribute('aria-activedescendant');
+    await user.keyboard('quiet');
+    const id = bar().getAttribute('aria-activedescendant');
+    expect(id === null || document.getElementById(id) !== null).toBe(true);
   });
 
   it('says so plainly when nothing on this device matches', async () => {

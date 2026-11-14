@@ -20,9 +20,10 @@
  * On a touch device an empty, focused bar offers Paste, which reads the
  * clipboard once inside that tap: the only place the app reads it.
  */
-import { type KeyboardEvent, type RefObject, useEffect, useRef, useState } from 'react';
+import { type KeyboardEvent, type RefObject, useContext, useEffect, useRef, useState } from 'react';
 import {
   Autocomplete,
+  AutocompleteStateContext,
   Button,
   Input,
   type Key,
@@ -412,6 +413,19 @@ function useRecords(
   return loaded ?? given;
 }
 
+/**
+ * Drops the list's virtual focus while no rows show, so the field never
+ * names a row that isn't there: React Aria keeps the last one otherwise, and
+ * names it again once a new list mounts.
+ */
+function ForgetRow({ shown }: { readonly shown: boolean }) {
+  const state = useContext(AutocompleteStateContext);
+  useEffect(() => {
+    if (!shown) state?.setFocusedNodeId(null);
+  }, [shown, state]);
+  return null;
+}
+
 /** No records: a search finds nothing until the app hands the bar what the device holds. */
 const NO_RECORDS: readonly SearchRecord[] = [];
 
@@ -515,6 +529,7 @@ export function LinkBar(props: LinkBarProps) {
             onKeyDown={onKeyDown}
             onSubmit={onSubmit}
           />
+          <ForgetRow shown={shown} />
           <Overlay
             live={inside}
             view={view}
