@@ -80,9 +80,9 @@
  * its leave and the pass has read its mailboxes once more, to see where the
  * leave landed: the pass notes the DELETEs of its push registration the
  * device owes, which push upkeep sends at a random minute within the next
- * day, never in this pass (#99, #356), purges it from the store and reads
- * nothing more for it. Until then it stays, leaving, through failures and
- * reloads. When that
+ * day, never in this pass (#99, #356), purges the coalitions only it held
+ * (#278), then the group itself, last (#409), and reads nothing more for it.
+ * Until then it stays, leaving, through failures and reloads. When that
  * read brings a key change that came before the leave and checks out here,
  * the leave reached the old epoch's mailbox too late to count (#225): the
  * device moves to the new epoch, as any device does, and posts the leave
@@ -452,14 +452,18 @@ export function createSync(options: SyncOptions): Sync {
 
   /**
    * Lets go of a group this device has left (#77): notes the DELETEs of its
-   * push registration it owes, sent within the day (#99, #356), then purges it,
-   * and the coalitions only it held here with it (#278).
+   * push registration it owes, sent within the day (#99, #356), purges the
+   * coalitions only it held here (#278), then purges the group. The group
+   * goes last (#409): its log is all that names its coalitions, so should the
+   * app close between the two, the group is still here, leaving, and the
+   * next pass lets it go again. No coalition entry outlives the group with
+   * nothing left on the device to say whose it was.
    */
   async function letGo(groupId: string): Promise<'left'> {
     const current = await store.getGroup(groupId);
     if (current !== undefined) await push?.forget(current);
-    await store.purgeGroup(groupId);
     if (current !== undefined) await dropCoalitionsOf(store, current);
+    await store.purgeGroup(groupId);
     return 'left';
   }
 
