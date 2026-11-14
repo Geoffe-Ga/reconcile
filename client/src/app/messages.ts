@@ -79,6 +79,34 @@ export const messages = {
     /** How many rows show, said politely as they change. */
     results: (count: number) => (count === 1 ? '1 result' : `${String(count)} results`),
   },
+  /** Search on this device (#445), from the link bar. */
+  search: {
+    /** The results' name as a list. */
+    results: 'Results',
+    /** The panel's name, as a region Tab can reach to scroll the results. */
+    panel: 'Search results',
+    /** Each kind of result's eyebrow, in the order they show. */
+    shelves: {
+      groups: 'Groups',
+      documents: 'Documents',
+      proposals: 'Proposals',
+      dispatches: 'Dispatches',
+      yours: 'Yours',
+      places: 'Go to',
+    },
+    showAll: (count: number) => `Show all ${String(count)}`,
+    nothing: 'Nothing on this device matches.',
+    scope: 'Search covers only what this device holds.',
+    /** The app's own places, by the names search finds them by. */
+    places: {
+      start: 'Your groups',
+      discover: 'Discover',
+      personal: 'Personal',
+      settings: 'Settings',
+      recovery: 'Recovery contacts',
+      create: 'Create a group',
+    },
+  },
   /** The tab bar (#423; ADR-0077 §7): the app's three places, a glyph and a word each. */
   tabs: {
     /** The bar's name as a landmark. */
@@ -2016,6 +2044,17 @@ export const messages = {
     body: 'Save a backup so you can get this group back if you lose your phone.',
     save: 'Save a backup',
     notNow: 'Not now',
+  },
+  /**
+   * Share beside Copy on a reconcile card's link and a follow link (#424;
+   * ADR-0077 §6): the device's share sheet gets the link alone.
+   */
+  linkShare: {
+    button: 'Share',
+    shared: 'Shared.',
+    /** By the button: a chat app's operator can read what goes through it, for as long as the link works. */
+    chatNote:
+      'If you send it through a chat app, whoever runs that app can read the link too, and open it in those 2 days.',
   },
   /** Reconcile with another group (#114): making a card, and the card a formed coalition's row makes. */
   card: {

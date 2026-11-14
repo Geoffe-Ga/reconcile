@@ -20,6 +20,7 @@ import { shareLinkOf } from '../share/shareLink';
 import { axeViolations } from '../test/axe';
 import { inviteLink } from './invite';
 import { LinkBar, type LinkBarProps } from './LinkBar';
+import type { SearchRecord } from './search';
 
 const ORIGIN = 'https://reconcile.example';
 
@@ -363,5 +364,122 @@ describe('LinkBar', () => {
 
       expect(screen.queryByRole('button', { name: 'Paste' })).toBeNull();
     });
+  });
+});
+
+/** A record search can find, under `kind`. */
+function found(
+  id: string,
+  kind: SearchRecord['kind'],
+  title: string,
+  text = '',
+  at = 0,
+): SearchRecord {
+  return { kind, id, title, text, from: 'Riverside Tenants', at, route: { name: 'start' } };
+}
+
+const RECORDS: readonly SearchRecord[] = [
+  found('doc', 'section', 'House rules', 'Quiet hours start at ten.', 1),
+  found('prop', 'proposal', 'Later quiet hours', 'Weekends run late.', 2),
+  found('mine', 'personal', 'Résumé', 'Quiet, careful work.', 3),
+  ...Array.from({ length: 7 }, (_, index) =>
+    found(
+      `bins-${String(index)}`,
+      'section',
+      'Bins',
+      `Bins go out on day ${String(index)}.`,
+      index,
+    ),
+  ),
+];
+
+describe('LinkBar: search (#445)', () => {
+  it('lists what plain words find under eyebrows, each row its title, its words marked in a snippet, and where it’s from', async () => {
+    const { user } = setup({ records: RECORDS });
+
+    await user.click(bar());
+    await user.keyboard('quiet');
+
+    const results = screen.getByRole('listbox', { name: 'Results' });
+    expect(within(results).getAllByRole('group')).toHaveLength(3);
+    // The panel scrolls when the results run long, so Tab can reach it.
+    expect(screen.getByRole('region', { name: 'Search results' })).toHaveAttribute('tabindex', '0');
+    expect(within(results).getByText('Documents')).toBeVisible();
+    expect(within(results).getByText('Proposals')).toBeVisible();
+    expect(within(results).getByText('Yours')).toBeVisible();
+    const [first] = within(results).getAllByRole('option');
+    expect(first).toHaveTextContent('House rules');
+    expect(first).toHaveTextContent('Riverside Tenants');
+    expect(within(first ?? results).getByText('Quiet', { selector: 'strong' })).toBeVisible();
+    expect(screen.getByRole('status')).toHaveTextContent('3 results');
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('shows five of a kind at most, and Show all shows the rest in place', async () => {
+    const { user } = setup({ records: RECORDS });
+
+    await user.click(bar());
+    await user.keyboard('bins');
+    expect(screen.getAllByRole('option', { name: /^Bins/u })).toHaveLength(5);
+
+    await user.click(screen.getByRole('option', { name: 'Show all 7' }));
+
+    expect(screen.getAllByRole('option', { name: /^Bins/u })).toHaveLength(7);
+    expect(screen.queryByRole('option', { name: 'Show all 7' })).toBeNull();
+    expect(bar()).toHaveFocus();
+  });
+
+  it('opens the first result on Enter, after a paste as after typing, and empties', async () => {
+    const onGo = vi.fn();
+    const { user } = setup({ records: RECORDS, onGo });
+
+    await paste(user, 'quiet');
+    await user.keyboard('{Enter}');
+
+    expect(onGo).toHaveBeenCalledTimes(1);
+    expect(onGo).toHaveBeenCalledWith(RECORDS[0]);
+    expect(bar()).toHaveValue('');
+  });
+
+  it('opens a link before any search: a pasted link gets its own row, and no results', async () => {
+    const records = [found('join', 'document', 'Join us', 'join')];
+    const { user } = setup({ records });
+
+    await paste(user, inviteLink(ORIGIN, newInviteSeed()));
+
+    expect(screen.getAllByRole('option')).toHaveLength(1);
+    expect(screen.getByRole('option')).toHaveTextContent('An invite');
+    expect(screen.queryByRole('listbox', { name: 'Results' })).toBeNull();
+  });
+
+  it('points at no row once the rows are gone, so the field never names one that isn’t there', async () => {
+    const { user } = setup({ records: RECORDS });
+
+    await user.click(bar());
+    await user.keyboard('bins');
+    expect(bar()).toHaveAttribute('aria-activedescendant');
+    await user.keyboard('{Escape}');
+
+    expect(screen.queryByRole('listbox')).toBeNull();
+    expect(bar()).not.toHaveAttribute('aria-activedescendant');
+    await user.keyboard('quiet');
+    const id = bar().getAttribute('aria-activedescendant');
+    expect(id === null || document.getElementById(id) !== null).toBe(true);
+  });
+
+  it('says so plainly when nothing on this device matches', async () => {
+    const { user } = setup({ records: RECORDS });
+
+    await user.click(bar());
+    await user.keyboard('allotments');
+
+    const search = screen.getByRole('search');
+    expect(
+      within(search).getByText('Nothing on this device matches.', { selector: 'p' }),
+    ).toBeVisible();
+    expect(within(search).getByText('Search covers only what this device holds.')).toBeVisible();
+    expect(screen.getByRole('status')).toHaveTextContent('Nothing on this device matches.');
+    expect(screen.queryByRole('listbox')).toBeNull();
+    expect(await axeViolations()).toEqual([]);
   });
 });

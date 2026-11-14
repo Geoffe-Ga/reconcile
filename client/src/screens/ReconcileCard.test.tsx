@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { messages } from '../app/messages';
 import type { CardValues } from '../app/reconcile';
+import type { WebShare } from '../app/share';
 import { axeViolations } from '../test/axe';
 import { type CardStep, ReconcileCard, type ReconcileCardProps } from './ReconcileCard';
 
@@ -21,6 +22,7 @@ function props(overrides: Partial<ReconcileCardProps> = {}): ReconcileCardProps 
       }),
     ),
     copyText: vi.fn(() => Promise.resolve()),
+    sharing: { share: undefined },
     ...overrides,
   };
 }
@@ -98,6 +100,26 @@ describe('ReconcileCard', () => {
       '#/g/riverside/p/p1',
     );
     expect(await axeViolations()).toEqual([]);
+  });
+
+  it('puts Share beside Copy on the made card, and hands the share sheet the link alone (#424)', async () => {
+    const user = userEvent.setup();
+    const share = vi.fn<WebShare>(() => Promise.resolve());
+    const copyText = vi.fn(() => Promise.resolve());
+    render(<ReconcileCard {...props({ sharing: { share }, copyText })} />);
+    await fillIn(user);
+    await user.click(screen.getByRole('button', { name: 'Make the card' }));
+    expect(await screen.findByRole('textbox', { name: 'Card link' })).toHaveValue(LINK);
+
+    const shareButton = screen.getByRole('button', { name: messages.linkShare.button });
+    expect(shareButton).toHaveClass('button-secondary');
+    expect(screen.getByRole('button', { name: messages.card.copy })).toHaveClass('button-primary');
+    expect(shareButton).toHaveAccessibleDescription(messages.linkShare.chatNote);
+    expect(await axeViolations()).toEqual([]);
+    await user.click(shareButton);
+    expect(share.mock.calls).toEqual([[{ url: LINK }]]);
+    expect(copyText).not.toHaveBeenCalled();
+    expect(await screen.findByText(messages.linkShare.shared)).toBeVisible();
   });
 
   it('refuses a name over 120 characters and a statement too large to send', async () => {
