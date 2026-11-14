@@ -48,7 +48,7 @@ import { ProtectComposer } from '../screens/ProtectComposer';
 import { RemovalComposer } from '../screens/RemovalComposer';
 import { AddSection, RemoveSection } from '../screens/SectionComposer';
 import { SendDispatch } from '../screens/SendDispatch';
-import { type NotifyGroup, Settings, type SettingsPasskey } from '../screens/Settings';
+import { type NotifyGroup, Settings } from '../screens/Settings';
 import { SharedPage } from '../screens/SharedPage';
 import type { SeatNumber } from '../engine/stewards';
 import type { GuideRecord } from '../platform/guide';
@@ -98,7 +98,6 @@ import {
 } from './reconcile';
 import type { Scores } from './Ballot';
 import { FirstRunGuide } from './FirstRunGuide';
-import type { Passkey } from './passkey';
 import {
   addVersion,
   askPriority,
@@ -142,6 +141,7 @@ import { relayMinuteNow } from './time';
 import { GroupServicesContext, type GroupView, useCoalitionList, useGroup } from './useGroup';
 import { useGroupList, useGroups } from './useGroupList';
 import { useNow } from './useNow';
+import { usePasskeyState } from './usePasskeyState';
 import { usePersonalList } from './usePersonalList';
 import { chooseContacts } from '../store/recovery';
 import { approveRecovery, holdViews } from '../recovery/holder';
@@ -257,23 +257,6 @@ function DoorScreen({
   );
 }
 
-/** Whether this device's keys are locked with a passkey, or one can be set up (#95); null until read. */
-function usePasskeyState(passkey: Passkey): SettingsPasskey['state'] | null {
-  const [locked, setLocked] = useState<boolean | null>(null);
-  useEffect(() => {
-    let live = true;
-    void passkey.isProtected().then((protectedNow) => {
-      if (live) setLocked(protectedNow);
-    });
-    return () => {
-      live = false;
-    };
-  }, [passkey]);
-  if (locked === null) return null;
-  if (locked) return 'locked';
-  return passkey.available ? 'offered' : 'unavailable';
-}
-
 /**
  * A group's push switch (#99): named once its genesis is back, and gone while
  * it's leaving or once it's a read-only archive (#108).
@@ -298,7 +281,7 @@ function SettingsScreen({ services }: { readonly services: AppServices }) {
   const relayBackup = useRelayBackupStatus(services.store);
   const recovery = useRecovery(services.store);
   const { push, passkey } = services;
-  const passkeyState = usePasskeyState(passkey);
+  const passkeyState = usePasskeyState(passkey, services.store);
   const loaded = groups !== null && switches !== null && relayBackup !== null && recovery !== null;
   return !loaded || passkeyState === null ? null : (
     <Settings
@@ -322,7 +305,7 @@ function SettingsScreen({ services }: { readonly services: AppServices }) {
       onRestore={(bytes, passphrase) => restoreBackup(services, bytes, passphrase)}
       onErase={services.erase}
       passkey={{
-        state: passkeyState,
+        ...passkeyState,
         onCreate: () => passkey.create(),
         onProtect: (id) => passkey.protect(id),
       }}

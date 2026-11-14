@@ -218,6 +218,11 @@ Build on **React Aria Components** (unstyled, accessible). Style everything from
   - It reveals a press-and-hold confirm. Releasing early cancels, and a polite live region announces the progress.
   - `negative` appears only on that final confirm.
   - No skulls, no red banners, no "stealth" language.
+- **Passkey offer** (#95, #389): the offer after the pilot notice, and Settings' Lock with a passkey. It never pressures and never hides Not now.
+  - What a passkey does (body), then the two taps: Make a passkey (primary; secondary in Settings, whose one primary action is Make a backup file) with Not now (quiet) on its line.
+  - **A way back first** (#389). With groups and no way back, "First, a way back to your groups" (heading-3) and one line in body take setup's place, then Save a backup's own form, whose Make a backup file is the one primary action, then "Choose recovery contacts instead →" as a forward link, then Not now. Once the file is saved, setup takes the form's place under one line saying so.
+  - On a device with no group yet, one line says the offer waits, with Continue (primary) and Not now (quiet).
+  - In Settings, one line in body points to the sections above. A device locked before #389 with no way back keeps its "locked" line, with a notice under it (`sunken` ground, `warning` rule) asking for a backup file or recovery contacts. It never offers to unlock or unseal.
 - **Linking code** (#96): the code a second device scans.
   - An inline SVG of the QR modules, `qr-dark` on `qr-light` in both themes, with a 4-module quiet zone, a `hairline` border and `md` corners. Never a `data:` image (the CSP refuses one) or a light-on-dark code, which many cameras can't read.
   - Beside it on wide screens, under it on phones, the same code as selectable `mono` text on `sunken`, which selects as a whole, and Copy the code (secondary).

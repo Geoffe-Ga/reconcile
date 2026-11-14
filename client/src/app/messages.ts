@@ -1504,6 +1504,28 @@ export const messages = {
     saveBackup: 'Save a backup',
     notNow: 'Not now',
     continue: 'Continue',
+    /**
+     * Before a passkey locks anything (#389): a way back if it ever stops
+     * unlocking this device, a backup file of every group or recovery contacts.
+     */
+    gateHeading: 'First, a way back to your groups',
+    gate: 'If your passkey ever stops unlocking this device, after an update or from another device, only a backup file or your recovery contacts can bring your groups back. Save a backup file now, then make your passkey.',
+    gateContacts: 'Choose recovery contacts instead',
+    /** The offer on a device with no group yet: nothing to back up, so it asks again later. */
+    gateEmpty:
+      'A passkey locks your keys only once a backup file or your recovery contacts can bring your groups back. You’re in no group yet, so Reconcile asks again once you are.',
+    wayBack:
+      'Your backup file is saved. If your passkey ever stops unlocking this device, it brings your groups back.',
+    noRecovery:
+      'Nothing was locked: no backup file holds every group, and no recovery contacts are chosen. Save a backup file or choose recovery contacts, then try again.',
+    /** Settings, where Save a backup and Recovery contacts sit above. */
+    settingsGate:
+      'Before you can lock your keys, save a backup file of every group or choose recovery contacts, above. If your passkey ever stops unlocking this device, they bring your groups back.',
+    settingsEmpty:
+      'Once you’re in a group, save a backup file or choose recovery contacts, above, and you can lock your keys here.',
+    /** A device locked before #389 whose groups have no way back: it stays locked, and asks. */
+    lockedNoWayBack:
+      'No backup file holds every group, and no recovery contacts are chosen. If your passkey ever stops unlocking this device, nothing could bring your groups back. Save a backup file or choose recovery contacts, above.',
   },
   // The unlock screen (#95): a device whose keys are locked opens here, and
   // nothing syncs or signs until the passkey unlocks it.

@@ -1,7 +1,8 @@
 /**
  * Passkey setup and unlock (#95), on a real store over fake IndexedDB and a
- * fake authenticator: the decision made once at the second tap, and a launch
- * that starts nothing until the passkey unlocks the keys.
+ * fake authenticator: the decision made once at the second tap, which seals
+ * only once the groups have a way back (#389), and a launch that starts
+ * nothing until the passkey unlocks the keys.
  */
 import { describe, expect, it, vi } from 'vitest';
 
@@ -16,6 +17,8 @@ import { createFakeRelay } from '../test/fakeRelay';
 import { type NewGroup, openStore, type Store, VaultLocked } from '../store/db';
 import { refreshRelayBackup } from '../store/relayBackup';
 import { exportGroups } from '../store/snapshot';
+import type { TestDevice } from '../test/appServices';
+import { members } from '../test/members';
 import { createSync } from '../store/sync';
 import { openDeviceLock, passkeyOn, type PasskeyDeps, whenOpen } from './passkey';
 
@@ -40,6 +43,15 @@ const ANA: NewGroup = {
   me: { author: 'author-ana', name: 'Ana' },
 };
 
+/**
+ * A way back for a store whose group is no real one: the backup key of
+ * recovery contacts chosen on another of the person's devices, with its split
+ * (#272), so keys may be sealed under a passkey (#389).
+ */
+function wayBack(store: Store, key = new Uint8Array(32).fill(0xc4)) {
+  return store.setRelayBackupKey(key, 'split-chosen-elsewhere');
+}
+
 /** The PRF salt a `get()` asked the passkey to evaluate. */
 function askedSalt(options: CredentialRequestOptions | undefined): Uint8Array {
   return options?.publicKey?.extensions?.prf?.eval?.first as Uint8Array;
@@ -60,6 +72,7 @@ async function lockedDevice(
 ) {
   const store = await openStore();
   await store.addGroup(ANA);
+  await wayBack(store);
   await before(store);
   const passkey = passkeyOn(deps(store, authenticator.calls));
   expect(await passkey.protect(await passkey.create())).toBe('protected');
@@ -79,6 +92,7 @@ describe('passkeyOn', () => {
   it('locks the keys with a passkey in two taps, with the PRF salt it asked with', async () => {
     const store = await openStore();
     await store.addGroup(ANA);
+    await wayBack(store);
     const authenticator = fakeAuthenticator();
     const passkey = passkeyOn(deps(store, authenticator.calls));
 
@@ -108,6 +122,7 @@ describe('passkeyOn', () => {
 
   it('zeroes the PRF output once used, and when it can’t protect the keys', async () => {
     const store = await openStore();
+    await wayBack(store);
     const outputs: Uint8Array[] = [];
     const webauthn: WebAuthn = {
       createCredential: () => Promise.resolve(Uint8Array.of(1)),
@@ -135,6 +150,56 @@ describe('passkeyOn', () => {
     await expect(passkey.protect(id)).rejects.toThrow(PasskeyUnanswered);
     await expect(passkey.create()).rejects.toThrow(PasskeyUnanswered);
     expect(await store.readVault()).toBeNull();
+  });
+
+  it('seals nothing, and says so, on a device with no way back: no group, or none in a backup file (#389)', async () => {
+    const store = await openStore();
+    const outputs: Uint8Array[] = [];
+    const webauthn: WebAuthn = {
+      createCredential: () => Promise.resolve(Uint8Array.of(1)),
+      evaluatePrf: () => {
+        const output = new Uint8Array(32).fill(7);
+        outputs.push(output);
+        return Promise.resolve(output);
+      },
+    };
+    const passkey = passkeyOn({ store, webauthn, platform: ANDROID, rpId: RP_ID });
+
+    expect(await passkey.recoveryPath()).toBe('empty');
+    expect(await passkey.protect(Uint8Array.of(1))).toBe('no-recovery');
+    await store.addGroup(ANA);
+    expect(await passkey.protect(Uint8Array.of(1))).toBe('no-recovery');
+
+    expect(await store.readVault()).toBeNull();
+    expect(outputs.map((output) => output.every((byte) => byte === 0))).toEqual([true, true]);
+    // Contacts chosen elsewhere are a way back.
+    await wayBack(store);
+    expect(await passkey.recoveryPath()).toBe('contacts');
+    expect(await passkey.protect(Uint8Array.of(1))).toBe('protected');
+  });
+
+  it('seals once a saved backup file holds every group, read when the second tap answers (#389)', async () => {
+    const made = await members(createFakeRelay(), ['Ana']);
+    const devices: readonly TestDevice[] = made.devices;
+    const [ana] = devices;
+    if (ana === undefined) throw new Error('Expected Ana’s device.');
+    const { store } = ana.services;
+    const authenticator = fakeAuthenticator();
+    const passkey = passkeyOn(deps(store, authenticator.calls));
+    try {
+      expect(await passkey.recoveryPath()).toBe('none');
+      const id = await passkey.create();
+      expect(await passkey.protect(id)).toBe('no-recovery');
+      expect(await store.readVault()).toBeNull();
+
+      await store.markBackup([made.groupId], 'saved');
+      expect(await passkey.recoveryPath()).toBe('backup');
+      expect(await passkey.protect(id)).toBe('protected');
+      expect(await store.readVault()).not.toBeNull();
+    } finally {
+      ana.services.sync.stop();
+      store.close();
+    }
   });
 
   it('fails with PasskeyUnanswered where the browser has no WebAuthn', async () => {
@@ -293,7 +358,7 @@ describe('whenOpen', () => {
   it('lets the sync loop refresh the relay backup (#97) only once the passkey unlocks the keys', async () => {
     const backupKey = new Uint8Array(32).fill(0xb2);
     const { store, authenticator } = await lockedDevice(fakeAuthenticator(), (held) =>
-      held.setRelayBackupKey(backupKey),
+      held.setRelayBackupKey(backupKey, 'split-of-this-key'),
     );
     const fake = createFakeRelay();
     const relay = createRelay({ fetch: fake.fetch });
