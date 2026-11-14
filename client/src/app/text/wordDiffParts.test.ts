@@ -4,7 +4,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { type DiffPart, MAX_DIFF_EDITS, wordDiff } from './wordDiff';
+import { type DiffPart, MAX_DIFF_EDITS, wordDiff } from './wordDiffParts';
 
 /** The text a diff's parts rebuild, keeping the unchanged parts and one side's changes. */
 function rebuild(parts: readonly DiffPart[], side: 'added' | 'removed'): string {
