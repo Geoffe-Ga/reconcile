@@ -2,7 +2,7 @@ import { useEffect, useEffectEvent, useId, useMemo, useState } from 'react';
 
 import type { FoundGroup, InviteLookup } from '../app/actions';
 import { CopyLink } from '../app/CopyLink';
-import { inviteLink } from '../app/invite';
+import { HELD_LINKS, type HeldLinkName } from '../app/heldLinks';
 import { messages } from '../app/messages';
 import { PageHeader } from '../app/ui';
 import { doorLinkOf, type DoorView, parseDoorPayload } from '../door/page';
@@ -10,18 +10,20 @@ import { DoorExcerpt } from './FrontDoor';
 import { InvitePreview } from './InvitePreview';
 
 /**
- * How the page was opened: plainly, with an invite link, with one that can't
- * be read, or with a front door's link (#121), whose address is no secret.
+ * How the page was opened: plainly; with a link whose seed is held in memory,
+ * an invite, a reconcile card or a follow link (#280, `heldLinks.ts`); with
+ * one of those that can't be read, and its kind; or with a front door's link
+ * (#121), whose address is no secret.
  */
 export type Arrival =
   | { readonly kind: 'plain' }
-  | { readonly kind: 'invite'; readonly seed: Uint8Array }
-  | { readonly kind: 'damaged' }
+  | { readonly kind: HeldLinkName; readonly seed: Uint8Array }
+  | { readonly kind: 'damaged'; readonly link: HeldLinkName }
   | { readonly kind: 'door'; readonly payload: string };
 
 /** Props for {@link InstallGuide}. */
 export interface InstallGuideProps {
-  /** How the page was opened. An invite is held in memory, out of the address bar. */
+  /** How the page was opened. An invite, a card or a follow link is held in memory, out of the address bar. */
   readonly arrival: Arrival;
   /** The app's origin: its address, and the start of invite links. */
   readonly origin: string;
@@ -52,40 +54,70 @@ function CopyAppAddress({ origin, copyText }: Pick<InstallGuideProps, 'origin' |
   );
 }
 
-interface InviteSectionProps {
-  readonly group: FoundGroup | null;
+/** What a held link says once it can't be used, by its kind: its own page's line (#280). */
+const UNUSABLE: Readonly<Record<HeldLinkName, string>> = {
+  invite: messages.join.badLink,
+  card: messages.bring.badLink,
+  follow: messages.follow.badLink,
+};
+
+interface HeldCopyProps {
+  readonly name: HeldLinkName;
   readonly link: string;
   readonly copyText: InstallGuideProps['copyText'];
 }
 
-/** The invite's preview, when the relay showed one, and the link to copy into the installed app. */
+/** A held link's field and its Copy, to paste into the installed app (#76, #280). */
+function HeldCopy({ name, link, copyText }: HeldCopyProps) {
+  const words = messages.install.held[name];
+  return (
+    <CopyLink
+      link={link}
+      label={words.label}
+      hint={messages.install.heldHint}
+      button={words.copy}
+      primary
+      copyText={copyText}
+    />
+  );
+}
+
+/**
+ * A held link with no preview (#280): a card's or a follow link's, whose own
+ * page in the installed app shows what it holds before anything happens, or
+ * an invite's while the relay can't be reached.
+ */
+function HeldSection(props: HeldCopyProps) {
+  const heading = useId();
+  return (
+    <section className="stack" aria-labelledby={heading}>
+      <h2 id={heading} className="heading-3">
+        {messages.install.held[props.name].heading}
+      </h2>
+      <HeldCopy {...props} />
+    </section>
+  );
+}
+
+interface InviteSectionProps {
+  readonly group: FoundGroup;
+  readonly link: string;
+  readonly copyText: InstallGuideProps['copyText'];
+}
+
+/** The invite's preview, as the relay showed it, and the link to copy into the installed app. */
 function InviteSection({ group, link, copyText }: InviteSectionProps) {
   const heading = useId();
   return (
     <section className="stack" aria-labelledby={heading}>
-      {group === null ? (
-        <h2 id={heading} className="heading-3">
-          {messages.install.inviteHeading}
+      <div className="page-head">
+        <p className="eyebrow">{messages.join.eyebrow}</p>
+        <h2 id={heading} className="heading-2">
+          <bdi>{group.preview.groupName}</bdi>
         </h2>
-      ) : (
-        <>
-          <div className="page-head">
-            <p className="eyebrow">{messages.join.eyebrow}</p>
-            <h2 id={heading} className="heading-2">
-              <bdi>{group.preview.groupName}</bdi>
-            </h2>
-          </div>
-          <InvitePreview preview={group.preview} />
-        </>
-      )}
-      <CopyLink
-        link={link}
-        label={messages.install.inviteLabel}
-        hint={messages.install.inviteHint}
-        button={messages.install.copyInvite}
-        primary
-        copyText={copyText}
-      />
+      </div>
+      <InvitePreview preview={group.preview} />
+      <HeldCopy name="invite" link={link} copyText={copyText} />
     </section>
   );
 }
@@ -96,6 +128,7 @@ interface InviteAreaProps extends Pick<InstallGuideProps, 'origin' | 'copyText'>
 }
 
 function InviteArea({ seed, phase, origin, copyText }: InviteAreaProps) {
+  const link = HELD_LINKS.invite.link(origin, seed);
   switch (phase.kind) {
     case 'loading':
       return (
@@ -104,22 +137,24 @@ function InviteArea({ seed, phase, origin, copyText }: InviteAreaProps) {
         </p>
       );
     case 'missing':
-      return <ExpiredLink origin={origin} copyText={copyText} />;
+      return <ExpiredLink name="invite" origin={origin} copyText={copyText} />;
     case 'found':
-      return (
-        <InviteSection group={phase.group} link={inviteLink(origin, seed)} copyText={copyText} />
-      );
+      return <InviteSection group={phase.group} link={link} copyText={copyText} />;
     case 'offline':
     case 'joined':
-      return <InviteSection group={null} link={inviteLink(origin, seed)} copyText={copyText} />;
+      return <HeldSection name="invite" link={link} copyText={copyText} />;
   }
 }
 
-/** M2-03's expired-or-damaged line, without the link, then the app's address. */
-function ExpiredLink({ origin, copyText }: Pick<InstallGuideProps, 'origin' | 'copyText'>) {
+interface ExpiredLinkProps extends Pick<InstallGuideProps, 'origin' | 'copyText'> {
+  readonly name: HeldLinkName;
+}
+
+/** The link's own expired-or-damaged line (M2-03's, for an invite), without it, then the app's address. */
+function ExpiredLink({ name, origin, copyText }: ExpiredLinkProps) {
   return (
     <>
-      <p className="lede">{messages.join.badLink}</p>
+      <p className="lede">{UNUSABLE[name]}</p>
       <CopyAppAddress origin={origin} copyText={copyText} />
     </>
   );
@@ -197,22 +232,36 @@ function DoorArea({ payload, origin, copyText, readDoor }: DoorAreaProps) {
   );
 }
 
-/** The last step: open the app, and with an invite or a door, where to paste its link. */
+/** The last step: open the app, and with a held link or a door, where to paste its link. */
 function lastStep(arrival: Arrival, phase: Phase): string {
-  if (arrival.kind === 'door') return messages.door.openToApply;
-  // Pasting the invite into the link bar is the next step only while the link still works.
-  const toJoin = arrival.kind === 'invite' && phase.kind !== 'missing';
-  return toJoin ? messages.install.openToJoin : messages.install.open;
+  switch (arrival.kind) {
+    case 'door':
+      return messages.door.openToApply;
+    case 'invite':
+      // Pasting the invite into the link bar is the next step only while the link still works.
+      return phase.kind === 'missing' ? messages.install.open : messages.install.openToPaste.invite;
+    case 'card':
+    case 'follow':
+      return messages.install.openToPaste[arrival.kind];
+    case 'damaged':
+    case 'plain':
+      return messages.install.open;
+  }
 }
 
-/** What follows the steps: the invite, the door, a damaged link's line, or the app's address. */
+/** What follows the steps: the held link, the door, a damaged link's line, or the app's address. */
 function ArrivalArea(props: InstallGuideProps & { readonly phase: Phase }) {
   const { arrival, origin, copyText, readDoor, phase } = props;
   switch (arrival.kind) {
     case 'invite':
       return <InviteArea seed={arrival.seed} phase={phase} origin={origin} copyText={copyText} />;
+    case 'card':
+    case 'follow': {
+      const link = HELD_LINKS[arrival.kind].link(origin, arrival.seed);
+      return <HeldSection name={arrival.kind} link={link} copyText={copyText} />;
+    }
     case 'damaged':
-      return <ExpiredLink origin={origin} copyText={copyText} />;
+      return <ExpiredLink name={arrival.link} origin={origin} copyText={copyText} />;
     case 'door':
       return (
         <DoorArea
@@ -254,8 +303,10 @@ function useInviteLookup(arrival: Arrival, lookup: InstallGuideProps['lookup']):
  * The install guide (ADR-0029, spec §8.1): what an iPhone or iPad shows in
  * any browser outside the installed app, where nothing may create keys. One
  * guide for every iOS browser. An invite link opened here still shows its
- * preview, and its link to copy into the installed app; a front door's link
- * shows its page, and its link to copy, in place of the form (#121).
+ * preview, and its link to copy into the installed app; a reconcile card's
+ * or a follow link shows its link to copy (#280), with no preview, since its
+ * own page there shows what it holds before anything happens; a front door's
+ * link shows its page, and its link to copy, in place of the form (#121).
  */
 export function InstallGuide(props: InstallGuideProps) {
   const { arrival, lookup } = props;
