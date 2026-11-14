@@ -49,7 +49,6 @@ import { createSync, type Sync } from './sync';
 freshIndexedDBPerTest();
 
 const TS = 1_762_650_000_000;
-const DAY_MS = 86_400_000;
 const DAY = 1440;
 /** Noon UTC on a day, in relay minutes. */
 const NOON = 20_400 * DAY + 720;
@@ -64,27 +63,30 @@ function doc(id: string, title: string, updatedAt: number, createdAt = 1): Perso
   return { id, title, text: `${title}, as written.`, createdAt, updatedAt };
 }
 
-/** A share by link (#105), its seed filled with `fill`, last posted at `lastPostedAt`. */
-function share(fill: number, lastPostedAt: number | null = TS): ShareState {
+/** The relay minute the merge's own groups last heard (#347). */
+const RELAY = 29_377_500;
+
+/** A share by link (#105), its seed filled with `fill`, last posted at relay minute `postedAt`. */
+function share(fill: number, postedAt: ShareState['postedAt'] = RELAY): ShareState {
   const keys = newSigningKeys();
   return {
     seed: new Uint8Array(32).fill(fill),
     secretKey: keys.secretKey,
     publicKey: keys.publicKey,
     n: 1,
-    lastPostedAt,
+    postedAt,
     pending: false,
   };
 }
 
-/** The merge at {@link TS}, with nothing uploaded from this device before unless named. */
+/** The merge at relay minute {@link RELAY}, with nothing uploaded from this device before unless named. */
 function merge(
   own: readonly PersonalDocument[],
   relay: readonly PersonalDocument[],
   uploaded: readonly string[] = [],
-  now = TS,
+  relayNow: number | null = RELAY,
 ): PersonalDocument[] {
-  return mergePersonal(own, relay, { uploaded: new Set(uploaded), now });
+  return mergePersonal(own, relay, { uploaded: new Set(uploaded), relayNow });
 }
 
 describe('mergePersonal (#247)', () => {
@@ -124,22 +126,31 @@ describe('mergePersonal (#247)', () => {
 
   it('keeps this device’s share over another the relay copy holds on the same Document', () => {
     const mine = share(1);
-    const theirs = share(2, TS + 1);
+    const theirs = share(2, RELAY + 1);
 
     expect(
       merge([{ ...doc(A, 'Same', 5), share: mine }], [{ ...doc(A, 'Same', 5), share: theirs }]),
     ).toEqual([{ ...doc(A, 'Same', 5), share: mine }]);
   });
 
-  it('carries the relay copy’s share onto a Document this device holds unshared while its link may still open', () => {
-    const ttl = SHARE_TTL_DAYS * DAY_MS;
-    const live = share(3, TS - ttl + 1);
+  it('carries the relay copy’s share onto a Document this device holds unshared while its link may still open on the relay’s clock (#347)', () => {
+    const ttl = SHARE_TTL_DAYS * DAY;
+    const live = share(3, RELAY - ttl + 1);
     const same = doc(A, 'Same', 5);
 
     expect(merge([same], [{ ...same, share: live }])).toEqual([{ ...same, share: live }]);
     // Its link has expired at the relay: nobody can read it, and this device may be the one that stopped it.
-    expect(merge([same], [{ ...same, share: share(3, TS - ttl) }])).toEqual([same]);
+    const expired = share(3, RELAY - ttl);
+    expect(merge([same], [{ ...same, share: expired }])).toEqual([same]);
     expect(merge([same], [{ ...same, share: share(3, null) }])).toEqual([same]);
+    // Nothing says its link can't open: no relay minute heard yet, or a time from before #347.
+    expect(merge([same], [{ ...same, share: expired }], [], null)).toEqual([
+      { ...same, share: expired },
+    ]);
+    const unmeasured = share(3, 'unmeasured');
+    expect(merge([same], [{ ...same, share: unmeasured }])).toEqual([
+      { ...same, share: unmeasured },
+    ]);
     // Later words here mark it pending, so a device restored from the copy posts them to the link.
     const later = doc(A, 'Later here', 6);
     expect(merge([later], [{ ...same, share: live }])).toEqual([
@@ -150,7 +161,7 @@ describe('mergePersonal (#247)', () => {
   });
 
   it('keeps a Document only the relay copy holds whole, however long ago its share last posted', () => {
-    const old = share(4, TS - 400 * DAY_MS);
+    const old = share(4, RELAY - 400 * DAY);
     const theirs = { ...doc(B, 'Theirs', 5), share: old };
 
     expect(merge([], [theirs])).toEqual([theirs]);

@@ -48,7 +48,7 @@ function share(changes: Partial<ShareState> = {}): ShareState {
     secretKey: KEYS.secretKey,
     publicKey: KEYS.publicKey,
     n: 1,
-    lastPostedAt: 1_762_650_000_000,
+    postedAt: 29_377_500,
     pending: false,
     ...changes,
   };
@@ -107,8 +107,13 @@ describe('isPersonalDocument', () => {
 describe('isShareState', () => {
   it('accepts a share before its first post and after one, pending or not', () => {
     expect(isShareState(share())).toBe(true);
-    expect(isShareState(share({ n: 0, lastPostedAt: null, pending: true }))).toBe(true);
+    expect(isShareState(share({ n: 0, postedAt: null, pending: true }))).toBe(true);
     expect(isPersonalDocument(doc({ share: share() }))).toBe(true);
+  });
+
+  it('accepts a share whose time is unmeasured, and one with its mailbox’s last relay minute (#347)', () => {
+    expect(isShareState(share({ postedAt: 'unmeasured' }))).toBe(true);
+    expect(isShareState(share({ seenAt: 29_400_000 }))).toBe(true);
   });
 
   it('accepts a share a restore paused (#328)', () => {
@@ -126,8 +131,18 @@ describe('isShareState', () => {
     ['a public key that isn’t its secret key’s', share({ publicKey: newSigningKeys().publicKey })],
     ['a negative n', share({ n: -1 })],
     ['a fractional n', share({ n: 1.5 })],
-    ['a fractional post time', share({ lastPostedAt: 1.5 })],
-    ['a post time that isn’t a number', { ...share(), lastPostedAt: '1' }],
+    ['a fractional post time', share({ postedAt: 1.5 })],
+    ['a post time that is another word', { ...share(), postedAt: '1' }],
+    ['no post time', { ...share(), postedAt: undefined }],
+    [
+      'a post time in the shape from before #347, which only a stored record’s read takes',
+      (() => {
+        const old: Record<string, unknown> = { ...share(), lastPostedAt: 1_762_650_000_000 };
+        delete old.postedAt;
+        return old;
+      })(),
+    ],
+    ['a fractional relay reading', share({ seenAt: 1.5 })],
     ['a pending that isn’t true or false', { ...share(), pending: 1 }],
     ['a paused that is false, which a share never holds', { ...share(), paused: false }],
     ['a paused that isn’t true', { ...share(), paused: 'yes' }],

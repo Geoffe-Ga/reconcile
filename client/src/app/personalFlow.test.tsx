@@ -9,6 +9,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
+  keepSharesAlive,
   keepSharing,
   readShare,
   SHARE_TTL_DAYS,
@@ -233,6 +234,8 @@ describe('a share another device stopped, in the app (#339)', () => {
     fake.minute += lapsed * 24 * 60;
     clock += lapsed * 24 * 60 * 60 * 1000;
     const posts = fake.requests.filter(({ method }) => method === 'PUT').length;
+    // The launch reads the share's mailbox, and the relay's minute says 30 days (#347).
+    expect(await keepSharesAlive(phone.services)).toEqual([[id, 'paused']]);
     window.history.replaceState(null, '', '#/me');
     render(<App services={phone.services} />);
     const { share } = messages.personal;

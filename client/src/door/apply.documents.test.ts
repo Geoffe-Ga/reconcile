@@ -244,7 +244,7 @@ const HELD: PersonalEntry = {
   text: 'Café rents.',
   createdAt: 1,
   updatedAt: 2,
-  share: { n: 3, lastPostedAt: 4, pending: false },
+  share: { n: 3, postedAt: 29_000_004, pending: false },
 };
 
 describe('apply with documents', () => {

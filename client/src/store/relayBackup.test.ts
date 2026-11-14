@@ -574,7 +574,7 @@ describe('a key change and the relay copy (#97, #98)', () => {
     await startRelayBackup(device.services);
     const shared = statement();
     await device.store.savePersonal(shared);
-    const share = { ...shareState(5), n: 0, lastPostedAt: null, pending: true };
+    const share = { ...shareState(5), n: 0, postedAt: null, pending: true };
     await device.store.updateShare(shared.id, () => share);
     const before = await groupOn(device.store, groupId);
     const services = {
@@ -658,7 +658,7 @@ function shareState(fill: number): ShareState {
     secretKey: keys.secretKey,
     publicKey: keys.publicKey,
     n: 1,
-    lastPostedAt: TS,
+    postedAt: NOON,
     pending: false,
   };
 }

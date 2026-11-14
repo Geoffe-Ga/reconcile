@@ -63,7 +63,7 @@ function shareOf(fill: number, n = 1): ShareState {
     secretKey: bytes32(fill + 1),
     publicKey: publicKeyOf(bytes32(fill + 1)),
     n,
-    lastPostedAt: 100 * n,
+    postedAt: 29_000_000 + 100 * n,
     pending: false,
   };
 }
@@ -255,8 +255,8 @@ describe('sealKeys with shares and sent applications (#255, #265)', () => {
     expect(await found(ALL_KEYS)).toEqual([]);
     const documents = await rawRecords('personal');
     expect(documents.map((document) => Object.keys(document.share ?? {}).sort())).toEqual([
-      ['lastPostedAt', 'n', 'pending'],
-      ['lastPostedAt', 'n', 'pending'],
+      ['n', 'pending', 'postedAt'],
+      ['n', 'pending', 'postedAt'],
       [],
     ]);
     expect((await rawRecords('sent')).map((sent) => Object.keys(sent).sort())).toEqual([
@@ -390,7 +390,7 @@ describe('a share a restore paused, on a device whose keys are sealed (#328)', (
     const entries = await locked.listPersonalEntries();
     expect(entries.find(({ id }) => id === brought.id)?.share).toEqual({
       n: 1,
-      lastPostedAt: 100,
+      postedAt: 29_000_100,
       pending: false,
       paused: true,
     });
@@ -408,7 +408,7 @@ describe('a locked device’s shares and sent applications', () => {
 
     const entries = await store.listPersonalEntries();
 
-    const mark = { n: 1, lastPostedAt: 100, pending: false };
+    const mark = { n: 1, postedAt: 29_000_100, pending: false };
     expect(entries).toEqual([
       { ...textOnly(SHARED), share: mark },
       { ...textOnly(OTHER_SHARED), share: mark },
