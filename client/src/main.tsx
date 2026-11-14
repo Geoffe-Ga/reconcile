@@ -13,6 +13,8 @@ import './styles/passkey.css';
 import './styles/recovery.css';
 import './styles/coalitions.css';
 import './styles/history.css';
+import './styles/frame.css';
+import './styles/linkbar.css';
 import './styles/tabs.css';
 
 import { StrictMode } from 'react';

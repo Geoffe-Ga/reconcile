@@ -6,7 +6,7 @@
  * reads only the coalition's; nothing counts.
  */
 import { render, screen, within } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { discoverFeed, type FeedPlace } from '../app/discoverFeed';
 import { messages } from '../app/messages';
@@ -17,13 +17,6 @@ import { axeViolations } from '../test/axe';
 import { Logs, seatKey } from '../test/coalitions';
 import { groupLog } from '../test/votes';
 import { Discover } from './Discover';
-
-const OPEN = {
-  onOpenInvite: vi.fn(),
-  onOpenCard: vi.fn(),
-  onOpenFollow: vi.fn(),
-  onOpenDoor: vi.fn(),
-};
 
 /** A group named `name` whose Ana sent one Dispatch at `minute`. */
 function group(name: string, minute: number, words: { title: string; text: string }): GroupState {
@@ -79,10 +72,12 @@ describe('Discover’s feed (#429)', () => {
       [placeOf('group', 'riverside', riverside), placeOf('group', 'oak', oak)],
       [placeOf('coalition', 'valley', coalition)],
     );
-    render(<Discover feed={feed} {...OPEN} />);
+    render(<Discover feed={feed} />);
 
     const list = screen.getByRole('list', { name: messages.discover.feedLabel });
     expect(within(list).getAllByRole('listitem')).toHaveLength(3);
+    // With a feed, the empty state's pointer to the link bar steps aside too (#444).
+    expect(screen.queryByText(messages.discover.pasteInBar)).toBeNull();
     expect(cards()).toEqual([
       { from: coalition.name, title: 'Rally Saturday' },
       { from: 'Oak St Co-op', title: 'Bins on Tuesday' },
@@ -104,9 +99,8 @@ describe('Discover’s feed (#429)', () => {
     expect(within(sunday).getByText(/Bring a chair/).textContent).toBe(
       'Bring a chair.\n\n  We start at 10.',
     );
-    // The empty state's sentence goes once there's something to read; the field stays.
+    // The empty state's sentence goes once there's something to read; a card or link opens from the bar (#444).
     expect(screen.queryByText(messages.discover.empty)).not.toBeInTheDocument();
-    expect(screen.getByRole('region', { name: messages.discover.openHeading })).toBeVisible();
     // No counts and no badges.
     expect(document.querySelector('.badge, .count')).toBeNull();
     expect(await axeViolations()).toEqual([]);
@@ -114,9 +108,7 @@ describe('Discover’s feed (#429)', () => {
 
   it('marks a dissolved group’s Dispatches as from a group that has ended', async () => {
     const ended = group('Allotment Society', 500, { title: 'Last seeds', text: 'Thanks, all.' });
-    render(
-      <Discover feed={discoverFeed([placeOf('group', 'allot', ended, true)], [])} {...OPEN} />,
-    );
+    render(<Discover feed={discoverFeed([placeOf('group', 'allot', ended, true)], [])} />);
 
     const [card] = screen.getAllByRole('article');
     if (card === undefined) throw new Error('Expected the card.');
@@ -128,9 +120,7 @@ describe('Discover’s feed (#429)', () => {
   it('shows a follower of a coalition its Dispatches, and nothing from inside its member groups', async () => {
     const coalition = coalitionWithRisen();
     // A follower holds the coalition's log and none of its member groups' (#124).
-    render(
-      <Discover feed={discoverFeed([], [placeOf('coalition', 'valley', coalition)])} {...OPEN} />,
-    );
+    render(<Discover feed={discoverFeed([], [placeOf('coalition', 'valley', coalition)])} />);
 
     const all = screen.getAllByRole('article');
     expect(all).toHaveLength(1);
@@ -146,14 +136,13 @@ describe('Discover’s feed (#429)', () => {
     expect(await axeViolations()).toEqual([]);
   });
 
-  it('says in one sentence what shows here while there’s nothing, beside Open a card or link', async () => {
-    render(<Discover feed={[]} {...OPEN} />);
+  it('says in one sentence what shows here while there’s nothing, and that a card or link opens from the bar (#444)', async () => {
+    render(<Discover feed={[]} />);
 
     expect(screen.getByText(messages.discover.empty)).toBeVisible();
+    expect(screen.getByText(messages.discover.pasteInBar)).toBeVisible();
     expect(screen.queryByRole('list', { name: messages.discover.feedLabel })).toBeNull();
-    expect(screen.getByRole('button', { name: messages.discover.open })).toHaveClass(
-      'button-primary',
-    );
+    expect(screen.queryByRole('button')).toBeNull();
     expect(await axeViolations()).toEqual([]);
   });
 });

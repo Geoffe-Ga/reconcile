@@ -116,12 +116,15 @@ describe('Root', () => {
       expect(screen.getByRole('heading', { level: 2, name: topic.heading })).toBeVisible();
     }
     expect(screen.queryByRole('textbox', { name: 'Your name' })).not.toBeInTheDocument();
+    // The link bar (#444) stands only once first run is through.
+    expect(screen.queryByRole('search')).not.toBeInTheDocument();
     expect(keysMade).not.toHaveBeenCalled();
     expect(await ben.services.store.listGroups()).toEqual([]);
     expect(await axeViolations()).toEqual([]);
 
     await user.click(screen.getByRole('button', { name: messages.notice.accept }));
     expect(await joinPreview()).toEqual(['Riverside Tenants', 'House rules']);
+    expect(screen.getByRole('search')).toBeVisible();
     expect(keysMade).not.toHaveBeenCalled();
 
     await user.type(screen.getByRole('textbox', { name: 'Your name' }), 'Ben');
@@ -130,7 +133,7 @@ describe('Root', () => {
     expect(keysMade).toHaveBeenCalledTimes(1);
   });
 
-  it('brings a pasted invite link to the same preview as an opened one', async () => {
+  it('brings an invite link pasted into the link bar to the same preview as an opened one (#444)', async () => {
     const fake = createFakeRelay();
     const link = await anasGroup(fake);
 
@@ -145,24 +148,26 @@ describe('Root', () => {
     const paster = await device(fake, 'paster');
     const { user } = renderRoot(paster);
     await user.click(screen.getByRole('button', { name: 'I understand' }));
-    await user.click(await screen.findByRole('textbox', { name: 'Invite link' }));
+    await user.click(await screen.findByRole('searchbox', { name: messages.linkBar.label }));
     await user.paste(`  ${link}  `);
-    await user.click(screen.getByRole('button', { name: 'Join with an invite link' }));
+    await user.keyboard('{Enter}');
 
     expect(await joinPreview()).toEqual(opened);
     expect(window.location.hash).toBe('#/join');
   });
 
-  it('shows the damaged-link line for a malformed paste, with none of the input', async () => {
+  it('says a damaged invite link is damaged in the link bar, with none of it on the page (#444)', async () => {
     const ben = await device(createFakeRelay(), 'ben');
     const { user } = renderRoot(ben);
     await user.click(screen.getByRole('button', { name: 'I understand' }));
-    const field = await screen.findByRole('textbox', { name: 'Invite link' });
-    await user.type(field, 'https://example.org/#/join/canary-payload');
-    await user.click(screen.getByRole('button', { name: 'Join with an invite link' }));
-    expect(field).toHaveAccessibleDescription(
-      `${messages.start.inviteHint} ${messages.join.badLink}`,
-    );
+    const field = await screen.findByRole('searchbox', { name: messages.linkBar.label });
+    const before = window.location.hash;
+    await user.type(field, 'https://example.org/#join/canary-payload');
+    await user.keyboard('{Enter}');
+    expect(
+      within(screen.getByRole('search')).getByText(messages.linkBar.damaged, { selector: 'p' }),
+    ).toBeVisible();
+    expect(window.location.hash).toBe(before);
     expect(document.body).not.toHaveTextContent('canary');
   });
 
@@ -183,6 +188,7 @@ describe('Root', () => {
     expect(window.location.hash).toBe('');
     expect(screen.queryByRole('button', { name: 'I understand' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Create group' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('search')).not.toBeInTheDocument();
     expect(keysMade).not.toHaveBeenCalled();
     expect(await ben.services.store.listGroups()).toEqual([]);
     expect(await axeViolations()).toEqual([]);
@@ -221,6 +227,7 @@ describe('Root', () => {
     ).toBeVisible();
     expect(screen.getByText(messages.shared.note)).toBeVisible();
     expect(screen.queryByRole('button', { name: messages.notice.accept })).not.toBeInTheDocument();
+    expect(screen.queryByRole('search')).not.toBeInTheDocument();
     expect(keysMade).not.toHaveBeenCalled();
     expect(await reader.services.store.listPersonal()).toEqual([]);
     expect(window.location.hash).toBe(`#share/${sharePayloadOf(started.link)}`);

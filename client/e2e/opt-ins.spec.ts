@@ -33,10 +33,12 @@ const GROUP = 'Riverside Tenants';
 const WEBHOOK = 'https://discord.com/api/webhooks/1199000000000000001/sEcReT-tokenWXYZ';
 const PHONE = { width: 390, height: 844 };
 
-/** True when nothing on the page scrolls sideways. */
+/** True when nothing on the page scrolls sideways: the document, nor the region it scrolls in under the link bar (#444). */
 async function fitsWidth(page: Page): Promise<boolean> {
-  return page.evaluate(
-    () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+  return page.evaluate(() =>
+    [document.documentElement, document.querySelector('.app-page')].every(
+      (box) => box === null || box.scrollWidth <= box.clientWidth,
+    ),
   );
 }
 

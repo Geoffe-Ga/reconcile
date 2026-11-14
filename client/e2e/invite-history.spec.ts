@@ -14,9 +14,10 @@
  *
  * Reading before joining (#91): Cal reads the whole Document as it reads now
  * on the Join screen while IndexedDB holds nothing and the invite GET is the
- * only request, taps Not now, and comes back. Ana and Ben meet the first-run
- * guide after their first create and join, before any vote, and its cards
- * send nothing. A second test opens an invite whose Document holds script, an
+ * only request, taps Not now, and comes back through the link bar (#444),
+ * whose seed goes to Join in memory. Ana and Ben meet the first-run guide
+ * after their first create and join, before any vote, and its cards send
+ * nothing. A second test opens an invite whose Document holds script, an
  * image and `javascript:` links, which render as inert text with no CSP
  * violation.
  */
@@ -314,10 +315,16 @@ test('a newcomer gets the whole history from the invite, even what the relay pur
     expect(await localKeys(page)).toEqual(firstRunKeys);
   });
 
-  await test.step('C opens the link again, joins, and sees what A and B see', async () => {
+  await test.step('C pastes the link into the link bar on Start, joins, and sees what A and B see', async () => {
     const { page } = cal;
-    await page.goto(links[1] ?? '');
+    // Through the link bar (#444), the seed goes to Join in memory, never into the address bar.
+    const bar = page.getByRole('searchbox', { name: 'Search or paste a link' });
+    await bar.fill(links[1] ?? '');
+    await expect(page.getByRole('option')).toHaveText(/^An invite/u);
+    await bar.press('Enter');
     await expect(heading(page, GROUP)).toBeVisible();
+    await expect(page).toHaveURL(/#\/join$/u);
+    await expect(bar).toHaveValue('');
     await expect(page.getByRole('article').getByRole('paragraph')).toHaveText([
       NEW_TEXT,
       SECOND_ATOM,

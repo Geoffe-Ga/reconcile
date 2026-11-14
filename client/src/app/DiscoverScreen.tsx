@@ -1,18 +1,18 @@
 /**
  * Discover on the app's services (#423, #429): its feed, kept current as the
  * store changes (`useDiscoverFeed`, which reads the store and never the
- * relay), and the handlers its field opens links with.
+ * relay). A card or link opens from the link bar (#444), on every screen.
  */
-import { Discover, type DiscoverProps } from '../screens/Discover';
+import { Discover } from '../screens/Discover';
 import { type FeedStore, useDiscoverFeed } from './useDiscoverFeed';
 
-/** Props for {@link DiscoverScreen}: the store, and what opens each kind of link. */
-export interface DiscoverScreenProps extends Omit<DiscoverProps, 'feed'> {
+/** Props for {@link DiscoverScreen}. */
+export interface DiscoverScreenProps {
   readonly store: FeedStore;
 }
 
 /** Discover, once the store has answered, so the empty state never flashes before the feed. */
-export function DiscoverScreen({ store, ...open }: DiscoverScreenProps) {
+export function DiscoverScreen({ store }: DiscoverScreenProps) {
   const feed = useDiscoverFeed(store);
-  return feed === null ? null : <Discover feed={feed} {...open} />;
+  return feed === null ? null : <Discover feed={feed} />;
 }

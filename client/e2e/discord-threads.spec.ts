@@ -154,9 +154,14 @@ test('a Proposal’s first notice opens its Discord thread, Join discussion open
     await expect(heading(page, PROPOSAL)).toBeVisible();
     await expect(page.getByText('Proposal 2 · Open', { exact: true })).toBeVisible();
     await expect(joinDiscussion(page)).toHaveAttribute('href', THREAD, { timeout: 30_000 });
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
-      true,
-    );
+    // Nothing scrolls sideways: the document, nor the region it scrolls in under the link bar (#444).
+    expect(
+      await page.evaluate(() =>
+        [document.documentElement, document.querySelector('.app-page')].every(
+          (box) => box === null || box.scrollWidth <= box.clientWidth,
+        ),
+      ),
+    ).toBe(true);
     await expectAccessible(ben, 'Proposal view on a phone, with its thread');
 
     const [thread] = await Promise.all([

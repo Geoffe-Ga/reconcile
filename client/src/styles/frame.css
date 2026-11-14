@@ -1,0 +1,28 @@
+/*
+ * The app's frame (#444, #423; DESIGN.md "Link bar" and "Tab bar"): every
+ * screen past first run stands in one column the height of the viewport,
+ * with the link bar's band at the top, the page in a region of its own under
+ * it, and the tab bar at the bottom on the four pages that are its places.
+ *
+ * The page scrolls in its own region, never under the bars, as an installed
+ * app's does: nothing the page shows ever sits under the pill or the tabs,
+ * so a control at an edge is never half covered and a focused one is never
+ * hidden (WCAG 2.4.11).
+ */
+.app-frame {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  height: 100vh;
+  height: 100dvh;
+}
+
+/*
+ * The page's region runs the full width, so its scrollbar sits at the
+ * window's edge and a wheel anywhere over it scrolls it; the page inside
+ * keeps its own column. Its scroll stops at its ends rather than dragging the
+ * whole app, bars and all.
+ */
+.app-page {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}

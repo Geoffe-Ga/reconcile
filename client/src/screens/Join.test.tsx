@@ -566,11 +566,11 @@ describe('Not now, in the app (#91)', () => {
     keysMade.mockClear();
     const spies = spyOnWrites();
 
-    // Pasted on Start, the seed travels to Join in memory, held by the app.
+    // Pasted into the link bar (#444), the seed travels to Join in memory, held by the app.
     render(<App services={ben.services} />);
-    await user.click(await screen.findByRole('textbox', { name: 'Invite link' }));
+    await user.click(await screen.findByRole('searchbox', { name: 'Search or paste a link' }));
     await user.paste(link);
-    await user.click(screen.getByRole('button', { name: 'Join with an invite link' }));
+    await user.keyboard('{Enter}');
 
     expect(await screen.findByRole('heading', { level: 2, name: 'House rules' })).toHaveFocus();
     expect(screen.getByText('Bins go out on Tuesday.')).toBeVisible();

@@ -2,33 +2,13 @@
  * The tab bar (#423; DESIGN.md "Tab bar", ADR-0077 §7): Groups, Discover and
  * Me, at the bottom of the viewport on the four pages that are their places.
  *
- * The page scrolls in a region of its own above the bar, and the bar stays
- * put below it, as an installed app's does. Nothing the page shows ever sits
- * under the bar, so a control at the bottom edge is never half covered and a
- * focused one is never hidden (WCAG 2.4.11). The bar's own padding below
- * clears the iPhone home indicator in the installed app.
+ * The page scrolls in its own region above the bar (frame.css), so the bar
+ * never covers it. The bar's own padding below clears the iPhone home
+ * indicator in the installed app.
  *
  * Its classes all start `tab-bar`: `.tab-list` and `.tab` are the Write and
  * Preview tabs' (app.css, MarkdownField).
  */
-.tabbed {
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
-  height: 100vh;
-  height: 100dvh;
-}
-
-/*
- * The page's region runs the full width, so its scrollbar sits at the
- * window's edge and a wheel anywhere over it scrolls it; the page inside
- * keeps its own column. Its scroll stops at its ends rather than dragging the
- * whole app, bar and all.
- */
-.tabbed-page {
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
-
 .tab-bar {
   background: var(--surface);
   border-top: 1px solid var(--hairline);
