@@ -65,6 +65,24 @@ function SenderLine({ state, dispatch, place }: PartProps) {
   );
 }
 
+/**
+ * "· <date>" as one part that never wraps inside (#453), right after the
+ * sender with no space between; app.css puts a word joiner before the dot.
+ * When the line wraps, the sender's last word comes down with it, so no line
+ * starts with "·". Screen readers read a comma in the dot's place, as before.
+ */
+function When({ received }: { readonly received: number }) {
+  return (
+    <span className="dispatch-when">
+      <VisuallyHidden>{messages.home.levelSeparator}</VisuallyHidden>
+      <span className="dispatch-separator" aria-hidden="true">
+        {messages.dispatches.dateSeparator}
+      </span>
+      <time dateTime={minuteIso(received)}>{formatDay(received)}</time>
+    </span>
+  );
+}
+
 /** Where Open goes: the group's Document `doc` (#92), or the coalition's (#124). */
 function documentHref(state: GroupState, doc: string, place: DispatchPlace): string {
   const id = state.group ?? '';
@@ -140,9 +158,7 @@ export function DispatchCard({
       <Title id={heading} level={level} title={dispatch.title} />
       <p className="dispatch-meta">
         <SenderLine state={state} dispatch={dispatch} place={place} />
-        <VisuallyHidden>{messages.home.levelSeparator}</VisuallyHidden>
-        <span aria-hidden="true">{messages.dispatches.dateSeparator}</span>
-        <time dateTime={minuteIso(dispatch.received)}>{formatDay(dispatch.received)}</time>
+        <When received={dispatch.received} />
       </p>
       <Text text={dispatch.text} />
       <OpenDocument state={state} doc={dispatch.doc} place={place} />

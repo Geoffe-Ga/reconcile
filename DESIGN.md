@@ -187,7 +187,7 @@ Build on **React Aria Components** (unstyled, accessible). Style everything from
   - Once they expire, a caption takes the disclosure's place ("Individual scores and notes were cleared on Sat 12 Dec."), and the totals stay.
   - A priority vote's result (#107) names the focus, then lists the options that passed, best first, and those that didn't clear the floor, by their text alone. Its totals go under the disclosure with the ballots. Once the ballots expire, that disclosure, now "Totals", keeps the totals, with the cleared caption in the ballots' place.
 - **Dispatch card** (#112): a `surface` card with a `hairline` border, as every card.
-  - The title in heading-3, then "From <name> · <date>" (caption, `muted`). A Dispatch a Proposal carried reads "From the Proposal ‘<title>’", the title a link to it.
+  - The title in heading-3, then "From <name> · <date>" (caption, `muted`). A Dispatch a Proposal carried reads "From the Proposal ‘<title>’", the title a link to it. When the line wraps, "· <date>" stays in one piece and takes the sender's last word down with it, so no line starts with "·" (#453).
   - The text in body, as plain pre-wrapped text: line breaks and spaces show as typed, and Markdown and addresses stay text, never formatting or links.
   - "Open <Document title> →" as a forward link when it points to a Document.
   - On the Dispatches view, Send a Dispatch is the one primary action; on Group home, it's secondary, beside See all.
