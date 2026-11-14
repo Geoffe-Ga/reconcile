@@ -19,6 +19,7 @@ import { TakePart } from '../app/CoalitionSection';
 import { documentNamed } from '../app/documentLines';
 import { groupHistory, type HistorySource } from '../app/historySource';
 import { ChangeInvolvement } from '../app/LevelPicker';
+import { sectionAnchor, useAimedSection } from '../app/aimedSection';
 import { messages } from '../app/messages';
 import { WaitingNote } from '../app/Newcomer';
 import { type Route, routeHref } from '../app/router';
@@ -410,6 +411,7 @@ function Sections({ state, document, atoms, proposes, handlers, source }: Sectio
   const at = (after: string | null) => ({ document: document.id, after });
   const first = proposes ? <AddHere place={at(null)} section={0} onAdd={onAdd} /> : null;
   const before = headingsBefore(atoms);
+  useAimedSection(atoms);
   if (atoms.length === 0) {
     return (
       <>
@@ -423,7 +425,10 @@ function Sections({ state, document, atoms, proposes, handlers, source }: Sectio
       {first}
       {atoms.map((atom, index) => (
         <Fragment key={atom.id}>
-          <div className={isHeadingOnly(atom.text) ? 'atom atom-heading' : 'atom'}>
+          <div
+            id={sectionAnchor(atom.id)}
+            className={isHeadingOnly(atom.text) ? 'atom atom-heading' : 'atom'}
+          >
             <AtomBadge cls={atom.class} />
             <AtomText text={atom.text} after={before[index] ?? 1} />
             {proposes ? (
@@ -635,6 +640,7 @@ export function CoalitionDocumentView(props: CoalitionDocumentViewProps) {
   const { atoms, standing, open } = props;
   const proposes = standing.kind === 'proposes';
   const before = headingsBefore(atoms);
+  useAimedSection(atoms);
   return (
     <main className="shell">
       <BackLink to={{ name: 'coalition', coalitionId: props.coalitionId }} label={props.name} />
@@ -657,7 +663,7 @@ export function CoalitionDocumentView(props: CoalitionDocumentViewProps) {
       ) : (
         <article className="document">
           {atoms.map((atom, index) => (
-            <div key={atom.id} className="atom">
+            <div key={atom.id} id={sectionAnchor(atom.id)} className="atom">
               <AtomText text={atom.text} after={before[index] ?? 1} />
               <CoalitionSectionAction
                 atom={atom}

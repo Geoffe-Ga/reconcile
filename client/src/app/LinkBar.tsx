@@ -54,6 +54,8 @@ export interface LinkBarProps {
   readonly touch?: boolean;
   /** What this device holds for search (#445), built in memory; none by default. */
   readonly records?: readonly SearchRecord[];
+  /** Reads what this device holds for search afresh, each time the bar takes focus; in place of `records`. */
+  readonly loadRecords?: () => Promise<readonly SearchRecord[]>;
   /** Opens a search result, at its own page. */
   readonly onGo?: (record: SearchRecord) => void;
 }
@@ -372,6 +374,29 @@ function Overlay({ view, onDismiss, ...rest }: OverlayProps) {
   );
 }
 
+/**
+ * The records search reads: `given`, or what `load` reads each time the
+ * bar takes focus, kept only while the bar shows them.
+ */
+function useRecords(
+  given: readonly SearchRecord[],
+  load: (() => Promise<readonly SearchRecord[]>) | undefined,
+  inside: boolean,
+): readonly SearchRecord[] {
+  const [loaded, setLoaded] = useState<readonly SearchRecord[] | null>(null);
+  useEffect(() => {
+    if (load === undefined || !inside) return;
+    let live = true;
+    void load().then((records) => {
+      if (live) setLoaded(records);
+    });
+    return () => {
+      live = false;
+    };
+  }, [load, inside]);
+  return loaded ?? given;
+}
+
 /** No records: a search finds nothing until the app hands the bar what the device holds. */
 const NO_RECORDS: readonly SearchRecord[] = [];
 
@@ -386,13 +411,14 @@ function resultsOf(view: View | null): readonly SearchResult[] {
 /** The pill, the panel under it while it has focus and text, and the scrim behind them. */
 export function LinkBar(props: LinkBarProps) {
   const { onOpen, onPanelChange, readClipboard = clipboardReader(), touch = isTouch() } = props;
-  const { records = NO_RECORDS, onGo } = props;
+  const { onGo } = props;
   const input = useRef<HTMLInputElement>(null);
   const bar = useRef<HTMLDivElement>(null);
   const [text, setText] = useState('');
   // A pasted code's kind: the bar points to where the code goes, and keeps none of it.
   const [pointer, setPointer] = useState<CodeKind | null>(null);
   const { inside, handBack, forget } = useFocusInside(bar, input, setPointer);
+  const records = useRecords(props.records ?? NO_RECORDS, props.loadRecords, inside);
   const [expanded, setExpanded] = useState<ReadonlySet<Shelf>>(NONE_EXPANDED);
   const take = (value: string) => {
     const { kind } = linkKind(value);
