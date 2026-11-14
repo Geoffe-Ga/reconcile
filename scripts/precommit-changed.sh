@@ -4,7 +4,7 @@
 # The one way to run pre-commit on changed files, locally and in CI
 # (ADR-0061), so both always check the same file set.
 #
-# Base: $BASE_REF if set (CI passes the PR base or the pushed-over commit),
+# Base: $BASE_REF if set (CI passes a PR's base; its other runs set FULL=true),
 # else origin/main after a quiet fetch. Files are diffed from the merge-base.
 # Falls back to every file when no usable base exists, when $FULL=true, or
 # when .pre-commit-config.yaml itself changed.

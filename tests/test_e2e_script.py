@@ -2,9 +2,9 @@
 
 The tests run a copy of e2e.sh in a temp tree whose ``npm`` and ``npx`` are
 stubs on PATH. Each stub logs what it was asked to run and the environment the
-loop would have seen, so the tests check the script's own work (free ports, a
-temp relay database that is deleted afterwards, build before test) without a
-browser or a relay.
+loop would have seen, so the tests check the script's own work (free ports for
+each Playwright worker, a temp directory for the relays that is deleted
+afterwards, build before test) without a browser or a relay.
 """
 
 from __future__ import annotations
@@ -25,12 +25,11 @@ BASH = shutil.which("bash") or "bash"
 SEP = "\t"
 
 # Logs one line per call: the command, its directory, the three variables the
-# Playwright config reads, and whether the database's directory exists.
+# Playwright config reads, and whether the relays' directory exists.
 STUB = f"""#!{BASH}
-db_dir="$(dirname "${{RECONCILE_RELAY_DB:-/nonexistent/db}}")"
-exists=no; [[ -d "$db_dir" ]] && exists=yes
+exists=no; [[ -d "${{E2E_RELAY_DIR:-/nonexistent}}" ]] && exists=yes
 printf '%s{SEP}%s{SEP}%s{SEP}%s{SEP}%s{SEP}%s\\n' "$(basename "$0") $*" "$PWD" \\
-    "${{E2E_WEB_PORT:-}}" "${{RECONCILE_RELAY_PORT:-}}" "${{RECONCILE_RELAY_DB:-}}" \\
+    "${{E2E_WEB_PORTS:-}}" "${{E2E_RELAY_PORTS:-}}" "${{E2E_RELAY_DIR:-}}" \\
     "$exists" >> "$STUB_LOG"
 """
 
@@ -41,10 +40,10 @@ class Call:
 
     command: str
     cwd: str
-    web_port: str
-    relay_port: str
-    db: str
-    db_dir_existed: bool
+    web_ports: list[str]
+    relay_ports: list[str]
+    relay_dir: str
+    relay_dir_existed: bool
 
 
 @dataclass(frozen=True)
@@ -54,6 +53,7 @@ class Run:
     code: int
     calls: list[Call]
     tmp: Path
+    stderr: str
 
 
 @pytest.fixture
@@ -68,10 +68,10 @@ def tree(tmp_path: Path) -> Path:
     return tmp_path
 
 
-def _stub(tree: Path, tool: str, exit_code: int = 0) -> None:
-    """Put a logging stub for ``tool`` on the tree's PATH."""
+def _stub(tree: Path, tool: str, exit_code: int = 0, then: str = "") -> None:
+    """Put a logging stub for ``tool`` on the tree's PATH; it runs ``then`` last."""
     path = tree / "bin" / tool
-    path.write_text(f"{STUB}exit {exit_code}\n", "utf-8")
+    path.write_text(f"{STUB}{then}\nexit {exit_code}\n", "utf-8")
     path.chmod(0o755)
 
 
@@ -99,9 +99,11 @@ def _run(tree: Path, *args: str, env: dict[str, str] | None = None) -> Run:
     lines = log.read_text("utf-8").splitlines() if log.exists() else []
     calls = []
     for line in lines:
-        command, cwd, web, relay, db, existed = line.split(SEP)
-        calls.append(Call(command, cwd, web, relay, db, existed == "yes"))
-    return Run(result.returncode, calls, tree / "tmp")
+        command, cwd, web, relay, relay_dir, existed = line.split(SEP)
+        calls.append(
+            Call(command, cwd, web.split(), relay.split(), relay_dir, existed == "yes")
+        )
+    return Run(result.returncode, calls, tree / "tmp", result.stderr)
 
 
 def _is_free(port: int) -> bool:
@@ -114,8 +116,12 @@ def _is_free(port: int) -> bool:
     return True
 
 
-def test_builds_then_runs_playwright_on_free_ports_and_a_temp_db(tree: Path) -> None:
-    """Build, then test, from client/, with two free ports and a fresh database."""
+def test_builds_then_runs_playwright_on_free_ports_and_a_temp_dir(tree: Path) -> None:
+    """Build, then test, from client/, with free ports for two workers and a new dir.
+
+    Each worker gets a web port and a relay port of its own, so no two servers
+    ever share one.
+    """
     run = _run(tree)
     assert run.code == 0
     assert [call.command for call in run.calls] == [
@@ -124,11 +130,44 @@ def test_builds_then_runs_playwright_on_free_ports_and_a_temp_db(tree: Path) -> 
     ]
     test = run.calls[1]
     assert test.cwd == str(tree / "client")
-    ports = {int(test.web_port), int(test.relay_port)}
-    assert len(ports) == 2
+    assert len(test.web_ports) == len(test.relay_ports) == 2
+    ports = {int(port) for port in test.web_ports + test.relay_ports}
+    assert len(ports) == 4
     assert all(1024 <= port <= 65535 and _is_free(port) for port in ports)
-    assert Path(test.db).parent.parent == run.tmp
-    assert test.db_dir_existed
+    assert Path(test.relay_dir).parent == run.tmp
+    assert test.relay_dir_existed
+
+
+def test_e2e_workers_sets_how_many_workers_get_servers(tree: Path) -> None:
+    """``E2E_WORKERS=3`` picks three distinct pairs of ports; 1 picks one pair."""
+    for workers in (1, 3):
+        test = _run(tree, env={"E2E_WORKERS": str(workers)}).calls[-1]
+        assert len(test.web_ports) == len(test.relay_ports) == workers
+        assert len(set(test.web_ports + test.relay_ports)) == 2 * workers
+
+
+@pytest.mark.parametrize("workers", ["0", "two", "-1", "1.5"])
+def test_e2e_workers_must_be_a_positive_whole_number(tree: Path, workers: str) -> None:
+    """A bad worker count stops the run before the build, saying why."""
+    run = _run(tree, env={"E2E_WORKERS": workers})
+    assert run.code == 2
+    assert run.calls == []
+    assert "E2E_WORKERS" in run.stderr
+
+
+def test_failing_loop_prints_each_relays_output(tree: Path) -> None:
+    """A failed run shows what each worker's relay printed before it is deleted."""
+    _stub(
+        tree,
+        "npx",
+        exit_code=1,
+        then='echo "relay one said hi" > "$E2E_RELAY_DIR/relay-1.log"',
+    )
+    run = _run(tree)
+    assert run.code == 1
+    assert "relay-1.log" in run.stderr
+    assert "relay one said hi" in run.stderr
+    assert list(run.tmp.iterdir()) == []
 
 
 def test_deletes_the_temp_dir_after_a_run(tree: Path) -> None:
