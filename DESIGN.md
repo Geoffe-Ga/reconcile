@@ -237,6 +237,13 @@ Build on **React Aria Components** (unstyled, accessible). Style everything from
   - an inline card on `ochre-soft` with plain context ("Reconcile is free to use and runs on reciprocity…")
   - a suggested amount, then *Gift* (primary) and *Not now* (quiet text button) on the same line
   - never modal, never repeated in the same session, never guilt-tripping
+- **Tab bar** (#423; ADR-0077 §7): the app's three places, one tap apart: **Groups** (Start, still the opening screen), **Discover** and **Me** (Personal, with Settings a quiet forward link at its end).
+  - A `nav` named "Main" along the bottom of the viewport: `surface` with a `hairline` rule on its top edge, and padded below by `env(safe-area-inset-bottom)` so it clears the iPhone home indicator in the installed app. Three equal columns, held to the reading column on wide screens.
+  - The page scrolls in its own full-width region above the bar, as an installed app's does, so nothing ever sits under the bar: a control at the bottom edge is never half covered, and a focused one is never hidden.
+  - Each tab is one link: a 24px line glyph (1.75px `currentColor` strokes, round ends) over its word in caption, at least 44px tall, `muted` at rest. Groups is two people, Discover a compass, Me one person.
+  - The current place says so three ways, never by color alone: `aria-current` ("page", or "true" on Settings, a page of Me's), its glyph and word in `primary` with the word at 650, and a 3px `primary` pill, 32px wide, on its top edge.
+  - Never a count, a badge or a dot. It shows only on Start, Discover, Personal and Settings: never behind first run, on a shared page or a link's own page, or on a screen whose one primary action is a form or a ballot.
+- **Discover** (#423; ADR-0077 §6): the eyebrow "Reconcile" and the heading "Discover", then the empty state's one sentence as a lede, then "Open a card or link" (heading-3) over one field, "Card or link", whose hint names every kind it opens, and Open, the page's one primary action. It opens an invite, a reconcile card, a follow link or a front door link exactly as Start's field does, through the same shared field; anything else gets one line in the field's error, which never repeats the text.
 - **Empty states:** one sentence and one action. No illustrations of crowds or protest imagery.
 
 ## Voice

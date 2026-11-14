@@ -104,7 +104,8 @@ function DocumentList({
  * or 30 days with no post from this device (#339). One line says what stays
  * on this device, and, once the device keeps a relay backup key, that its
  * sealed relay backup has them too
- * (#248).
+ * (#248). It's the tab bar's Me (#423), so Settings is a quiet link at its
+ * end, as on Start.
  */
 export function Personal({ documents, newId, now, relayBackup }: PersonalProps) {
   const { personal } = messages;
@@ -119,6 +120,11 @@ export function Personal({ documents, newId, now, relayBackup }: PersonalProps) 
         <DocumentList documents={documents} newId={newId} now={now} />
       )}
       {relayBackup === null ? null : <p className="caption">{privacyLine(relayBackup)}</p>}
+      <div>
+        <Link className="forward-link" href={routeHref({ name: 'settings' })}>
+          {personal.settings}
+        </Link>
+      </div>
     </main>
   );
 }

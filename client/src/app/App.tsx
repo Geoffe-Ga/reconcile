@@ -40,6 +40,7 @@ import { NewDocumentComposer } from '../screens/NewDocumentComposer';
 import { MoveComposer } from '../screens/MoveComposer';
 import type { OptIn } from '../engine/optIns';
 import { OptInComposer, type OptInOutcome } from '../screens/OptInComposer';
+import { Discover } from '../screens/Discover';
 import { Personal } from '../screens/Personal';
 import { PersonalDocument } from '../screens/PersonalDocument';
 import { PriorityComposer } from '../screens/PriorityComposer';
@@ -54,6 +55,8 @@ import type { SeatNumber } from '../engine/stewards';
 import type { GuideRecord } from '../platform/guide';
 import type { Persistence } from '../platform/persist';
 import { Start, type StartFollowing, type StartRequest } from '../screens/Start';
+import { TabBar } from './TabBar';
+import { tabPlaceOf } from './tabPlace';
 import { StewardComposer, type StewardOutcome } from '../screens/StewardComposer';
 import { dismissed } from '../store/applications';
 import { dispatchOf, notesElsewhere, skipCarry } from '../store/carry';
@@ -1497,6 +1500,15 @@ function PlainScreen(props: PlainScreenProps) {
       );
     case 'personal':
       return <PersonalScreen services={services} />;
+    case 'discover':
+      return (
+        <Discover
+          onOpenInvite={openInvite}
+          onOpenCard={openCard}
+          onOpenFollow={openFollow}
+          onOpenDoor={openDoor}
+        />
+      );
     case 'personalDocument':
       // Keyed by id, so another Document starts its editor afresh.
       return <PersonalDocumentScreen key={route.id} services={services} id={route.id} />;
@@ -1606,7 +1618,12 @@ function Screen({ route, services, heldSeed, holdSeed, persistence, guide }: Scr
   );
 }
 
-/** The current route's screen, with the store and sync loop provided to `useGroup`. */
+/**
+ * The current route's screen, with the store and sync loop provided to
+ * `useGroup`, and, on the four pages that are its places, the tab bar under
+ * it (#423): the page scrolls in its own region above the bar, so the bar
+ * stays at the bottom and never covers any of the page.
+ */
 export function App({ services, initialSeed = null, persistence = null }: AppProps) {
   const route = useRoute();
   // A pasted invite's seed, or one first run held, travels here in memory, never in the address bar.
@@ -1616,16 +1633,26 @@ export function App({ services, initialSeed = null, persistence = null }: AppPro
     () => ({ store: services.store, sync: services.sync }),
     [services.store, services.sync],
   );
+  const screen = (
+    <Screen
+      route={route}
+      services={services}
+      heldSeed={heldSeed}
+      holdSeed={holdSeed}
+      persistence={persistence}
+      guide={guide}
+    />
+  );
   return (
     <GroupServicesContext value={groupServices}>
-      <Screen
-        route={route}
-        services={services}
-        heldSeed={heldSeed}
-        holdSeed={holdSeed}
-        persistence={persistence}
-        guide={guide}
-      />
+      {tabPlaceOf(route) === null ? (
+        screen
+      ) : (
+        <div className="tabbed">
+          <div className="tabbed-page">{screen}</div>
+          <TabBar route={route} />
+        </div>
+      )}
     </GroupServicesContext>
   );
 }

@@ -62,7 +62,8 @@ describe('Personal in the app', () => {
     expect(await axeViolations()).toEqual([]);
 
     await user.click(screen.getByRole('link', { name: /Personal/ }));
-    const list = await screen.findByRole('list');
+    // The page's own list, not the tab bar's (#423).
+    const list = await within(await screen.findByRole('main')).findByRole('list');
     const item = within(list).getByRole('link', { name: /My mission statement/ });
     expect(item).toHaveAttribute('href', `#/me/${id}`);
     expect(screen.getByRole('link', { name: 'New document' }).getAttribute('href')).not.toBe(
