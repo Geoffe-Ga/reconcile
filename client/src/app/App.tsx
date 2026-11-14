@@ -40,7 +40,6 @@ import { NewDocumentComposer } from '../screens/NewDocumentComposer';
 import { MoveComposer } from '../screens/MoveComposer';
 import type { OptIn } from '../engine/optIns';
 import { OptInComposer, type OptInOutcome } from '../screens/OptInComposer';
-import { Discover } from '../screens/Discover';
 import { Personal } from '../screens/Personal';
 import { PersonalDocument } from '../screens/PersonalDocument';
 import { PriorityComposer } from '../screens/PriorityComposer';
@@ -146,6 +145,7 @@ import { GroupServicesContext, type GroupView, useCoalitionList, useGroup } from
 import { useGroupList, useGroups } from './useGroupList';
 import { useNow } from './useNow';
 import { usePersonalList } from './usePersonalList';
+import { DiscoverScreen } from './DiscoverScreen';
 import { chooseContacts } from '../store/recovery';
 import { approveRecovery, holdViews, resendRelease } from '../recovery/holder';
 import { recoverSession, startRecovery, stopRecovery } from '../recovery/request';
@@ -1502,7 +1502,8 @@ function PlainScreen(props: PlainScreenProps) {
       return <PersonalScreen services={services} />;
     case 'discover':
       return (
-        <Discover
+        <DiscoverScreen
+          store={services.store}
           onOpenInvite={openInvite}
           onOpenCard={openCard}
           onOpenFollow={openFollow}

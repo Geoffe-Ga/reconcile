@@ -26,7 +26,7 @@ function setup() {
     onOpenFollow: vi.fn(),
     onOpenDoor: vi.fn(),
   };
-  render(<Discover {...open} />);
+  render(<Discover feed={[]} {...open} />);
   return { user: userEvent.setup(), open };
 }
 
@@ -45,7 +45,9 @@ describe('Discover', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Discover' })).toHaveFocus();
     expect(document.title).toBe('Discover · Reconcile');
     expect(
-      screen.getByText('Dispatches that groups put on the public shelf will show up here.'),
+      screen.getByText(
+        'Dispatches from your groups, and from the coalitions you’re in or follow, show up here.',
+      ),
     ).toBeVisible();
     expect(screen.getByRole('region', { name: 'Open a card or link' })).toBeVisible();
     expect(screen.getByRole('textbox', { name: 'Card or link' })).toHaveAccessibleDescription(

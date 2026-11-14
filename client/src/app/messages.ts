@@ -58,8 +58,14 @@ export const messages = {
   discover: {
     pageTitle: 'Discover',
     title: 'Discover',
-    /** The empty state's one sentence, until the shelf (ADR-0077 §1) has entries to show. */
-    empty: 'Dispatches that groups put on the public shelf will show up here.',
+    /** The empty state's one sentence, while this device holds no Dispatch (#429). */
+    empty:
+      'Dispatches from your groups, and from the coalitions you’re in or follow, show up here.',
+    /** The feed (#429): every Dispatch this device holds, newest first. */
+    feedLabel: 'Dispatches from your groups and coalitions',
+    /** After a dissolved group's name on its Dispatches' eyebrow: "<group> · Ended". */
+    endedSeparator: ' · ',
+    ended: 'Ended',
     openHeading: 'Open a card or link',
     openLabel: 'Card or link',
     openHint:

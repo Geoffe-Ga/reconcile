@@ -8,8 +8,11 @@
  * A coalition's Dispatch (#124) comes from a passed motion, whose vote lives
  * inside each member group, so its title is plain text there, and Open goes
  * to the coalition's own Document.
+ *
+ * On Discover's feed (#429), one line opens the card, above its title: an
+ * eyebrow naming the group or coalition it's shown from.
  */
-import { useId } from 'react';
+import { type ReactNode, useId } from 'react';
 import { Link, VisuallyHidden } from 'react-aria-components';
 
 import type { Dispatch } from '../engine/dispatches';
@@ -118,13 +121,22 @@ export interface DispatchCardProps {
   readonly level: DispatchHeadingLevel;
   /** Whose log it's from: a group's unless a coalition's (#124). */
   readonly place?: DispatchPlace;
+  /** A line above the title, as Discover's feed names where it's from (#429). */
+  readonly eyebrow?: ReactNode;
 }
 
-/** One Dispatch: its title, sender and date, text, and Document. */
-export function DispatchCard({ state, dispatch, level, place = 'group' }: DispatchCardProps) {
+/** One Dispatch: where it's from on Discover, its title, sender and date, text, and Document. */
+export function DispatchCard({
+  state,
+  dispatch,
+  level,
+  place = 'group',
+  eyebrow,
+}: DispatchCardProps) {
   const heading = useId();
   return (
     <article className="card dispatch" aria-labelledby={heading}>
+      {eyebrow === undefined ? null : <p className="eyebrow dispatch-from">{eyebrow}</p>}
       <Title id={heading} level={level} title={dispatch.title} />
       <p className="dispatch-meta">
         <SenderLine state={state} dispatch={dispatch} place={place} />
