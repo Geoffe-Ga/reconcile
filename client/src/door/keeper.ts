@@ -20,7 +20,8 @@
  *    later copy outrank, posted again whenever it is 7 days old.
  * 2. **The inbox.** While the door is open in effect, the device of a member
  *    who may invite reads its inbox (`inbox.ts`). Once it's off, no device
- *    reads it.
+ *    reads it. Either way, each application an invite has folded for loses
+ *    its copy of Documents on this device (#425).
  *
  * After each complete pass, the device looks for replies to the
  * applications it sent ({@link DoorKeeper.replies}, `apply.ts`).
@@ -34,10 +35,10 @@ import type { GroupState } from '../engine/fold';
 import { type FrontDoor, isFrontDoor, rulesChangeOf } from '../engine/optIns';
 import type { Relay } from '../net/relay';
 import type { Seal } from '../crypto/seal';
-import type { Store } from '../store/db';
+import type { Group, Store } from '../store/db';
 import { foldGroup } from '../store/expiry';
 import { checkReplies } from './apply';
-import { readInbox } from './inbox';
+import { forgetAnswered, readInbox } from './inbox';
 import {
   type DoorPage,
   encodePage,
@@ -122,6 +123,26 @@ export function pagesDue(
   return open === null ? closed : [[open, pageFor(state, open, plainText)], ...closed];
 }
 
+/**
+ * The inbox's part of a run for `group`, folded as `state`: first deletes
+ * the copy of Documents from each answered application it holds, whether
+ * the door is open or not and before any request, so a read that fails
+ * can't keep one (#425); then reads the inbox while the door is open in
+ * effect and this member may invite.
+ */
+async function keepInbox(
+  options: Pick<DoorKeeperOptions, 'store' | 'relay'>,
+  group: Group,
+  state: GroupState,
+): Promise<void> {
+  const { store, relay } = options;
+  await forgetAnswered(store, group.groupId, group.door, state);
+  const open = openDoor(state);
+  if (open !== null && can(state, group.me.author, 'invite')) {
+    await readInbox({ relay, store }, group.groupId, open, state);
+  }
+}
+
 /** A keeper over `options.store`. */
 export function createDoorKeeper(options: DoorKeeperOptions): DoorKeeper {
   const { store, relay, seal, plainText, clock = Date.now } = options;
@@ -149,9 +170,7 @@ export function createDoorKeeper(options: DoorKeeperOptions): DoorKeeper {
       // From a removal's final pass its member only reads, so their device keeps no door (#115).
       if (state.group === null || !can(state, me, 'read') || isOusted(state, me)) return;
       for (const [door, page] of pagesDue(state, plainText)) await keep(door, page, state.at);
-      const open = openDoor(state);
-      if (open !== null && can(state, me, 'invite'))
-        await readInbox({ relay, store }, groupId, open);
+      await keepInbox({ store, relay }, group, state);
     },
     replies: () => checkReplies({ relay, store, now: clock }),
   };

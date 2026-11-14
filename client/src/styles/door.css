@@ -26,6 +26,26 @@
   font: var(--type-ui);
 }
 
+/* "Send some of your own Documents with this" (#425): under the message, the
+ * label, one line on who reads them, then a checkbox per Document, none
+ * checked, and the one form-error line when the choice can't go. */
+.door-documents {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.door-documents-list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* A title is whatever its owner typed, so it may need to break anywhere. */
+.door-documents-list .checkbox {
+  overflow-wrap: anywhere;
+}
+
 /* An open door's link on Group rules, with whether it shows the count. */
 .door-link {
   gap: var(--space-2);
@@ -53,6 +73,29 @@
   color: var(--ink);
   font: var(--type-body);
   white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+/* The Documents an application carries a copy of (#425): under the message,
+ * each a disclosure whose toggle is its title. */
+.application-documents {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.application-document .reads-as-toggle {
+  text-align: start;
+  overflow-wrap: anywhere;
+}
+
+/* The text as its writer typed it, set like a Document: Newsreader at
+ * document size, line breaks and spaces kept, Markdown and addresses as text. */
+.application-document-text {
+  max-width: 34em;
+  margin: 0;
+  color: var(--ink);
+  font: var(--type-document);
+  white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 

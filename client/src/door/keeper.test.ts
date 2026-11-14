@@ -8,7 +8,7 @@
  * copy the former member forges or replays outranks, and the door reopens
  * only by a new opening Proposal, whose secrets the former member never sees.
  */
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { base64url, fromBase64url } from '../crypto/base64url';
 import {
@@ -135,15 +135,25 @@ async function inbox(device: TestDevice | undefined, groupId: string) {
   return (await device?.services.store.getGroup(groupId))?.door?.applications ?? [];
 }
 
-/** `kim` reads the open door and asks to join as Kim. */
-async function applyAt(fake: FakeRelay, kim: TestDevice): Promise<void> {
+/** The words in the copy of a Document Kim sends (#425), a canary the store is searched for. */
+const CANARY = 'canary-425-fair-rents';
+const STATEMENT = { title: 'What I stand for', text: `Fair rents for every tenant, ${CANARY}.` };
+
+/** `kim` reads the open door and asks to join as Kim, with a copy of `documents` if any. */
+async function applyAt(fake: FakeRelay, kim: TestDevice, documents?: [typeof STATEMENT]) {
   const view = await readDoor(reader(fake), addressOf(DOOR));
   if (view.kind !== 'open') throw new Error('Expected an open door.');
   const outcome = await apply(kim.services, addressOf(DOOR), view.page, {
     name: 'Kim',
     message: 'Hi.',
+    ...(documents === undefined ? {} : { documents }),
   });
   expect(outcome).toBe('sent');
+}
+
+/** Everything `device`'s store holds of `groupId`'s front door, as JSON: read from the store, not a screen. */
+async function heldWords(device: TestDevice | undefined, groupId: string): Promise<string> {
+  return JSON.stringify((await device?.services.store.getGroup(groupId))?.door ?? null);
 }
 
 /** Each PUT to `kim`'s reply mailbox since request `before`: its query and its blob's size. */
@@ -277,6 +287,84 @@ describe('the keeper reads the inbox, and Send an invite answers', DEVICES, () =
     const before = fake.requests.filter((request) => request.url.includes(inbox)).length;
     for (const device of devices) await device.services.sync.syncOnce();
     expect(fake.requests.filter((request) => request.url.includes(inbox))).toHaveLength(before);
+  });
+
+  it('brings the copy of Kim’s Documents, and each device deletes it once the invite folds (#425)', async () => {
+    const { fake, groupId, devices } = await openGroup();
+    const [ana, ben] = present(devices);
+    const cal = devices[2];
+    const kim = await stranger(fake);
+    await applyAt(fake, kim, [STATEMENT]);
+    const [held] = await inbox(ana, groupId);
+    expect(held?.documents).toEqual([STATEMENT]);
+    expect((await inbox(ben, groupId))[0]?.documents).toEqual([STATEMENT]);
+
+    expect(await sendInvite({ ...ana.services, makeInvite }, groupId, held?.id ?? '')).toBe('sent');
+    // Ana's device deletes it as the invite goes, before any sync.
+    expect(await heldWords(ana, groupId)).not.toContain(CANARY);
+    await ana.services.sync.syncOnce();
+    // Ben's deletes it when it folds the invite; Cal's, which reads it only after, never keeps it.
+    expect(await heldWords(ben, groupId)).toContain(CANARY);
+    await inbox(ben, groupId);
+    expect(await heldWords(ben, groupId)).not.toContain(CANARY);
+    expect(await inbox(cal, groupId)).toMatchObject([{ name: 'Kim', message: 'Hi.' }]);
+    expect(await heldWords(cal, groupId)).not.toContain(CANARY);
+  });
+
+  it('deletes the copy once the invite folds, though the door closed meanwhile (#425)', async () => {
+    const { fake, groupId, devices } = await openGroup();
+    const [ana, ben] = present(devices);
+    const kim = await stranger(fake);
+    await applyAt(fake, kim, [STATEMENT]);
+    const [held] = await inbox(ana, groupId);
+    await inbox(ben, groupId);
+    expect(await heldWords(ben, groupId)).toContain(CANARY);
+    expect(await sendInvite({ ...ana.services, makeInvite }, groupId, held?.id ?? '')).toBe('sent');
+    await ana.services.sync.syncOnce();
+    await propose(ana, groupId, false, true);
+    await ben.services.sync.syncOnce();
+    expect(await heldWords(ben, groupId)).not.toContain(CANARY);
+    expect(await heldWords(ben, groupId)).toContain('"name":"Kim"');
+  });
+
+  it('deletes the copy once the invite folds, though the inbox can’t be read on that pass (#425)', async () => {
+    const { fake, groupId, devices } = await openGroup();
+    const [ana, ben] = present(devices);
+    const kim = await stranger(fake);
+    await applyAt(fake, kim, [STATEMENT]);
+    const [held] = await inbox(ana, groupId);
+    await inbox(ben, groupId);
+    expect(await heldWords(ben, groupId)).toContain(CANARY);
+    expect(await sendInvite({ ...ana.services, makeInvite }, groupId, held?.id ?? '')).toBe('sent');
+    await ana.services.sync.syncOnce();
+    // Ben's sync pulls the invite, but the door's inbox can't be read on that pass.
+    const { inbox: mailbox } = doorChannelsOf(addressOf(DOOR));
+    const { relay } = ben.services;
+    const read = relay.getBlobs.bind(relay);
+    const failed = vi
+      .spyOn(relay, 'getBlobs')
+      .mockImplementation((id, after) =>
+        id === mailbox ? Promise.reject(new Error('The relay can’t be reached.')) : read(id, after),
+      );
+    await ben.services.sync.syncOnce();
+    expect(failed.mock.calls.some(([id]) => id === mailbox)).toBe(true);
+    expect(await heldWords(ben, groupId)).not.toContain(CANARY);
+    failed.mockRestore();
+  });
+
+  it('keeps the copy of an application nobody has answered, and leaves a failed invite’s', async () => {
+    const { fake, groupId, devices } = await openGroup();
+    const [ana, ben] = present(devices);
+    const kim = await stranger(fake);
+    await applyAt(fake, kim, [STATEMENT]);
+    const [held] = await inbox(ana, groupId);
+    await ben.services.sync.syncOnce();
+    expect(await heldWords(ben, groupId)).toContain(CANARY);
+    fake.offline = true;
+    expect(await sendInvite({ ...ana.services, makeInvite }, groupId, held?.id ?? '')).toBe(
+      'failed',
+    );
+    expect(await heldWords(ana, groupId)).toContain(CANARY);
   });
 
   it('refuses Send an invite while offline, queueing nothing', async () => {

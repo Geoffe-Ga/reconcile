@@ -14,6 +14,7 @@ import {
   DOOR_SECRET_BYTES,
   doorChannelsOf,
   doorKeysOf,
+  MAX_PADDED_PLAINTEXT,
   newDoorSecrets,
   newReplySeed,
   openDoorRecord,
@@ -280,6 +281,18 @@ describe('padded boxes', () => {
       expect(blob).toHaveLength(size);
       expect(hex(openPadded(secret, blob, APPLICATION_INFO, INBOX))).toBe(bytesToHex(plaintext));
     }
+  });
+
+  it('carry at most 65,460 bytes: the largest blob less the box and the length (#425)', () => {
+    expect(MAX_PADDED_PLAINTEXT).toBe(65_460);
+    expect(MAX_PADDED_PLAINTEXT).toBe(Math.max(...BLOB_SIZES) - BOX_OVERHEAD - 4);
+    const blob = sealPadded(
+      publicKey,
+      new Uint8Array(MAX_PADDED_PLAINTEXT),
+      APPLICATION_INFO,
+      INBOX,
+    );
+    expect(blob).toHaveLength(65536);
   });
 
   it('refuse a plaintext too large for the largest blob', () => {

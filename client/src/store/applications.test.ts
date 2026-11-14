@@ -6,11 +6,13 @@ import { freshIndexedDBPerTest } from '../test/idb';
 import {
   dismissed,
   type DoorInbox,
+  holdsCopies,
   type ReceivedApplication,
   SENT_CHANGED,
   SENT_DAYS,
   type SentApplication,
   withApplications,
+  withoutCopies,
 } from './applications';
 import { vaultKeyFromPrf } from '../crypto/keyVault';
 import { type Group, openStore, VaultLocked } from './db';
@@ -71,8 +73,45 @@ describe('withApplications and dismissed', () => {
     ]);
   });
 
+  it('dismiss deletes the copy of the Documents it carried, and keeps its name and message (#425)', () => {
+    const documents = [{ title: 'What I stand for', text: 'Fair rents, canary-a1.' }];
+    const inbox = withApplications(INBOX, [{ ...received('a', 1), documents }, received('b', 2)]);
+    const [a, b] = dismissed(inbox, 'a').applications;
+    expect(a).toEqual({ ...received('a', 1), dismissed: true });
+    expect(b).toEqual(received('b', 2));
+    expect(JSON.stringify(dismissed(inbox, 'a'))).not.toContain('canary-a1');
+  });
+
   it('keep sent applications 30 days', () => {
     expect(SENT_DAYS).toBe(30);
+  });
+});
+
+describe('withoutCopies and holdsCopies (#425)', () => {
+  const documents = [{ title: 'What I stand for', text: 'Fair rents.' }];
+  const inbox = withApplications(INBOX, [
+    { ...received('a', 1), documents },
+    { ...received('b', 2), documents },
+    received('c', 3),
+  ]);
+  const answered = (id: string) => id !== 'b';
+
+  it('drop the copy of each answered application alone, keeping every application', () => {
+    expect(holdsCopies(inbox, answered)).toBe(true);
+    const kept = withoutCopies(inbox, answered);
+    expect(kept.applications).toEqual([
+      received('a', 1),
+      { ...received('b', 2), documents },
+      received('c', 3),
+    ]);
+    expect(holdsCopies(kept, answered)).toBe(false);
+    expect({ ...kept, applications: [] }).toEqual({ ...inbox, applications: [] });
+  });
+
+  it('find nothing to drop in an inbox the device doesn’t hold, or with nothing answered', () => {
+    expect(holdsCopies(undefined, answered)).toBe(false);
+    expect(holdsCopies(inbox, () => false)).toBe(false);
+    expect(holdsCopies(withApplications(INBOX, [received('a', 1)]), () => true)).toBe(false);
   });
 });
 
@@ -197,6 +236,34 @@ describe('the front door under a passkey vault (#95, #121)', () => {
     const door = (await locked.getGroup('group-1'))?.door;
     expect(door?.applications.map((application) => application.id)).toEqual(['a', 'b']);
     locked.close();
+  });
+
+  it('keeps an application’s copy of Documents as the rest of it: on the group, which a locked launch reads none of (#425)', async () => {
+    const documents = [{ title: 'What I stand for', text: 'Fair rents, canary-b2.' }];
+    const store = await openStore();
+    await store.addGroup(GROUP);
+    await store.updateInbox('group-1', () =>
+      withApplications(INBOX, [{ ...received('a', 1), documents }]),
+    );
+    await store.sealKeys(LOCK, KEY);
+    store.close();
+
+    const locked = await openStore();
+    await expect(locked.getGroup('group-1')).rejects.toThrow(VaultLocked);
+    await expect(locked.listGroups()).rejects.toThrow(VaultLocked);
+    expect(await locked.unlock(KEY)).toBe(true);
+    const [held] = (await locked.getGroup('group-1'))?.door?.applications ?? [];
+    expect(held?.documents).toEqual(documents);
+    await locked.updateInbox('group-1', (inbox) =>
+      inbox === undefined ? inbox : dismissed(inbox, 'a'),
+    );
+    locked.close();
+
+    const raw = await openDB('reconcile');
+    const records: unknown[] = [];
+    for (const name of Array.from(raw.objectStoreNames)) records.push(await raw.getAll(name));
+    raw.close();
+    expect(JSON.stringify(records)).not.toContain('canary-b2');
   });
 
   it('seals the applications this device sent with the other keys, so a locked launch reads none until unlocked (#265)', async () => {

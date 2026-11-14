@@ -13,6 +13,12 @@
  * the application by the SHA-256 of its sealed blob, so everyone sees
  * "Invited by <name>" (engine/frontDoor.ts). Nothing about the applicant
  * enters the group's log but that id.
+ *
+ * An application's copy of personal Documents (#425) goes once it's
+ * answered: the device that sends the invite deletes it as the invite goes,
+ * and every other device once it folds the `door-invited`
+ * ({@link forgetAnswered}), whether its door is still open or not, and one
+ * that reads the application only afterwards never keeps it.
  */
 import { fromBase64url } from '../crypto/base64url';
 import {
@@ -25,10 +31,16 @@ import {
   sealPadded,
 } from '../crypto/door';
 import { signEvent } from '../engine/event';
-import { mayRecordInvite } from '../engine/frontDoor';
+import { type DoorInviteState, inviteFor, mayRecordInvite } from '../engine/frontDoor';
 import type { FrontDoor } from '../engine/optIns';
 import type { Relay, RelayPage } from '../net/relay';
-import { type DoorInbox, type ReceivedApplication, withApplications } from '../store/applications';
+import {
+  type DoorInbox,
+  holdsCopies,
+  type ReceivedApplication,
+  withApplications,
+  withoutCopies,
+} from '../store/applications';
 import type { Store } from '../store/db';
 import { foldGroup } from '../store/expiry';
 import { parseApplication } from './apply';
@@ -46,7 +58,7 @@ export interface InboxServices {
 /** What 'Send an invite' reaches, and the invite it sends. */
 export interface InviteServices {
   readonly relay: Pick<Relay, 'putBlob'>;
-  readonly store: Pick<Store, 'getGroup' | 'enqueue'>;
+  readonly store: Pick<Store, 'getGroup' | 'enqueue' | 'updateInbox'>;
   /** The sync loop, run once after the `door-invited` is queued. */
   readonly sync: { readonly syncOnce: () => Promise<boolean> };
   /** The device clock in milliseconds: the event's display-only `ts`. */
@@ -75,11 +87,18 @@ function applicationsIn(
   });
 }
 
+/** Whether an invite has folded for application `id` in `state`: it's answered. */
+function answeredIn(state: Pick<DoorInviteState, 'doorInvites'>): (id: string) => boolean {
+  return (id) => inviteFor(state, id) !== undefined;
+}
+
 /**
  * Reads the door's inbox after the cursor this device holds for it, and
  * keeps each new application. A door whose inbox differs from the one held,
  * after a rotation, starts afresh; a relay instance the device hasn't seen is
  * read again from the start, and applications already held stay, once each.
+ * Each application `state` holds an invite for keeps no copy of Documents
+ * (#425).
  *
  * @throws {Error} when the relay can't be reached or answers wrongly.
  */
@@ -87,6 +106,7 @@ export async function readInbox(
   services: InboxServices,
   groupId: string,
   door: FrontDoor,
+  state: Pick<DoorInviteState, 'doorInvites'>,
 ): Promise<void> {
   const { inbox } = doorChannelsOf(addressOf(door));
   const held = (await services.store.getGroup(groupId))?.door;
@@ -99,17 +119,37 @@ export async function readInbox(
   const cursor = page.records.at(-1)?.seq ?? start.cursor;
   await services.store.updateInbox(groupId, (current) => {
     const base = current?.inbox === inbox ? current : fresh(inbox);
-    return withApplications({ ...base, cursor, instance: page.instance }, found);
+    const read = withApplications({ ...base, cursor, instance: page.instance }, found);
+    return withoutCopies(read, answeredIn(state));
   });
+}
+
+/**
+ * Deletes the copy of Documents from each application `state` holds an
+ * invite for (#425), with no request, and writes nothing when there's none.
+ * `held` is the inbox the device holds for `groupId`.
+ */
+export async function forgetAnswered(
+  store: Pick<Store, 'updateInbox'>,
+  groupId: string,
+  held: DoorInbox | undefined,
+  state: Pick<DoorInviteState, 'doorInvites'>,
+): Promise<void> {
+  const answered = answeredIn(state);
+  if (!holdsCopies(held, answered)) return;
+  await store.updateInbox(groupId, (current) =>
+    current === undefined ? current : withoutCopies(current, answered),
+  );
 }
 
 /**
  * 'Send an invite' for application `id` of group `groupId`: only while this
  * member may record it (`mayRecordInvite`). Makes an invite, seals its link to
  * the applicant's reply key and PUTs it to their reply mailbox for 2 days,
- * then queues `door-invited`. `missing` when the application or the right to
- * answer it is gone; `failed`, with nothing queued, when the relay can't be
- * reached.
+ * then queues `door-invited` and deletes the application's copy of Documents
+ * from this device (#425). `missing` when the application or the right to
+ * answer it is gone; `failed`, with nothing queued and the copy kept, when
+ * the relay can't be reached.
  */
 export async function sendInvite(
   services: InviteServices,
@@ -136,6 +176,9 @@ export async function sendInvite(
     body: { application: id },
   });
   await services.store.enqueue(groupId, record);
+  await services.store.updateInbox(groupId, (held) =>
+    held === undefined ? held : withoutCopies(held, (answered) => answered === id),
+  );
   void services.sync.syncOnce();
   return 'sent';
 }

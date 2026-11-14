@@ -126,6 +126,39 @@ describe('Applications', () => {
     expect(onDismiss).toHaveBeenCalledWith(KIM.id);
   });
 
+  it('shows each Document sent with one as a disclosure under the message, its text plain (#425)', async () => {
+    const text =
+      '# Rent\n\n**Fair** rents, see https://rent.test and [our list](https://list.test).\n  <i>Now</i>.';
+    const documents = [
+      { title: 'What I stand for', text },
+      { title: '<b>Bikes</b>', text: 'I fix them.' },
+    ];
+    const { user } = setup(opened().state(), [{ ...KIM, documents }, LEE]);
+    const kim = card('Kim');
+    const group = within(kim).getByRole('group', { name: door.documentsSent });
+    const [statement, bikes] = within(group).getAllByRole('button');
+    expect(statement).toHaveAccessibleName('What I stand for');
+    expect(bikes).toHaveAccessibleName('<b>Bikes</b>');
+    expect(within(group).getByText('<b>Bikes</b>').tagName).toBe('BDI');
+    expect(statement).toHaveAttribute('aria-expanded', 'false');
+    expect(within(group).getByText(/Fair/)).not.toBeVisible();
+    const message = within(kim).getByText(/I live at number 12\./);
+    expect(message.compareDocumentPosition(group) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(await axeViolations()).toEqual([]);
+
+    await user.click(statement ?? kim);
+    expect(statement).toHaveAttribute('aria-expanded', 'true');
+    expect(within(group).getByText(/Fair/)).toBeVisible();
+    const words = kim.querySelector('.application-document-text');
+    expect(words?.textContent).toBe(text);
+    expect(words?.querySelector('bdi')?.textContent).toBe(text);
+    for (const tag of ['a', 'b', 'i', 'h1', 'strong']) expect(kim.querySelector(tag)).toBeNull();
+    expect(screen.queryByRole('link')).toBeNull();
+    expect(await axeViolations()).toEqual([]);
+    // Lee sent none, so Lee's card shows nothing new.
+    expect(within(card('<i>Lee</i>')).queryByRole('group')).toBeNull();
+  });
+
   it('says no one has asked yet', () => {
     setup(opened().state(), [{ ...KIM, dismissed: true }]);
     expect(screen.getByText(door.noApplications)).toBeVisible();

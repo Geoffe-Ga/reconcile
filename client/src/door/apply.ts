@@ -9,6 +9,17 @@
  * the page's `box` key and padded to a blob size (`crypto/door.ts`), to the
  * door's inbox for 30 days. Only the members' devices open it.
  *
+ * It may also carry a copy of up to {@link DOCUMENTS_MAX} of the applicant's
+ * personal Documents (#425; ADR-0077 §3), `documents: [{title, text}]` after
+ * the reply, only when they chose some: their titles and text, never an id,
+ * a time, a share or anything else the device keeps of them, so no link ties
+ * one application to another (ADR-0009). An application without them is
+ * byte for byte what the app wrote before. The copy travels inside the one
+ * sealed, padded blob, under {@link DOCUMENTS_MAX_BYTES}, which is what the
+ * largest blob has left once the longest application without documents is
+ * in it, so every application the form lets through fits one blob. The
+ * applicant's device keeps no copy: what it sent is still its own Document.
+ *
  * A member answers with an invite link sealed to the reply key, in the reply
  * mailbox the seed derives. For {@link SENT_DAYS} days, every sync reads each
  * pending application's reply mailbox ({@link checkReplies}); a reply that
@@ -23,6 +34,7 @@ import {
   APPLICATION_INFO,
   applicationIdOf,
   doorChannelsOf,
+  MAX_PADDED_PLAINTEXT,
   newReplySeed,
   openPadded,
   REPLY_INFO,
@@ -31,7 +43,12 @@ import {
 } from '../crypto/door';
 import { codePointLength } from '../engine/text';
 import type { Relay } from '../net/relay';
-import { SENT_DAYS, type SentApplication, type SentStore } from '../store/applications';
+import {
+  type ApplicationDocument,
+  SENT_DAYS,
+  type SentApplication,
+  type SentStore,
+} from '../store/applications';
 import { fragmentOf, keyIn, type OpenPage } from './page';
 
 /** The longest name an application carries, in code points: an invite preview's limit. */
@@ -43,6 +60,12 @@ export const MESSAGE_MAX = 2_000;
 /** How long the relay keeps an application: its 30-day blob retention (ADR-0057). */
 export const APPLICATION_TTL_DAYS = 30;
 
+/** The most personal Documents one application carries a copy of (#425). */
+export const DOCUMENTS_MAX = 3;
+
+/** The longest title a copy carries, in code points: a personal Document's own limit. */
+const TITLE_MAX = 120;
+
 const DAY_MS = 86_400_000;
 
 /** What an application says: the applicant's chosen name, why, and where an invite goes. */
@@ -51,13 +74,20 @@ export interface Application {
   readonly message: string;
   /** The reply seed and the reply X25519 public key, each in unpadded base64url. */
   readonly reply: { readonly seed: string; readonly key: string };
+  /** A copy of 1 to 3 of their personal Documents, only when they chose some (#425). */
+  readonly documents?: readonly ApplicationDocument[];
 }
 
-/** What the form hands Send: the two fields as typed. */
+/** What the form hands Send: the two fields as typed, and the personal Documents chosen, if any. */
 export interface ApplyValues {
   readonly name: string;
   readonly message: string;
+  /** The chosen Documents: only each one's title and text goes, whatever else they hold. */
+  readonly documents?: readonly ApplicationDocument[];
 }
+
+/** Why a choice of Documents can't go with an application: too many, or too long together. */
+export type DocumentsProblem = 'too-many' | 'too-long';
 
 /** What Send reaches: the relay, where the device keeps what it sent, and its clock. */
 export interface ApplyServices {
@@ -74,11 +104,61 @@ export interface ReplyServices {
   readonly now: () => number;
 }
 
-/** `application` as the bytes it's sealed as: compact JSON, its keys in a fixed order. */
+/** Each document's title and text alone, in that order, as an application carries them. */
+function copiesOf(documents: readonly ApplicationDocument[]): ApplicationDocument[] {
+  return documents.map(({ title, text }) => ({ title, text }));
+}
+
+/**
+ * `application` as the bytes it's sealed as: compact JSON, its keys in a
+ * fixed order, `documents` last and only when it carries some.
+ */
 export function encodeApplication(application: Application): Uint8Array<ArrayBuffer> {
-  const { name, message, reply } = application;
-  const json = { name, message, reply: { seed: reply.seed, key: reply.key } };
+  const { name, message, reply, documents = [] } = application;
+  const json = {
+    name,
+    message,
+    reply: { seed: reply.seed, key: reply.key },
+    ...(documents.length === 0 ? {} : { documents: copiesOf(documents) }),
+  };
   return Uint8Array.from(new TextEncoder().encode(JSON.stringify(json)));
+}
+
+/** The bytes `documents` take in an application: their list as compact JSON, in UTF-8. */
+function documentsBytes(documents: readonly ApplicationDocument[]): number {
+  return new TextEncoder().encode(JSON.stringify(copiesOf(documents))).length;
+}
+
+/**
+ * The bytes the longest application without documents takes: a name of 120
+ * code points and a message of 2,000, each escaped to six bytes (`\u0000`),
+ * the most JSON spends on one code point, and a reply.
+ */
+const LONGEST_WITHOUT = encodeApplication({
+  name: '\u0000'.repeat(NAME_MAX),
+  message: '\u0000'.repeat(MESSAGE_MAX),
+  reply: { seed: 'A'.repeat(43), key: 'A'.repeat(43) },
+}).length;
+
+/**
+ * The most bytes the documents may take together, as {@link documentsBytes}
+ * counts them: what the largest padded box carries (65,460) less the longest
+ * application without them (12,859) and the field's own `,"documents":`, so
+ * 52,588. Any name and message the form takes then fit beside them in one
+ * 64 KiB blob.
+ */
+export const DOCUMENTS_MAX_BYTES = MAX_PADDED_PLAINTEXT - LONGEST_WITHOUT - ',"documents":'.length;
+
+/**
+ * Why `documents` can't go with an application, or null when they can:
+ * more than {@link DOCUMENTS_MAX}, or more than {@link DOCUMENTS_MAX_BYTES}
+ * together, as they're sealed.
+ */
+export function documentsProblem(
+  documents: readonly ApplicationDocument[],
+): DocumentsProblem | null {
+  if (documents.length > DOCUMENTS_MAX) return 'too-many';
+  return documentsBytes(documents) > DOCUMENTS_MAX_BYTES ? 'too-long' : null;
 }
 
 /** The JSON object `bytes` spell in UTF-8, or null. */
@@ -109,21 +189,49 @@ function replyIn(value: unknown): Application['reply'] | null {
   return bytes !== null && isUsableKxKey(bytes) ? { seed, key } : null;
 }
 
+/** Whether `value` is text of 1 to `max` code points that isn't blank. */
+function filledUpTo(value: unknown, max: number): value is string {
+  return textUpTo(value, max) && value.trim() !== '';
+}
+
+/** The copy `value` spells: exactly a title of 1 to 120 code points, not blank, and text; or null. */
+function documentIn(value: unknown): ApplicationDocument | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const json = value as Record<string, unknown>;
+  const { title, text } = json;
+  if (Object.keys(json).sort().join() !== 'text,title') return null;
+  return filledUpTo(title, TITLE_MAX) && typeof text === 'string' ? { title, text } : null;
+}
+
+/** The copies `value` lists: 1 to 3 well-formed documents within the cap, or null. */
+function documentsIn(value: unknown): ApplicationDocument[] | null {
+  if (!Array.isArray(value) || value.length === 0) return null;
+  const documents = value.map(documentIn);
+  if (documents.some((document) => document === null)) return null;
+  const read = documents as ApplicationDocument[];
+  return documentsProblem(read) === null ? read : null;
+}
+
+/** The keys an application holds: today's three, and `documents` beside them (#425). */
+const KEYS = ['message,name,reply', 'documents,message,name,reply'];
+
 /**
  * The application `bytes` spell, or null: anything but exactly a name of 1
- * to 120 code points, not blank, a message of at most 2,000 and a reply a
- * box can be sealed to is refused, so a member's device shows nothing else
- * and never fails to answer one it shows.
+ * to 120 code points, not blank, a message of at most 2,000, a reply a box
+ * can be sealed to and, when it carries any, 1 to 3 documents within the cap
+ * (#425), is refused, so a member's device shows nothing else and never
+ * fails to answer one it shows.
  */
 export function parseApplication(bytes: Uint8Array): Application | null {
   const json = objectIn(bytes);
-  if (json === null || Object.keys(json).sort().join() !== 'message,name,reply') return null;
+  if (json === null || !KEYS.includes(Object.keys(json).sort().join())) return null;
   const { name, message } = json;
-  if (!textUpTo(name, NAME_MAX) || name.trim() === '' || !textUpTo(message, MESSAGE_MAX)) {
-    return null;
-  }
+  if (!filledUpTo(name, NAME_MAX) || !textUpTo(message, MESSAGE_MAX)) return null;
   const reply = replyIn(json.reply);
-  return reply === null ? null : { name, message, reply };
+  if (reply === null) return null;
+  if (!('documents' in json)) return { name, message, reply };
+  const documents = documentsIn(json.documents);
+  return documents === null ? null : { name, message, reply, documents };
 }
 
 /** An invite link's own form, as a reply carries it. */
@@ -136,10 +244,24 @@ export function inviteSeedIn(text: string): Uint8Array | null {
 }
 
 /**
+ * The copy of `documents` an application carries: each title and text
+ * alone, in NFC. The form measures this, so what it lets through is what
+ * Send seals.
+ */
+export function documentCopies(documents: readonly ApplicationDocument[]): ApplicationDocument[] {
+  return documents.map(({ title, text }) => ({
+    title: title.normalize('NFC'),
+    text: text.normalize('NFC'),
+  }));
+}
+
+/**
  * Send: seals the application to `page`'s box key, padded, PUTs it to the
  * door's inbox for 30 days, and only once the relay has it keeps the reply
  * seed and key on this device. Offline, nothing is kept. The name and message
- * are trimmed and NFC-normalized first.
+ * are trimmed and NFC-normalized first, and each chosen Document's title and
+ * text is NFC-normalized ({@link documentCopies}, #425); a choice the form
+ * would refuse ({@link documentsProblem}) sends nothing.
  */
 export async function apply(
   services: ApplyServices,
@@ -147,12 +269,15 @@ export async function apply(
   page: OpenPage,
   values: ApplyValues,
 ): Promise<'sent' | 'failed'> {
+  const documents = documentCopies(values.documents ?? []);
+  if (documentsProblem(documents) !== null) return 'failed';
   const seed = newReplySeed();
   const replyKey = newKxKey();
   const application = {
     name: values.name.trim().normalize('NFC'),
     message: values.message.trim().normalize('NFC'),
     reply: { seed: base64url(seed), key: base64url(kxPublicKeyOf(replyKey)) },
+    documents,
   };
   const { inbox } = doorChannelsOf(address);
   try {

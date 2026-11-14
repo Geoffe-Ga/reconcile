@@ -9,6 +9,10 @@
  * Every request the relay got is scanned: none carries a door secret, Kim's
  * reply seed or key, or the words she wrote. The published page's plaintext
  * holds no member's name, though every name is a canary.
+ *
+ * Kim can send a copy of a personal Document with it (#425): the picker
+ * starts unchecked, Applications shows it, and Dismiss and Send an invite
+ * each delete it from that device's store, read from the store itself.
  */
 import { act, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -25,6 +29,7 @@ import { fold } from '../engine/fold';
 import { isFrontDoor } from '../engine/optIns';
 import { DAY_MINUTES } from '../engine/rules';
 import { createRelay } from '../net/relay';
+import { newPersonalId } from '../store/personal';
 import { TEST_ORIGIN, testDevice, type TestDevice } from '../test/appServices';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
@@ -210,6 +215,15 @@ async function textOf(inside: HTMLElement, className: string): Promise<string> {
   return text.replace(/\s+/g, ' ');
 }
 
+/** The words of the personal Document Kim sends a copy of (#425): a canary for every store. */
+const STATEMENT_TEXT = 'Fair rents for every tenant, canary-425-statement.';
+const CANARY_WORDS = 'canary-425-statement';
+
+/** Everything `device`'s store keeps of `groupId`, as JSON: read from the store, never a screen. */
+async function storedWords(device: TestDevice | undefined, groupId: string): Promise<string> {
+  return JSON.stringify((await device?.services.store.getGroup(groupId)) ?? null);
+}
+
 describe('a group’s front door in the app', () => {
   it('1. a group passes the opt-in from Group rules, and its page names no member', async () => {
     const fake = createFakeRelay();
@@ -306,6 +320,70 @@ describe('a group’s front door in the app', () => {
     expect(await votes()).toBe(false);
     fake.minute += 14 * DAY_MINUTES;
     expect(await votes()).toBe(true);
+  });
+
+  it('5. sends a copy of Kim’s Document, unchecked to start, and Dismiss and Send an invite each delete it from the store (#425)', async () => {
+    const user = userEvent.setup();
+    const { fake, groupId, devices, link } = await openGroup();
+    const [ana, ben, cal] = devices;
+    const kim = await newcomer(fake);
+    const at = Date.now();
+    await kim.services.store.savePersonal({
+      id: newPersonalId(),
+      title: 'What I stand for',
+      text: STATEMENT_TEXT,
+      createdAt: at,
+      updatedAt: at,
+    });
+    go(new URL(link).hash);
+    const k = mount(kim, 'k');
+    const picker = await within(k).findByRole('group', {
+      name: 'Send some of your own Documents with this',
+    });
+    const box = within(picker).getByRole('checkbox', { name: 'What I stand for' });
+    expect(box).not.toBeChecked();
+    await user.click(within(k).getByRole('textbox', { name: 'Name you’d like to use' }));
+    await user.paste(APPLICANT);
+    await user.click(within(k).getByRole('textbox', { name: 'Why you’d like to join' }));
+    await user.paste(MESSAGE);
+    await user.click(box);
+    await user.click(within(k).getByRole('button', { name: 'Send' }));
+    expect(await within(k).findByRole('status')).toHaveTextContent(/^Sent\./);
+    expect(JSON.stringify(await kim.services.store.listSent())).not.toContain(CANARY_WORDS);
+    for (const app of mounted.splice(0)) app.unmount();
+
+    go(`#/g/${groupId}`);
+    for (const device of [ana, ben]) await sync(device);
+    expect(await storedWords(ben, groupId)).toContain(CANARY_WORDS);
+    const a = mount(ana, 'a');
+    const applications = await within(a).findByRole('region', { name: 'Applications' });
+    await user.click(within(applications).getByRole('button', { name: 'What I stand for' }));
+    expect(within(applications).getByText(STATEMENT_TEXT)).toBeVisible();
+
+    const b = mount(ben, 'b');
+    const bens = await within(b).findByRole('region', { name: 'Applications' });
+    await user.click(
+      within(bens).getByRole('button', { name: `Dismiss ${APPLICANT}’s application` }),
+    );
+    expect(await within(bens).findByText('No one has asked to join yet.')).toBeVisible();
+    await waitFor(async () => {
+      expect(await storedWords(ben, groupId)).not.toContain(CANARY_WORDS);
+    });
+    expect(await storedWords(ana, groupId)).toContain(CANARY_WORDS);
+
+    await user.click(
+      within(applications).getByRole('button', { name: `Send an invite to ${APPLICANT}` }),
+    );
+    expect(
+      await within(applications).findByText('Invite sent. It waits 2 days for their device.'),
+    ).toBeVisible();
+    expect(await storedWords(ana, groupId)).not.toContain(CANARY_WORDS);
+    expect(within(applications).queryByText(STATEMENT_TEXT)).toBeNull();
+    // Cal's device reads the application only after the invite, and never keeps the copy.
+    await sync(ana);
+    await sync(cal);
+    expect(await storedWords(cal, groupId)).toContain(APPLICANT);
+    expect(await storedWords(cal, groupId)).not.toContain(CANARY_WORDS);
   });
 
   it('carries no door secret, reply seed or key, or the applicant’s words in any request', async () => {
