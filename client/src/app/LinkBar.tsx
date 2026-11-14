@@ -36,7 +36,7 @@ import { clipboardReader, isTouch, type ReadClipboard } from '../platform/clipbo
 import { type CodeKind, type LinkKind, linkKind, type OpenableLink } from './linkKind';
 import { messages } from './messages';
 import { type Route, routeHref } from './router';
-import { search, type SearchRecord, type SearchResult } from './search';
+import { prepare, search, type SearchRecord, type SearchResult } from './search';
 import { SearchResults } from './SearchResults';
 import { moreOf, type Shelf, shelvesOf } from './searchShelves';
 
@@ -299,7 +299,9 @@ function openable(read: LinkKind | null): OpenableLink | null {
  * What the panel shows: a link's read (a link, a code, a damaged link, or a
  * link to another site), or search results for plain words (#445).
  */
-type View = { readonly read: LinkKind } | { readonly results: readonly SearchResult[] };
+type View =
+  | { readonly read: LinkKind }
+  | { readonly results: readonly SearchResult[]; readonly query: string };
 
 /** Text that's meant as a link: an address with a scheme, or a fragment. Words that aren't are a search. */
 const LINK_LIKE = /(?:^|\s)(?:[a-z][a-z\d+.-]*:\/\/|#\S)/iu;
@@ -316,7 +318,7 @@ function viewOf(
   if (text.trim() === '') return null;
   const read = linkKind(text);
   return read.kind === 'not-a-link' && !LINK_LIKE.test(text)
-    ? { results: search(records, text) }
+    ? { results: search(records, text), query: text }
     : { read };
 }
 
@@ -352,7 +354,14 @@ function ViewPanel({
       </>
     );
   }
-  return <SearchResults results={view.results} expanded={expanded} onAction={onResult} />;
+  return (
+    <SearchResults
+      results={view.results}
+      query={view.query}
+      expanded={expanded}
+      onAction={onResult}
+    />
+  );
 }
 
 /** The panel under the pill and the scrim behind it, while the bar has focus and text. */
@@ -388,7 +397,9 @@ function useRecords(
     if (load === undefined || !inside) return;
     let live = true;
     void load().then((records) => {
-      if (live) setLoaded(records);
+      if (!live) return;
+      prepare(records);
+      setLoaded(records);
     });
     return () => {
       live = false;

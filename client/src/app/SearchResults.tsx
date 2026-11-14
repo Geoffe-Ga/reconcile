@@ -10,7 +10,7 @@ import type { Key } from 'react-aria-components';
 import { Header, ListBox, ListBoxItem, ListBoxSection } from 'react-aria-components';
 
 import { messages } from './messages';
-import type { SearchResult, SnippetPart } from './search';
+import { type SearchResult, snippetFor, type SnippetPart } from './search';
 import { MORE, type Shelf, shelvesOf } from './searchShelves';
 
 const words = messages.search;
@@ -27,6 +27,7 @@ function placed(parts: readonly SnippetPart[]): { part: SnippetPart; at: number 
 
 /** A snippet's text, its matched words in `<strong>`. */
 function Snippet({ parts }: { readonly parts: readonly SnippetPart[] }) {
+  if (parts.length === 0) return null;
   return (
     <span className="search-snippet">
       <bdi>
@@ -41,6 +42,8 @@ function Snippet({ parts }: { readonly parts: readonly SnippetPart[] }) {
 /** Props for {@link SearchResults}. */
 export interface SearchResultsProps {
   readonly results: readonly SearchResult[];
+  /** What was searched for, to mark in each row's snippet. */
+  readonly query: string;
   /** The eyebrows whose every row shows. */
   readonly expanded: ReadonlySet<Shelf>;
   /** A row's key: a result's record id, or a "Show all" row's (see {@link moreOf}). */
@@ -48,13 +51,13 @@ export interface SearchResultsProps {
 }
 
 /** The results under their eyebrows. */
-export function SearchResults({ results, expanded, onAction }: SearchResultsProps) {
+export function SearchResults({ results, query, expanded, onAction }: SearchResultsProps) {
   return (
     <ListBox className="link-bar-rows" aria-label={words.results} onAction={onAction}>
       {shelvesOf(results, expanded).map(({ shelf, rows, total }) => (
         <ListBoxSection key={shelf} id={shelf} className="search-shelf">
           <Header className="eyebrow search-eyebrow">{words.shelves[shelf]}</Header>
-          {rows.map(({ record, snippet }) => (
+          {rows.map(({ record }) => (
             <ListBoxItem
               key={record.id}
               id={record.id}
@@ -64,7 +67,7 @@ export function SearchResults({ results, expanded, onAction }: SearchResultsProp
               <span className="search-title">
                 <bdi>{record.title}</bdi>
               </span>
-              {snippet.length === 0 ? null : <Snippet parts={snippet} />}
+              <Snippet parts={snippetFor(record, query)} />
               {record.from === '' ? null : (
                 <span className="search-from">
                   <bdi>{record.from}</bdi>

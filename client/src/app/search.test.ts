@@ -7,7 +7,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { search, type SearchRecord } from './search';
+import { prepare, search, type SearchRecord, snippetFor } from './search';
 
 /** A record of `kind` with `title` and `text`, at `at`. */
 function record(
@@ -69,24 +69,24 @@ describe('search', () => {
   it('says whether the match was in the title, and marks the matched words in a one-line snippet', () => {
     const [title] = search(RECORDS, 'quiet');
     expect(title?.inTitle).toBe(true);
-    const [text] = search(
-      [record('d', 'Bins', 'Bins go out on Tuesday.\nHours vary in winter.')],
-      'hours',
-    );
+    const bins = record('d', 'Bins', 'Bins go out on Tuesday.\nHours vary in winter.');
+    const [text] = search([bins], 'hours');
     expect(text?.inTitle).toBe(false);
-    expect(text?.snippet.map((part) => part.text).join('')).toBe(
+    const snippet = snippetFor(bins, 'hours');
+    expect(snippet.map((part) => part.text).join('')).toBe(
       'Bins go out on Tuesday. Hours vary in winter.',
     );
-    expect(text?.snippet.filter((part) => part.marked).map((part) => part.text)).toEqual(['Hours']);
+    expect(snippet.filter((part) => part.marked).map((part) => part.text)).toEqual(['Hours']);
   });
 
   it('marks accented words as written, and starts a long snippet near its first match', () => {
-    const long = `${'Some words before. '.repeat(10)}Then the Résumé section.`;
-    const [hit] = search([record('r', 'Mine', long)], 'resume');
-    const shown = hit?.snippet.map((part) => part.text).join('') ?? '';
+    const long = record('r', 'Mine', `${'Some words before. '.repeat(10)}Then the Résumé section.`);
+    expect(search([long], 'resume')).toHaveLength(1);
+    const snippet = snippetFor(long, 'resume');
+    const shown = snippet.map((part) => part.text).join('');
     expect(shown.startsWith('…')).toBe(true);
     expect(shown).toContain('Résumé');
-    expect(hit?.snippet.filter((part) => part.marked).map((part) => part.text)).toEqual(['Résumé']);
+    expect(snippet.filter((part) => part.marked).map((part) => part.text)).toEqual(['Résumé']);
   });
 
   const words = fc.constantFrom(
@@ -130,6 +130,12 @@ describe('search', () => {
         },
       ),
     );
+  });
+
+  it('finds the same after the records are folded ahead of time', () => {
+    const before = ids('quiet');
+    prepare(RECORDS);
+    expect(ids('quiet')).toEqual(before);
   });
 
   it('never throws', () => {

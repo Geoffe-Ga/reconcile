@@ -44,15 +44,24 @@ export interface SearchResult {
   readonly record: SearchRecord;
   /** Whether every term matched in the title alone. */
   readonly inTitle: boolean;
-  /** One line of the record's text, near its first match, with the matched words marked; empty for none. */
-  readonly snippet: readonly SnippetPart[];
 }
 
-/** Text folded for matching, and for each of its code units the original index it came from. */
+/**
+ * Text folded for matching, and for each of its code units the original
+ * index it came from; null where they're the same, as for ASCII.
+ */
 interface Folded {
   readonly text: string;
-  readonly from: readonly number[];
+  readonly from: readonly number[] | null;
 }
+
+/** Where folded unit `index` came from in the original. */
+function originOf(fold: Folded, index: number): number {
+  return fold.from === null ? index : (fold.from[index] ?? index);
+}
+
+/** Plain ASCII, which folds by lowercasing alone, unit for unit. */
+const ASCII = /^\p{ASCII}*$/u;
 
 /** `char` with its accents taken off and its case folded. */
 function foldChar(char: string): string {
@@ -61,6 +70,7 @@ function foldChar(char: string): string {
 
 /** `text` folded, a character at a time, so each folded unit maps back to where it came from. */
 function folded(text: string): Folded {
+  if (ASCII.test(text)) return { text: text.toLowerCase(), from: null };
   let out = '';
   const from: number[] = [];
   let index = 0;
@@ -108,7 +118,10 @@ function holds(pattern: RegExp, text: string): boolean {
 }
 
 /** Each record's folded title and one-line text, kept while the record object lives. */
-const FOLDED = new WeakMap<SearchRecord, { title: Folded; line: string; text: Folded }>();
+const FOLDED = new WeakMap<
+  SearchRecord,
+  { title: Folded; line: string; text: Folded; both: string }
+>();
 
 /** `record`'s folded title and text, folded once. */
 function foldedOf(record: SearchRecord) {
@@ -116,7 +129,10 @@ function foldedOf(record: SearchRecord) {
   if (cached === undefined) {
     // Each space, tab or line break becomes one space, so the snippet stays one line and maps one to one.
     const line = record.text.replace(/\s/gu, ' ');
-    cached = { title: folded(record.title), line, text: folded(line) };
+    const title = folded(record.title);
+    const text = folded(line);
+    // A NUL between them, so no phrase runs from the title into the text.
+    cached = { title, line, text, both: `${title.text}\u0000${text.text}` };
     FOLDED.set(record, cached);
   }
   return cached;
@@ -132,8 +148,8 @@ function markedRanges(line: string, fold: Folded, patterns: readonly RegExp[]): 
   for (const pattern of patterns) {
     pattern.lastIndex = 0;
     for (const match of fold.text.matchAll(pattern)) {
-      const start = fold.from[match.index] ?? 0;
-      let end = (fold.from[match.index + match[0].length - 1] ?? start) + 1;
+      const start = originOf(fold, match.index);
+      let end = originOf(fold, match.index + match[0].length - 1) + 1;
       while (end < line.length && /[\p{L}\p{N}\p{M}]/u.test(line.charAt(end))) end += 1;
       ranges.push([start, end]);
     }
@@ -204,12 +220,24 @@ export function search(records: readonly SearchRecord[], query: string): SearchR
   if (patterns.length === 0) return [];
   const results: SearchResult[] = [];
   for (const record of records) {
-    const { title, text } = foldedOf(record);
-    // A NUL between them, so no phrase runs from the title into the text.
-    const both = `${title.text}\u0000${text.text}`;
+    const { title, both } = foldedOf(record);
     if (!patterns.every((pattern) => holds(pattern, both))) continue;
     const inTitle = patterns.every((pattern) => holds(pattern, title.text));
-    results.push({ record, inTitle, snippet: snippetOf(record, patterns) });
+    results.push({ record, inTitle });
   }
   return results.sort(ranked);
+}
+
+/**
+ * One line of `record`'s text near its first match of `query`, its matched
+ * words marked, "…" where it's cut; empty for a record with no text. Built
+ * only for the rows that show.
+ */
+export function snippetFor(record: SearchRecord, query: string): SnippetPart[] {
+  return snippetOf(record, termsOf(query).map(patternOf));
+}
+
+/** Folds `records` ahead of the first search, so the first keystroke costs no more than the next. */
+export function prepare(records: readonly SearchRecord[]): void {
+  for (const record of records) foldedOf(record);
 }
