@@ -6,6 +6,7 @@ import { freshIndexedDBPerTest } from '../test/idb';
 import {
   dismissed,
   type DoorInbox,
+  heldWithoutCopies,
   holdsCopies,
   type ReceivedApplication,
   SENT_CHANGED,
@@ -106,6 +107,11 @@ describe('withoutCopies and holdsCopies (#425)', () => {
     ]);
     expect(holdsCopies(kept, answered)).toBe(false);
     expect({ ...kept, applications: [] }).toEqual({ ...inbox, applications: [] });
+  });
+
+  it('leave no inbox where the device no longer holds one, as an edit of the store’s may find', () => {
+    expect(heldWithoutCopies(undefined, answered)).toBeUndefined();
+    expect(heldWithoutCopies(inbox, answered)).toEqual(withoutCopies(inbox, answered));
   });
 
   it('find nothing to drop in an inbox the device doesn’t hold, or with nothing answered', () => {

@@ -36,6 +36,7 @@ import type { FrontDoor } from '../engine/optIns';
 import type { Relay, RelayPage } from '../net/relay';
 import {
   type DoorInbox,
+  heldWithoutCopies,
   holdsCopies,
   type ReceivedApplication,
   withApplications,
@@ -137,9 +138,7 @@ export async function forgetAnswered(
 ): Promise<void> {
   const answered = answeredIn(state);
   if (!holdsCopies(held, answered)) return;
-  await store.updateInbox(groupId, (current) =>
-    current === undefined ? current : withoutCopies(current, answered),
-  );
+  await store.updateInbox(groupId, (current) => heldWithoutCopies(current, answered));
 }
 
 /**
@@ -177,7 +176,7 @@ export async function sendInvite(
   });
   await services.store.enqueue(groupId, record);
   await services.store.updateInbox(groupId, (held) =>
-    held === undefined ? held : withoutCopies(held, (answered) => answered === id),
+    heldWithoutCopies(held, (answered) => answered === id),
   );
   void services.sync.syncOnce();
   return 'sent';

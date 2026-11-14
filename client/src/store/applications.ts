@@ -184,6 +184,17 @@ export function withoutCopies(inbox: DoorInbox, answered: (id: string) => boolea
   };
 }
 
+/**
+ * {@link withoutCopies} of the inbox the device holds, as a store edit gets
+ * it: one it no longer holds stays absent.
+ */
+export function heldWithoutCopies(
+  inbox: DoorInbox | undefined,
+  answered: (id: string) => boolean,
+): DoorInbox | undefined {
+  return inbox === undefined ? inbox : withoutCopies(inbox, answered);
+}
+
 /** Whether `inbox` still holds a copy of Documents for any application `answered` names. */
 export function holdsCopies(
   inbox: DoorInbox | undefined,
