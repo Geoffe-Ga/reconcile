@@ -430,9 +430,11 @@ function useRecords(
  */
 function ForgetRow({ shown }: { readonly shown: boolean }) {
   const state = useContext(AutocompleteStateContext);
+  const focused = state?.focusedNodeId ?? null;
   useEffect(() => {
-    if (!shown) state?.setFocusedNodeId(null);
-  }, [shown, state]);
+    // Only when a row is named: an update with nothing to forget would re-render the bar for nothing.
+    if (!shown && focused !== null) state?.setFocusedNodeId(null);
+  }, [shown, focused, state]);
   return null;
 }
 
