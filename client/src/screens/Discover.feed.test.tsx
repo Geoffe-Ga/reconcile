@@ -120,9 +120,7 @@ describe('Discover’s feed (#429)', () => {
 
     const [card] = screen.getAllByRole('article');
     if (card === undefined) throw new Error('Expected the card.');
-    expect(card.querySelector('.dispatch-from')?.textContent).toBe(
-      `Allotment Society${messages.discover.endedSeparator}${messages.discover.ended}`,
-    );
+    expect(card.querySelector('.dispatch-from')?.textContent).toBe('Allotment Society · Ended');
     expect(within(card).getByRole('link', { name: 'Allotment Society' })).toBeVisible();
     expect(await axeViolations()).toEqual([]);
   });

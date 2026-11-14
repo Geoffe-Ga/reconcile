@@ -64,7 +64,7 @@ export const messages = {
     /** The feed (#429): every Dispatch this device holds, newest first. */
     feedLabel: 'Dispatches from your groups and coalitions',
     /** After a dissolved group's name on its Dispatches' eyebrow: "<group> · Ended". */
-    endedSeparator: ' · ',
+    endedSeparator: '·',
     ended: 'Ended',
     openHeading: 'Open a card or link',
     openLabel: 'Card or link',

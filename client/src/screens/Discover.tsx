@@ -63,7 +63,7 @@ function From({ from }: { readonly from: FeedPlace }) {
       <Link href={homeOf(from)}>
         <bdi>{from.state.name}</bdi>
       </Link>
-      {from.ended ? `${words.endedSeparator}${words.ended}` : null}
+      {from.ended ? ` ${words.endedSeparator} ${words.ended}` : null}
     </>
   );
 }
