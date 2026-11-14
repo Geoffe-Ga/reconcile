@@ -634,7 +634,11 @@ describe('a key change and the relay copy (#97, #98)', () => {
     const plaintext = (await fetchRelayBackup(createRelay({ fetch: fake.fetch }), key)) ?? utf8('');
     expect((JSON.parse(text(plaintext)) as { format: number }).format).toBe(2);
     const fresh = await openStore('fresh');
-    expect(await importSnapshot(fresh, plaintext)).toEqual({ groups: 1, skipped: 0 });
+    expect(await importSnapshot(fresh, plaintext)).toEqual({
+      groups: 1,
+      skipped: 0,
+      skippedDocuments: 0,
+    });
     const [held, original] = [await groupOn(fresh, groupId), await groupOn(device.store, groupId)];
     expect(held.epoch).toBe(1);
     expect(local(held.secret)).toEqual(local(next));
@@ -826,7 +830,7 @@ describe('fetchRelayBackup', () => {
     const fresh = await openStore('fresh');
     const restored = await importSnapshot(fresh, plaintext ?? new Uint8Array());
 
-    expect(restored).toEqual({ groups: 2, skipped: 0 });
+    expect(restored).toEqual({ groups: 2, skipped: 0, skippedDocuments: 0 });
     expect(await folds(fresh)).toEqual(await folds(device.store));
     expect(await fresh.getRelayBackup()).toBeUndefined();
   });

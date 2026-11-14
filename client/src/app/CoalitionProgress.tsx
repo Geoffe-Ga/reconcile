@@ -78,39 +78,43 @@ function listText(names: readonly string[]): string {
   return rest === '' ? last : `${rest} ${coalitions.and} ${last}`;
 }
 
+/** The lines a `progress` line keeps room for: one, or two whose wider wins (#417). */
+type Rooms = readonly [room: string, alt?: string];
+
 /**
- * The longest line an open motion can show: every group still waiting, or at
- * 5 groups and more the two-thirds line at its widest, or else its own
- * group's fail, whichever is longer.
+ * The longest lines an open motion can show, both kept, since which renders
+ * wider rests on the glyphs, not the count of characters (#417): every group
+ * still waiting, or at 5 groups and more the two-thirds line at its widest,
+ * and its own group's fail.
  */
-function openRoom(progress: Progress): string {
+function openRooms(progress: Progress): Rooms {
   const { needed, seats } = progress;
+  const names = listText(progress.groups.map((group) => group.name));
   const waiting = needsEvery(progress)
-    ? `${coalitions.passedOf(0, seats)} ${coalitions.waitingFor} ${listText(progress.groups.map((group) => group.name))}${coalitions.end}`
+    ? `${coalitions.passedOf(0, seats)} ${coalitions.waitingFor} ${names}${coalitions.end}`
     : coalitions.twoThirds(needed, seats, seats, seats);
-  const failed = `${coalitions.mine.fail} ${coalitions.waitingMore(needed)}`;
-  return waiting.length >= failed.length ? waiting : failed;
+  return [waiting, `${coalitions.mine.fail} ${coalitions.waitingMore(needed)}`];
 }
 
 /**
- * The longest line `progress` can show from now on, as plain text: the room
+ * The longest lines `progress` can show from now on, as plain text: the room
  * its line keeps on a vote's page (#407). Once the coalition has decided,
  * that's a fail's sentence, or a pass's with the day it takes effect, which
  * is longer than what it says once final.
  */
-function roomOf(progress: Progress): string {
-  if (progress.outcome === undefined) return openRoom(progress);
+function roomsOf(progress: Progress): Rooms {
+  if (progress.outcome === undefined) return openRooms(progress);
   if (progress.outcome === 'fail') {
-    return needsEvery(progress) ? coalitions.failedEvery : coalitions.failedTwoThirds;
+    return [needsEvery(progress) ? coalitions.failedEvery : coalitions.failedTwoThirds];
   }
-  return `${coalitions.takesEffect} ${formatDay(progress.settles)}${coalitions.end}`;
+  return [`${coalitions.takesEffect} ${formatDay(progress.settles)}${coalitions.end}`];
 }
 
 /**
  * The progress line, as the coalition home and a coalition vote's page show
  * it: inside a card's link, a span; on its own, a paragraph that keeps the
- * room its longest line takes (`.steady`, #407), so a group's pass or fail
- * syncing in moves nothing below it, the ballot least of all.
+ * room its longest lines take (`.steady`, #407, #417), so a group's pass or
+ * fail syncing in moves nothing below it, the ballot least of all.
  */
 export function ProgressLine({
   progress,
@@ -120,8 +124,9 @@ export function ProgressLine({
   readonly inline?: boolean;
 }) {
   if (inline) return <span className="coalition-progress-line">{lineOf(progress)}</span>;
+  const [room, alt] = roomsOf(progress);
   return (
-    <p className="coalition-progress-line steady" data-room={roomOf(progress)}>
+    <p className="coalition-progress-line steady" data-room={room} data-room-alt={alt}>
       <span>{lineOf(progress)}</span>
     </p>
   );

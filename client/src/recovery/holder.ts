@@ -6,7 +6,10 @@
  *   sent and asks whose share it is for. The contact calls them or meets
  *   them, and types the six digits they read out; {@link approveRecovery}
  *   goes on only when those match the code's check (`crypto/recovery.ts`),
- *   so a code swapped on its way never gets a share. It posts a
+ *   so a code swapped on its way never gets a share. The contact also types
+ *   the second number the new device shows, which isn't in the code (#398):
+ *   it goes inside the release, and the new device drops a release without
+ *   it, so someone holding only the code can't plant shares. It posts a
  *   `recovery-alert` in the share's group, sealed to the person's encryption
  *   key, with a fresh tag inside, and keeps a hold beside it, in one store
  *   change.
@@ -21,7 +24,11 @@
  *   1,024-byte blob, and PUTs it there for 7 days. A cancel, or a share from
  *   a later choice of contacts, stops the hold and nothing goes. A pass that
  *   fails runs none of this, and a PUT that fails is tried again after the
- *   next complete pass. Each hold drops its code once it ends.
+ *   next complete pass.
+ * - **Sending again.** A stopped hold drops its code and second number at
+ *   once. A sent one keeps them while the relay keeps the release, 7 days in
+ *   relay time, so a contact who typed the number wrong can send it again
+ *   with the right one ({@link resendRelease}); then the pass drops them.
  *
  * Contacts who collude can skip all of this by putting their shares
  * together themselves: an accepted pilot risk (ADR-0075 §4). What the wait
@@ -52,6 +59,9 @@ export const HOLD_MINUTES = 4320;
 /** How long the relay keeps a released share: 7 days. */
 export const RELEASE_TTL_DAYS = 7;
 
+/** Relay minutes in a day. */
+const MINUTES_PER_DAY = 1440;
+
 /** Thrown when the number the person read out isn't the code's check: nothing is approved. */
 export class CheckMismatch extends Error {
   constructor() {
@@ -60,12 +70,24 @@ export class CheckMismatch extends Error {
   }
 }
 
-/** What a contact approves: the code, whose share (their key in the group), and the number read out. */
+/** Thrown when the second number typed isn't six digits (#398): nothing is approved or sent. */
+export class SecondNumberInvalid extends Error {
+  constructor() {
+    super('The second number is six digits.');
+    this.name = 'SecondNumberInvalid';
+  }
+}
+
+/**
+ * What a contact approves: the code, whose share (their key in the group),
+ * the number read out, and the second number the new device shows (#398).
+ */
 export interface Approval {
   readonly code: string;
   readonly groupId: string;
   readonly person: string;
   readonly check: string;
+  readonly number: string;
 }
 
 /** What approving works with. */
@@ -78,7 +100,7 @@ export interface ApproveServices {
 
 /** What releasing works with. */
 export interface ReleaseServices {
-  readonly store: Pick<Store, 'listGroups' | 'endHold'>;
+  readonly store: Pick<Store, 'listGroups' | 'endHold' | 'forgetHoldCode'>;
   readonly relay: Pick<Relay, 'putBlob'>;
   readonly seal: Seal;
   /** The device clock in milliseconds, for when a hold ended. */
@@ -95,6 +117,13 @@ export type HoldStatus =
   | { readonly kind: 'soon' | 'ready' | 'sent' | 'stopped' }
   | { readonly kind: 'holding'; readonly until: number };
 
+/** What sending a release again works with (#398). */
+export interface ResendServices {
+  readonly store: Pick<Store, 'getGroup' | 'setHoldNumber'>;
+  readonly relay: Pick<Relay, 'putBlob'>;
+  readonly seal: Seal;
+}
+
 /** One hold as Help someone recover shows it. */
 export interface HoldView {
   /** The alert's event id. */
@@ -103,6 +132,17 @@ export interface HoldView {
   /** The person's name in the group. */
   readonly name: string;
   readonly status: HoldStatus;
+  /** The second number typed, while the hold keeps it (#398). */
+  readonly number: string | null;
+  /** Whether the share can go again with a corrected second number (#398). */
+  readonly resend: boolean;
+}
+
+/** `typed` as six digits, with the spaces it was read out in taken out (#398). */
+function secondNumber(typed: string): string {
+  const number = typed.replace(/\s/g, '');
+  if (!/^[0-9]{6}$/.test(number)) throw new SecondNumberInvalid();
+  return number;
 }
 
 /** The person's encryption key in `state`, or null when they have none or have gone. */
@@ -113,20 +153,23 @@ function kxOf(state: GroupState, person: string): string | null {
 /**
  * Approves a recovery (#118): checks the number read out against the code,
  * then queues a `recovery-alert` to the person in the share's group and
- * keeps the hold beside it, and runs a sync pass so the alert goes.
+ * keeps the hold beside it, with the second number (#398), and runs a sync
+ * pass so the alert goes.
  *
  * @throws {RangeError} when `code` holds no recovery code.
  * @throws {CheckMismatch} when the number isn't the code's check.
+ * @throws {SecondNumberInvalid} when the second number isn't six digits.
  * @throws {Error} when this device holds no share for `person` in the
  *   group; nothing is queued or kept for any of these.
  */
 export async function approveRecovery(
   services: ApproveServices,
-  { code, groupId, person, check }: Approval,
+  { code, groupId, person, check, number: typed }: Approval,
 ): Promise<void> {
   const parsed = parseRecoveryCode(code);
   if (parsed === null) throw new RangeError('That isn’t a recovery code.');
   if (check.replace(/\s/g, '') !== recoveryCheck(parsed.code)) throw new CheckMismatch();
+  const number = secondNumber(typed);
   const group = await services.store.getGroup(groupId);
   const share = group === undefined ? null : openHeldShare(group, person);
   const kx = group === undefined ? null : kxOf(foldGroup(group), person);
@@ -144,7 +187,15 @@ export async function approveRecovery(
     body: { box },
   } as const;
   const { record, id } = signEvent(group.signingKey, draft);
-  const hold = { alert: id, person, split, tag, code: parsed.code, approvedAt: services.now() };
+  const hold = {
+    alert: id,
+    person,
+    split,
+    tag,
+    code: parsed.code,
+    number,
+    approvedAt: services.now(),
+  };
   await services.store.holdShare(groupId, record, hold);
   await services.sync.syncOnce();
 }
@@ -161,25 +212,28 @@ function holdEnd(state: GroupState, hold: RecoveryHold): number | null {
 }
 
 /**
- * Puts the share `hold` approved, sealed to the new device, in the request
- * mailbox: `sent` once the relay has it, `stopped` when there is no share to
- * send (the person chose again, or left), or null when the PUT failed.
+ * Puts the share `hold` approved, sealed to the new device with `number`
+ * inside (#398), in the request mailbox: `sent` once the relay has it,
+ * `stopped` when there is no share to send (the person chose again, or
+ * left) or no second number (a hold approved before #398), or null when the
+ * PUT failed.
  */
 async function release(
-  services: ReleaseServices,
+  services: Pick<ReleaseServices, 'relay' | 'seal'>,
   group: Group,
   hold: RecoveryHold,
+  number = hold.number,
 ): Promise<HoldEnd['kind'] | null> {
   const code = parseRecoveryCode(hold.code ?? '');
   const share = openHeldShare(group, hold.person);
-  if (code === null || share?.split !== hold.split) {
+  if (code === null || number === undefined || share?.split !== hold.split) {
     share?.share.fill(0);
     return 'stopped';
   }
   const { mailbox, key } = recoveryChannel(code.seed);
   let blob: Uint8Array<ArrayBuffer>;
   try {
-    blob = services.seal.seal(mailbox, key, sealRelease(code.publicKey, mailbox, share));
+    blob = services.seal.seal(mailbox, key, sealRelease(code.publicKey, mailbox, share, number));
   } finally {
     share.share.fill(0);
     key.fill(0);
@@ -211,23 +265,80 @@ function hasSynced(group: Group): group is Group & { readonly relayNow: number }
   return group.relayNow !== null;
 }
 
+/** The relay minute a sent `hold`'s release leaves the relay, so it can't go again (#398). */
+function resendEnd(state: GroupState, hold: RecoveryHold): number | null {
+  const until = holdEnd(state, hold);
+  return until === null ? null : until + RELEASE_TTL_DAYS * MINUTES_PER_DAY;
+}
+
 /**
- * After a complete sync pass: for each hold still open on this device, stops
- * it on a cancel from the person, or releases its share once 4,320 relay
- * minutes have passed since the relay received its alert.
+ * Whether `hold` was sent and may go again with a corrected second number
+ * at `relayNow` (#398): it keeps its code, the person hasn't cancelled, and
+ * the relay still keeps its release.
  */
-export async function releaseHeldShares(services: ReleaseServices): Promise<void> {
-  for (const group of await services.store.listGroups()) {
-    const open = (group.recoveryHolds ?? []).filter(({ ended }) => ended === undefined);
-    if (open.length === 0 || !hasSynced(group)) continue;
-    const state = foldGroup(group);
-    for (const hold of open) {
+function canResend(state: GroupState, hold: RecoveryHold, relayNow: number): boolean {
+  if (hold.ended?.kind !== 'sent' || hold.code === undefined) return false;
+  const until = resendEnd(state, hold);
+  return until !== null && relayNow < until && !isCancelled(state, hold);
+}
+
+/** Settles each of `group`'s open holds after a pass, and forgets the code of each sent one that can't go again. */
+async function settleGroup(
+  services: ReleaseServices,
+  group: Group & { readonly relayNow: number },
+): Promise<void> {
+  const state = foldGroup(group);
+  for (const hold of group.recoveryHolds ?? []) {
+    if (hold.ended === undefined) {
       const kind = await settle(services, group, state, hold);
       if (kind !== null) {
         await services.store.endHold(group.groupId, hold.alert, { kind, at: services.now() });
       }
+    } else if (hold.code !== undefined && !canResend(state, hold, group.relayNow)) {
+      await services.store.forgetHoldCode(group.groupId, hold.alert);
     }
   }
+}
+
+/**
+ * After a complete sync pass: for each hold still open on this device, stops
+ * it on a cancel from the person, or releases its share once 4,320 relay
+ * minutes have passed since the relay received its alert. A sent hold
+ * forgets its code and second number once the relay no longer keeps its
+ * release, or the person cancels (#398).
+ */
+export async function releaseHeldShares(services: ReleaseServices): Promise<void> {
+  for (const group of await services.store.listGroups()) {
+    if ((group.recoveryHolds ?? []).length === 0 || !hasSynced(group)) continue;
+    await settleGroup(services, group);
+  }
+}
+
+/**
+ * Sends the share of the sent hold of `alert` again, with a corrected second
+ * `number` (#398), and keeps that number on the hold. The relay keeps both
+ * releases; the new device drops the one with the wrong number.
+ *
+ * @throws {SecondNumberInvalid} when `number` isn't six digits.
+ * @throws {Error} when the hold can't go again (it isn't sent, has forgotten
+ *   its code, was cancelled, or its share is gone), or the relay didn't take it.
+ */
+export async function resendRelease(
+  services: ResendServices,
+  { groupId, alert, number: typed }: { groupId: string; alert: string; number: string },
+): Promise<void> {
+  const number = secondNumber(typed);
+  const group = await services.store.getGroup(groupId);
+  const hold = group?.recoveryHolds?.find((held) => held.alert === alert);
+  if (group === undefined || hold === undefined || !hasSynced(group)) {
+    throw new Error('This share can’t go again.');
+  }
+  if (!canResend(foldGroup(group), hold, group.relayNow)) {
+    throw new Error('This share can’t go again.');
+  }
+  const kind = await release(services, group, hold, number);
+  if (kind !== 'sent') throw new Error('This share didn’t go again.');
+  await services.store.setHoldNumber(groupId, alert, number);
 }
 
 /**
@@ -271,6 +382,8 @@ export function holdViews(
       groupId: group.groupId,
       name: displayName(state, hold.person) ?? '',
       status: statusOf(state, hold, now),
+      number: hold.number ?? null,
+      resend: canResend(state, hold, now),
     }));
   });
 }

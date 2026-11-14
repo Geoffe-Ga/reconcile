@@ -67,6 +67,7 @@ These rules close the capture paths a steward's powers open ([ADR-0015](0015-ant
   - The picker says: "Pick people you'd trust with all your groups at once."
   - **Revisit** before the outside review: a relay-held release, where the backup fetch opens only 72 hours after a request that the person's devices see and can cancel.
 - **Fix: record the rule #118 builds.** Each contact's device runs the wait in relay time, from the relay's receipt of that contact's alert. The person's devices hear of it through the groups they share with each contact.
+  - **Amendment (2026-11-14, #398):** a release carries a second number that only the new device shows, and the new device asks "Are these your groups?" before it restores anything. See the amendment below.
 - **Fix: restored devices keep recovery working.** The random backup key travels in the passphrase backup file and the second-device link bundle. Both already hold every group's keys. A restored or linked device can therefore keep the relay backup fresh.
   - **Amendment (2026-11-12, #272):** the key travels with its split's id, and one person's latest choice of contacts wins on every device. See the amendment below.
 - **Fix: one library beyond `@noble/*`.** This amends ADR-0060's "audited libraries only (`@noble/*`)".
@@ -343,3 +344,48 @@ Both are spelled out in [spec §4, Coalitions, Push](../spec/phase-1/04-events/1
 
 - **The same hour.** Each group's nudges for a motion still fall within the hour after its two minutes, so at rest the relay sees every member group's mailbox take a nudge within the same hour, twice. At the pilot's scale that's a weaker signal than the same minute.
 - **Live timing.** The offsets protect what the relay stores, not a live watcher. Member groups' devices read a new motion within a pass or two of each other and post its nudges then. And a device polls its groups' and its coalitions' mailboxes in one pass from one IP address. That's §2's "polling links a phone's groups live", and the pilot notice already discloses it ([spec §9](../spec/phase-1/09-privacy-rules.md): whoever runs the relay sees connecting IP addresses and timing live).
+
+## Amendment (2026-11-14): A Second Number, and Asking Before Restoring (#398)
+
+**Decided by the founder on 2026-11-14 ([#398](https://github.com/Geoffe-Ga/reconcile/issues/398)): option A and option B together. Built as decided.**
+
+### Context
+
+The recovery code carries the request mailbox's seed and the new device's public key `E_R`. So anyone holding the code can post releases the new device opens. The relay takes `PUT /v1/backup/{id}` from anyone, as a blind relay must (ADR-0007). Together, these opened two holes in #118:
+
+- **The try budget.** Fake splits, each consistent with itself, used up the 35 subsets a visit tries.
+- **A hijack.** Someone holding only the code could choose a key K′, upload a relay backup of their own groups under `backupIdFor(K′)`, and post two shares of K′. The new device restored those groups and called `finishRecovery`, which dropped the real request. One malicious contact, or anyone who intercepted the code, could do this alone.
+
+#303's idea, dropping shares that don't verify as a chosen contact's, can't be built. A device that has lost everything holds no contact's signing key to check against.
+
+### Options considered
+
+- **A. A second number, not derived from the code.** The person reads it on the call, and the contact's device seals it inside the release. The new device drops any release without it before combining.
+- **B. Ask before finishing.** After a backup opens, the new device shows the groups it found and asks "Are these your groups?". "No" keeps the real request.
+- **C. Accept and document.**
+
+A closes both holes for anyone who holds only the code. It doesn't stop a malicious contact who heard the number on the call. B backstops that case.
+
+### Decision
+
+- **The second number** is `u32be(HKDF-SHA-256(E_R's secret key, empty salt, "reconcile/v1/recovery-number", 32)[0..4]) mod 10^6`, as six digits.
+  - It comes from the secret key, which never leaves the new device, so the code doesn't reveal it. It's bound to this request, and nothing new is stored.
+  - It stays the same until the recovery ends: confirmed, or stopped.
+  - The new device shows it beside the check. The contact types both numbers to approve.
+- **The release format changes.** The plaintext becomes `{"v":2,"split","t","n","share","number"}`. The box's label (`reconcile/v1/recovery-release`), its AAD (the mailbox id) and the 1,024-byte Seal don't change.
+  - The new device refuses the first format, which had no `v`.
+  - `vectors/recovery.json` pins the number, the new release, and the old plaintext as refused. Python computed them, outside @noble.
+- **Drop before combining.** A release whose `number` isn't the device's own is left out before any split forms, and counted, so the screen can say so. A share planted with only the code never reaches a combine or a backup fetch, and so never costs a try.
+- **A mistyped number can be retried.** A sent hold keeps its code and number while the relay keeps the release, until relay time passes the hold's end + 7 days. Help someone recover names the number the share went with, and offers sending it again with another. A cancel, or a stopped hold, drops both at once.
+- **Ask before restoring.** Once a subset's key opens a backup, nothing is written. The device lists the backup's group names, each in `<bdi>`, and asks "Are these your groups?".
+  - **Yes** restores the backup, adopts its key and finishes the recovery, as before.
+  - **No** forgets the backup and keeps the request. The device doesn't fetch that backup's id again in the session. It says: "Nothing was restored. Someone else may have your recovery code. Stop recovering, start again for a new code, and call each contact as you send it."
+  - Declining by backup id, not by split, means a contact who reuses the real split's id can't shut the real shares out.
+
+**Privacy.** The relay sees nothing new. The number travels only inside the sealed release, and no request carries it. The backup's group names are shown only on the device that opened it, and are written nowhere until Yes.
+
+### Accepted pilot risks added
+
+- **A contact who heard the number** can still post a matching split. That costs the person tries, and it makes them answer No, once per visit, since a reload forgets the decline. They're among the people the person chose, which §4 already accepts as a collusion risk. The remedy is to start again with a new code and call each contact as it's sent.
+- **The number authenticates the call, not the contact.** Anyone listening to the call learns it.
+- **Older apps.** A contact on an older app sends a first-format release, which the new device drops; that contact updates and sends again. A recovering device on an older app reads a version-2 release as before, so it keeps the old exposure until it updates.

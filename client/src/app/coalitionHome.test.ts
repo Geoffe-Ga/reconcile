@@ -237,6 +237,17 @@ describe('a coalition home for followers and sharers (#124)', () => {
     expect(coalitionHome(heldBy(logs, at, 'eve', { following: true }), [])?.share).toBe(false);
   });
 
+  it('lets no follower share a follow link, even one whose key a seat binds (#364)', () => {
+    const logs = new Logs();
+    const at = formed(logs);
+    // Built by hand: a follower's key is a fresh one no join binds, but a change
+    // that reused a participant's key mustn't offer a follower the share.
+    const bound = heldBy(logs, at, 'kim', { following: true });
+
+    expect(bound.state.coalition?.bindings.some((b) => b.author === authorOf('kim'))).toBe(true);
+    expect(coalitionHome(bound, [deviceGroup(logs, 'A', at, 'ana')])?.share).toBe(false);
+  });
+
   it('reads as a follower only for an entry followed with no group of its own here', () => {
     const logs = new Logs();
     const at = formed(logs);

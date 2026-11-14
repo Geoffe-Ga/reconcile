@@ -14,10 +14,11 @@
  *
  * Reading before joining (#91): Cal reads the whole Document as it reads now
  * on the Join screen while IndexedDB holds nothing and the invite GET is the
- * only request, taps Not now, and comes back. Ana and Cal meet the first-run
- * guide after their first create and join, and its cards send nothing. A
- * second test opens an invite whose Document holds script, an image and
- * `javascript:` links, which render as inert text with no CSP violation.
+ * only request, taps Not now, and comes back. Ana and Ben meet the first-run
+ * guide after their first create and join, before any vote, and its cards
+ * send nothing. A second test opens an invite whose Document holds script, an
+ * image and `javascript:` links, which render as inert text with no CSP
+ * violation.
  */
 import { DatabaseSync } from 'node:sqlite';
 
@@ -39,7 +40,9 @@ import {
   test,
 } from './support/fixtures';
 import { type Canary, describeFinding, findIn, keyCanaries } from './support/scan';
-import { derive, groupMailboxes, onlyGroup } from './support/stored';
+import { postedEvents } from './support/recovery';
+import { SYNC_MS } from './support/steps';
+import { derive, groupMailboxes, onlyGroup, queuedRecords, storedLogs } from './support/stored';
 
 const GROUP = 'Riverside Tenants';
 const TITLE = 'House rules';
@@ -122,12 +125,6 @@ async function joinHere(person: Person): Promise<void> {
   await expect(page).toHaveURL(/#\/g\/[\w-]+$/);
 }
 
-/** Opens `link`, checks the preview, and joins as `person.name` at Join's preselected level. */
-async function joinFrom(person: Person, link: string): Promise<void> {
-  await openInvite(person, link);
-  await joinHere(person);
-}
-
 /** The relay requests `page` sends while `act` runs, as "METHOD /path". */
 async function relayRequestsDuring(page: Page, act: () => Promise<void>): Promise<string[]> {
   const seen: Request[] = [];
@@ -149,11 +146,19 @@ async function relayRequestsDuring(page: Page, act: () => Promise<void>): Promis
  * nothing: the only relay requests meanwhile are the sync loop's reads of the
  * group's own weekly mailboxes (#110). Done leaves the guide's flag set on
  * the device.
+ *
+ * It measures from a device that owes the relay nothing: a drained outbox,
+ * and no Proposal in its log. Any member's device posts a closed Proposal's
+ * result on its own time (#111), and a newcomer's once landed inside a slow
+ * walk on CI, so a walk after a vote would race the sync loop.
  */
 async function walkGuide(person: Person, titles: readonly string[]): Promise<void> {
   const { page } = person;
   const dialog = page.getByRole('dialog');
   await expect(dialog).toBeVisible();
+  await expect.poll(() => queuedRecords(page), { timeout: SYNC_MS }).toBe(0);
+  const [held] = await storedLogs(page);
+  expect(postedEvents(held?.log ?? [], 'proposal'), 'no result can come due').toEqual([]);
   const { secret } = await onlyGroup(page);
   // The group's weekly mailboxes (#110): a pass reads last week's and this week's.
   const reads = groupMailboxes(Uint8Array.from(secret)).map((id) => `GET /v1/mailbox/${id}`);
@@ -206,7 +211,7 @@ test('a newcomer gets the whole history from the invite, even what the relay pur
   for (const { page } of [ana, ben, cal]) page.on('request', (request) => requests.push(request));
   const links: string[] = [];
 
-  await test.step('A creates a group, walks the first-run guide, and copies an invite link; B joins from it', async () => {
+  await test.step('A creates a group, walks the first-run guide, and copies an invite link; B joins from it and walks the guide', async () => {
     const { page } = ana;
     await page.goto('/#/create');
     await acceptNotice(ana, { guide: true });
@@ -223,7 +228,9 @@ test('a newcomer gets the whole history from the invite, even what the relay pur
     await expect(heading(page, GROUP)).toBeVisible();
     await expect(page.getByRole('dialog')).toHaveCount(0);
     links.push(await copyInvite(page));
-    await joinFrom(ben, links[0] ?? '');
+    await openInvite(ben, links[0] ?? '', { guide: true });
+    await joinHere(ben);
+    await walkGuide(ben, COLLABORATOR_CARDS);
   });
 
   await test.step('A proposes a change to the first section, and both vote it through', async () => {
@@ -286,9 +293,11 @@ test('a newcomer gets the whole history from the invite, even what the relay pur
     const inviteGet = [`GET /v1/mailbox/${inviteMailbox}`];
 
     const reading = await relayRequestsDuring(page, async () => {
-      const { passkeyOffered } = await openInvite(cal, link, { guide: true });
-      // First run's own device flags: the notice's, and the passkey offer's answer where it showed (#95).
-      firstRunKeys.push(...(passkeyOffered ? [PASSKEY_OFFER_KEY, NOTICE_KEY] : [NOTICE_KEY]));
+      const { passkeyOffered } = await openInvite(cal, link);
+      // First run's own device flags, sorted: the guide's, set as its Skip leaves it (Ben walks
+      // it, before any vote), the passkey offer's answer where it showed (#95), and the notice's.
+      const passkey = passkeyOffered ? [PASSKEY_OFFER_KEY] : [];
+      firstRunKeys.push(GUIDE_KEY, ...passkey, NOTICE_KEY);
       const document = page.getByRole('article');
       await expect(document.getByRole('paragraph')).toHaveText([NEW_TEXT, SECOND_ATOM]);
       await expect(page.getByRole('heading', { level: 2, name: TITLE })).toBeFocused();
@@ -305,7 +314,7 @@ test('a newcomer gets the whole history from the invite, even what the relay pur
     expect(await localKeys(page)).toEqual(firstRunKeys);
   });
 
-  await test.step('C opens the link again, joins, walks the guide, and sees what A and B see', async () => {
+  await test.step('C opens the link again, joins, and sees what A and B see', async () => {
     const { page } = cal;
     await page.goto(links[1] ?? '');
     await expect(heading(page, GROUP)).toBeVisible();
@@ -315,7 +324,6 @@ test('a newcomer gets the whole history from the invite, even what the relay pur
     ]);
     expect(await storedRecords(page)).toBe(0);
     await joinHere(cal);
-    await walkGuide(cal, COLLABORATOR_CARDS);
     for (const person of [cal, ana, ben]) await expectSameGroup(person);
   });
 

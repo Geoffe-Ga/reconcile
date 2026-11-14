@@ -4,9 +4,11 @@
  * group with a chat link, and Ben, on a phone in the dark theme, joins. They
  * turn the chat bot on with a forum channel's webhook, which the `openProfile`
  * fixture answers as Discord would, so nothing reaches Discord. The vote's
- * result opens 'Proposal 1 in Reconcile'. Then Ana proposes a change: its
- * opening notice opens 'Proposal 2 in Reconcile', the device that posted it
- * reads the webhook once and records the thread, and Ben's Join discussion
+ * result opens 'Proposal 1 in Reconcile', and the device that posted it
+ * records that thread, though nobody claimed the vote's opening (#245). Then
+ * Ana proposes a change: its opening notice opens 'Proposal 2 in Reconcile',
+ * the device that posted it records the thread, each device reading the
+ * webhook once at most, and Ben's Join discussion
  * opens that thread instead of the group's chat. When they vote
  * it through, the result goes into the thread as the concluded line. No
  * thread name or post carries a title, a name or the group's text. Nothing
@@ -60,6 +62,9 @@ test('a Proposal’s first notice opens its Discord thread, Join discussion open
   const ana = await openProfile('Ana', { viewport: { width: 1280, height: 800 } });
   const ben = await openProfile('Ben', { viewport: PHONE, colorScheme: 'dark' });
   const posts = () => openProfile.discord.filter((request) => request.method === 'POST');
+  /** Each read of the webhook's server and channel, which a device makes to record a thread. */
+  const reads = () =>
+    openProfile.discord.filter((request) => request.method === 'GET' && request.url === WEBHOOK);
   let proposalUrl = '';
 
   await test.step('Ana founds the group with a chat link, and Ben joins', async () => {
@@ -113,6 +118,8 @@ test('a Proposal’s first notice opens its Discord thread, Join discussion open
         allowed_mentions: { parse: [] },
       },
     });
+    // The device that posted it reads where the webhook posts, to record the thread (#245).
+    await expect.poll(() => reads().map((request) => request.url)).toEqual([WEBHOOK]);
   });
 
   await test.step('Ana proposes a change, and its opening notice opens Proposal 2’s thread', async () => {
@@ -137,11 +144,8 @@ test('a Proposal’s first notice opens its Discord thread, Join discussion open
         allowed_mentions: { parse: [] },
       },
     });
-    // The device that posted it reads the webhook's server and channel, once.
-    await expect
-      .poll(() => openProfile.discord.filter((request) => request.method === 'GET').length)
-      .toBe(1);
-    expect(openProfile.discord.find((request) => request.method === 'GET')?.url).toBe(WEBHOOK);
+    // Each device reads the webhook's server and channel once at most: Proposal 1's poster has.
+    expect(reads().length).toBeLessThanOrEqual(2);
   });
 
   await test.step('on Ben’s phone, the Proposal shows its number, and Join discussion opens its thread', async () => {
@@ -182,6 +186,8 @@ test('a Proposal’s first notice opens its Discord thread, Join discussion open
   });
 
   await test.step('nothing of the group went to Discord: no title, name or text', () => {
+    // Two devices, each of which read the webhook's server and channel once at most.
+    expect(reads().length).toBeLessThanOrEqual(2);
     const everything = JSON.stringify(openProfile.discord.map(({ url, body }) => ({ url, body })));
     for (const word of [GROUP, PROPOSAL, NEW_TEXT, ATOM, 'House rules', 'Ana', 'Ben', CHAT]) {
       expect(everything).not.toContain(word);

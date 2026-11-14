@@ -513,7 +513,13 @@ function metersFor(proposal: Proposal): (version: VersionView) => ReactNode {
     const tallied = detail?.versions.find((candidate) => candidate.id === version.id);
     const label = priority ? { label: messages.meter.optionLabel(version.text) } : {};
     return detail === null || tallied === undefined ? null : (
-      <ConsentMeter number={version.number} tally={tallied} bar={detail.bar} {...label} />
+      <ConsentMeter
+        number={version.number}
+        tally={tallied}
+        bar={detail.bar}
+        eligible={proposal.eligible.length}
+        {...label}
+      />
     );
   };
 }

@@ -12,10 +12,14 @@ type OnRestore = (bytes: Uint8Array, passphrase: string) => Promise<RestoredFile
 
 /**
  * What a restore of `groups` groups resolves to, leaving out `skipped` group
- * entries (#336), from an older file or not (#225).
+ * entries (#336) and `skippedDocuments` personal Documents (#351), from an
+ * older file or not (#225).
  */
-function restored(groups: number, { skipped = 0, older = false } = {}): RestoredFile {
-  return { groups, skipped, older };
+function restored(
+  groups: number,
+  { skipped = 0, skippedDocuments = 0, older = false } = {},
+): RestoredFile {
+  return { groups, skipped, skippedDocuments, older };
 }
 
 const FILE = new File([Uint8Array.of(82, 67, 66, 49)], 'reconcile-backup-2026-11-08.bin');
@@ -222,6 +226,42 @@ describe('RestoreBackup', () => {
       ),
     ).not.toBeNull();
     expect(screen.queryByText(/holds no groups/)).not.toBeInTheDocument();
+  });
+
+  it('says how many personal Documents it left out, after the groups, in the one status line (#351)', async () => {
+    const onRestore = vi
+      .fn<OnRestore>()
+      .mockResolvedValueOnce(restored(2, { skipped: 1, skippedDocuments: 1 }))
+      .mockResolvedValueOnce(restored(1, { skippedDocuments: 2 }))
+      .mockResolvedValueOnce(restored(0, { skippedDocuments: 1 }));
+    const { user } = setup(onRestore);
+
+    await restoreAgain(user);
+    const status = await screen.findByText(
+      '2 groups are back on this device. One group in this backup couldn’t be read and was left out. One personal Document in this backup couldn’t be read and was left out.',
+    );
+    expect(status.closest('[role="status"]')).toHaveClass('restore-status');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(await axeViolations()).toEqual([]);
+
+    await restoreAgain(user);
+    expect(
+      inStatus(
+        await screen.findByText(
+          '1 group is back on this device. 2 personal Documents in this backup couldn’t be read and were left out.',
+        ),
+      ),
+    ).not.toBeNull();
+
+    // With no group in it, the backup says so before what it left out.
+    await restoreAgain(user);
+    expect(
+      inStatus(
+        await screen.findByText(
+          'This backup holds no groups. One personal Document in this backup couldn’t be read and was left out.',
+        ),
+      ),
+    ).not.toBeNull();
   });
 
   it('restores once when Restore is tapped again while it restores and the backup doesn’t open (#193)', async () => {

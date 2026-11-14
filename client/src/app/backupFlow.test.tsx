@@ -355,3 +355,44 @@ describe('a backup file with a group entry that doesn’t check out (#336)', () 
     expect(await phone.services.store.listPersonal()).toEqual([statement]);
   });
 });
+
+/**
+ * `file` with `document` put into its personal Documents first, sealed again
+ * under the same passphrase: a personal Document that doesn't check out (#351).
+ */
+async function withDocument(file: File, document: unknown): Promise<File> {
+  const plaintext = await openBackup(new Uint8Array(await file.arrayBuffer()), PASSPHRASE);
+  const snapshot = JSON.parse(text(plaintext)) as { personal: unknown[] };
+  const personal = [document, ...snapshot.personal];
+  const sealed = await sealBackup(utf8(JSON.stringify({ ...snapshot, personal })), PASSPHRASE);
+  return new File([sealed], file.name);
+}
+
+describe('a backup file with a personal Document that doesn’t check out (#351)', () => {
+  it('brings back every group and every other Document from Start, and says one was left out', async () => {
+    const { fake, ana } = await anaAndBen();
+    const statement = {
+      id: 'U3RhdGVtZW50IGlkIDM1MQ',
+      title: 'What I stand for',
+      text: 'I show up for my neighbors.\n',
+      createdAt: 1_762_000_400_000,
+      updatedAt: 1_762_000_500_000,
+    };
+    await ana.services.store.savePersonal(statement);
+    const saved = await saveFrom(ana, 'a');
+    for (const done of mounted.splice(0)) done.unmount();
+    const file = await withDocument(saved, { ...statement, id: 'UGxhbnRlZCBpZCAzNTE', title: '' });
+    const phone = await testDevice(fake, 'ana-phone');
+    opened.push(phone);
+
+    const start = await restoreOn(
+      phone,
+      'p',
+      file,
+      '1 group is back on this device. One personal Document in this backup couldn’t be read and was left out.',
+    );
+
+    expect(await start.findByRole('link', { name: /Riverside Tenants/ })).toBeVisible();
+    expect(await phone.services.store.listPersonal()).toEqual([statement]);
+  });
+});

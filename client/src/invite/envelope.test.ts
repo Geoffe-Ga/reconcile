@@ -20,6 +20,7 @@ import {
   ENTRY_HEADER_BYTES,
   type Envelope,
   EXCERPT_MAX,
+  MAX_COALITIONS,
   NAME_MAX,
   openEnvelope,
   packEntries,
@@ -49,6 +50,7 @@ function envelope(entries: readonly LogRecord[]): Envelope {
     token: TOKEN,
     entries,
     cleared: [],
+    coalitions: [],
   };
 }
 
@@ -505,6 +507,112 @@ describe('sealEnvelope and openEnvelope', () => {
       );
       expect(openEnvelope(xchachaSeal, channel, forged)).toBeNull();
     }
+  });
+});
+
+describe('a group’s coalitions in its invite (#279)', () => {
+  const channel = inviteChannelOf(newInviteSeed());
+  const group = [entry(1, 900), entry(2, 900)];
+  const eastside = { secret: newGroupSecret(), entries: [entry(3, 40_000), entry(7, 40_000)] };
+  const metro = { secret: newGroupSecret(), entries: [entry(4, 500)] };
+  const sent = { ...envelope(group), coalitions: [eastside, metro] };
+  const blobs = sealEnvelope(xchachaSeal, channel, sent);
+
+  /** The header `blobs` carry, as JSON. */
+  function headerOf(sealed: readonly Uint8Array[]): Record<string, unknown> {
+    const plain = xchachaSeal.open(channel.mailbox, channel.key, sealed[0] ?? new Uint8Array());
+    return JSON.parse(new TextDecoder().decode(plain ?? new Uint8Array())) as Record<
+      string,
+      unknown
+    >;
+  }
+
+  /** `header` and `chunks`, each sealed under the channel, as an inviter would post them. */
+  function forged(header: unknown, chunks: readonly Uint8Array[] = []): Uint8Array[] {
+    return [bytes(JSON.stringify(header)), ...chunks].map((plain) =>
+      xchachaSeal.seal(channel.mailbox, channel.key, plain),
+    );
+  }
+
+  it('carries each coalition’s log after the group’s, under its secret, and reads every one back', () => {
+    const counts = [group, eastside.entries, metro.entries].map((log) => packEntries(log).length);
+    expect(counts).toEqual([1, 2, 1]);
+    expect(blobs).toHaveLength(1 + 4);
+    expect(headerOf(blobs)).toMatchObject({
+      chunkCount: 1,
+      coalitions: [
+        { secret: base64url(eastside.secret), chunkCount: 2 },
+        { secret: base64url(metro.secret), chunkCount: 1 },
+      ],
+    });
+    const opened = openEnvelope(xchachaSeal, channel, blobs);
+    expect(opened?.entries).toEqual(group);
+    expect(opened?.coalitions).toEqual([
+      { secret: Uint8Array.from(eastside.secret), entries: eastside.entries },
+      { secret: Uint8Array.from(metro.secret), entries: metro.entries },
+    ]);
+  });
+
+  it('writes no coalitions for a group that reaches none, so its invite is as it was', () => {
+    const plain = sealEnvelope(xchachaSeal, channel, envelope(group));
+    expect(headerOf(plain)).not.toHaveProperty('coalitions');
+    expect(openEnvelope(xchachaSeal, channel, plain)?.coalitions).toEqual([]);
+  });
+
+  it('leaves out a coalition whose log is empty, and carries at most 32', () => {
+    const many = Array.from({ length: MAX_COALITIONS + 3 }, (_, i) => ({
+      secret: newGroupSecret(),
+      entries: [entry(10 + i, 50)],
+    }));
+    const empty = { secret: newGroupSecret(), entries: [] };
+    const opened = roundTrip({ ...envelope(group), coalitions: [empty, ...many] });
+    expect(MAX_COALITIONS).toBe(32);
+    expect(opened?.coalitions.map((c) => base64url(c.secret))).toEqual(
+      many.slice(0, MAX_COALITIONS).map((c) => base64url(c.secret)),
+    );
+  });
+
+  it('refuses a coalition chunk missing or extra', () => {
+    expect(openEnvelope(xchachaSeal, channel, blobs.slice(0, -1))).toBeNull();
+    expect(openEnvelope(xchachaSeal, channel, [...blobs, blobs[1] ?? new Uint8Array()])).toBeNull();
+  });
+
+  it('refuses a list that’s empty, too long or repeats a coalition, or a secret or count that’s wrong', () => {
+    const chunks = [...packEntries(group), ...packEntries(metro.entries)];
+    const one = { secret: base64url(metro.secret), chunkCount: 1 };
+    const base = { ...headerJson(), chunkCount: 1 };
+    // The control: the same blobs with a well-formed list open.
+    expect(openEnvelope(xchachaSeal, channel, forged({ ...base, coalitions: [one] }))).toBeNull();
+    expect(
+      openEnvelope(xchachaSeal, channel, forged({ ...base, coalitions: [one] }, chunks)),
+    ).not.toBeNull();
+    const tooMany = Array.from({ length: MAX_COALITIONS + 1 }, () => ({
+      secret: base64url(newGroupSecret()),
+      chunkCount: 1,
+    }));
+    for (const coalitions of [
+      [],
+      tooMany,
+      [one, one],
+      [{ ...one, secret: base64url(new Uint8Array(31)) }],
+      [{ ...one, chunkCount: 0 }],
+      [{ ...one, chunkCount: 1.5 }],
+      ['not a coalition'],
+      'not a list',
+    ]) {
+      expect(decodeHeader(bytes(JSON.stringify({ ...base, coalitions })))).toBeNull();
+    }
+  });
+
+  it('refuses a coalition entry marked kept, since a coalition’s log keeps no result', () => {
+    const header = {
+      ...headerJson(),
+      coalitions: [{ secret: base64url(metro.secret), chunkCount: 1 }],
+    };
+    const marked = packEntries([{ ...entry(4, 500), kept: true }]);
+    expect(
+      openEnvelope(xchachaSeal, channel, forged(header, [...packEntries(group), ...marked])),
+    ).toBeNull();
   });
 });
 

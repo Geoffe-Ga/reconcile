@@ -14,14 +14,20 @@ const LOCALE = 'en-GB';
 const count = (n: number): string => n.toLocaleString(LOCALE);
 
 /**
- * What a restore or a link says of the group entries it left out because
- * they didn't check out (#336), `where` they were, or null for none.
+ * What a restore or a link says of the group entries (#336) and personal
+ * Documents (#351) it left out because they didn't check out, `where` they
+ * were: a sentence for each kind it left any of, groups first.
  */
-function leftOut(skipped: number, where: string): string | null {
-  if (skipped === 0) return null;
-  return skipped === 1
-    ? `One group ${where} couldn’t be read and was left out.`
-    : `${count(skipped)} groups ${where} couldn’t be read and were left out.`;
+function leftOut(skipped: number, skippedDocuments: number, where: string): string[] {
+  const groups =
+    skipped === 1
+      ? `One group ${where} couldn’t be read and was left out.`
+      : `${count(skipped)} groups ${where} couldn’t be read and were left out.`;
+  const documents =
+    skippedDocuments === 1
+      ? `One personal Document ${where} couldn’t be read and was left out.`
+      : `${count(skippedDocuments)} personal Documents ${where} couldn’t be read and were left out.`;
+  return [...(skipped === 0 ? [] : [groups]), ...(skippedDocuments === 0 ? [] : [documents])];
 }
 
 /** What a result says once a device has deleted its ballots: by expiry (#111), or in an archive (#108). */
@@ -1651,17 +1657,19 @@ export const messages = {
     submit: 'Restore',
     restoring: 'Opening your backup…',
     /**
-     * How many groups came back, then how many group entries didn't check out
-     * and were left out (#336), when any were: only that, when none came back.
+     * How many groups came back, then how many group entries (#336) and
+     * personal Documents (#351) didn't check out and were left out, when any
+     * were. When no group came back: what it left out of the groups, or else
+     * that it holds none, then any Documents it left out.
      */
-    restored: (groups: number, skipped: number) => {
-      const left = leftOut(skipped, 'in this backup');
-      if (groups === 0) return left ?? 'This backup holds no groups.';
+    restored: (groups: number, skipped: number, skippedDocuments: number) => {
+      const left = leftOut(skipped, skippedDocuments, 'in this backup');
       const back =
         groups === 1
           ? '1 group is back on this device.'
           : `${count(groups)} groups are back on this device.`;
-      return left === null ? back : `${back} ${left}`;
+      const lead = groups === 0 ? (skipped === 0 ? 'This backup holds no groups.' : null) : back;
+      return [...(lead === null ? [] : [lead]), ...left].join(' ');
     },
     /**
      * After a restore from a file saved before #98, which holds no encryption
@@ -1738,14 +1746,16 @@ export const messages = {
     waitingOther: 'Waiting for your other device…',
     check: 'Check that your other device shows the same number, then confirm there.',
     cancel: 'Cancel',
-    /** How many groups the device now has, then how many from the bundle were left out (#336). */
-    linked: (groups: number, skipped: number) => {
+    /**
+     * How many groups the device now has, then how many group entries (#336)
+     * and personal Documents (#351) from the bundle were left out.
+     */
+    linked: (groups: number, skipped: number, skippedDocuments: number) => {
       const now =
         groups === 1
           ? 'Linked. This device now has 1 group.'
           : `Linked. This device now has ${count(groups)} groups.`;
-      const left = leftOut(skipped, 'from your other device');
-      return left === null ? now : `${now} ${left}`;
+      return [now, ...leftOut(skipped, skippedDocuments, 'from your other device')].join(' ');
     },
     mismatch: 'That code didn’t match. Start again on your other device.',
     damaged: 'Your groups didn’t arrive in one piece. Start again on your other device.',
@@ -1829,12 +1839,33 @@ export const messages = {
     blocked: 'The code couldn’t be shared or copied. Select it and copy it instead.',
     /** What Share sends beside the code; the app's address goes with it. */
     message: 'My Reconcile recovery code:',
-    check: 'Send this code to your recovery contacts, then call them and read them this number.',
+    check: 'Send this code to your recovery contacts, then call them and read them both numbers.',
+    firstNumber: 'First number',
+    secondNumber: 'Second number',
+    /** Under the numbers (#398): why the second one matters, in plain words. */
+    numbersNote:
+      'Only this device shows the second number. A share that comes without it is left out.',
     wait: 'Once a contact approves, their device waits 72 hours, then sends their share here. If you still have a device, it can cancel. Come back to this page: your code stays the same.',
     waiting: 'Waiting for your contacts.',
     arrived: (shares: number, needed: number) =>
       `${count(shares)} of ${count(needed)} shares have arrived.`,
+    /** Shares that came with another second number, left out (#398). */
+    mismatched: (n: number) =>
+      n === 1
+        ? 'A share came with a different second number, so it was left out. Call your contacts, check the second number with them, and ask them to send their share again.'
+        : `${count(n)} shares came with a different second number, so they were left out. Call your contacts, check the second number with them, and ask them to send their share again.`,
     unreachable: 'Can’t reach the relay right now. Still trying.',
+    /** "Are these your groups?" (#398): nothing is restored until the person says yes. */
+    foundHeading: 'Are these your groups?',
+    foundLede:
+      'Your contacts’ shares opened a backup with these groups. Restore it only if they’re yours.',
+    foundNone: 'This backup holds no groups.',
+    yes: 'Yes, restore them',
+    no: 'No, they aren’t mine',
+    restoring: 'Restoring…',
+    restoreFailed: 'These groups couldn’t be restored. Try again.',
+    declined:
+      'Nothing was restored. Someone else may have your recovery code. Stop recovering, start again for a new code, and call each contact as you send it.',
     stop: 'Stop recovering',
     stopNote: 'Stopping forgets this code, so no share sent to it can be read.',
   },
@@ -1854,10 +1885,14 @@ export const messages = {
     /** "Call <name> or meet them. Make sure it's really them." around the name. */
     callBefore: 'Call',
     callAfter: 'or meet them. Make sure it’s really them.',
-    numberLabel: 'The number they read out',
+    numberLabel: 'The first number they read out',
     numberHint: 'Six digits, from their new device.',
     wrongNumber:
       'That number doesn’t match this code. Check it’s the code they sent, and ask them to read the number again.',
+    /** The second number (#398), which their share goes with. */
+    secondLabel: 'The second number they read out',
+    secondHint: 'Six more digits, under the first.',
+    badSecond: 'The second number is six digits. Ask them to read it again.',
     approve: 'Approve',
     approving: 'Approving…',
     failed: 'This couldn’t be approved. Try again.',
@@ -1869,6 +1904,18 @@ export const messages = {
     holdingSoon: '’s share. The 72 hours start once the relay has your approval.',
     readyAfter: '’s share goes to their new device the next time Reconcile syncs.',
     sentAfter: '’s share went to their new device.',
+    /** "<name>'s share went to their new device with the second number 966 043." (#398) */
+    sentWith: (number: string) =>
+      `’s share went to their new device with the second number ${number}.`,
+    /** Sending a share again with a corrected second number (#398). */
+    resendOpen: 'Send it again with another number',
+    resendHint:
+      'If they read a different second number, type it here. Their device leaves out a share with the wrong one.',
+    resend: 'Send again',
+    resending: 'Sending…',
+    resent: 'Sent again.',
+    resendFailed: 'This couldn’t be sent again. Try again.',
+    resendCancel: 'Cancel',
     stoppedAfter: '’s share stays with you: this recovery was cancelled.',
     another: 'Help someone else',
     settings: 'Settings',

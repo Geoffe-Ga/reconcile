@@ -3,9 +3,11 @@
  * docs/spec/phase-1-spec.md §4, Chat bot), through the sync loop: devices on
  * one fake relay, posting to one fake Discord webhook (src/test/fakeDiscord.ts)
  * that answers as a forum channel or a text channel would, so nothing reaches
- * the network. With a forum, a Proposal's first notice opens a thread named
- * by its number, its open claimant's device records the thread's link once,
- * and its later notices go into the thread, the result as the concluded line.
+ * the network. With a forum, a Proposal's first notice that lands opens a
+ * thread named by its number, the device that won that notice's claim records
+ * the thread's link once (#245: a later notice's, when the opening never
+ * landed), and its later notices go into the thread, the result as the
+ * concluded line.
  * With a text channel, the device falls back once and posts as #119 does. No
  * thread name or post carries a title, a name or any other word of the group.
  */
@@ -228,7 +230,7 @@ describe('a forum channel’s webhook', () => {
     });
   });
 
-  it('opens a thread for the vote that turned the bot on, whose result is its only post, and records none, as nobody claimed its opening', async () => {
+  it('opens a thread for the vote that turned the bot on, whose result is its only post, and its result claimant records it, though nobody claimed its opening (#245)', async () => {
     const fake = createFakeRelay({ minute: START });
     fake.discord.channel = 'forum';
     const { groupId, devices } = await members(fake, ['Ana']);
@@ -247,10 +249,64 @@ describe('a forum channel’s webhook', () => {
     await say(ana, groupId, { type: 'vote', body: { proposal: on, scores: { [on]: 4 } } });
     await syncRounds(devices);
 
+    const thread = String(fake.discord.threads.at(-1));
     expect(requests(fake)).toEqual([
       { sent: `POST ${WEBHOOK}?wait=true`, body: body(NOTICES.result, 'Proposal 1 in Reconcile') },
+      { sent: `GET ${WEBHOOK}`, body: null },
     ]);
-    expect((await threadRecords(ana, groupId)).kept).toEqual([]);
+    const { kept, logged } = await threadRecords(ana, groupId, on);
+    expect(kept).toEqual([
+      expect.objectContaining({
+        proposal: on,
+        url: `https://discord.com/channels/${FAKE_GUILD}/${thread}`,
+      }),
+    ]);
+    expect(logged).toBe(1);
+  });
+
+  it('lets the closing claimant record the thread when the opening post never landed, so the result goes into it: one thread, not two (#245)', async () => {
+    const { fake, groupId, devices, founder } = await botOnWith('forum');
+    const threads = fake.discord.threads.length;
+    // Discord can't be reached while the opening is posted, and a post is never retried.
+    fake.discord.offline = true;
+    const proposal = await proposeCanary(fake, founder, groupId);
+    await syncRounds(devices);
+    fake.discord.offline = false;
+    expect(fake.discord.threads).toHaveLength(threads);
+    // The opening was due, claimed and tried, and never landed.
+    expect(fake.discord.requests.filter((r) => r.method === 'POST').map((r) => r.status)).toEqual([
+      null,
+    ]);
+
+    // Ben's device syncs first as the vote's last day starts, so another member wins its claim.
+    fake.minute = DEADLINE - DAY;
+    await syncRounds([...devices].reverse());
+    fake.minute = DEADLINE;
+    await syncRounds(devices);
+    const claims = (await stateOn(founder, groupId)).chatPosts.filter(
+      (claim) => claim.proposal === proposal,
+    );
+    const [open, closing] = claims;
+    expect(claims.map((claim) => claim.moment)).toEqual(['open', 'closing', 'result']);
+    expect(closing?.by).not.toBe(open?.by);
+
+    expect(fake.discord.threads).toHaveLength(threads + 1);
+    const thread = String(fake.discord.threads.at(-1));
+    const posts = requests(fake).filter((request) => request.sent.startsWith('POST'));
+    expect(posts.slice(-2)).toEqual([
+      { sent: `POST ${WEBHOOK}?wait=true`, body: body(NOTICES.closing, 'Proposal 3 in Reconcile') },
+      { sent: `POST ${WEBHOOK}?thread_id=${thread}`, body: body(NOTICES.concluded) },
+    ]);
+    for (const device of devices) {
+      const { kept, logged } = await threadRecords(device, groupId, proposal);
+      expect(kept.filter((t) => t.proposal === proposal)).toEqual([
+        expect.objectContaining({
+          proposal,
+          url: `https://discord.com/channels/${FAKE_GUILD}/${thread}`,
+        }),
+      ]);
+      expect(logged).toBe(1);
+    }
   });
 
   it('puts nothing of the group in a thread name or a post: only the number and fixed text', async () => {

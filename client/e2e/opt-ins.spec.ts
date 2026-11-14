@@ -11,12 +11,15 @@
  * deploy CSP, and the fixture answers it as a forum channel's webhook would,
  * so nothing reaches Discord. The post opens the vote's thread by its number
  * alone (#123) and carries the fixed line and the app's address, with no
- * cookie or referrer, and after the steward's narrowing nothing more goes.
+ * cookie or referrer. The device that posted it then reads the webhook's
+ * server and channel once, to record the thread its result opened (#245),
+ * and after the steward's narrowing nothing more goes.
  */
 import type { Page } from '@playwright/test';
 
 import {
   acceptNotice,
+  type DiscordRequest,
   expect,
   expectAccessible,
   heading,
@@ -40,6 +43,18 @@ async function fitsWidth(page: Page): Promise<boolean> {
 /** The People list. */
 function people(page: Page) {
   return page.getByRole('region', { name: 'People', exact: true });
+}
+
+/**
+ * Checks that `read` is a read of the webhook's server and channel, as a
+ * device makes to record a thread (#245): a GET of the webhook itself, with
+ * no cookie or referrer.
+ */
+function expectWebhookRead(read: DiscordRequest | undefined): void {
+  expect(read?.method).toBe('GET');
+  expect(read?.url).toBe(WEBHOOK);
+  expect(read?.headers['referer']).toBeUndefined();
+  expect(read?.headers['cookie']).toBeUndefined();
 }
 
 /** The chat bot's card on Group rules. */
@@ -136,8 +151,8 @@ test('the group turns its chat bot on by an entrenched vote, and a steward turns
   });
 
   await test.step('one device posts the result to the webhook, opening its thread, and nothing of the group', async () => {
-    await expect.poll(() => openProfile.discord.length, { timeout: 30_000 }).toBe(1);
-    const [post] = openProfile.discord;
+    await expect.poll(() => openProfile.discord.length, { timeout: 30_000 }).toBe(2);
+    const [post, read] = openProfile.discord;
     expect(post?.method).toBe('POST');
     expect(post?.url).toBe(`${WEBHOOK}?wait=true`);
     expect(post?.body).toEqual({
@@ -149,6 +164,8 @@ test('the group turns its chat bot on by an entrenched vote, and a steward turns
     expect(post?.headers['content-type']).toBe('application/json');
     expect(post?.headers['referer']).toBeUndefined();
     expect(post?.headers['cookie']).toBeUndefined();
+    // Then it reads where the webhook posts, so it can record the thread its result opened (#245).
+    expectWebhookRead(read);
   });
 
   await test.step('Ana, the steward, turns it off now, and Ben reads who did', async () => {
@@ -173,6 +190,6 @@ test('the group turns its chat bot on by an entrenched vote, and a steward turns
     );
     await expectAccessible(ben, 'Group rules on a phone, narrowed');
     // The off-Proposal opened while the bot was narrowed, so no device posts it.
-    expect(openProfile.discord).toHaveLength(1);
+    expect(openProfile.discord).toHaveLength(2);
   });
 });

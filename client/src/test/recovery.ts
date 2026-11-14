@@ -8,8 +8,7 @@ import { joinGroup, lookupInvite, makeInvite } from '../app/actions';
 import { parseInviteLink } from '../app/invite';
 import { fromBase64url } from '../crypto/base64url';
 import { deriveWeekMailboxId, weekOf } from '../crypto/groupKeys';
-import { openRelease, recoveryChannel } from '../crypto/recovery';
-import type { RecoveryShare } from '../crypto/shares';
+import { openRelease, recoveryChannel, type Release } from '../crypto/recovery';
 import { xchachaSeal } from '../crypto/seal';
 import { LEVELS } from '../engine/capabilities';
 import type { Group } from '../store/db';
@@ -141,17 +140,20 @@ export async function recoveryWorld(fake: FakeRelay): Promise<RecoveryWorld> {
   return { ana, ben, cal, dee, devices, groupId, allotment };
 }
 
-/** Every share the request mailbox of `code`'s seed holds, opened with the new device's `secretKey`. */
+/**
+ * Every release the request mailbox of `code`'s seed holds, opened with the
+ * new device's `secretKey`: each share, and the second number it came with (#398).
+ */
 export function releasedShares(
   fake: FakeRelay,
   seed: Uint8Array,
   secretKey: Uint8Array,
-): RecoveryShare[] {
+): Release[] {
   const { mailbox, key } = recoveryChannel(seed);
   return fake.blobs(mailbox).flatMap((blob) => {
     const box = xchachaSeal.open(mailbox, key, blob);
-    const share = box === null ? null : openRelease(secretKey, mailbox, box);
-    return share === null ? [] : [share];
+    const release = box === null ? null : openRelease(secretKey, mailbox, box);
+    return release === null ? [] : [release];
   });
 }
 

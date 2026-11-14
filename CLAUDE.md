@@ -62,7 +62,7 @@ Reconcile can easily turn into a **database of people, their ideologies, and the
 
 **MVP scope comes first:** [ADR-0074](docs/adr/0074-mvp-scope-revised.md) sets each feature's depth, Phase 2 coalitions included, [ADR-0075](docs/adr/0075-safeguards-for-the-revised-mvp.md) adds its safeguards, and [ADR-0073](docs/adr/0073-mvp-scope.md) defers the rest until pilot feedback asks for it. Build to that depth, neither a shell nor the full spec, and don't add edge-case handling a small group can sort out by talking.
 
-**Decisions:** all recorded in ADRs 0001–0076 (0064–0071 came from the four-lenses review, and 0076 covers repo tooling, [docs/spec/four-lenses-review.md](docs/spec/four-lenses-review.md)). [docs/spec/decision-roadmap.md](docs/spec/decision-roadmap.md) is complete, and lists what's deliberately deferred with a trigger:
+**Decisions:** all recorded in ADRs 0001–0077 (0064–0071 came from the four-lenses review, 0076 covers repo tooling, and 0077 covers Discover, [docs/spec/four-lenses-review.md](docs/spec/four-lenses-review.md)). [docs/spec/decision-roadmap.md](docs/spec/decision-roadmap.md) is complete, and lists what's deliberately deferred with a trigger:
 - the eternal core's wording ([ADR-0035](docs/adr/0035-reconcile-group-minimal-eternal-core.md)), before Phase 2
 - the fiscal sponsor ([ADR-0062](docs/adr/0062-entity-and-sponsor-timing.md)), after the pilot
 - the outside security review ([ADR-0058](docs/adr/0058-security-review-on-demand.md)), on demand
@@ -89,7 +89,7 @@ When work depends on one of these, flag it instead of silently picking an answer
 1. **TDD:** a failing test first, then the code.
 2. **`./scripts/check-all.sh` passes.** It runs the checks for the areas the change touches (Python, client, deploy, and the end-to-end loop); `--all` forces every area.
 3. **Pre-commit is clean on the changed files:** `./scripts/precommit-changed.sh`. The commit hook already does this for staged files.
-4. **CI is green.** CI runs only the areas that changed, plus pre-commit on changed files. The full Python matrix (3.11–3.13) runs only for backend changes.
+4. **CI is green.** CI runs only the areas that changed, plus pre-commit on changed files. The full Python matrix (3.11–3.13) runs only for backend changes. `main` runs the full CI nightly and on dispatch, not on each merge.
 5. **The review bot passes.** LGTM is preferred. COMMENTS can merge, but only after every finding is filed as a P0–P3 follow-up issue: file first, then merge. CHANGES_REQUESTED blocks.
 
 **Mutation testing is recommended before a release, not a merge gate.** Run `./scripts/mutation.sh` (Python) and `client/scripts/mutation.sh` (client), or trigger CI's manual mutation job; aim for ≥80%.
@@ -123,6 +123,7 @@ reconcile/
 ├── docs/adr/             # Accepted architecture decisions
 ├── docs/prompts/         # Working prompts (local only, gitignored)
 ├── docs/spec/            # Specifications (phase-1-spec.md feeds spec-decomposition)
+├── docs/spec/phase-1/    # One file per spec section: edit the section's file, not the index phase-1-spec.md
 ├── plans/                # Working implementation plans
 ├── client/               # TypeScript PWA (see client/CLAUDE.md)
 ├── reconcile/            # Python package: the blind mailbox relay (reconcile/relay/, ADR-0028)
@@ -254,3 +255,11 @@ Give each subagent:
 3. **Privacy impact:** what personal, affiliation, or voting data the change touches, checked against the threat model.
 4. **Acceptance criteria:** the gates above pass (`./scripts/check-all.sh` exits 0, coverage ≥90%, mypy strict, security scan clean), public APIs are documented, and an ADR exists if an architectural decision was made.
 5. **Open questions:** any TBD product decision the task depends on, flagged explicitly.
+
+**Run only parallelizable work at once.** A lane is a subagent or session that opens a PR.
+
+- Before giving a lane a task, list the files it will likely change: the issue's named files, plus a quick grep of the code it names.
+- Compare them with the files each unmerged branch changes, pushed or still local: `git diff --name-only $(git merge-base origin/main <head>) <head>`.
+- On any overlap, the task waits. Leave the lane empty instead, even down to one lane: each conflict between in-flight PRs forces a re-push, and every push re-runs CI.
+- Shared files count as overlap: the spec, an ADR that more than one branch amends, and `client/src/engine/`'s `fold.ts`, `event.ts` and `stewards.ts`.
+- If two in-flight branches overlap anyway, sequence them. The later one waits until the earlier one merges, then merges `main` locally and pushes once.

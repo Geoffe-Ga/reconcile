@@ -149,7 +149,7 @@ vim tests/unit/test_my_module.py
 ./scripts/check-all.sh
 
 # 10. (Optional) Run mutation tests before a release
-# This takes several minutes and is automatically run in CI
+# This takes a long time; CI runs it only when dispatched by hand, never nightly
 ./scripts/mutation.sh
 
 # 11. Commit (only if all checks pass)

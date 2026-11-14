@@ -104,3 +104,7 @@ Everything else in ADR-0073's table stays deferred:
 - The backlog grows from 18 to 57 issues. The 18 filed issues stand. New epics build on them: membership and roles, Documents, rules, devices and recovery, privacy hardening, reaching people, and coalitions.
 - The four lenses' warnings about capture and burden still apply. The pilot (ADR-0056) tells us which of these features groups use.
 - ADR-0058's outside security review is still due before groups outside the founder's circle use the app, now covering the restored features too.
+
+## Amendment (2026-11-14): a shelf of single Dispatches
+
+[ADR-0077](0077-discover.md) lifts "no public index" for one thing: single Dispatches a group or coalition votes to show in public. There is still no directory of groups or people.

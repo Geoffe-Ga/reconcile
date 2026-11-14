@@ -427,6 +427,8 @@ describe('makeInvite', () => {
       token: { by: group.me.author, sig: expect.any(String) as string },
       entries: group.log.map((record) => ({ ...record, bytes: Uint8Array.from(record.bytes) })),
       cleared: [],
+      // A group in no coalition carries none (#279).
+      coalitions: [],
     });
     const sig = fromBase64url(envelope?.token.sig ?? '');
     expect(verifyInviteToken(publicKeyOf(group.signingKey), sig, groupId)).toBe(true);
@@ -565,6 +567,7 @@ describe('lookupInvite', () => {
         epoch: 0,
         token: envelopeAt(fake, link)?.token,
         cleared: [],
+        coalitions: [],
         page: {
           records: group.log.map((record) => ({ ...record, bytes: Uint8Array.from(record.bytes) })),
           // The highest seq among the entries: Ana's own base cursor is 0 (#110).
@@ -636,6 +639,7 @@ describe('lookupInvite', () => {
       token: { by: group.me.author, sig: 'A'.repeat(86) },
       entries: [{ seq: 1, received: 1, bytes: utf8('not a record') }],
       cleared: [],
+      coalitions: [],
     });
     for (const blob of forged) await ana.relay.putBlob(channel.mailbox, blob, 1);
 
@@ -1061,6 +1065,7 @@ describe('encryption keys and a new group key (#98)', () => {
       token: { by: held.me.author, sig: 'A'.repeat(86) },
       entries: held.log,
       cleared: [],
+      coalitions: [],
     });
     for (const blob of forged) await ana.relay.putBlob(channel.mailbox, blob, INVITE_TTL_DAYS);
 
@@ -1103,6 +1108,7 @@ describe('encryption keys and a new group key (#98)', () => {
       token: { by: held.me.author, sig: 'A'.repeat(86) },
       entries: log,
       cleared: [],
+      coalitions: [],
     });
     for (const blob of poisoned) await ben.relay.putBlob(channel.mailbox, blob, INVITE_TTL_DAYS);
 

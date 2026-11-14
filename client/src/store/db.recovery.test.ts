@@ -129,14 +129,15 @@ describe('held shares a group’s home has shown', () => {
 });
 
 describe('the shares this device holds for someone recovering (#118)', () => {
-  const HOLD = {
+  /** A hold without its code and second number, as one that has ended keeps it. */
+  const BARE = {
     alert: 'alert-id',
     person: 'author-ben',
     split: 'split-of-the-hold',
     tag: 'tag-of-the-hold',
-    code: 'RR1.the-code',
     approvedAt: 1_762_650_000_000,
   };
+  const HOLD = { ...BARE, code: 'RR1.the-code', number: '123456' };
 
   it('queues the signed alert and keeps the hold in one change, and tells listeners', async () => {
     const store = await openStore();
@@ -153,7 +154,7 @@ describe('the shares this device holds for someone recovering (#118)', () => {
     expect(heard.mock.calls).toEqual([['group-1']]);
   });
 
-  it('ends a hold once, dropping its code, and leaves the others alone', async () => {
+  it('ends a hold once, a sent one keeping its code and number, and leaves the others alone', async () => {
     const store = await openStore();
     await keepGroup(store, 'group-1');
     await store.holdShare('group-1', Uint8Array.from([1]), HOLD);
@@ -163,12 +164,53 @@ describe('the shares this device holds for someone recovering (#118)', () => {
     await store.endHold('group-1', 'alert-id', { kind: 'stopped', at: 6 });
     await store.endHold('group-1', 'no-such-alert', { kind: 'stopped', at: 7 });
 
-    const holds = (await store.getGroup('group-1'))?.recoveryHolds;
-    expect(holds?.[0]).not.toHaveProperty('code');
-    expect(holds).toEqual([
-      { ...HOLD, code: undefined, ended: { kind: 'sent', at: 5 } },
+    // A sent hold keeps them, so the contact can send again with a corrected number (#398).
+    expect((await store.getGroup('group-1'))?.recoveryHolds).toEqual([
+      { ...HOLD, ended: { kind: 'sent', at: 5 } },
       { ...HOLD, alert: 'other-alert' },
     ]);
+  });
+
+  it('drops a stopped hold’s code and number at once (#398)', async () => {
+    const store = await openStore();
+    await keepGroup(store, 'group-1');
+    await store.holdShare('group-1', Uint8Array.from([1]), HOLD);
+
+    await store.endHold('group-1', 'alert-id', { kind: 'stopped', at: 6 });
+
+    const [hold] = (await store.getGroup('group-1'))?.recoveryHolds ?? [];
+    expect(hold).not.toHaveProperty('code');
+    expect(hold).not.toHaveProperty('number');
+    expect(hold).toEqual({ ...BARE, ended: { kind: 'stopped', at: 6 } });
+  });
+
+  it('takes a corrected number for a sent hold only while it has its code, then forgets both (#398)', async () => {
+    const store = await openStore();
+    await keepGroup(store, 'group-1');
+    await store.holdShare('group-1', Uint8Array.from([1]), HOLD);
+    await store.holdShare('group-1', Uint8Array.from([2]), { ...HOLD, alert: 'open-alert' });
+    await store.endHold('group-1', 'alert-id', { kind: 'sent', at: 5 });
+    const heard = vi.fn<(groupId: string) => void>();
+    store.subscribe(heard);
+
+    await store.setHoldNumber('group-1', 'alert-id', '654321');
+    // A hold still waiting takes no number this way.
+    await store.setHoldNumber('group-1', 'open-alert', '654321');
+    expect((await store.getGroup('group-1'))?.recoveryHolds?.map((h) => h.number)).toEqual([
+      '654321',
+      '123456',
+    ]);
+
+    await store.forgetHoldCode('group-1', 'alert-id');
+    await store.forgetHoldCode('group-1', 'open-alert');
+    await store.setHoldNumber('group-1', 'alert-id', '111111');
+    const [sent, open] = (await store.getGroup('group-1'))?.recoveryHolds ?? [];
+    expect(sent).toEqual({ ...BARE, ended: { kind: 'sent', at: 5 } });
+    expect(sent).not.toHaveProperty('code');
+    expect(sent).not.toHaveProperty('number');
+    // A hold still waiting keeps its code: only an ended one forgets it.
+    expect(open).toEqual({ ...HOLD, alert: 'open-alert' });
+    expect(heard).toHaveBeenCalledWith('group-1');
   });
 
   it('refuses a group that is leaving or read-only, queuing and keeping nothing', async () => {

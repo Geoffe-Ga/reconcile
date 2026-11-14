@@ -23,6 +23,13 @@
  *   the header's list of ids, which grew by one per cleared Proposal until a
  *   long-lived group's header could outgrow a blob (#269). A header that
  *   still has `cleared`, from an invite made before #269, reads as damaged.
+ * - After the group's chunks come those of each coalition the group reaches
+ *   (#279), at most {@link MAX_COALITIONS}, in the order the header's
+ *   `coalitions` lists them, `[{secret, chunkCount}]`, each a coalition's
+ *   whole relay-accepted log, none marked kept. The relay keeps a coalition's
+ *   mailboxes 30 days, so this is how a newcomer reads one that formed
+ *   before then (ADR-0057's 2026-11-13 amendment). A group that reaches none
+ *   writes no `coalitions`, so its invite is as it was.
  *
  * Opening is all or nothing: an empty mailbox, a missing or extra blob, a blob
  * that won't open, or a header or chunk that doesn't parse all read as one
@@ -50,6 +57,14 @@ export interface InvitePreview {
   readonly excerpt: string;
 }
 
+/** A coalition's log an invite carries (#279): its secret, and its relay-accepted log in seq order. */
+export interface CarriedCoalition {
+  /** The coalition's 32-byte secret, from which its entry id and mailboxes derive. */
+  readonly secret: Uint8Array;
+  /** Its relay-accepted log, in seq order, never its outbox. */
+  readonly entries: readonly LogRecord[];
+}
+
 /** What an envelope carries. */
 export interface Envelope {
   /** The 32-byte group secret, from which the joiner derives the group's weekly mailboxes and seal key. */
@@ -72,12 +87,27 @@ export interface Envelope {
    * changes no fold.
    */
   readonly cleared: readonly string[];
+  /**
+   * The log of each coalition the group reaches (#279), in the order its
+   * chunks follow the group's: none for a group in no coalition. Sealing
+   * leaves out one whose log is empty and any past {@link MAX_COALITIONS}.
+   */
+  readonly coalitions: readonly CarriedCoalition[];
+}
+
+/** One coalition as an invite's header names it (#279): its secret, and how many chunks hold its log. */
+export interface CoalitionChunks {
+  readonly secret: Uint8Array;
+  /** At least 1: a coalition with no log goes uncarried. */
+  readonly chunkCount: number;
 }
 
 /** An envelope's first blob: everything but the entries and their marks, and how many chunks hold them. */
-export interface InviteHeader extends Omit<Envelope, 'entries' | 'cleared'> {
-  /** How many chunk blobs follow the header: at least 1, since the log holds genesis. */
+export interface InviteHeader extends Omit<Envelope, 'entries' | 'cleared' | 'coalitions'> {
+  /** How many chunk blobs of the group's log follow the header: at least 1, since the log holds genesis. */
   readonly chunkCount: number;
+  /** The coalitions whose chunks follow the group's (#279), the header's `coalitions`; absent for none. */
+  readonly coalitionChunks?: readonly CoalitionChunks[];
 }
 
 /** A log entry as a chunk carries it: marked `kept` when it's the result a cleared Proposal keeps (#269). */
@@ -92,6 +122,13 @@ export interface ChunkEntry extends LogRecord {
  * days" stays true (spec §2, ADR-0073). The relay's TTL is the only expiry.
  */
 export const INVITE_TTL_DAYS = 1;
+
+/**
+ * The most coalitions an invite carries (#279): far more than nesting three
+ * levels deep gives a pilot group, and few enough that the header stays a
+ * few kilobytes. A header that lists more reads as damaged.
+ */
+export const MAX_COALITIONS = 32;
 
 /** The longest group name, inviter name or Document title a preview carries, in code points. */
 export const NAME_MAX = 120;
@@ -214,9 +251,13 @@ export function unpackChunk(chunk: Uint8Array): ChunkEntry[] | null {
   return entries.length > 0 ? entries : null;
 }
 
-/** The header's JSON bytes, each preview field cut to its limit. */
+/** The header's JSON bytes, each preview field cut to its limit, and `coalitions` only when there are some. */
 export function encodeHeader(header: InviteHeader): Uint8Array {
-  const { groupSecret, epoch, preview, token, chunkCount } = header;
+  const { groupSecret, epoch, preview, token, chunkCount, coalitionChunks = [] } = header;
+  const carried = coalitionChunks.map((coalition) => ({
+    secret: base64url(coalition.secret),
+    chunkCount: coalition.chunkCount,
+  }));
   return encoder.encode(
     JSON.stringify({
       groupSecret: base64url(groupSecret),
@@ -229,6 +270,7 @@ export function encodeHeader(header: InviteHeader): Uint8Array {
       },
       token: { by: token.by, sig: token.sig },
       chunkCount,
+      ...(carried.length === 0 ? {} : { coalitions: carried }),
     }),
   );
 }
@@ -295,11 +337,40 @@ export function decodeHeader(bytes: Uint8Array): InviteHeader | null {
   const preview = parsePreview(raw.preview);
   const token = parseToken(raw.token);
   const { chunkCount, epoch } = raw;
+  const coalitionChunks = parseCoalitions(raw.coalitions);
   if (groupSecret === null || preview === null || token === null || !isEpoch(epoch)) return null;
-  if (!Number.isSafeInteger(chunkCount) || typeof chunkCount !== 'number' || chunkCount < 1) {
-    return null;
+  if (!isCount(chunkCount) || coalitionChunks === null) return null;
+  const header = { groupSecret, epoch, preview, token, chunkCount };
+  return coalitionChunks.length === 0 ? header : { ...header, coalitionChunks };
+}
+
+/** Whether `value` is a count of chunks: a whole number, 1 or more. */
+function isCount(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 1;
+}
+
+/**
+ * The header's `coalitions` (#279): none when absent, or null unless it lists
+ * 1 to {@link MAX_COALITIONS} distinct coalitions, each a secret and a count.
+ */
+function parseCoalitions(value: unknown): readonly CoalitionChunks[] | null {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length < 1 || value.length > MAX_COALITIONS) return null;
+  const parsed: CoalitionChunks[] = [];
+  for (const each of value) {
+    const coalition = isObject(each) ? parseCoalition(each) : null;
+    if (coalition === null) return null;
+    parsed.push(coalition);
   }
-  return { groupSecret, epoch, preview, token, chunkCount };
+  const distinct = new Set(parsed.map((coalition) => base64url(coalition.secret)));
+  return distinct.size === parsed.length ? parsed : null;
+}
+
+/** One coalition the header names: its secret and chunk count, or null. */
+function parseCoalition(value: Json): CoalitionChunks | null {
+  const secret = parseSecret(value.secret);
+  const { chunkCount } = value;
+  return secret === null || !isCount(chunkCount) ? null : { secret, chunkCount };
 }
 
 /** Whether `value` is an epoch: a whole number a u32 holds. */
@@ -346,15 +417,27 @@ function logRecordOf({ seq, received, bytes, epoch }: ChunkEntry): LogRecord {
   return { seq, received, bytes, ...(epoch === undefined ? {} : { epoch }) };
 }
 
-/** The envelope's blobs, in the order they're posted: the header, then each chunk. */
+/**
+ * The envelope's blobs, in the order they're posted: the header, then each
+ * chunk of the group's log, then each of every coalition's it carries (#279).
+ */
 export function sealEnvelope(
   seal: Seal,
   channel: InviteChannel,
   envelope: Envelope,
 ): Uint8Array<ArrayBuffer>[] {
   const chunks = packEntries(markKept(envelope.entries, envelope.cleared));
-  const header = encodeHeader({ ...envelope, chunkCount: chunks.length });
-  return sealChunked(seal, channel, header, chunks);
+  const carried = envelope.coalitions
+    .map((coalition) => ({ secret: coalition.secret, chunks: packEntries(coalition.entries) }))
+    .filter((coalition) => coalition.chunks.length > 0)
+    .slice(0, MAX_COALITIONS);
+  const coalitionChunks = carried.map(({ secret, chunks: own }) => ({
+    secret,
+    chunkCount: own.length,
+  }));
+  const header = encodeHeader({ ...envelope, chunkCount: chunks.length, coalitionChunks });
+  const all = [...chunks, ...carried.flatMap((coalition) => coalition.chunks)];
+  return sealChunked(seal, channel, header, all);
 }
 
 /**
@@ -382,10 +465,23 @@ export function sealChunked(
  */
 export function openChunked<Header extends { readonly chunkCount: number }>(
   seal: Seal,
-  { mailbox, key }: InviteChannel,
+  channel: InviteChannel,
   blobs: readonly Uint8Array[],
   decode: (bytes: Uint8Array) => Header | null,
 ): { readonly header: Header; readonly entries: ChunkEntry[] } | null {
+  const opened = openBlobs(seal, channel, blobs, decode);
+  if (opened === null || opened.header.chunkCount !== opened.chunks.length) return null;
+  const entries = unpackChunks(opened.chunks);
+  return entries === null ? null : { header: opened.header, entries };
+}
+
+/** Every blob opened under `channel`, the first decoded as the header, or null when any won't. */
+function openBlobs<Header>(
+  seal: Seal,
+  { mailbox, key }: InviteChannel,
+  blobs: readonly Uint8Array[],
+  decode: (bytes: Uint8Array) => Header | null,
+): { readonly header: Header; readonly chunks: Uint8Array[] } | null {
   const opened: Uint8Array[] = [];
   for (const blob of blobs) {
     const plaintext = seal.open(mailbox, key, blob);
@@ -394,14 +490,18 @@ export function openChunked<Header extends { readonly chunkCount: number }>(
   }
   const [first, ...chunks] = opened;
   const header = first === undefined ? null : decode(first);
-  if (header === null || header.chunkCount !== chunks.length) return null;
+  return header === null ? null : { header, chunks };
+}
+
+/** The entries of `chunks`, in order, or null when any chunk doesn't parse. */
+function unpackChunks(chunks: readonly Uint8Array[]): ChunkEntry[] | null {
   const entries: ChunkEntry[] = [];
   for (const chunk of chunks) {
     const read = unpackChunk(chunk);
     if (read === null) return null;
     entries.push(...read);
   }
-  return { header, entries };
+  return entries;
 }
 
 /**
@@ -417,18 +517,43 @@ export function unmarked(entries: readonly ChunkEntry[]): LogRecord[] | null {
 /**
  * The envelope in `blobs`, the invite mailbox's records in relay order, or
  * null unless every blob opens, the first is a header, and exactly its
- * chunk count of chunks follow, each holding whole entries, every one marked
- * kept a signed result.
+ * chunk counts of chunks follow, the group's and then each coalition's
+ * (#279), each holding whole entries: in the group's, every one marked kept
+ * a signed result; in a coalition's, none marked.
  */
 export function openEnvelope(
   seal: Seal,
   channel: InviteChannel,
   blobs: readonly Uint8Array[],
 ): Envelope | null {
-  const opened = openChunked(seal, channel, blobs, decodeHeader);
+  const opened = openBlobs(seal, channel, blobs, decodeHeader);
   if (opened === null) return null;
-  const cleared = keptProposals(opened.entries);
-  if (cleared === null) return null;
-  const { groupSecret, epoch, preview, token } = opened.header;
-  return { groupSecret, epoch, preview, token, entries: opened.entries.map(logRecordOf), cleared };
+  const { header, chunks } = opened;
+  const named = header.coalitionChunks ?? [];
+  const total = named.reduce((sum, coalition) => sum + coalition.chunkCount, header.chunkCount);
+  if (total !== chunks.length) return null;
+  const entries = unpackChunks(chunks.slice(0, header.chunkCount));
+  const cleared = entries === null ? null : keptProposals(entries);
+  const coalitions = carriedIn(named, chunks.slice(header.chunkCount));
+  if (entries === null || cleared === null || coalitions === null) return null;
+  const { groupSecret, epoch, preview, token } = header;
+  const records = entries.map(logRecordOf);
+  return { groupSecret, epoch, preview, token, entries: records, cleared, coalitions };
+}
+
+/** Each coalition `named` lists, with its log from `chunks` in turn, or null when any is damaged or marked kept. */
+function carriedIn(
+  named: readonly CoalitionChunks[],
+  chunks: readonly Uint8Array[],
+): CarriedCoalition[] | null {
+  const carried: CarriedCoalition[] = [];
+  let at = 0;
+  for (const { secret, chunkCount } of named) {
+    const read = unpackChunks(chunks.slice(at, at + chunkCount));
+    const entries = read === null ? null : unmarked(read);
+    if (entries === null) return null;
+    carried.push({ secret, entries });
+    at += chunkCount;
+  }
+  return carried;
 }

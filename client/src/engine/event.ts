@@ -85,11 +85,18 @@ export interface CoalitionGenesisBody {
   readonly commit?: string;
 }
 
-/** True when a genesis founds a coalition rather than a group (#100). */
+/**
+ * True when a genesis founds a coalition rather than a group (#100): its
+ * `kind` is `"coalition"`, not merely there (#258), so a field of that name
+ * a group's genesis may one day gain never reads it as a coalition's. The
+ * parser takes no genesis with any other `kind` (`parseGenesis`), so a
+ * parsed one reads as it always has.
+ */
 export function isCoalitionGenesis(
   body: GenesisBody | CoalitionGenesisBody,
 ): body is CoalitionGenesisBody {
-  return 'kind' in body;
+  const kind: unknown = 'kind' in body ? body.kind : undefined;
+  return kind === 'coalition';
 }
 
 /**
