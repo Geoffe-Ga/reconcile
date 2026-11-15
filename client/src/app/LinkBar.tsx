@@ -19,8 +19,13 @@
  * covers the page (which the app makes inert), and a tap there empties it.
  * On a touch device an empty, focused bar offers Paste, which reads the
  * clipboard once inside that tap: the only place the app reads it.
+ *
+ * The pill floats over the page, which shows around it. A swipe up the pill
+ * tucks the bar away, emptied, until the app brings it back (a pull down
+ * past the page's top, `barGestures.ts`) or a shortcut does.
  */
 import { type KeyboardEvent, type RefObject, useContext, useEffect, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import {
   Autocomplete,
   AutocompleteStateContext,
@@ -34,6 +39,7 @@ import {
 } from 'react-aria-components';
 
 import { clipboardReader, isTouch, type ReadClipboard } from '../platform/clipboard';
+import { type SwipeAway, useSwipeAway } from './barGestures';
 import { type CodeKind, type LinkKind, linkKind, type OpenableLink } from './linkKind';
 import { messages } from './messages';
 import { type Route, routeHref } from './router';
@@ -59,6 +65,12 @@ export interface LinkBarProps {
   readonly loadRecords?: () => Promise<readonly SearchRecord[]>;
   /** Opens a search result, at its own page. */
   readonly onGo?: (record: SearchRecord) => void;
+  /** Whether the bar is tucked away above the page, out of reach until it comes back; never by default. */
+  readonly tucked?: boolean;
+  /** Asks to tuck the bar away, on a swipe up the pill. */
+  readonly onTuck?: () => void;
+  /** Asks to bring a tucked bar back, on Cmd+L, Ctrl+L or `/`; the bar re-renders before it takes the cursor. */
+  readonly onUntuck?: () => void;
 }
 
 /** Whether `target` takes typing of its own, so `/` belongs to it. */
@@ -75,8 +87,15 @@ function asksForBar(event: globalThis.KeyboardEvent): boolean {
   return event.key === '/' && !isField(event.target);
 }
 
-/** Puts the cursor in `input` on Cmd+L, Ctrl+L or `/`, except while a modal dialog holds focus. */
-function useShortcut(input: RefObject<HTMLInputElement | null>): void {
+/**
+ * Puts the cursor in `input` on Cmd+L, Ctrl+L or `/`, except while a modal
+ * dialog holds focus; `reveal` first brings a tucked bar back.
+ */
+function useShortcut(input: RefObject<HTMLInputElement | null>, reveal: () => void): void {
+  const revealing = useRef(reveal);
+  useEffect(() => {
+    revealing.current = reveal;
+  });
   useEffect(() => {
     const onKeyDown = (event: globalThis.KeyboardEvent): void => {
       if (event.defaultPrevented || !asksForBar(event)) return;
@@ -84,6 +103,7 @@ function useShortcut(input: RefObject<HTMLInputElement | null>): void {
       const field = input.current;
       if (field === null) return;
       event.preventDefault();
+      revealing.current();
       field.focus();
       field.select();
     };
@@ -255,12 +275,14 @@ interface PillProps {
   readonly paste: (() => void) | null;
   readonly onKeyDown: (event: KeyboardEvent) => void;
   readonly onSubmit: () => void;
+  /** A swipe up the pill's handlers. */
+  readonly swipe: Omit<SwipeAway, 'lift'>;
 }
 
 /** The magnifier, the field, and Clear while there's text, or Paste where it's offered. */
-function Pill({ input, empty, paste, onKeyDown, onSubmit }: PillProps) {
+function Pill({ input, empty, paste, onKeyDown, onSubmit, swipe }: PillProps) {
   return (
-    <div className="link-bar-pill">
+    <div className="link-bar-pill" {...swipe}>
       <MagnifierGlyph />
       <SearchField
         aria-label={words.label}
@@ -452,7 +474,7 @@ function resultsOf(view: View | null): readonly SearchResult[] {
 /** The pill, the panel under it while it has focus and text, and the scrim behind them. */
 export function LinkBar(props: LinkBarProps) {
   const { onOpen, onPanelChange, readClipboard = clipboardReader(), touch = isTouch() } = props;
-  const { onGo } = props;
+  const { onGo, tucked = false, onTuck, onUntuck } = props;
   const input = useRef<HTMLInputElement>(null);
   const bar = useRef<HTMLDivElement>(null);
   const [text, setText] = useState('');
@@ -469,7 +491,10 @@ export function LinkBar(props: LinkBarProps) {
     setExpanded(NONE_EXPANDED);
   };
   const paste = usePaste(readClipboard, touch && inside && text === '', input, take);
-  useShortcut(input);
+  useShortcut(input, () => {
+    // The band stops being inert in this render, so the field can take the cursor right after.
+    if (tucked) flushSync(() => onUntuck?.());
+  });
 
   const view = viewOf(inside, pointer, text, records);
   const shown = view !== null;
@@ -521,6 +546,14 @@ export function LinkBar(props: LinkBarProps) {
     if (shelf !== null) setExpanded(new Set([...expanded, shelf]));
     else goTo(resultsOf(view).find((result) => result.record.id === key)?.record);
   };
+  const { lift, ...swipe } = useSwipeAway(() => {
+    setText('');
+    setPointer(null);
+    setExpanded(NONE_EXPANDED);
+    forget();
+    letGo(input.current);
+    onTuck?.();
+  });
   const onSubmit = () => {
     // A row with the keyboard's virtual focus opens through the list; else Enter opens the first.
     if (input.current?.hasAttribute('aria-activedescendant') === true) return;
@@ -531,7 +564,13 @@ export function LinkBar(props: LinkBarProps) {
   };
 
   return (
-    <div className="link-bar-band">
+    <div
+      className="link-bar-band"
+      data-tucked={tucked}
+      data-lifting={lift !== 0}
+      inert={tucked}
+      style={lift === 0 ? undefined : { transform: `translateY(${String(lift)}px)` }}
+    >
       <div ref={bar} role="search" className="link-bar">
         <Autocomplete inputValue={text} onInputChange={take}>
           <Pill
@@ -540,6 +579,7 @@ export function LinkBar(props: LinkBarProps) {
             paste={paste}
             onKeyDown={onKeyDown}
             onSubmit={onSubmit}
+            swipe={swipe}
           />
           <ForgetRow shown={shown} />
           <Overlay

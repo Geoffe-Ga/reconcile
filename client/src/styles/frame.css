@@ -1,19 +1,29 @@
 /*
  * The app's frame (#444, #423; DESIGN.md "Link bar" and "Tab bar"): every
  * screen past first run stands in one column the height of the viewport,
- * with the link bar's band at the top, the page in a region of its own under
- * it, and the tab bar at the bottom on the four pages that are its places.
+ * the page in a region of its own with the link bar floating over its top,
+ * and the tab bar at the bottom on the four pages that are its places.
  *
- * The page scrolls in its own region, never under the bars, as an installed
- * app's does: nothing the page shows ever sits under the pill or the tabs,
- * so a control at an edge is never half covered and a focused one is never
- * hidden (WCAG 2.4.11).
+ * The page shows around the pill as it scrolls under it. It starts below the
+ * pill, and its scroll padding keeps a focused control clear of it, so a
+ * focused one is never hidden (WCAG 2.4.11). Tucked away, the bar leaves the
+ * page the whole height, clear of the notch.
  */
 .app-frame {
+  /* The band's height: its padding and the pill (border-box, so its border is inside). */
+  --link-bar-room: calc(
+    max(var(--space-3), env(safe-area-inset-top, 0px)) + var(--touch) + 4px + var(--space-2)
+  );
+
+  position: relative;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr) auto;
   height: 100vh;
   height: 100dvh;
+}
+
+.app-frame[data-tucked='true'] {
+  --link-bar-room: env(safe-area-inset-top, 0px);
 }
 
 /*
@@ -25,4 +35,13 @@
 .app-page {
   overflow-y: auto;
   overscroll-behavior: contain;
+  padding-top: var(--link-bar-room);
+  scroll-padding-top: var(--link-bar-room);
+  transition: padding-top 200ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-page {
+    transition: none;
+  }
 }

@@ -5,8 +5,9 @@
  * anywhere; Escape empties it, then hands focus back; and on a touch device
  * an empty bar offers Paste, the only place the app reads the clipboard.
  */
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { cardLink } from '../coalition/card';
@@ -18,6 +19,7 @@ import { newRecoveryKeys, recoveryCode } from '../crypto/recovery';
 import { doorLinkOf } from '../door/page';
 import { shareLinkOf } from '../share/shareLink';
 import { axeViolations } from '../test/axe';
+import { SWIPE_AWAY } from './barGestures';
 import { inviteLink } from './invite';
 import { LinkBar, type LinkBarProps } from './LinkBar';
 import type { SearchRecord } from './search';
@@ -481,5 +483,111 @@ describe('LinkBar: search (#445)', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Nothing on this device matches.');
     expect(screen.queryByRole('listbox')).toBeNull();
     expect(await axeViolations()).toEqual([]);
+  });
+});
+
+/** The link bar as the app holds it: tucked away by a swipe, back by a pull or a shortcut. */
+function TuckableBar({ start = false }: { readonly start?: boolean }) {
+  const [tucked, setTucked] = useState(start);
+  return (
+    <>
+      <LinkBar
+        onOpen={vi.fn()}
+        touch={false}
+        tucked={tucked}
+        onTuck={() => {
+          setTucked(true);
+        }}
+        onUntuck={() => {
+          setTucked(false);
+        }}
+      />
+      <main>
+        <h1>A page</h1>
+      </main>
+    </>
+  );
+}
+
+/** The band the pill stands in. */
+function band(): HTMLElement {
+  const element = document.querySelector<HTMLElement>('.link-bar-band');
+  if (element === null) throw new Error('no band');
+  return element;
+}
+
+/** A finger's swipe up on the pill, `by` px. */
+function swipeUp(by: number) {
+  const pill = bar().closest<HTMLElement>('.link-bar-pill');
+  if (pill === null) throw new Error('no pill');
+  fireEvent.pointerDown(pill, { pointerId: 1, pointerType: 'touch', clientX: 0, clientY: 100 });
+  fireEvent.pointerMove(pill, {
+    pointerId: 1,
+    pointerType: 'touch',
+    clientX: 0,
+    clientY: 100 - by,
+  });
+  fireEvent.pointerUp(pill, { pointerId: 1, pointerType: 'touch', clientX: 0, clientY: 100 - by });
+}
+
+describe('LinkBar: tucked away', () => {
+  it('tucks away on a swipe up the pill, emptied and out of reach, its panel gone', async () => {
+    const user = userEvent.setup();
+    render(<TuckableBar />);
+    await user.click(bar());
+    await user.keyboard('allotments');
+    expect(screen.getByRole('status')).toHaveTextContent('Nothing on this device matches.');
+
+    swipeUp(SWIPE_AWAY);
+
+    expect(band()).toHaveAttribute('data-tucked', 'true');
+    expect(band()).toHaveAttribute('inert');
+    expect(bar()).toHaveValue('');
+    expect(bar()).not.toHaveFocus();
+    expect(screen.queryByTestId('link-bar-scrim')).toBeNull();
+  });
+
+  it('stays put on a tap or a short swipe', async () => {
+    const user = userEvent.setup();
+    render(<TuckableBar />);
+    await user.click(bar());
+    swipeUp(SWIPE_AWAY - 1);
+    expect(band()).toHaveAttribute('data-tucked', 'false');
+    expect(band()).not.toHaveAttribute('inert');
+  });
+
+  it('follows the finger up while it swipes', () => {
+    render(<TuckableBar />);
+    const pill = bar().closest<HTMLElement>('.link-bar-pill');
+    if (pill === null) throw new Error('no pill');
+    fireEvent.pointerDown(pill, { pointerId: 1, pointerType: 'touch', clientX: 0, clientY: 100 });
+    fireEvent.pointerMove(pill, { pointerId: 1, pointerType: 'touch', clientX: 0, clientY: 80 });
+    expect(band().style.transform).toBe('translateY(-20px)');
+    fireEvent.pointerUp(pill, { pointerId: 1, pointerType: 'touch', clientX: 0, clientY: 95 });
+    expect(band().style.transform).toBe('');
+  });
+
+  it('comes back on Cmd+L, Ctrl+L or `/`, with the cursor in it', async () => {
+    const user = userEvent.setup();
+    render(<TuckableBar start />);
+    expect(band()).toHaveAttribute('inert');
+
+    await user.keyboard('/');
+
+    expect(band()).toHaveAttribute('data-tucked', 'false');
+    expect(band()).not.toHaveAttribute('inert');
+    expect(bar()).toHaveFocus();
+
+    await user.keyboard('{Escape}');
+    swipeUp(SWIPE_AWAY * 2);
+    expect(band()).toHaveAttribute('data-tucked', 'true');
+    await user.keyboard('{Control>}l{/Control}');
+    expect(bar()).toHaveFocus();
+  });
+
+  it('is never tucked when the app doesn’t say so', () => {
+    setup();
+    swipeUp(SWIPE_AWAY);
+    expect(band()).toHaveAttribute('data-tucked', 'false');
   });
 });
