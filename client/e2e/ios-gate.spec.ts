@@ -1,7 +1,8 @@
 /**
  * The iOS install gate (#76, ADR-0029): an iPhone in Safari, in Chrome, or in
  * an in-app browser, outside the installed app, makes no keys. A plain visit
- * and an invite link both show the install guide and a Copy button; neither
+ * (past the landing page, ADR-0077) and an invite link both show the install
+ * guide and a Copy button; neither
  * shows Create group, Join or the pilot notice, and IndexedDB holds no
  * records. An invite link still shows its preview, and leaves the address bar.
  */
@@ -82,8 +83,12 @@ for (const [name, userAgent] of Object.entries(IPHONES)) {
     });
     const { page } = phone;
 
-    await test.step('a plain visit', async () => {
+    await test.step('a plain visit: the landing page, then the guide', async () => {
       await page.goto('/');
+      // The landing page makes nothing either (ADR-0077).
+      await expect(page.getByRole('heading', { level: 1, name: 'Reconcile' })).toBeVisible();
+      await expectNothingMade(page);
+      await page.getByRole('button', { name: 'Start a Group' }).first().click();
       await expect(heading(page, 'Add Reconcile to your Home Screen')).toBeVisible();
       await expect(page.getByRole('button', { name: 'Copy link' })).toBeVisible();
       await expectNothingMade(page);

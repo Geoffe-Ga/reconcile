@@ -914,4 +914,175 @@ export const messages = {
     save: 'Save a backup',
     notNow: 'Not now',
   },
+  // The landing page (ADR-0077): what a new visitor reads before first run.
+  // It explains each feature through a case study, at about a 7th-grade
+  // reading level, and writes Group with a capital as the founder's intro does.
+  landing: {
+    nav: {
+      label: 'On this page',
+      dispatch: 'Dispatch',
+      reconcile: 'Reconcile',
+      documents: 'Documents',
+      privacy: 'Privacy',
+    },
+    title: 'Reconcile',
+    partOfSpeech: 'verb.',
+    definition: 'To find common ground, then act on it together.',
+    lede: 'Reconcile is a home for all sorts of Groups.',
+    points: [
+      'Agree by vote on Documents like your mission, values, house rules or action roadmaps.',
+      'Write posts, called Dispatches, for the people who follow your Groups.',
+      'Team up with other Groups to form Coalitions when you find common ground and a shared mission.',
+      'And above all, read and write the Dispatches that spread to higher-level Coalitions when the Groups composing them vote to promote them.',
+    ],
+    start: 'Start a Group',
+    seeIt: 'See it in real life',
+    caseStudy: 'A case study',
+    dispatch: {
+      name: 'Dispatch',
+      title: 'How far should news of one talk travel?',
+      stepsLabel: 'Where the Dispatch went',
+      intro:
+        'A dharma teacher is giving a talk in Berkeley. He posts about it in his San Jose sangha’s WhatsApp group. Here is where it goes next.',
+      steps: [
+        {
+          where: 'San Jose sangha',
+          title: 'The Group votes',
+          body: 'They like it. They vote to share it with everyone who follows their page.',
+          verdict: 'Yes. Shared, and passed up.',
+          passed: true,
+        },
+        {
+          where: 'Bay Area Coalition',
+          title: 'The Coalition votes',
+          body: 'San Jose belongs to it, with Palo Alto and San Francisco. They want it too.',
+          verdict: 'Yes. Shared, and passed up.',
+          passed: true,
+        },
+        {
+          where: 'California Coalition',
+          title: 'The bigger Coalition votes',
+          body: 'Sanghas across the state. For Los Angeles, Berkeley is too far to drive.',
+          verdict: 'No. It stops here.',
+          passed: false,
+        },
+      ],
+      takeaway: 'The news reached everyone close enough to come. No one else was bothered with it.',
+    },
+    reconcile: {
+      name: 'Reconcile',
+      title: 'They disagree on vaccines. They agree on microplastics.',
+      groups: [
+        { name: 'Climate activists', about: 'A local chapter that meets on Facebook.' },
+        { name: 'Holistic medicine group', about: 'A movement that talks on Reddit.' },
+      ],
+      tally: [
+        { shared: false, lead: 'Vaccines.', rest: 'Most of one Group disagrees with the other.' },
+        { shared: true, lead: 'Microplastics.', rest: 'Both Groups are worried.' },
+        {
+          shared: true,
+          lead: 'A petition.',
+          rest: 'It would put a proposition on the next ballot. Both would sign.',
+        },
+      ],
+      thenTitle: 'So they Reconcile',
+      then: [
+        'Each Group votes to join up.',
+        'They gather the values they share into one mission.',
+        'That forms a Coalition.',
+        'An action plan goes out as a Dispatch: sign the petition. Everyone in the Coalition gets it.',
+      ],
+      after: 'Neither Group has to change its mind about anything else.',
+      note: 'Think of it as an operating system for anarcho-syndicalism: small Groups that run themselves, and decide things together by vote.',
+    },
+    documents: {
+      name: 'Documents',
+      kind: 'Two case studies',
+      title: 'Anything your Group needs to agree on.',
+      kindsLabel: 'Kinds of Document',
+      kinds: ['Missions', 'Values', 'Lists of demands', 'Action roadmaps', 'House rules'],
+      cases: [
+        {
+          title: 'At home',
+          body: 'Your household Discord can’t agree on lights out. Your teenager Proposes a change to the house rules. Everyone talks it over and votes, right in the app.',
+        },
+        {
+          title: 'In a movement',
+          body: 'Your movement is too big and too mixed to write one list of demands. So members vote, and the list becomes whatever most of them agree on.',
+        },
+      ],
+      voteTitle: 'How a vote works',
+      scaleLabel: 'The ballot scale',
+      rules: [
+        {
+          shared: true,
+          lead: 'Enthusiasm counts.',
+          rest: 'You score from 0 to 4, not just yes or no.',
+        },
+        { shared: true, lead: 'It passes', rest: 'with an average of 2 or more.' },
+        {
+          shared: false,
+          lead: 'It’s blocked',
+          rest: 'if 1 in 10 voters or more give it a 0. That many people can’t live with it.',
+        },
+      ],
+      levels: [
+        'Follows the Group and gets its Dispatches.',
+        'Votes on changes.',
+        'Votes, writes, and Proposes changes.',
+      ],
+      levelsNote: 'After you join a Group, you pick your own level.',
+    },
+    privacy: {
+      name: 'Privacy',
+      kind: 'Why it’s built this way',
+      title: 'A map of who believes what is worth a lot.',
+      pair: [
+        {
+          title: 'The risk',
+          body: 'Governments, data brokers and advertisers would all want a tool that maps activists and their politics.',
+        },
+        { title: 'Our answer', body: 'Reconcile keeps that data where even we can’t get at it.' },
+      ],
+      points: [
+        {
+          title: 'Every vote and Dispatch is a sealed letter',
+          body: 'We pass it along. We can’t open it.',
+        },
+        {
+          title: 'No one outside sees who belongs to which Group',
+          body: 'Not us, and not anyone who asks us.',
+        },
+        {
+          title: 'Not only for activists',
+          body: 'Families, fan clubs and sanghas get the same protection.',
+        },
+      ],
+    },
+    network: {
+      name: 'The network',
+      title: 'A feed that follows your roots.',
+      intro:
+        'Trees that look separate are linked underground. Thin threads between their roots carry water and warnings from tree to tree. Dispatches travel the same way: through the Groups you joined and the Coalitions they formed.',
+      points: [
+        {
+          title: 'Votes decide what spreads',
+          body: 'A Dispatch spreads because Groups voted to share it. No one can pay to spread it.',
+        },
+        {
+          title: 'Nothing built to hook you',
+          body: 'No ads. No like counts. No leaderboards. Reconcile runs on gifts.',
+        },
+        {
+          title: 'No public map',
+          body: 'Groups team up by private invitation. No one can look up who has joined with whom.',
+        },
+      ],
+    },
+    begin: {
+      title: 'Start with your own Group.',
+      body: 'Reconcile is in a small pilot. It’s free. It runs in your browser, and you can add it to your phone’s home screen.',
+    },
+    footer: 'No ads, no trackers, and nothing loaded from other sites.',
+  },
 } as const;

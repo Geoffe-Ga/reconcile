@@ -63,6 +63,9 @@ test('opens offline with the last-synced Document, and never caches the relay', 
     expect(paths).toContain('/');
     expect(paths).toContain('/manifest.webmanifest');
     expect(paths.some((path) => path.endsWith('.woff2'))).toBe(true);
+    // The screens' painted edges are kept; the landing page's painting never is (ADR-0077).
+    expect(paths).toContain('/edges/sky.webp');
+    expect(paths.filter((path) => path.startsWith('/painting/'))).toEqual([]);
     expect(paths.filter((path) => path === '/v1' || path.startsWith('/v1/'))).toEqual([]);
   });
 

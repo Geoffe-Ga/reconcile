@@ -1,6 +1,10 @@
 /**
  * First run (spec §8.1, #76): what stands between a new device and its keys.
  *
+ * 0. **The landing page** (ADR-0077). A plain visit in a browser tab, on a
+ *    device that hasn't accepted the notice, starts on the landing page. It
+ *    stores nothing, and its Start a Group button moves on to the steps below.
+ *    An invite link, the installed app and a returning device all skip it.
  * 1. **The install gate** (ADR-0029). An iPhone or iPad outside the installed
  *    app sees only the install guide, in every browser. Nothing there creates
  *    keys or stores anything.
@@ -16,10 +20,11 @@
  */
 import { type ReactNode, useEffect, useState } from 'react';
 
-import { canCreateKeys, type PlatformEnv } from '../platform/installGate';
+import { canCreateKeys, isInstalled, type PlatformEnv } from '../platform/installGate';
 import type { NoticeRecord } from '../platform/notice';
 import type { Persistence } from '../platform/persist';
 import { type Arrival, InstallGuide } from '../screens/InstallGuide';
+import { Landing } from '../screens/Landing';
 import { PilotNotice } from '../screens/PilotNotice';
 import type { InviteLookup } from './actions';
 import { parseInvitePayload } from './invite';
@@ -128,7 +133,22 @@ function usePersistence(
   return persistence;
 }
 
-/** Shows the install guide, then the pilot notice, then the app. */
+/**
+ * Whether the landing page shows (ADR-0077): on a `visiting` device, until
+ * its Start a Group is pressed. That is kept only in memory, because the
+ * landing page stores nothing, so each new visit starts on it again.
+ */
+function useWelcome(visiting: boolean): { readonly showing: boolean; readonly start: () => void } {
+  const [welcomed, setWelcomed] = useState(false);
+  const start = () => {
+    // The next screen opens at its top, wherever on the page Start a Group was pressed.
+    document.documentElement.scrollTop = 0;
+    setWelcomed(true);
+  };
+  return { showing: visiting && !welcomed, start };
+}
+
+/** Shows a new visitor the landing page, then the install guide, the pilot notice, and the app. */
 export function FirstRunGate(props: FirstRunGateProps) {
   const { platform, notice, requestPersistence, origin, copyText, lookup, children } = props;
   const open = canCreateKeys(platform);
@@ -137,7 +157,10 @@ export function FirstRunGate(props: FirstRunGateProps) {
   // Once the notice was accepted at launch, Join reads any link itself, as it always has.
   const { arrival, visit } = useHeldArrival(!open || !accepted, open);
   const persistence = usePersistence(open && accepted, requestPersistence);
-
+  const welcome = useWelcome(
+    !acceptedAtLaunch && !isInstalled(platform) && arrival.kind === 'plain',
+  );
+  if (welcome.showing) return <Landing onStart={welcome.start} />;
   if (!open) {
     return (
       <InstallGuide

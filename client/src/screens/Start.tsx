@@ -120,7 +120,7 @@ export function Start({ groups, onOpenInvite, persistence = null, onRestore }: S
   };
 
   return (
-    <main className="shell">
+    <main className="shell" data-scene="sky">
       <PageHeader
         eyebrow={messages.app.name}
         title={messages.start.title}

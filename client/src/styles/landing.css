@@ -1,7 +1,8 @@
 /*
- * The Reconcile landing page, over a hand-painted background. Colors and type
- * come from ../DESIGN.md. The background is one tall painting made by
- * paint.py and cut into a piece per section (img/).
+ * The landing page (ADR-0077, src/screens/Landing.tsx), over a hand-painted
+ * background. Colors and type come from tokens.css (DESIGN.md). The
+ * background is one tall painting made by ../../../painting/paint.py and cut
+ * into a piece per section (public/painting/).
  *
  * Layout: one scene read top to bottom. Each section is as tall as its piece
  * of the painting (aspect-ratio), so the pieces meet edge to edge and read as
@@ -9,55 +10,12 @@
  * the tall painting; wide windows get the wide one. If a section's text needs
  * more room than its piece allows, the section grows and the painting crops
  * at the sides.
+ *
+ * Every class starts with `lp-`, so nothing here touches the app's own styles
+ * and nothing in app.css reaches in.
  */
 
-@font-face {
-  font-family: 'Newsreader Variable';
-  font-style: normal;
-  font-weight: 200 800;
-  font-display: swap;
-  src: url('fonts/newsreader-latin-wght-normal.woff2') format('woff2-variations');
-}
-@font-face {
-  font-family: 'Newsreader Variable';
-  font-style: italic;
-  font-weight: 200 800;
-  font-display: swap;
-  src: url('fonts/newsreader-latin-wght-italic.woff2') format('woff2-variations');
-}
-@font-face {
-  font-family: 'Public Sans Variable';
-  font-style: normal;
-  font-weight: 100 900;
-  font-display: swap;
-  src: url('fonts/public-sans-latin-wght-normal.woff2') format('woff2-variations');
-}
-
-:root {
-  color-scheme: light;
-
-  /* DESIGN.md tokens */
-  --canvas: #f6f1e7;
-  --surface: #fffdf8;
-  --hairline: #ddd5c4;
-  --sunken: #ece5d6;
-  --primary-soft: #dfe8dc;
-  --ochre-soft: #f1e3c4;
-  --negative: #b3362a;
-  --ink: #1d1c19;
-  --body: #3d3a33;
-  --muted: #6b665b;
-  --primary: #1f4a33;
-  --on-primary: #f6f1e7;
-  --ochre: #a8741a;
-  --ochre-ink: #7a5410;
-  --score-0: #b3362a;
-  --score-1: #a85a35;
-  --score-2: #76705f;
-  --score-3: #4f7746;
-  --score-4: #1f4a33;
-  --scrim: #1d1c1973;
-
+.lp {
   /* What shows while a piece of the painting loads: its own main color. */
   --sky: #9cc6dc;
   --leaf: #245c3c;
@@ -72,37 +30,14 @@
   --sky-text: #1d1c19;
   --on-deep: #d6d0c2;
 
-  --font-serif: 'Newsreader Variable', 'Newsreader', 'Iowan Old Style', Georgia, serif;
-  --font-sans:
-    'Public Sans Variable', 'Public Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
-
   --gutter: clamp(16px, 4vw, 32px);
+
+  color: var(--body);
+  font: 400 17px/1.55 var(--font-sans);
 }
 
-/* Night. Two blocks so an explicit theme choice wins either way. */
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
-    color-scheme: dark;
-    --canvas: #15140f;
-    --surface: #1e1d17;
-    --hairline: #3a372d;
-    --sunken: #26241d;
-    --primary-soft: #233a2a;
-    --ochre-soft: #3a2f18;
-    --negative: #e0705f;
-    --ink: #f1ece0;
-    --body: #d6d0c2;
-    --muted: #a39d8f;
-    --primary: #8fbf98;
-    --on-primary: #10170f;
-    --ochre: #d9a54a;
-    --ochre-ink: #e2b663;
-    --score-0: #e0705f;
-    --score-1: #d9946a;
-    --score-2: #a39d8f;
-    --score-3: #93b986;
-    --score-4: #8fbf98;
-    --scrim: #0a0a07b3;
+  .lp {
     --sky: #2c3f66;
     --leaf: #122c22;
     --mist: #4a5a52;
@@ -113,77 +48,23 @@
     --sky-text: #f1ece0;
   }
 }
-:root[data-theme='dark'] {
-  color-scheme: dark;
-  --canvas: #15140f;
-  --surface: #1e1d17;
-  --hairline: #3a372d;
-  --sunken: #26241d;
-  --primary-soft: #233a2a;
-  --ochre-soft: #3a2f18;
-  --negative: #e0705f;
-  --ink: #f1ece0;
-  --body: #d6d0c2;
-  --muted: #a39d8f;
-  --primary: #8fbf98;
-  --on-primary: #10170f;
-  --ochre: #d9a54a;
-  --ochre-ink: #e2b663;
-  --score-0: #e0705f;
-  --score-1: #d9946a;
-  --score-2: #a39d8f;
-  --score-3: #93b986;
-  --score-4: #8fbf98;
-  --scrim: #0a0a07b3;
-  --sky: #2c3f66;
-  --leaf: #122c22;
-  --mist: #4a5a52;
-  --soil: #2a1d16;
-  --deep: #120d0a;
-  --tint: #5f6a96;
-  --tint-earth: #a9a3ad;
-  --sky-text: #f1ece0;
-}
 
 /* ---------- Base ---------- */
 
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-}
-
-html {
-  -webkit-text-size-adjust: 100%;
-  text-size-adjust: 100%;
-}
-
-body {
-  margin: 0;
-  background: var(--canvas);
-  color: var(--body);
-  font: 400 17px/1.55 var(--font-sans);
-}
-
-h1,
-h2,
-h3,
-p,
-ol,
-ul,
-dl,
-dd {
+.lp dl,
+.lp dd {
   margin: 0;
 }
 
-ol,
-ul {
+/* `:where` keeps this reset weaker than any class below, so a list can set its own. */
+:where(.lp) ol,
+:where(.lp) ul {
   padding: 0;
   list-style: none;
 }
 
-h1,
-h2 {
+.lp h1,
+.lp h2 {
   font-family: var(--font-serif);
   font-weight: 500;
   color: var(--ink);
@@ -191,71 +72,77 @@ h2 {
   letter-spacing: -0.01em;
 }
 
-h1 {
+.lp h1 {
   font-size: clamp(64px, 15vw, 148px);
   line-height: 0.95;
   letter-spacing: -0.03em;
 }
 
-h2 {
+.lp h2 {
   font-size: clamp(28px, 4vw, 40px);
   line-height: 1.1;
 }
 
-h3 {
+/* A heading takes focus when a top link jumps to it; it isn't a control. */
+.lp h2:focus {
+  outline: none;
+}
+
+.lp h3 {
   font: 650 18px/1.3 var(--font-sans);
   color: var(--ink);
 }
 
-a {
-  color: inherit;
+.lp button {
+  border: 0;
+  cursor: pointer;
 }
 
-:focus-visible {
+.lp :focus-visible {
   outline: 3px solid var(--ochre);
   outline-offset: 3px;
   border-radius: 6px;
 }
 
-.wrap {
+.lp-wrap {
   max-width: 72rem;
   margin-inline: auto;
   padding-left: max(var(--gutter), env(safe-area-inset-left, 0px));
   padding-right: max(var(--gutter), env(safe-area-inset-right, 0px));
 }
 
-.prose {
+.lp-prose {
   display: grid;
   gap: 16px;
   max-width: 42rem;
 }
 
-.eyebrow {
+.lp-eyebrow {
   font: 700 12px/1.2 var(--font-sans);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--primary);
 }
 
-.caption {
+.lp-caption {
   font-size: 14px;
   line-height: 1.4;
   color: var(--muted);
 }
 
-.wordmark {
+.lp-wordmark {
   font: 500 24px/1 var(--font-serif);
   letter-spacing: -0.01em;
 }
 
-.actions {
+.lp-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 12px 24px;
 }
 
-.button {
+.lp-button {
   display: inline-flex;
   align-items: center;
   min-height: 48px;
@@ -268,18 +155,22 @@ a {
   touch-action: pan-x pan-y pinch-zoom;
 }
 
-.quiet-link {
+.lp-link {
   display: inline-flex;
   align-items: center;
   min-height: 44px;
+  padding: 0;
+  background: none;
+  color: inherit;
   font: 500 15px/1.4 var(--font-sans);
+  touch-action: pan-x pan-y pinch-zoom;
   text-decoration: underline;
   text-decoration-thickness: 1px;
   text-underline-offset: 4px;
 }
 
 /* A card of paper laid over the painting. */
-.win {
+.lp-win {
   padding: clamp(20px, 3.5vw, 36px);
   border: 1px solid var(--hairline);
   border-radius: 10px;
@@ -290,11 +181,11 @@ a {
 
 /* ---------- The painting ---------- */
 
-.sky,
-.canopy,
-.understory,
-.soil,
-.deep {
+.lp-sky,
+.lp-canopy,
+.lp-understory,
+.lp-soil,
+.lp-deep {
   /* The tint is a flat layer multiplied over the picture; it isn't a gradient. */
   background-image: linear-gradient(var(--tint), var(--tint)), var(--piece);
   background-blend-mode: multiply, normal;
@@ -304,68 +195,68 @@ a {
 }
 
 /* Tall painting: each piece's height in widths matches `TALL.heights` in paint.py. */
-.sky {
-  --piece: url('img/tall/sky.webp');
+.lp-sky {
+  --piece: url('/painting/tall/sky.webp');
   aspect-ratio: 100 / 330;
   background-color: var(--sky);
   background-position: center bottom;
 }
-.canopy {
-  --piece: url('img/tall/canopy.webp');
+.lp-canopy {
+  --piece: url('/painting/tall/canopy.webp');
   aspect-ratio: 100 / 700;
   background-color: var(--leaf);
 }
-.understory {
-  --piece: url('img/tall/trunks.webp');
+.lp-understory {
+  --piece: url('/painting/tall/trunks.webp');
   aspect-ratio: 100 / 470;
   background-color: var(--mist);
 }
-.soil {
+.lp-soil {
   --tint: var(--tint-earth);
-  --piece: url('img/tall/soil.webp');
+  --piece: url('/painting/tall/soil.webp');
   aspect-ratio: 100 / 270;
   background-color: var(--soil);
 }
-.deep {
+.lp-deep {
   --tint: var(--tint-earth);
-  --piece: url('img/tall/deep.webp');
+  --piece: url('/painting/tall/deep.webp');
   aspect-ratio: 100 / 440;
   background-color: var(--deep);
 }
 
 /* Wide painting: `WIDE.heights` in paint.py. */
 @media (min-width: 1200px) {
-  .sky {
-    --piece: url('img/wide/sky.webp');
+  .lp-sky {
+    --piece: url('/painting/wide/sky.webp');
     aspect-ratio: 100 / 90;
   }
-  .canopy {
-    --piece: url('img/wide/canopy.webp');
+  .lp-canopy {
+    --piece: url('/painting/wide/canopy.webp');
     aspect-ratio: 100 / 160;
   }
-  .understory {
-    --piece: url('img/wide/trunks.webp');
+  .lp-understory {
+    --piece: url('/painting/wide/trunks.webp');
     aspect-ratio: 100 / 114;
   }
-  .soil {
-    --piece: url('img/wide/soil.webp');
+  .lp-soil {
+    --piece: url('/painting/wide/soil.webp');
     aspect-ratio: 100 / 70;
   }
-  .deep {
-    --piece: url('img/wide/deep.webp');
+  .lp-deep {
+    --piece: url('/painting/wide/deep.webp');
     aspect-ratio: 100 / 130;
   }
 }
 
 /* ---------- Sky ---------- */
 
-.sky {
+.lp-sky {
   /* Keep the words clear of the treetops at the bottom of this piece. */
   padding-bottom: 48vw;
   color: var(--sky-text);
 }
 
-.topbar {
+.lp-topbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -375,15 +266,31 @@ a {
 }
 
 /* The top links get paper under them too, for the same reason as the intro. */
-.topbar .quiet-link {
+.lp-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
   padding: 0 12px;
   border-radius: 9999px;
   background: var(--surface);
   color: var(--ink);
-  text-decoration: none;
+  font: 500 15px/1.4 var(--font-sans);
+  touch-action: pan-x pan-y pinch-zoom;
 }
 
-.hero {
+/* Four links fit one row on a phone only if they're a little smaller. */
+@media (max-width: 430px) {
+  .lp-topbar {
+    gap: 6px;
+  }
+
+  .lp-pill {
+    padding: 0 10px;
+    font-size: 14px;
+  }
+}
+
+.lp-hero {
   display: grid;
   gap: 20px;
   max-width: 44rem;
@@ -391,58 +298,58 @@ a {
 }
 
 /* The word, defined the way a dictionary would. */
-.define {
+.lp-define {
   max-width: 32rem;
   font: 400 clamp(22px, 2.8vw, 30px) / 1.3 var(--font-serif);
   text-wrap: balance;
 }
 
-.hero h1 {
+.lp-hero h1 {
   color: var(--sky-text);
 }
 
 /* The words under the title sit on paper, like every other block of text:
    small type straight on the brushwork is hard to read. Only the title, which
    is very large, sits on the sky itself. */
-.intro {
+.lp-intro {
   display: grid;
   gap: 16px;
   max-width: 38rem;
 }
 
-.lede {
+.lp-lede {
   max-width: 34rem;
   font: 400 clamp(19px, 2.2vw, 22px) / 1.5 var(--font-serif);
 }
 
 /* The intro's points: the same type as the sentence above them, one idea a line. */
-.points {
+.lp-points {
   display: grid;
   gap: 8px;
   padding-left: 1.1em;
   list-style: disc;
 }
 
-.points li {
+.lp-points li {
   padding-left: 0.2em;
 }
 
-.hero .actions {
+.lp-hero .lp-actions {
   padding-top: 4px;
 }
 
 /* ---------- Canopy ---------- */
 
-.canopy {
+.lp-canopy {
   padding-block: 8vw 12vw;
 }
 
 /* Room to see the boughs cross between the two groups of cards. */
-#reconcile {
+.lp-second {
   padding-top: 34vw;
 }
 
-.steps {
+.lp-steps {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(13.5rem, 1fr));
   gap: 20px;
@@ -450,7 +357,7 @@ a {
   counter-reset: step;
 }
 
-.steps li {
+.lp-steps li {
   display: grid;
   align-content: start;
   gap: 8px;
@@ -459,7 +366,7 @@ a {
   counter-increment: step;
 }
 
-.steps li::before {
+.lp-steps li::before {
   content: counter(step);
   font: 500 40px/1 var(--font-serif);
   color: var(--ochre-ink);
@@ -468,7 +375,7 @@ a {
 /* ---------- Case studies ---------- */
 
 /* Beside a section's name: what kind of thing follows. */
-.kind {
+.lp-kind {
   margin-left: 8px;
   padding-left: 8px;
   border-left: 1px solid var(--hairline);
@@ -476,7 +383,7 @@ a {
 }
 
 /* Where a step in a Dispatch's journey happens. */
-.where {
+.lp-where {
   font: 700 12px/1.2 var(--font-sans);
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -484,39 +391,39 @@ a {
 }
 
 /* How a vote came out. The words carry it; the color and the mark only back them up. */
-.verdict {
+.lp-verdict {
   justify-self: start;
   margin-top: 4px;
   padding: 6px 12px;
   border-radius: 6px;
   font: 600 14px/1.3 var(--font-sans);
 }
-.verdict::before {
+.lp-verdict::before {
   margin-right: 6px;
   font-weight: 700;
 }
-.verdict.yes {
+.lp-verdict.lp-yes {
   background: var(--primary-soft);
   color: var(--primary);
 }
-.verdict.yes::before {
+.lp-verdict.lp-yes::before {
   content: '\2713';
 }
-.verdict.stop {
+.lp-verdict.lp-stop {
   background: var(--ochre-soft);
   color: var(--ochre-ink);
 }
-.verdict.stop::before {
+.lp-verdict.lp-stop::before {
   content: '\25A0';
 }
 
 /* Two things side by side: two Groups, two stories, a risk and its answer. */
-.pair {
+.lp-pair {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
   gap: 12px;
 }
-.pair > div {
+.lp-pair > div {
   display: grid;
   align-content: start;
   gap: 6px;
@@ -525,21 +432,21 @@ a {
   border-radius: 6px;
   background: var(--sunken);
 }
-.pair p {
+.lp-pair p {
   font-size: 15px;
   line-height: 1.5;
 }
 
 /* A list where each line is marked: something shared, or something that divides. */
-.tally {
+.lp-tally {
   display: grid;
   gap: 10px;
 }
-.tally li {
+.lp-tally li {
   position: relative;
   padding-left: 30px;
 }
-.tally li::before {
+.lp-tally li::before {
   position: absolute;
   left: 0;
   top: 1px;
@@ -550,32 +457,32 @@ a {
   border-radius: 9999px;
   font: 700 12px/1 var(--font-sans);
 }
-.tally b {
+.lp-tally b {
   color: var(--ink);
 }
-.tally .shared::before {
+.lp-tally .lp-shared::before {
   content: '\2713';
   background: var(--primary);
   color: var(--on-primary);
 }
-.tally .apart::before {
+.lp-tally .lp-apart::before {
   content: '\2715';
   background: var(--negative);
   color: var(--surface);
 }
 
 /* What happens next, in order. */
-.then {
+.lp-then {
   display: grid;
   gap: 10px;
   counter-reset: then;
 }
-.then li {
+.lp-then li {
   position: relative;
   padding-left: 30px;
   counter-increment: then;
 }
-.then li::before {
+.lp-then li::before {
   content: counter(then);
   position: absolute;
   left: 0;
@@ -591,12 +498,12 @@ a {
 }
 
 /* The kinds of thing a Document can be. */
-.chips {
+.lp-chips {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
 }
-.chips li {
+.lp-chips li {
   padding: 4px 12px;
   border-radius: 6px;
   background: var(--sunken);
@@ -604,7 +511,7 @@ a {
   font: 500 14px/1.4 var(--font-sans);
 }
 
-.pullquote {
+.lp-pullquote {
   max-width: 34rem;
   margin-top: 20px;
   font: italic 400 clamp(21px, 2.6vw, 27px) / 1.3 var(--font-serif);
@@ -614,26 +521,26 @@ a {
 
 /* ---------- Understory: trunks ---------- */
 
-.understory {
+.lp-understory {
   /* Below the canopy's underside, above the forest floor. */
   padding-block: 42vw 56vw;
 }
 
-.notice {
+.lp-notice {
   display: grid;
   gap: 16px;
   max-width: 42rem;
   margin-inline: auto;
 }
 
-.scale {
+.lp-scale {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   padding-block: 8px;
 }
 
-.scale li {
+.lp-scale li {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -643,27 +550,27 @@ a {
   color: var(--surface);
   font: 500 14px/1.2 var(--font-sans);
 }
-.scale b {
+.lp-scale b {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
-.scale .s0 {
+.lp-scale .lp-s0 {
   background: var(--score-0);
 }
-.scale .s1 {
+.lp-scale .lp-s1 {
   background: var(--score-1);
 }
-.scale .s2 {
+.lp-scale .lp-s2 {
   background: var(--score-2);
 }
-.scale .s3 {
+.lp-scale .lp-s3 {
   background: var(--score-3);
 }
-.scale .s4 {
+.lp-scale .lp-s4 {
   background: var(--score-4);
 }
 
-.levels {
+.lp-levels {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
   gap: 16px 24px;
@@ -671,60 +578,60 @@ a {
   border-top: 1px solid var(--hairline);
 }
 
-.levels div {
+.lp-levels div {
   display: grid;
   gap: 4px;
   min-width: 0;
 }
 
-.levels dt {
+.lp-levels dt {
   font: 650 15px/1.4 var(--font-sans);
   color: var(--ink);
 }
 
-.levels dd {
+.lp-levels dd {
   font-size: 15px;
   line-height: 1.45;
 }
 
 /* ---------- Underground ---------- */
 
-.soil {
+.lp-soil {
   padding-block: 30vw 24vw;
 }
 
-.soil .win,
-.deep .win {
+.lp-soil .lp-win,
+.lp-deep .lp-win {
   margin-inline: auto;
 }
 
-.plain {
+.lp-plain {
   display: grid;
   gap: 16px;
   padding-top: 8px;
 }
 
-.plain li {
+.lp-plain li {
   display: grid;
   gap: 4px;
   padding-top: 16px;
   border-top: 1px solid var(--hairline);
 }
 
-.deep {
+.lp-deep {
   /* The network fills the top of this piece; the cards come after it. */
   padding-top: 108vw;
 }
 
-.bedrock {
+.lp-bedrock {
   padding-top: 24px;
 }
 
-.bedrock .actions {
+.lp-bedrock .lp-actions {
   padding-top: 8px;
 }
 
-.foot {
+.lp-foot {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -737,28 +644,22 @@ a {
 }
 
 @media (min-width: 1200px) {
-  .sky {
+  .lp-sky {
     padding-bottom: 16vw;
   }
-  .canopy {
+  .lp-canopy {
     padding-block: 6vw 10vw;
   }
-  #reconcile {
+  .lp-second {
     padding-top: 22vw;
   }
-  .understory {
+  .lp-understory {
     padding-block: 15vw 26vw;
   }
-  .soil {
+  .lp-soil {
     padding-block: 9vw 8vw;
   }
-  .deep {
+  .lp-deep {
     padding-top: 50vw;
-  }
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  html {
-    scroll-behavior: smooth;
   }
 }

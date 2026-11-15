@@ -1,9 +1,9 @@
-"""Paint the landing page's backgrounds with simulated brushstrokes.
+"""Paint the landing page and the app's edges with simulated brushstrokes.
 
 Usage (needs numpy and opencv-python-headless, which the repo doesn't pin)::
 
-    python landing/paint.py            # both layouts, full size, into landing/img/
-    python landing/paint.py --scale 0.4 --out /tmp/preview   # a quick look
+    python painting/paint.py           # both layouts, full size, into client/public/
+    python painting/paint.py --scale 0.4 --out /tmp/look --edges /tmp/look/edges
 
 It works the way a background painter does, in two steps.
 
@@ -17,7 +17,8 @@ It works the way a background painter does, in two steps.
    so it streaks like gouache, and a height map of the bristles is lit from the
    upper right to give the paint some body.
 
-The tall picture is then cut into one image per page section. The random
+The tall picture is then cut into one image per page section, and into the
+smaller pieces the app's screens show around their edges. The random
 numbers come from a fixed seed, so the same script paints the same picture.
 """
 
@@ -1041,7 +1042,27 @@ class Painter:
         return np.clip(out, 0, 255).astype(np.uint8)
 
 
-def render(lay: Layout, scale: float, out: Path, quality: int) -> None:
+# The app's screens show a few pixels of the painting around their edges. Each
+# edge image is a phone-shaped cut from the tall layout: which section it comes
+# from, and how far down that section the cut starts (0 is its top, 1 its end).
+EDGES = {"sky": (0, 0.0), "canopy": (1, 0.45), "trunks": (2, 0.3), "soil": (3, 0.0)}
+EDGE_SHAPE = 16 / 9  # an edge image's height, as a multiple of its width
+
+
+def cut_edges(scene: Scene, bgr: np.ndarray, out: Path) -> None:
+    """Save the pieces the app's screens show around their edges."""
+    out.mkdir(parents=True, exist_ok=True)
+    tall = round(scene.w * EDGE_SHAPE)
+    for name, (section, down) in EDGES.items():
+        top, bottom = scene.tops[section], scene.tops[section + 1]
+        start = top + round((bottom - top - tall) * down)
+        path = out / f"{name}.webp"
+        cv2.imwrite(
+            str(path), bgr[start : start + tall], [cv2.IMWRITE_WEBP_QUALITY, 60]
+        )
+
+
+def render(lay: Layout, scale: float, out: Path, quality: int, edges: Path) -> None:
     """Paint one layout and save it, cut into an image per page section."""
     scene = Scene(lay, scale, np.random.default_rng(1937)).build()
     picture = Painter(scene, np.random.default_rng(1997)).paint()
@@ -1053,16 +1074,29 @@ def render(lay: Layout, scale: float, out: Path, quality: int) -> None:
     ):
         path = folder / f"{name}.webp"
         cv2.imwrite(str(path), bgr[top:bottom], [cv2.IMWRITE_WEBP_QUALITY, quality])
+    if lay is TALL:
+        cut_edges(scene, bgr, edges)
 
 
 def main() -> None:
     """Paint the layouts asked for on the command line."""
-    here = Path(__file__).resolve().parent
+    public = Path(__file__).resolve().parent.parent / "client" / "public"
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
         "--scale", type=float, default=1.0, help="size, for a quick look"
     )
-    parser.add_argument("--out", type=Path, default=here / "img", help="where to save")
+    parser.add_argument(
+        "--out",
+        type=Path,
+        default=public / "painting",
+        help="where the landing page's pieces go",
+    )
+    parser.add_argument(
+        "--edges",
+        type=Path,
+        default=public / "edges",
+        help="where the app's edge pieces go",
+    )
     parser.add_argument(
         "--quality", type=int, default=74, help="WebP quality, 1 to 100"
     )
@@ -1070,7 +1104,7 @@ def main() -> None:
     args = parser.parse_args()
     for lay in (WIDE, TALL):
         if args.only in (None, lay.name):
-            render(lay, args.scale, args.out, args.quality)
+            render(lay, args.scale, args.out, args.quality, args.edges)
 
 
 if __name__ == "__main__":

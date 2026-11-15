@@ -7,9 +7,12 @@
  *   its scope is the whole app and the CSP's `script-src 'self'` allows it.
  *   The build fails if it would import another chunk.
  * - The list holds every chunk and asset (fonts included) and every file in
- *   `public/` (the manifest and icons), with index.html as `/`, the app
- *   shell. `/sw.js` itself isn't on it, and neither is anything under `/v1`:
- *   the relay isn't part of the build.
+ *   `public/` (the manifest, the icons and the screens' painted edges), with
+ *   index.html as `/`, the app shell. `/sw.js` itself isn't on it, and neither
+ *   is anything under `/v1`: the relay isn't part of the build.
+ * - The landing page's painting (`public/painting/`) isn't on it either. Only
+ *   a new visitor, who is online, ever sees it, and it's a few megabytes that
+ *   an installed app would otherwise download and keep for nothing (ADR-0077).
  * - Its version hashes every URL and file, so `/sw.js` changes, and the
  *   browser installs the new version in the background, whenever any file
  *   does.
@@ -35,6 +38,8 @@ const OUTPUT = 'sw.js';
 const PLACEHOLDER = '__RECONCILE_PRECACHE__';
 /** Hex characters of the version: 64 bits, plenty to tell builds apart. */
 const VERSION_LENGTH = 16;
+/** Files in `public/` under this folder are served, but never kept on the device. */
+const NETWORK_ONLY = 'painting/';
 
 /** One file the build writes: its URL and its contents. */
 interface BuiltFile {
@@ -93,10 +98,9 @@ export function serviceWorker(): Plugin {
           bytes: file.type === 'chunk' ? file.code : file.source,
         }));
       const publicDir = config?.publicDir ?? '';
-      const kept = filesUnder(publicDir).map((name) => ({
-        url: urlOf(name),
-        bytes: readFileSync(join(publicDir, name)),
-      }));
+      const kept = filesUnder(publicDir)
+        .filter((name) => !name.startsWith(NETWORK_ONLY))
+        .map((name) => ({ url: urlOf(name), bytes: readFileSync(join(publicDir, name)) }));
       const parts = worker.code.split(PLACEHOLDER);
       if (parts.length !== 2) {
         return this.error(`${OUTPUT} must name ${PLACEHOLDER} exactly once.`);

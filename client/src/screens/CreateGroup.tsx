@@ -96,7 +96,7 @@ export function CreateGroup({ onCreate }: CreateGroupProps) {
   };
 
   return (
-    <main className="shell">
+    <main className="shell" data-scene="sky">
       <BackLink to={{ name: 'start' }} label={messages.app.yourGroups} />
       <PageHeader
         eyebrow={messages.create.eyebrow}

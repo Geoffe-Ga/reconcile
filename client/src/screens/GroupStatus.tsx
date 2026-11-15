@@ -4,7 +4,7 @@ import { BackLink, PageHeader } from '../app/ui';
 /** Shown for `#/g/{groupId}` when this device isn't in that group. */
 export function GroupMissing() {
   return (
-    <main className="shell">
+    <main className="shell" data-scene="canopy">
       <BackLink to={{ name: 'start' }} label={messages.app.yourGroups} />
       <PageHeader title={messages.home.missingTitle} pageTitle={messages.home.pageTitle} />
       <p className="lede">{messages.home.missing}</p>
@@ -24,7 +24,7 @@ export function GroupArchived({
   readonly name: string;
 }) {
   return (
-    <main className="shell">
+    <main className="shell" data-scene="canopy">
       <BackLink to={{ name: 'group', groupId }} label={name} />
       <PageHeader title={messages.archive.readOnlyTitle} pageTitle={messages.home.pageTitle} />
       <p className="lede">{messages.archive.readOnly}</p>
@@ -38,7 +38,7 @@ export function GroupArchived({
  */
 export function GroupSettingUp() {
   return (
-    <main className="shell">
+    <main className="shell" data-scene="canopy">
       <BackLink to={{ name: 'start' }} label={messages.app.yourGroups} />
       <PageHeader title={messages.home.settingUpTitle} pageTitle={messages.home.pageTitle} />
       <p className="lede">{messages.home.settingUp}</p>

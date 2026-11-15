@@ -152,7 +152,7 @@ export function InstallGuide({ arrival, origin, lookup, copyText }: InstallGuide
     toJoin ? messages.install.openToJoin : messages.install.open,
   ];
   return (
-    <main className="shell">
+    <main className="shell" data-scene="sky">
       <PageHeader title={messages.install.title} pageTitle={messages.install.pageTitle} />
       <p className="lede">{messages.install.otherApp}</p>
       <ol className="steps">

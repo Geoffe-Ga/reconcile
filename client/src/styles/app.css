@@ -15,6 +15,68 @@
   padding-right: max(var(--space-4), env(safe-area-inset-right, 0px));
 }
 
+/*
+ * Painted edges (DESIGN.md, ADR-0077). A screen that names a scene shows a
+ * few pixels of the painting around the window, and stays plain paper inside.
+ * Screens that need deep focus name no scene.
+ */
+.shell[data-scene] {
+  --edge: 6px;
+  /* The painting is multiplied by this: white by day, a cool dimming at night. */
+  --edge-tint: #ffffff;
+  padding-block: calc(var(--space-6) + var(--edge)) calc(var(--space-8) + var(--edge));
+  padding-left: max(calc(var(--space-4) + var(--edge)), env(safe-area-inset-left, 0px));
+  padding-right: max(calc(var(--space-4) + var(--edge)), env(safe-area-inset-right, 0px));
+}
+
+/* The edge is a ring drawn over the page, so words scroll under it, never across it. */
+.shell[data-scene]::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  /* Above the page, below a dialog's scrim (.modal-overlay). */
+  z-index: 5;
+  padding: var(--edge);
+  pointer-events: none;
+  /* The tint is one flat layer over the picture; it isn't a gradient. */
+  background-image: linear-gradient(var(--edge-tint), var(--edge-tint)), var(--scene);
+  background-blend-mode: multiply, normal;
+  background-position: center;
+  background-size: cover;
+  /* Keep only the padding: everything inside the edge is cut away. */
+  mask:
+    linear-gradient(#000 0 0) content-box exclude,
+    linear-gradient(#000 0 0);
+}
+
+.shell[data-scene='sky'] {
+  --scene: url('/edges/sky.webp');
+}
+
+.shell[data-scene='canopy'] {
+  --scene: url('/edges/canopy.webp');
+}
+
+.shell[data-scene='trunks'] {
+  --scene: url('/edges/trunks.webp');
+}
+
+.shell[data-scene='soil'] {
+  --scene: url('/edges/soil.webp');
+}
+
+@media (min-width: 700px) {
+  .shell[data-scene] {
+    --edge: 10px;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .shell[data-scene] {
+    --edge-tint: #6a7396;
+  }
+}
+
 .page-head {
   display: grid;
   gap: var(--space-2);

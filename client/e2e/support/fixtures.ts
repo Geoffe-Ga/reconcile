@@ -202,7 +202,12 @@ export interface FirstRunOptions {
  * isn't stopped by the guide's dialog after its first create or join.
  */
 export async function acceptNotice(person: Person, options: FirstRunOptions = {}): Promise<void> {
-  await expect(heading(person.page, 'Before you start')).toBeVisible();
+  // A plain visit starts on the landing page (ADR-0077); an invite link goes straight to the notice.
+  const notice = heading(person.page, 'Before you start');
+  const start = person.page.getByRole('button', { name: 'Start a Group' }).first();
+  await expect(notice.or(start)).toBeVisible();
+  if (await start.isVisible()) await start.click();
+  await expect(notice).toBeVisible();
   await expectAccessible(person, 'Pilot notice');
   await person.page.getByRole('button', { name: 'I understand' }).click();
   if (options.guide === true) return;

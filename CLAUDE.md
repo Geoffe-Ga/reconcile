@@ -62,7 +62,7 @@ Reconcile can easily turn into a **database of people, their ideologies, and the
 
 **MVP scope comes first:** [ADR-0074](docs/adr/0074-mvp-scope-revised.md) sets each feature's depth, Phase 2 coalitions included, [ADR-0075](docs/adr/0075-safeguards-for-the-revised-mvp.md) adds its safeguards, and [ADR-0073](docs/adr/0073-mvp-scope.md) defers the rest until pilot feedback asks for it. Build to that depth, neither a shell nor the full spec, and don't add edge-case handling a small group can sort out by talking.
 
-**Decisions:** all recorded in ADRs 0001–0076 (0064–0071 came from the four-lenses review, and 0076 covers repo tooling, [docs/spec/four-lenses-review.md](docs/spec/four-lenses-review.md)). [docs/spec/decision-roadmap.md](docs/spec/decision-roadmap.md) is complete, and lists what's deliberately deferred with a trigger:
+**Decisions:** all recorded in ADRs 0001–0077 (0064–0071 came from the four-lenses review, 0076 covers repo tooling, and 0077 the landing page and painted edges, [docs/spec/four-lenses-review.md](docs/spec/four-lenses-review.md)). [docs/spec/decision-roadmap.md](docs/spec/decision-roadmap.md) is complete, and lists what's deliberately deferred with a trigger:
 - the eternal core's wording ([ADR-0035](docs/adr/0035-reconcile-group-minimal-eternal-core.md)), before Phase 2
 - the fiscal sponsor ([ADR-0062](docs/adr/0062-entity-and-sponsor-timing.md)), after the pilot
 - the outside security review ([ADR-0058](docs/adr/0058-security-review-on-demand.md)), on demand
@@ -125,7 +125,7 @@ reconcile/
 ├── docs/spec/            # Specifications (phase-1-spec.md feeds spec-decomposition)
 ├── plans/                # Working implementation plans
 ├── client/               # TypeScript PWA (see client/CLAUDE.md)
-├── landing/              # Static landing page over a painted background (see landing/README.md)
+├── painting/             # The painter for the landing page's background and the screens' edges (painting/README.md)
 ├── reconcile/            # Python package: the blind mailbox relay (reconcile/relay/, ADR-0028)
 ├── DESIGN.md             # Visual system and voice (client tokens and /decide sheets read it)
 ├── tests/                # pytest suite

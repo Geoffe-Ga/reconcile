@@ -95,6 +95,13 @@ function renderRoot(ben: TestDevice, platform: PlatformEnv = DESKTOP) {
 }
 
 /** Join's preview: the group’s name as the heading, and its Document’s title. */
+/** A plain first visit starts on the landing page (ADR-0077): press its Start a Group. */
+async function passLanding(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+  const [start] = screen.getAllByRole('button', { name: messages.landing.start });
+  if (start === undefined) throw new Error('The landing page has no Start a Group button.');
+  await user.click(start);
+}
+
 async function joinPreview(): Promise<string[]> {
   const heading = await screen.findByRole('heading', { level: 1, name: 'Riverside Tenants' });
   const main = screen.getByRole('main');
@@ -142,6 +149,7 @@ describe('Root', () => {
 
     const paster = await device(fake, 'paster');
     const { user } = renderRoot(paster);
+    await passLanding(user);
     await user.click(screen.getByRole('button', { name: 'I understand' }));
     await user.click(await screen.findByRole('textbox', { name: 'Invite link' }));
     await user.paste(`  ${link}  `);
@@ -154,6 +162,7 @@ describe('Root', () => {
   it('shows the damaged-link line for a malformed paste, with none of the input', async () => {
     const ben = await device(createFakeRelay(), 'ben');
     const { user } = renderRoot(ben);
+    await passLanding(user);
     await user.click(screen.getByRole('button', { name: 'I understand' }));
     const field = await screen.findByRole('textbox', { name: 'Invite link' });
     await user.type(field, 'https://example.org/#/join/canary-payload');
@@ -189,6 +198,7 @@ describe('Root', () => {
   it('says on Start when the browser may clear the app’s data', async () => {
     const ben = await device(createFakeRelay(), 'ben');
     const { user } = renderRoot(ben);
+    await passLanding(user);
     await user.click(screen.getByRole('button', { name: 'I understand' }));
     expect(await screen.findByText(messages.start.mayClear)).toBeVisible();
   });

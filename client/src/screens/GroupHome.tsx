@@ -750,7 +750,7 @@ export function GroupHome(props: GroupHomeProps) {
   // A dissolved group takes nothing new, as a group being left doesn't (#108).
   const readOnly = leaving || dissolved !== null;
   return (
-    <main className="shell">
+    <main className="shell" data-scene="canopy">
       <BackLink to={{ name: 'start' }} label={messages.app.yourGroups} />
       <div className="page-top">
         <PageHeader

@@ -80,6 +80,7 @@ Settled decisions about how Reconcile works. Before designing anything, check he
 | [0074](0074-mvp-scope-revised.md) | MVP scope revised: each feature at the founder's chosen depth, with Phase 2 coalitions in | Accepted; amended by 0075 |
 | [0075](0075-safeguards-for-the-revised-mvp.md) | Safeguards for the revised MVP: coalition seats, push linkage, steward limits, recovery | Accepted |
 | [0076](0076-merge-recap-to-discord.md) | Merge recaps send only metadata, PR titles included, to a private Discord channel; the bot token runs merged code | Accepted (tooling) |
+| [0077](0077-landing-page-and-painted-edges.md) | The landing page is the first step of first run, storing nothing; some screens show a few pixels of the painting at their edges, and focus screens stay plain | Accepted |
 
 **Status column:** "amended by 00NN" means a later ADR changed part of the decision, and the ADR's own file says what changed. A date means the ADR was amended in place, with no ADR of its own. Each one-liner describes the decision as amended.
 

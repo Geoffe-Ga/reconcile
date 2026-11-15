@@ -126,7 +126,7 @@ function OptInCard({ state, me, optIn }: CardProps) {
 export function GroupRules({ state, me }: GroupRulesProps) {
   const { optIns } = messages;
   return (
-    <main className="shell">
+    <main className="shell" data-scene="trunks">
       <BackLink to={{ name: 'group', groupId: state.group ?? '' }} label={state.name} />
       <PageHeader eyebrow={optIns.eyebrow} title={optIns.title} pageTitle={optIns.pageTitle} />
       <p className="lede">{optIns.lede}</p>
