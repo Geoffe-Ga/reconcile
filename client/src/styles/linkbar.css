@@ -1,26 +1,49 @@
 /*
  * The link bar (#444; DESIGN.md "Link bar", ADR-0077 §6): a pill on
- * `surface` with the one soft shadow, centered in a band of `canvas` along
- * the top of the viewport, clear of the notch. While the bar has focus and
- * text, a panel hangs under the pill over a scrim that covers the rest.
+ * `surface` with the one soft shadow, centered at the top of the viewport,
+ * clear of the notch, floating over the page, which shows around it. The
+ * band itself has no ground and takes no taps: only the pill does. While the
+ * bar has focus and text, a panel hangs under the pill over a scrim that
+ * covers the rest. Tucked away, the band slides up out of view, its shadow
+ * too.
  */
 .link-bar-band {
-  position: relative;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
   z-index: 3;
   padding-top: max(var(--space-3), env(safe-area-inset-top, 0px));
   padding-bottom: var(--space-2);
   padding-left: max(var(--space-4), env(safe-area-inset-left, 0px));
   padding-right: max(var(--space-4), env(safe-area-inset-right, 0px));
-  background: var(--canvas);
+  pointer-events: none;
+  transition: transform 200ms ease;
+}
+
+.link-bar-band[data-tucked='true'] {
+  transform: translateY(calc(-100% - 48px));
+}
+
+/* While a finger swipes it, the band follows the finger with no lag. */
+.link-bar-band[data-lifting='true'] {
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .link-bar-band {
+    transition: none;
+  }
 }
 
 .link-bar {
   position: relative;
   max-width: 42rem;
   margin: 0 auto;
+  pointer-events: auto;
 }
 
-/* The pill and the panel stand over the scrim; the scrim covers the band's own ground too. */
+/* The pill and the panel stand over the scrim; the scrim covers the page under the band too. */
 .link-bar-pill,
 .link-bar-panel {
   position: relative;
@@ -37,6 +60,8 @@
   border-radius: var(--radius-full);
   background: var(--surface);
   box-shadow: 0 12px 32px var(--scrim);
+  /* A vertical drag on the pill is a swipe, never a scroll or a zoom. */
+  touch-action: none;
 }
 
 .link-bar-pill:focus-within {

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -8,6 +8,7 @@ import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { createGroup, makeInvite } from './actions';
 import { App } from './App';
+import { PULL_BACK, SWIPE_AWAY } from './barGestures';
 
 freshIndexedDBPerTest();
 
@@ -177,5 +178,31 @@ describe('App', () => {
       'href',
       `#/g/${groupId}`,
     );
+  });
+
+  it('tucks the link bar away on a swipe up, and brings it back on a pull down past the page’s top', async () => {
+    const { services } = await device(createFakeRelay(), 'ana');
+    const { container } = render(<App services={services} />);
+    const field = await screen.findByRole('searchbox', { name: 'Search or paste a link' });
+    const pill = field.closest<HTMLElement>('.link-bar-pill');
+    const frame = container.querySelector<HTMLElement>('.app-frame');
+    const page = container.querySelector<HTMLElement>('.app-page');
+    if (pill === null || frame === null || page === null) throw new Error('no frame');
+    expect(frame).toHaveAttribute('data-tucked', 'false');
+
+    const touch = { pointerId: 1, pointerType: 'touch', clientX: 0 };
+    fireEvent.pointerDown(pill, { ...touch, clientY: 100 });
+    fireEvent.pointerUp(pill, { ...touch, clientY: 100 - SWIPE_AWAY });
+
+    expect(frame).toHaveAttribute('data-tucked', 'true');
+    expect(screen.getByRole('search').parentElement).toHaveAttribute('inert');
+
+    fireEvent.touchStart(page, { touches: [{ clientY: 100 }] });
+    fireEvent.touchMove(page, { touches: [{ clientY: 100 + PULL_BACK }] });
+    fireEvent.touchEnd(page, { touches: [] });
+
+    expect(frame).toHaveAttribute('data-tucked', 'false');
+    expect(screen.getByRole('search').parentElement).not.toHaveAttribute('inert');
+    expect(await axeViolations()).toEqual([]);
   });
 });

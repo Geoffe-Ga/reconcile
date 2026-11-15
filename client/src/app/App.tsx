@@ -4,7 +4,7 @@
  * Screens only show things and report what people did. This file turns those
  * reports into actions on the store and the relay, and moves between routes.
  */
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { apply, type ApplyValues, forgetJoined } from '../door/apply';
 import { sendInvite } from '../door/inbox';
@@ -55,6 +55,7 @@ import type { GuideRecord } from '../platform/guide';
 import type { Persistence } from '../platform/persist';
 import { Start, type StartFollowing, type StartRequest } from '../screens/Start';
 import { aimAt } from './aimedSection';
+import { usePullBack } from './barGestures';
 import { LinkBar } from './LinkBar';
 import type { SearchRecord } from './search';
 import { loadSearchRecords } from './searchLoad';
@@ -1674,10 +1675,12 @@ function goToResult(record: SearchRecord): void {
 
 /**
  * The current route's screen, with the store and sync loop provided to
- * `useGroup`, in the app's frame: the link bar at the top (#444), the page
- * in its own scroll region under it, and, on the four pages that are its
- * places, the tab bar at the bottom (#423), so neither bar ever covers any
- * of the page. A shared page stands outside the app, with neither (#105).
+ * `useGroup`, in the app's frame: the link bar floating at the top (#444),
+ * over the page's own scroll region, which shows around it and keeps a
+ * focused control clear of it, and, on the four pages that are its places,
+ * the tab bar at the bottom (#423). A swipe up the pill tucks the bar away
+ * and a pull down past the page's top brings it back. A shared page stands
+ * outside the app, with neither (#105).
  */
 export function App({ services, initialSeed = null, persistence = null }: AppProps) {
   const route = useRoute();
@@ -1690,6 +1693,16 @@ export function App({ services, initialSeed = null, persistence = null }: AppPro
   );
   // While the link bar's panel shows, the page and the tab bar under its scrim are inert (#444).
   const [barOpen, setBarOpen] = useState(false);
+  // A swipe up tucks the link bar away; a pull down past the page's top brings it back.
+  const [tucked, setTucked] = useState(false);
+  const tuck = useCallback(() => {
+    setTucked(true);
+  }, []);
+  const untuck = useCallback(() => {
+    setTucked(false);
+  }, []);
+  const page = useRef<HTMLDivElement>(null);
+  usePullBack(page, tucked, untuck);
   const openLink = useCallback((link: OpenableLink) => {
     openPasted(link, holdSeed);
   }, []);
@@ -1710,14 +1723,17 @@ export function App({ services, initialSeed = null, persistence = null }: AppPro
       {route.name === 'shared' ? (
         screen
       ) : (
-        <div className="app-frame">
+        <div className="app-frame" data-tucked={tucked}>
           <LinkBar
             onOpen={openLink}
             onPanelChange={setBarOpen}
             loadRecords={loadRecords}
             onGo={goToResult}
+            tucked={tucked}
+            onTuck={tuck}
+            onUntuck={untuck}
           />
-          <div className="app-page" inert={barOpen}>
+          <div ref={page} className="app-page" inert={barOpen}>
             {screen}
           </div>
           <TabBar route={route} inert={barOpen} />

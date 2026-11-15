@@ -289,7 +289,9 @@ test('three members propose, vote and see the Update', async ({ openProfile }) =
     await expect(
       page.getByText('To open a card or link, paste it into the bar at the top.'),
     ).toBeVisible();
-    // The page scrolls in a region of its own between the link bar's band and the tab bar, so nothing sits under either.
+    // The page scrolls in a region of its own from the top of the viewport to the tab bar, with the
+    // link bar floating over its top: it starts below the band, and its scroll padding keeps a
+    // focused control clear of the pill.
     const region = await page.getByRole('main').evaluate((main) => {
       const scroller = main.parentElement;
       const box = scroller?.getBoundingClientRect();
@@ -299,15 +301,22 @@ test('three members propose, vote and see the Update', async ({ openProfile }) =
         sideways: (scroller?.scrollWidth ?? 0) > (scroller?.clientWidth ?? 0),
       };
     });
+    const padding = await page.locator('.app-page').evaluate((scroller) => {
+      const style = getComputedStyle(scroller);
+      return [style.paddingTop, style.scrollPaddingTop].map((px) =>
+        Math.round(Number.parseFloat(px)),
+      );
+    });
     const band = await page.getByRole('search').evaluate((search) => {
       const box = search.parentElement?.getBoundingClientRect();
       return Math.round(box?.bottom ?? 0);
     });
     expect(region).toEqual({
-      top: band,
+      top: 0,
       bottom: Math.round((await tabs.boundingBox())?.y ?? 0),
       sideways: false,
     });
+    expect(padding).toEqual([band, band]);
     for (const colorScheme of ['dark', 'light'] as const) {
       await page.emulateMedia({ colorScheme });
       await expectAccessible(cal, `Discover on a phone, ${colorScheme}`);
