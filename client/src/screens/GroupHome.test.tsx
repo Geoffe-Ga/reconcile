@@ -490,6 +490,27 @@ describe('GroupHome', () => {
     }
   });
 
+  it('opens each section’s heading with a glyph of its own, hidden from assistive tech', () => {
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    log.propose('ana', { title: 'Later quiet hours' });
+    log.propose('ben', { title: 'Bike racks' });
+    renderHome(log.state(), { applications: <p>No one has asked yet.</p> });
+    const headings = Array.from(document.querySelectorAll('section.section > h2'));
+    expect(headings.length).toBeGreaterThan(9);
+    const drawn = headings.map((heading) => {
+      const glyphs = heading.querySelectorAll('svg');
+      expect(glyphs).toHaveLength(1);
+      const glyph = glyphs[0];
+      expect(glyph?.getAttribute('aria-hidden')).toBe('true');
+      expect(glyph?.getAttribute('focusable')).toBe('false');
+      // The heading's words stay its whole name: the glyph adds none.
+      const words = heading.textContent;
+      expect(screen.getByRole('region', { name: words })).toContainElement(heading as HTMLElement);
+      return glyph?.innerHTML;
+    });
+    expect(new Set(drawn).size).toBe(headings.length);
+  });
+
   it('offers Propose a new Document only to someone who may propose, and not while leaving (#92)', () => {
     const log = groupLog({ members: ['Ben'], levels: { Ben: VOTING } });
     renderHome(log.state(), { me: authorOf('ben') });

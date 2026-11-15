@@ -17,6 +17,8 @@ import { MotionTagText } from '../app/MotionTag';
 import { NewcomerProgress, WaitingNote } from '../app/Newcomer';
 import { routeHref } from '../app/router';
 import { RulesLink } from '../app/RulesLink';
+import { SectionGlyph } from '../app/SectionGlyph';
+import type { SectionGlyphKind } from '../app/sectionGlyphs';
 import { SendStatus } from '../app/SendStatus';
 import { ShareLink } from '../app/ShareLink';
 import { formatDay } from '../app/format';
@@ -133,11 +135,21 @@ export interface SyncStatus {
   readonly keyChange?: KeyChange | null;
 }
 
-function Section({ title, children }: { readonly title: string; readonly children: ReactNode }) {
+interface SectionProps {
+  /** The section's heading, set as an eyebrow. */
+  readonly title: string;
+  /** The glyph that opens its heading, so it's told apart at a glance (DESIGN.md "Section glyphs"). */
+  readonly glyph: SectionGlyphKind;
+  readonly children: ReactNode;
+}
+
+/** A section of Group home: its glyph and eyebrow heading, then its one content cell. */
+function Section({ title, glyph, children }: SectionProps) {
   const heading = useId();
   return (
     <section className="section" aria-labelledby={heading}>
-      <h2 id={heading} className="eyebrow">
+      <h2 id={heading} className="eyebrow section-heading">
+        <SectionGlyph kind={glyph} />
         {title}
       </h2>
       {children}
@@ -242,7 +254,7 @@ function OpenLists(props: OpenListsProps) {
   return (
     <>
       {waits ? (
-        <Section title={home.needsYourVote}>
+        <Section title={home.needsYourVote} glyph="vote">
           <ProposalCards
             state={state}
             groupId={groupId}
@@ -255,7 +267,7 @@ function OpenLists(props: OpenListsProps) {
       {lastIsWaits ? after : null}
       {children}
       {others ? (
-        <Section title={waits ? home.otherOpen : home.openProposals}>
+        <Section title={waits ? home.otherOpen : home.openProposals} glyph="open">
           <ProposalCards
             state={state}
             groupId={groupId}
@@ -266,7 +278,7 @@ function OpenLists(props: OpenListsProps) {
         </Section>
       ) : null}
       {waits || others ? null : (
-        <Section title={home.openProposals}>
+        <Section title={home.openProposals} glyph="open">
           <p>{home.noProposals}</p>
         </Section>
       )}
@@ -292,7 +304,7 @@ function Unfinished({
   if (proposals.length === 0) return null;
   const { archive, removal } = messages;
   return (
-    <Section title={removed ? removal.stillOpen : archive.unfinished}>
+    <Section title={removed ? removal.stillOpen : archive.unfinished} glyph="open">
       <ProposalCards
         state={state}
         groupId={groupId}
@@ -393,7 +405,7 @@ function Focus({ state, me, readOnly }: FocusProps) {
   const { focus } = state;
   const canAsk = !readOnly && can(state, me, 'propose') && openPriority(state) === undefined;
   return (
-    <Section title={messages.home.focus}>
+    <Section title={messages.home.focus} glyph="focus">
       <div className="stack">
         {focus === null ? (
           <p>{messages.home.noFocus}</p>
@@ -470,7 +482,7 @@ function HomeDispatches({ state, me, readOnly }: HomeDispatchesProps) {
   const sends = !readOnly && can(state, me, 'dispatch');
   const any = latest !== null;
   return (
-    <Section title={messages.dispatches.title}>
+    <Section title={messages.dispatches.title} glyph="dispatches">
       <div className="stack home-dispatches">
         {latest === null ? (
           <p>{messages.dispatches.empty}</p>
@@ -778,7 +790,7 @@ function PeopleSection(props: GroupHomeProps) {
   const mine = leaving ? undefined : state.members.find((member) => member.author === me);
   const waiting = waitingLevel(me, pending);
   return (
-    <Section title={messages.home.people}>
+    <Section title={messages.home.people} glyph="people">
       <div className="stack people-stack">
         <People {...props} />
         {mine === undefined ? null : (
@@ -941,10 +953,12 @@ function InviteSections(props: GroupHomeProps & { readonly current: boolean }) {
   return (
     <>
       {props.applications === undefined ? null : (
-        <Section title={messages.door.applications}>{props.applications}</Section>
+        <Section title={messages.door.applications} glyph="applications">
+          {props.applications}
+        </Section>
       )}
       {can(state, me, 'invite') && current ? (
-        <Section title={messages.home.invite}>
+        <Section title={messages.home.invite} glyph="invite">
           <ShareLink words={INVITE_WORDS} makeLink={makeInviteLink} copyText={copyText} />
         </Section>
       ) : null}
@@ -972,12 +986,12 @@ function MemberSections(props: GroupHomeProps) {
     <>
       {shown.roster ? <PeopleSection {...props} /> : null}
       {shown.stewards ? (
-        <Section title={messages.stewards.heading}>
+        <Section title={messages.stewards.heading} glyph="stewards">
           <StewardSeats state={state} me={me} leaving={leaving} />
         </Section>
       ) : null}
       {shown.rules ? (
-        <Section title={messages.optIns.homeHeading}>
+        <Section title={messages.optIns.homeHeading} glyph="rules">
           <RulesLink state={state} />
         </Section>
       ) : null}
@@ -1100,7 +1114,7 @@ function Documents({ state, me, readOnly }: DocumentsProps) {
   const groupId = state.group ?? '';
   const { home } = messages;
   return (
-    <Section title={home.documentsLabel}>
+    <Section title={home.documentsLabel} glyph="documents">
       <div className="stack">
         <ul className="card-list">
           {state.documents.map(({ id, title }) => (
@@ -1242,7 +1256,7 @@ export function GroupHome(props: GroupHomeProps) {
         </OpenSections>
         {leads ? null : news}
         <Documents state={state} me={me} readOnly={readOnly} />
-        <Section title={messages.decided.title}>
+        <Section title={messages.decided.title} glyph="decided">
           <Decided
             state={state}
             groupId={groupId}
@@ -1253,7 +1267,7 @@ export function GroupHome(props: GroupHomeProps) {
         {props.coalitions}
         <MemberSections {...props} leaving={readOnly} />
         {discussion === null ? null : (
-          <Section title={messages.home.discussion}>
+          <Section title={messages.home.discussion} glyph="discussion">
             <div>
               <ChatLink href={discussion} />
             </div>

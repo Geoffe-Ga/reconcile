@@ -6,6 +6,7 @@ import { axeViolations } from '../test/axe';
 import type { CoalitionRow } from './coalitionLines';
 import { CoalitionSection, type CoalitionSectionProps } from './CoalitionSection';
 import { messages } from './messages';
+import { SectionGlyph } from './SectionGlyph';
 import type { WebShare } from './share';
 
 const ROW: CoalitionRow = {
@@ -143,6 +144,18 @@ describe('CoalitionSection', () => {
     expect(container).toBeEmptyDOMElement();
     rerender(<CoalitionSection {...props({ rows: [] })} />);
     expect(section()).toHaveTextContent('CoalitionsReconcile with another group→');
+  });
+
+  it('opens its heading with the coalitions glyph, hidden from assistive tech', () => {
+    render(<CoalitionSection {...props()} />);
+    const heading = within(section()).getByRole('heading', { level: 2, name: 'Coalitions' });
+    const glyph = heading.querySelector('svg');
+    expect(glyph).toHaveClass('section-glyph');
+    expect(glyph?.getAttribute('aria-hidden')).toBe('true');
+    expect(glyph?.getAttribute('focusable')).toBe('false');
+    expect(glyph?.innerHTML).toBe(
+      render(<SectionGlyph kind="coalitions" />).container.querySelector('svg')?.innerHTML,
+    );
   });
 
   it('takes part under a name, and says so when that didn’t save', async () => {

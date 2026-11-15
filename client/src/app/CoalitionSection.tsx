@@ -6,6 +6,7 @@ import { CopyLink } from './CopyLink';
 import { messages } from './messages';
 import { ResultMismatch } from './ResultMismatch';
 import { routeHref } from './router';
+import { SectionGlyph } from './SectionGlyph';
 import type { SharePort } from './share';
 import { Field } from './ui';
 
@@ -322,7 +323,8 @@ export function CoalitionSection(props: CoalitionSectionProps) {
   if (rows.length === 0 && !starts) return null;
   return (
     <section className="section" aria-labelledby={heading}>
-      <h2 id={heading} className="eyebrow">
+      <h2 id={heading} className="eyebrow section-heading">
+        <SectionGlyph kind="coalitions" />
         {coalitions.heading}
       </h2>
       <div className="stack">
