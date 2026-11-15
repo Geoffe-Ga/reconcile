@@ -416,6 +416,22 @@ a[data-focus-visible] {
   padding-block-end: 0;
 }
 
+/*
+ * A section's glyph (DESIGN.md "Section glyphs"): 16px, in the eyebrow's own
+ * muted, set inline before its words so the heading keeps their baseline.
+ */
+.section-glyph {
+  width: 16px;
+  height: 16px;
+  margin-inline-end: var(--space-2);
+  vertical-align: -3px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 @media (min-width: 40rem) {
   .section {
     grid-template-columns: 10rem minmax(0, 1fr);
