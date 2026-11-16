@@ -82,6 +82,17 @@ describe('LinkBar', () => {
     expect(await axeViolations()).toEqual([]);
   });
 
+  it('has the Reconcile mark before the pill, a link to the landing page, outside the search', async () => {
+    setup();
+
+    const about = screen.getByRole('link', { name: 'About Reconcile' });
+    expect(about).toHaveAttribute('href', '#/about');
+    expect(within(screen.getByRole('search')).queryByRole('link')).toBeNull();
+    // Before the field in reading order, as it sits to its left.
+    expect(about.compareDocumentPosition(bar()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(await axeViolations()).toEqual([]);
+  });
+
   it('holds its live region only while it has focus, so a page’s own stays the only one', async () => {
     const { user } = setup();
     expect(screen.queryByRole('status')).toBeNull();

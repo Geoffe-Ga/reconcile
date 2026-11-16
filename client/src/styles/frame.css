@@ -31,17 +31,17 @@
  * window's edge and a wheel anywhere over it scrolls it; the page inside
  * keeps its own column. Its scroll stops at its ends rather than dragging the
  * whole app, bars and all.
+ *
+ * Its room for the bar changes at once, never by a transition, which would
+ * lay the page out again every frame. The app keeps it steady instead: it
+ * scrolls by the room that changed, or at the top slides the words by a
+ * transform (`useSteadyPage` in barGestures.ts). The browser's own scroll
+ * anchoring is off, so it never adds a second correction to that one.
  */
 .app-page {
   overflow-y: auto;
   overscroll-behavior: contain;
+  overflow-anchor: none;
   padding-top: var(--link-bar-room);
   scroll-padding-top: var(--link-bar-room);
-  transition: padding-top 200ms ease;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .app-page {
-    transition: none;
-  }
 }

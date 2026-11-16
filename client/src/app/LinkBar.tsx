@@ -23,6 +23,10 @@
  * The pill floats over the page, which shows around it. A swipe up the pill
  * tucks the bar away, emptied, until the app brings it back (a pull down
  * past the page's top, `barGestures.ts`) or a shortcut does.
+ *
+ * The Reconcile mark sits at the pill's left, outside the search: a link to
+ * the landing page (`#/about`, ADR-0078), to read it again or see what a
+ * friend sees from the bare address.
  */
 import { type KeyboardEvent, type RefObject, useContext, useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
@@ -128,6 +132,18 @@ function MagnifierGlyph() {
       <circle cx="10.5" cy="10.5" r="6.5" />
       <path d="m15.5 15.5 5 5" />
     </svg>
+  );
+}
+
+/** The Reconcile mark: two linked rings on forest, as the app's icon draws them. */
+function AboutMark() {
+  return (
+    <Link className="link-bar-mark" href={routeHref({ name: 'about' })} aria-label={words.about}>
+      <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false">
+        <circle cx="9" cy="12" r="5" />
+        <circle cx="15" cy="12" r="5" />
+      </svg>
+    </Link>
   );
 }
 
@@ -460,6 +476,16 @@ function ForgetRow({ shown }: { readonly shown: boolean }) {
   return null;
 }
 
+/**
+ * Moves the band `lift` px up with a finger, written straight to it so it
+ * keeps up with the finger, with no render; 0 hands it back to its own slide.
+ */
+function followFinger(band: HTMLElement | null, lift: number): void {
+  if (band === null) return;
+  band.style.transform = lift === 0 ? '' : `translateY(${String(lift)}px)`;
+  band.dataset.lifting = String(lift !== 0);
+}
+
 /** No records: a search finds nothing until the app hands the bar what the device holds. */
 const NO_RECORDS: readonly SearchRecord[] = [];
 
@@ -546,14 +572,20 @@ export function LinkBar(props: LinkBarProps) {
     if (shelf !== null) setExpanded(new Set([...expanded, shelf]));
     else goTo(resultsOf(view).find((result) => result.record.id === key)?.record);
   };
-  const { lift, ...swipe } = useSwipeAway(() => {
-    setText('');
-    setPointer(null);
-    setExpanded(NONE_EXPANDED);
-    forget();
-    letGo(input.current);
-    onTuck?.();
-  });
+  const band = useRef<HTMLElement>(null);
+  const swipe = useSwipeAway(
+    () => {
+      setText('');
+      setPointer(null);
+      setExpanded(NONE_EXPANDED);
+      forget();
+      letGo(input.current);
+      onTuck?.();
+    },
+    (lift) => {
+      followFinger(band.current, lift);
+    },
+  );
   const onSubmit = () => {
     // A row with the keyboard's virtual focus opens through the list; else Enter opens the first.
     if (input.current?.hasAttribute('aria-activedescendant') === true) return;
@@ -564,13 +596,9 @@ export function LinkBar(props: LinkBarProps) {
   };
 
   return (
-    <div
-      className="link-bar-band"
-      data-tucked={tucked}
-      data-lifting={lift !== 0}
-      inert={tucked}
-      style={lift === 0 ? undefined : { transform: `translateY(${String(lift)}px)` }}
-    >
+    // The page's banner: the mark, then the search.
+    <header ref={band} className="link-bar-band" data-tucked={tucked} inert={tucked}>
+      <AboutMark />
       <div ref={bar} role="search" className="link-bar">
         <Autocomplete inputValue={text} onInputChange={take}>
           <Pill
@@ -592,6 +620,6 @@ export function LinkBar(props: LinkBarProps) {
           />
         </Autocomplete>
       </div>
-    </div>
+    </header>
   );
 }

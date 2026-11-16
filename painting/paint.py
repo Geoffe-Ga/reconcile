@@ -1045,7 +1045,15 @@ class Painter:
 # The app's screens show a few pixels of the painting around their edges. Each
 # edge image is a phone-shaped cut from the tall layout: which section it comes
 # from, and how far down that section the cut starts (0 is its top, 1 its end).
-EDGES = {"sky": (0, 0.0), "canopy": (1, 0.45), "trunks": (2, 0.3), "soil": (3, 0.0)}
+# A negative start reaches up into the section above: the treetops' cut is
+# centered on the canopy's top, where the crowns meet the sky.
+EDGES = {
+    "sky": (0, 0.0),
+    "treetops": (1, -0.17),
+    "canopy": (1, 0.45),
+    "trunks": (2, 0.3),
+    "soil": (3, 0.0),
+}
 EDGE_SHAPE = 16 / 9  # an edge image's height, as a multiple of its width
 
 

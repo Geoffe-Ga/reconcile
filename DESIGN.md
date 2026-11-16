@@ -165,10 +165,11 @@ One hand-painted forest, read top to bottom: sky, canopy, trunks, soil and roots
 
 ### Painted edges
 
-A screen may show a few pixels of the painting around the window: `edge` is 6px on a phone and 10px from 700px up. Inside the edge the page is `canvas`, exactly as a plain screen. The edge is drawn over the page, so words scroll under it and never across it, and it takes no presses.
+A screen may show a few pixels of the painting around the window: `edge` is 6px on a phone and 10px from 700px up. Inside the edge the page is `canvas`, exactly as a plain screen, and its corners round at `lg`, so it sits in the painting like a sheet with soft corners; the window's own corners stay painted. The edge is drawn over the page, so words scroll under it and never across it, and it takes no presses.
 
 - **Which piece** follows where the screen sits in the story:
-  - sky for arriving and setting out (the install guide, Start, Create group, Join, Follow, a front door, Bring a card, Discover)
+  - sky for arriving and setting out (the install guide, Start, Create group, Join, Follow, a front door, Bring a card)
+  - treetops for looking out over everything: the crowns of the canopy where they meet the sky (Discover)
   - canopy for a group (Group home, its status pages, its Dispatches)
   - trunks for what holds a group up (Group rules)
   - soil for what's out of sight (Personal, and a Coalition's home, where groups' roots meet)
@@ -183,6 +184,7 @@ What a new visitor sees before first run: the whole painting, with each section'
 - A mark or a color never carries the meaning alone. "Yes. Shared, and passed up." says it; the tick only backs it up.
 - The copy aims at about a 7th-grade reading level: short sentences, common words, one idea each.
 - Forest is still the one action color, and Start a Group is the one action.
+- **Seen again** (`#/about`): the Reconcile mark at the link bar's start opens it from anywhere in the app, to read it again or see what a friend sees from the bare address. It stands outside the app's frame, as a new visitor sees it, with one addition: "← Back to your groups", a `surface` pill in `primary` at the start of its top links, back to Start. Start a Group there opens Create group.
 
 ## Components (Reconcile-specific)
 
@@ -281,7 +283,8 @@ Build on **React Aria Components** (unstyled, accessible). Style everything from
   - never modal, never repeated in the same session, never guilt-tripping
 - **Link bar** (#444; ADR-0077 §6): one pill at the top of every screen of the app once first run is through, forms and ballots included, where any Reconcile link opens. Never behind the install gate, the pilot notice or the unlock screen, and never on a shared page, which stands outside the app.
   - A `search` landmark: a pill (`full` radius) on `surface` with a `hairline` border and the one soft shadow, centered, at most 42rem wide with a 16px gutter on phones, floating at the top of the viewport padded by `env(safe-area-inset-top)` to clear the notch. The band around it has no ground and takes no taps, so the page shows around the pill as it scrolls under it. The page starts below the pill, and its scroll padding keeps a focused control clear of it.
-  - **Tucked away:** a swipe up the pill (32px or more, more up than across) empties it, lets go of focus and slides the bar up out of view, and the page takes the whole height. A pull down past the page's top (64px), or a wheel or trackpad scrolling up past it, brings the bar back once the finger lets go; the page bounces home as it always does, under the bar. Cmd+L, Ctrl+L and `/` bring it back too, with the cursor in it, so no one needs a gesture to reach it. While tucked, the bar is inert. Reduced motion drops the slide.
+  - **Tucked away:** a swipe up the pill (32px or more, more up than across) empties it, lets go of focus and slides the bar up out of view, and the page takes the whole height. The page never jumps: scrolled down, its words stay where they are and only the bar moves; at the top, they slide up with the bar. Both move on the compositor, never by laying the page out each frame, and the bar follows the finger as it swipes. A pull down past the page's top (64px), or a wheel or trackpad scrolling up past it, brings the bar back once the finger lets go; the page bounces home as it always does, and its words slide down with the bar. Cmd+L, Ctrl+L and `/` bring it back too, with the cursor in it, so no one needs a gesture to reach it. While tucked, the bar is inert. Reduced motion drops the slide.
+  - **The Reconcile mark** stands at the pill's left, outside the search: a round forest button the pill's height, with the app icon's two linked rings in `on-primary` and the same soft shadow. It's a link named "About Reconcile" to the landing page (`#/about`). The band holding both is the page's banner.
   - At least 44px tall: a magnifier glyph (`muted`) at its start, the field in body (16px, so iOS doesn't zoom it) with the placeholder "Search or paste a link", and at its end Clear once there is text, or Paste on a touch device while it's empty and focused, where the browser lets a tap read the clipboard. Focused, the pill takes the 3px `ochre` ring.
   - Under it, a `surface` panel the pill's width, with a `hairline` border and the soft shadow, over the `scrim`. A link gets one row: what it is in ui ("An invite", "A reconcile card", "A coalition to follow", "A front door", "A shared Document"), then "Open →" in `primary`; the row the keyboard is on sits on `sunken`. A damaged or cut-off link gets one line saying so, and anything else "That isn't a Reconcile link.", both in `body`, never an alert color. A linking or recovery code gets one line saying where it goes and a quiet forward link to that screen; the field empties at once, and the code goes nowhere with the link.
   - While the panel shows, the page and the tab bar under the `scrim` are inert; a tap on the scrim empties the bar.

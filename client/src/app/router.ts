@@ -26,6 +26,8 @@ export type Route =
   | { readonly name: 'personal' }
   /** Discover (#423; ADR-0077): reading across groups, and the field that opens a card or link. */
   | { readonly name: 'discover' }
+  /** The landing page again (ADR-0078), from the Reconcile mark at the link bar's start. */
+  | { readonly name: 'about' }
   /** One personal Document, by its id, to read and edit (#93). */
   | { readonly name: 'personalDocument'; readonly id: string }
   /** Link a new device, on the existing device (#96). */
@@ -368,7 +370,7 @@ function seedRoute(name: 'card' | 'follow', rest: readonly string[]): Route {
 
 /**
  * The pages that take no argument after `#/`: Create group, Settings (#78),
- * Discover (#423), the two sides of linking a device (#96), Choose recovery
+ * Discover (#423), the landing page (ADR-0078), the two sides of linking a device (#96), Choose recovery
  * contacts (#109), and the two sides of recovering with contacts (#118).
  * Discover isn't one of {@link isBare}'s: like Personal, it opens a tab of
  * its own (`TabBar.tsx`). A linking code never
@@ -389,6 +391,7 @@ const PAGES: ReadonlyMap<string, Route> = new Map<string, Route>([
   ['create', { name: 'create' }],
   ['settings', { name: 'settings' }],
   ['discover', { name: 'discover' }],
+  ['about', { name: 'about' }],
   ['link-new', { name: 'linkNew' }],
   ['link-this', { name: 'linkThis' }],
   ['recovery', { name: 'recovery' }],
@@ -606,6 +609,7 @@ type FixedTop = Extract<
       | 'settings'
       | 'personal'
       | 'discover'
+      | 'about'
       | 'linkNew'
       | 'linkThis'
       | 'recovery'
@@ -621,6 +625,7 @@ const TOP_HREFS: Readonly<Record<FixedTop['name'], string>> = {
   settings: '#/settings',
   personal: '#/me',
   discover: '#/discover',
+  about: '#/about',
   linkNew: '#/link-new',
   linkThis: '#/link-this',
   recovery: '#/recovery',

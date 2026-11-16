@@ -663,3 +663,11 @@
     padding-top: 50vw;
   }
 }
+
+/* Opened again from inside the app (`#/about`): the way home, first and apart from the rest. */
+.lp-home {
+  gap: 6px;
+  margin-right: auto;
+  color: var(--primary);
+  text-decoration: none;
+}

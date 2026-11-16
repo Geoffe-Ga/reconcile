@@ -2,16 +2,18 @@
  * The link bar's gestures: a swipe up tucks it away, and a pull down past
  * the page's top, by finger or wheel, brings it back.
  */
-import { fireEvent, render, screen } from '@testing-library/react';
-import { useRef } from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import { Profiler, useRef, useState } from 'react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   liftOf,
   PULL_BACK,
+  settle,
   SWIPE_AWAY,
   swipedAway,
   usePullBack,
+  useSteadyPage,
   useSwipeAway,
   WHEEL_BACK,
 } from './barGestures';
@@ -35,11 +37,13 @@ describe('liftOf', () => {
   });
 });
 
-/** A pill that takes the swipe's handlers and shows its lift. */
+/** A pill that takes the swipe's handlers and shows its lift, written straight to the element. */
 function Pill({ onAway }: { readonly onAway: () => void }) {
-  const { lift, ...handlers } = useSwipeAway(onAway);
+  const handlers = useSwipeAway(onAway, (lift) => {
+    screen.getByTestId('pill').dataset.lift = String(lift);
+  });
   return (
-    <div data-testid="pill" data-lift={lift} {...handlers}>
+    <div data-testid="pill" data-lift="0" {...handlers}>
       Pill
     </div>
   );
@@ -84,6 +88,23 @@ describe('useSwipeAway', () => {
     // A cancelled finger's later lift-off swipes nothing.
     fireEvent.pointerUp(pill, { pointerId: 1, pointerType: 'touch', clientX: 0, clientY: 0 });
     expect(pill.dataset.lift).toBe('0');
+  });
+
+  it('follows the finger without rendering again, so the bar moves on the next frame', () => {
+    const commits = vi.fn();
+    render(
+      <Profiler id="pill" onRender={commits}>
+        <Pill onAway={vi.fn()} />
+      </Profiler>,
+    );
+    const pill = screen.getByTestId('pill');
+    const before = commits.mock.calls.length;
+    fireEvent.pointerDown(pill, { pointerId: 1, pointerType: 'touch', clientX: 0, clientY: 100 });
+    for (const y of [90, 80, 70, 60]) {
+      fireEvent.pointerMove(pill, { pointerId: 1, pointerType: 'touch', clientX: 0, clientY: y });
+    }
+    fireEvent.pointerUp(pill, { pointerId: 1, pointerType: 'touch', clientX: 0, clientY: 95 });
+    expect(commits).toHaveBeenCalledTimes(before);
   });
 
   it('ignores a second finger’s moves', () => {
@@ -243,3 +264,132 @@ function wheelAt(deltaY: number, timeStamp: number): WheelEvent {
   Object.defineProperty(event, 'timeStamp', { value: timeStamp });
   return event;
 }
+
+describe('settle', () => {
+  it('keeps a scrolled page’s words still while the bar’s room shrinks or grows', () => {
+    // Tucking away: 60px of room goes, so the page scrolls 60px less to keep its place.
+    expect(settle({ room: 72, scrollTop: 400 }, 12)).toBe(340);
+    // Coming back: 60px of room comes, so it scrolls 60px more.
+    expect(settle({ room: 12, scrollTop: 400 }, 72)).toBe(460);
+  });
+
+  it('stays at the top, where the words move with the room', () => {
+    expect(settle({ room: 72, scrollTop: 0 }, 12)).toBe(0);
+    expect(settle({ room: 12, scrollTop: 0 }, 72)).toBe(0);
+    // Bouncing past the top, as WebKit reports it.
+    expect(settle({ room: 12, scrollTop: -30 }, 72)).toBe(0);
+  });
+
+  it('goes no higher than the top when it’s scrolled less than the room that goes', () => {
+    expect(settle({ room: 72, scrollTop: 20 }, 12)).toBe(0);
+  });
+});
+
+/** A page whose room, its top padding, follows `tucked`, with two children and a painted shell. */
+function SteadyPage() {
+  const [tucked, setTucked] = useState(false);
+  const page = useRef<HTMLDivElement>(null);
+  const brace = useSteadyPage(page, tucked);
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => {
+          brace();
+          setTucked(!tucked);
+        }}
+      >
+        Toggle
+      </button>
+      <div ref={page} data-testid="page" style={{ paddingTop: tucked ? 12 : 72 }}>
+        <p data-testid="plain">Plain</p>
+        <div className="shell" data-scene="sky" data-testid="shell">
+          <h1 data-testid="heading">Heading</h1>
+        </div>
+      </div>
+    </>
+  );
+}
+
+describe('useSteadyPage', () => {
+  const animate = vi.fn();
+  const reduced = { matches: false };
+
+  afterEach(() => {
+    animate.mockReset();
+    reduced.matches = false;
+    Reflect.deleteProperty(HTMLElement.prototype, 'animate');
+    Reflect.deleteProperty(window, 'matchMedia');
+  });
+
+  /** Gives jsdom the Web Animations call and the media query it lacks. */
+  function canAnimate() {
+    Object.defineProperty(HTMLElement.prototype, 'animate', { value: animate, configurable: true });
+    Object.defineProperty(window, 'matchMedia', {
+      value: () => reduced,
+      configurable: true,
+    });
+  }
+
+  function toggle(scrollTop: number) {
+    const page = screen.getByTestId('page');
+    page.scrollTop = scrollTop;
+    act(() => {
+      screen.getByRole('button', { name: 'Toggle' }).click();
+    });
+    return page;
+  }
+
+  it('scrolls a scrolled page by the room that changed, and slides nothing', () => {
+    canAnimate();
+    render(<SteadyPage />);
+    expect(toggle(400).scrollTop).toBe(340);
+    expect(toggle(340).scrollTop).toBe(400);
+    expect(animate).not.toHaveBeenCalled();
+  });
+
+  it('slides the words at the top from where they were, on the compositor, never the painted edge', () => {
+    canAnimate();
+    render(<SteadyPage />);
+    toggle(0);
+    const targets = animate.mock.contexts as HTMLElement[];
+    // The shell's own edge is fixed to the window: its children move, never the shell.
+    expect(targets.map((element) => element.dataset.testid)).toEqual(['plain', 'heading']);
+    expect(animate.mock.calls[0]?.[0]).toEqual([
+      { transform: 'translateY(60px)' },
+      { transform: 'none' },
+    ]);
+    animate.mockReset();
+    toggle(0);
+    expect(animate.mock.calls[0]?.[0]).toEqual([
+      { transform: 'translateY(-60px)' },
+      { transform: 'none' },
+    ]);
+  });
+
+  it('slides only the part a page scrolled less than the room can’t take up', () => {
+    canAnimate();
+    render(<SteadyPage />);
+    expect(toggle(20).scrollTop).toBe(0);
+    expect(animate.mock.calls[0]?.[0]).toEqual([
+      { transform: 'translateY(40px)' },
+      { transform: 'none' },
+    ]);
+  });
+
+  it('jumps without a slide under reduced motion, or where the browser can’t animate', () => {
+    render(<SteadyPage />);
+    expect(() => toggle(0)).not.toThrow();
+    canAnimate();
+    reduced.matches = true;
+    toggle(0);
+    expect(animate).not.toHaveBeenCalled();
+  });
+
+  it('does nothing on a render the bar didn’t move in', () => {
+    canAnimate();
+    const { rerender } = render(<SteadyPage />);
+    rerender(<SteadyPage />);
+    expect(animate).not.toHaveBeenCalled();
+  });
+});
