@@ -21,9 +21,9 @@
   padding-left: max(var(--space-4), env(safe-area-inset-left, 0px));
   padding-right: max(var(--space-4), env(safe-area-inset-right, 0px));
   pointer-events: none;
+  /* A transform runs on the compositor, which gives the band a layer of its own while it moves.
+     Nothing here holds one at rest: that would make the band the scrim's containing block. */
   transition: transform 200ms ease;
-  /* Its own layer, so its slide and a finger's swipe are the compositor's alone. */
-  will-change: transform;
 }
 
 .link-bar-band[data-tucked='true'] {
