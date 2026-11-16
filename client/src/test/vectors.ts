@@ -7,18 +7,23 @@
  *
  * - keys.json, `{kind: "keys", seeds: {name: seed}}`, names the signing keys the fold vectors
  *   use, each from a fixed 32-byte seed in hex.
- * - A tally vector is `{name, eligible, bar?, versions, expect}`. `bar` names a class whose
- *   bar `DEFAULT_RULES` holds, `"ordinary"` when missing (#94), and the outcome must equal
- *   `expect` with that bar added.
- * - A fold vector is `{name, records, relayNow, expect, unchangedWithout?}`.
+ * - A tally vector is `{name, eligible, bar?, versions, expect, rank?}`. `bar` names a class
+ *   whose bar `DEFAULT_RULES` holds, `"ordinary"` when missing (#94), and the outcome must equal
+ *   `expect` with that bar added. `rank`, when present, lists the ids `rank()` gives, best
+ *   first (#107).
+ * - A fold vector is `{name, cleared?, alsoCleared?, records, relayNow, expect, unchangedWithout?}`.
+ *   `cleared` lists the Proposals (by `@seq`) whose ballots the device has cleared (#111), passed
+ *   to `fold`. `alsoCleared` lists Proposals whose ballots the records still hold: vectors.test.ts
+ *   also folds the log as a device that has cleared them would hold it ({@link clearedLog}), and
+ *   `expect` must hold there too, the two states agreeing on everything but the ballots (#289).
  *   - Each record is `{seq, received, event | raw}`. An `event` is serialized with
  *     `JSON.stringify` as written, so a vector pins exact bytes; `raw` gives the bytes as text.
  *   - A string `"@3"` stands for the id of the record at seq 3, so `"@1.0"` is genesis's first
  *     Atom, and `"%ana"` stands for ana's public key in base64url. `"&ana"` stands for ana's
  *     X25519 encryption key (#98) in base64url: the public key of the secret key
  *     SHA-256("reconcile/vector-kx/" + name). `{"$base64url": [bytes]}`
- *     stands for those bytes in unpadded base64url, as invite.json's token signatures are
- *     written, so no high-entropy text sits in the repository.
+ *     stands for those bytes in unpadded base64url, as invite.json's token signatures and
+ *     a result's `commit` (#111) are written, so no high-entropy text sits in the repository.
  *   - The relay record is `publicKey ‖ signature ‖ event bytes` (spec §3), signed by the key
  *     `by` names, or else by the key the event's `"%name"` author names. `key` (hex, or
  *     `"%name"`) and `sig` (hex) replace those fields, and `flip: {in, at}` flips the low bit of
@@ -28,15 +33,53 @@
  *     (#98); a record without one was read from epoch 0's.
  *   - `expect` is matched as a subset of the folded state.
  *   - `unchangedWithout` lists seqs whose removal must leave the state, apart from `ignored`,
- *     deep-equal.
+ *     deep-equal. `unchangedExcept` names any other fields left out of that comparison, as a
+ *     `recovery-share` (#109) is kept in `recoveryShares` and changes nothing else.
+ * - A coalition file (#100), `{kind: "coalition", vectors}`, holds vectors with several logs:
+ *   `{name, logs: {coalition: [...], A: [...]}, cleared?, relayNow, expect: {coalition, A},
+ *   report?, mismatches?, unchangedWithout?}`, `cleared` naming by log the Proposals whose ballots
+ *   that log's device has cleared (#111, #278). Seqs are global, as the relay's one counter is, so `@n`
+ *   names a record in any log. vectors.test.ts folds the coalition log, then each other log, a
+ *   member group, with the motions its seat is owed (`motionsFor`), and matches `report` and
+ *   `mismatches` against `resultsToReport` and `resultMismatches` for that group's seat.
+ *   `unchangedWithout` lists, by log, the seqs whose removal must leave every state, apart from
+ *   `ignored`, deep-equal. A coalition's references: `"^A"` is seat A's public key and `"!A"`
+ *   its 32-byte secret in base64url, from SHA-256("reconcile/vector-seat/" + name); `"~name"` is
+ *   32 bytes, SHA-256("reconcile/vector-secret/" + name), in base64url, for a coalition secret or
+ *   `inner`; `"&^A"` is seat A's X25519 key, `seatKxOf` of `"!A"` (#313, `crypto/room.ts`); and
+ *   `{"$seatProof": ["A", "@1", "%kim"]}` is seat A's proof for kim's key in the coalition whose
+ *   genesis is seq 1 (`crypto/seat.ts`).
+ * - A room file (#125), `{kind: "room", vectors}`, holds vectors with a coalition's log and its
+ *   room's: `{name, logs: {coalition: [...], room: [...]}, relayNow, expect}`, built as a
+ *   coalition file's are, so `@n` names a record of either. room.test.ts folds the coalition log,
+ *   then `foldRoom` the room's, and matches `expect`, a list of messages, against what it gives.
+ * - room-keys.json (#125), `{kind: "room-keys", ...}`, pins a room's derivations and one sealed
+ *   message, computed outside @noble; crypto/room.test.ts runs it.
+ * - A nested file (#122), `{kind: "nested", vectors}`, holds vectors with several coalitions and
+ *   groups: `{name, logs: {D: [...], C: [...], A: [...]}, relayNow, expect, report?,
+ *   unchangedWithout?}`. vectors.test.ts folds every log together as a device that holds them all
+ *   does (`foldTogether`): each coalition with the motions its seats decide in the coalitions above
+ *   it, then each group. `report` maps a lower log to the logs above it: `{C: {D: [...]}}` must
+ *   equal `resultsToReport` for the seat C holds in D, and `null` says C holds no seat there.
+ *   `promote` (#126) maps a lower log to the logs above it the same way, matched against
+ *   `promotionsOwed`: the promotion records it owes there. promote-*.json are nested files too,
+ *   but promote-dispatch.json, a group's own Dispatch put to a vote, is a fold file.
+ *   `{"$sealed": [coalition, inner, secret, innerAbove, seat]}` is a coalition's sealed seat above
+ *   (`crypto/innerSeal.ts`): the secrets `secret` and `innerAbove` and seat `seat`'s secret,
+ *   sealed in the coalition `coalition` under `inner`, each a reference as above. A seal's nonce is
+ *   random, so a record that holds one is new bytes, and a new id, on every run.
  * - invite.json (#73) is a fold file: joins carrying invite tokens, each signed outside @noble.
  * - atom-text.json pins `normalizeAtomText` and the genesis split; atomText.test.ts runs it.
  */
 import { kxPublicKeyOf } from '../crypto/box';
+import { sealSeatSecrets } from '../crypto/innerSeal';
 import { sha256 } from '../crypto/hash';
+import { seatKxOf } from '../crypto/room';
+import { signSeatProof } from '../crypto/seat';
 import { EVENT_CONTEXT, publicKeyOf, sign } from '../crypto/sign';
-import { base64url, eventId } from '../engine/event';
-import type { LogRecord } from '../engine/fold';
+import { base64url, eventId, fromBase64url, parseRecord } from '../engine/event';
+import { expiringProposal } from '../engine/expiry';
+import type { GroupState, LogRecord } from '../engine/fold';
 import type { ProposalClass } from '../engine/rules';
 import type { TallyInput, TallyOutcome } from '../engine/tally';
 import { concat, fromHex } from './bytes';
@@ -50,6 +93,8 @@ export interface TallyVector extends Omit<TallyInput, 'bar'> {
   readonly bar?: ProposalClass;
   /** The outcome without its bar, which the runner adds. */
   readonly expect: DistributiveOmit<TallyOutcome, 'bar'>;
+  /** The passing versions' ids, best first, as `rank()` gives them (#107). */
+  readonly rank?: readonly string[];
 }
 
 /** How a vector record departs from a plain record signed by its author. */
@@ -72,16 +117,57 @@ type VectorRecord = RecordOptions &
 /** One fold vector: records in relay order, the relay's `now`, and the state they must fold to. */
 export interface FoldVector {
   readonly name: string;
+  readonly cleared?: readonly string[];
+  readonly alsoCleared?: readonly string[];
   readonly records: readonly VectorRecord[];
   readonly relayNow: number | null;
   readonly expect: object;
   readonly unchangedWithout?: readonly number[];
+  readonly unchangedExcept?: readonly string[];
+}
+
+/** One vector with several logs (#100): a coalition's and its member groups', by name. */
+export interface LogsVector {
+  readonly name: string;
+  readonly logs: Readonly<Record<string, readonly VectorRecord[]>>;
+  /** By log, the Proposals (by `@seq`) whose ballots its device has cleared (#111, #278). */
+  readonly cleared?: Readonly<Record<string, readonly string[]>>;
+  readonly relayNow: number | null;
+  readonly expect: Readonly<Record<string, object>>;
+  readonly report?: Readonly<Record<string, readonly unknown[]>>;
+  readonly mismatches?: Readonly<Record<string, readonly unknown[]>>;
+  readonly unchangedWithout?: Readonly<Record<string, readonly number[]>>;
+}
+
+/** What each lower log owes each log above it, by name: `{C: {D: [...]}}` (#122, #126). */
+type Owed = Readonly<Record<string, Readonly<Record<string, readonly unknown[] | null>>>>;
+
+/**
+ * One vector with coalitions nested in coalitions (#122): what each lower log
+ * owes each above it, its results in `report` and its promotion records in
+ * `promote` (#126).
+ */
+export interface NestedVector extends Omit<LogsVector, 'report' | 'mismatches'> {
+  readonly report?: Owed;
+  readonly promote?: Owed;
+}
+
+/** One room vector (#125): a coalition's log and its room's, and the messages they must show. */
+export interface RoomVector {
+  readonly name: string;
+  readonly logs: Readonly<Record<'coalition' | 'room', readonly VectorRecord[]>>;
+  readonly relayNow: number | null;
+  readonly expect: readonly object[];
 }
 
 /** One vector file, by its `kind`. */
 export type VectorFile =
   | { readonly kind: 'tally'; readonly vectors: readonly TallyVector[] }
   | { readonly kind: 'fold'; readonly vectors: readonly FoldVector[] }
+  | { readonly kind: 'coalition'; readonly vectors: readonly LogsVector[] }
+  | { readonly kind: 'nested'; readonly vectors: readonly NestedVector[] }
+  | { readonly kind: 'room'; readonly vectors: readonly RoomVector[] }
+  | { readonly kind: 'room-keys'; readonly vectors: readonly { readonly name: string }[] }
   | { readonly kind: 'atom-text'; readonly vectors: readonly { readonly name: string }[] }
   | { readonly kind: 'keys'; readonly seeds: Readonly<Record<string, string>> };
 
@@ -127,15 +213,45 @@ export function kxNamed(name: string): string {
   return base64url(kxPublicKeyOf(sha256(encoder.encode(`reconcile/vector-kx/${name}`))));
 }
 
+/** The 32-byte seat secret the vectors call `!name` (#100). */
+export function seatSecretNamed(name: string): Uint8Array {
+  return sha256(encoder.encode(`reconcile/vector-seat/${name}`));
+}
+
+/** The base64url X25519 key the vectors call `&^name`: seat name's, from its seat secret (#313). */
+export function seatKxNamed(name: string): string {
+  return seatKxOf(seatSecretNamed(name));
+}
+
+/** The 32 bytes the vectors call `~name`: a coalition secret or `inner` (#100). */
+function secretNamed(name: string): Uint8Array {
+  return sha256(encoder.encode(`reconcile/vector-secret/${name}`));
+}
+
+/** The base64url text of the 32 bytes a seat or secret reference (`^`, `!` or `~`) names, or null. */
+function seatRef(text: string): string | null {
+  const match = /^([\^!~])(\w+)$/.exec(text);
+  if (match === null) return null;
+  const [, sigil, name = ''] = match;
+  if (sigil === '~') return base64url(secretNamed(name));
+  const secret = seatSecretNamed(name);
+  return base64url(sigil === '!' ? secret : publicKeyOf(secret));
+}
+
 /**
  * Replaces `@n` (and `@n.i`) with the id of the record at seq n, `%name` with
- * name's key, and `&name` with name's encryption key.
+ * name's key, `&name` with name's encryption key, `&^name` with seat name's
+ * encryption key (#313), and a seat or secret reference with its bytes (#100).
  */
 function resolveRef(text: string, ids: ReadonlyMap<number, string>): string {
   const key = /^%(\w+)$/.exec(text);
   if (key !== null) return publicKeyNamed(String(key[1]));
   const kx = /^&(\w+)$/.exec(text);
   if (kx !== null) return kxNamed(String(kx[1]));
+  const seatKx = /^&\^(\w+)$/.exec(text);
+  if (seatKx !== null) return seatKxNamed(String(seatKx[1]));
+  const seat = seatRef(text);
+  if (seat !== null) return seat;
   const match = /^@(\d+)(.*)$/.exec(text);
   if (match === null) return text;
   const id = ids.get(Number(match[1]));
@@ -151,9 +267,37 @@ function base64urlBytes(value: object): number[] | null {
   return Array.isArray(bytes) && bytes.every((byte) => typeof byte === 'number') ? bytes : null;
 }
 
+/** The base64url seat proof `{"$seatProof": [seat, coalition, joiner]}` stands for, or null (#100). */
+function seatProof(value: object, ids: ReadonlyMap<number, string>): string | null {
+  const args: unknown =
+    Object.entries(value).length === 1 ? Reflect.get(value, '$seatProof') : null;
+  if (!Array.isArray(args) || args.length !== 3) return null;
+  const [seat, coalition, joiner] = args.map((arg: unknown) => resolve(arg, ids));
+  if (typeof seat !== 'string' || typeof coalition !== 'string' || typeof joiner !== 'string') {
+    return null;
+  }
+  const proof = signSeatProof(seatSecretNamed(seat), coalition, fromBase64url(joiner));
+  return base64url(proof);
+}
+
+/** The sealed field `{"$sealed": [coalition, inner, secret, innerAbove, seat]}` stands for, or null (#122). */
+function sealedField(value: object, ids: ReadonlyMap<number, string>): string | null {
+  const args: unknown = Object.entries(value).length === 1 ? Reflect.get(value, '$sealed') : null;
+  if (!Array.isArray(args) || args.length !== 5) return null;
+  const [coalition = '', inner = '', secret = '', innerAbove = '', seat = ''] = args.map(
+    (arg: unknown) => String(resolve(arg, ids)),
+  );
+  return sealSeatSecrets(coalition, fromBase64url(inner), {
+    secret: fromBase64url(secret),
+    inner: fromBase64url(innerAbove),
+    seat: seatSecretNamed(seat),
+  });
+}
+
 /**
  * Resolves every `@n` and `%name` reference inside a JSON value, in keys as
- * well as values, and writes each `{"$base64url": [bytes]}` as its text.
+ * well as values, and writes each `{"$base64url": [bytes]}`,
+ * `{"$seatProof": [...]}` and `{"$sealed": [...]}` as its text.
  */
 export function resolve(value: unknown, ids: ReadonlyMap<number, string>): unknown {
   if (typeof value === 'string') return resolveRef(value, ids);
@@ -161,6 +305,10 @@ export function resolve(value: unknown, ids: ReadonlyMap<number, string>): unkno
   if (typeof value === 'object' && value !== null) {
     const bytes = base64urlBytes(value);
     if (bytes !== null) return base64url(Uint8Array.from(bytes));
+    const proof = seatProof(value, ids);
+    if (proof !== null) return proof;
+    const sealed = sealedField(value, ids);
+    if (sealed !== null) return sealed;
     return Object.fromEntries(
       Object.entries(value).map(([key, item]) => [resolveRef(key, ids), resolve(item, ids)]),
     );
@@ -209,26 +357,89 @@ function relayBytes(record: VectorRecord, event: Uint8Array): Uint8Array {
   return concat(at.key, at.signature, at.event);
 }
 
-/** A fold vector's relay records, the id of each record by seq, and its relay `now`. */
+/**
+ * A fold vector's relay records, the id of each record by seq, its relay
+ * `now`, its `cleared`, and the Proposals it also folds cleared.
+ */
 export interface VectorLog {
   readonly records: LogRecord[];
   readonly ids: ReadonlyMap<number, string>;
   readonly relayNow: number | null;
+  readonly cleared: readonly string[];
+  readonly alsoCleared: readonly string[];
+}
+
+/**
+ * One vector record as a relay record, serialized once with `ids` so far, or
+ * none for a record of another mailbox; its id joins `ids`.
+ */
+function buildRecord(record: VectorRecord, ids: Map<number, string>): LogRecord[] {
+  const text = 'raw' in record ? record.raw : JSON.stringify(resolve(record.event, ids));
+  const event = encoder.encode(text);
+  ids.set(record.seq, eventId(event));
+  const bytes = relayBytes(record, event);
+  const { seq, received, epoch } = record;
+  const read = { seq, received, bytes, ...(epoch === undefined ? {} : { epoch }) };
+  return record.elsewhere === true ? [] : [read];
 }
 
 /** Turns a vector's records into relay records, serializing each event once, in seq order. */
 export function buildRecords(vector: FoldVector): VectorLog {
   const ids = new Map<number, string>();
-  const records = vector.records.flatMap((record) => {
-    const text = 'raw' in record ? record.raw : JSON.stringify(resolve(record.event, ids));
-    const event = encoder.encode(text);
-    ids.set(record.seq, eventId(event));
-    const bytes = relayBytes(record, event);
-    const { seq, received, epoch } = record;
-    const read = { seq, received, bytes, ...(epoch === undefined ? {} : { epoch }) };
-    return record.elsewhere === true ? [] : [read];
+  const records = vector.records.flatMap((record) => buildRecord(record, ids));
+  const cleared = (vector.cleared ?? []).map((ref) => resolveRef(ref, ids));
+  const alsoCleared = (vector.alsoCleared ?? []).map((ref) => resolveRef(ref, ids));
+  return { records, ids, relayNow: vector.relayNow, cleared, alsoCleared };
+}
+
+/**
+ * The log as a device holds it once it has cleared `log.alsoCleared` (#111):
+ * without the records that expire with each one's ballots, apart from the
+ * result `held`, the fold of the full log, accepted for it, and with those
+ * Proposals added to `cleared`. Every record left keeps its seq and receipt,
+ * as clearing leaves them. Throws for a Proposal with no accepted result,
+ * which no device would clear.
+ */
+export function clearedLog(
+  log: VectorLog,
+  held: GroupState,
+): { records: LogRecord[]; cleared: string[] } {
+  const kept = new Set(
+    log.alsoCleared.map((id) => {
+      const result = held.proposals.find((p) => p.id === id)?.result ?? null;
+      if (result === null) throw new Error(`a vector clears ${id}, which has no result`);
+      return result.id;
+    }),
+  );
+  const records = log.records.filter((record) => {
+    const parsed = parseRecord(record.bytes);
+    const proposal = parsed === null ? null : expiringProposal(parsed.event);
+    return proposal === null || !log.alsoCleared.includes(proposal) || kept.has(parsed?.id ?? '');
   });
-  return { records, ids, relayNow: vector.relayNow };
+  return { records, cleared: [...log.cleared, ...log.alsoCleared] };
+}
+
+/** A vector's logs as relay records by name, and the id of each record by its global seq (#100). */
+export interface VectorLogs {
+  readonly logs: Readonly<Record<string, LogRecord[]>>;
+  readonly ids: ReadonlyMap<number, string>;
+}
+
+/**
+ * Turns a vector's logs into relay records, building every record in global
+ * seq order, so `@n` names a record of any log written before it (#100).
+ */
+export function buildLogs(vector: Pick<LogsVector, 'logs'>): VectorLogs {
+  const ids = new Map<number, string>();
+  const tagged = Object.entries(vector.logs).flatMap(([log, records]) =>
+    records.map((record) => ({ log, record })),
+  );
+  tagged.sort((a, b) => a.record.seq - b.record.seq);
+  const logs: Record<string, LogRecord[]> = Object.fromEntries(
+    Object.keys(vector.logs).map((log) => [log, []]),
+  );
+  for (const { log, record } of tagged) logs[log]?.push(...buildRecord(record, ids));
+  return { logs, ids };
 }
 
 /** Every tally vector, file by file. */
@@ -239,6 +450,21 @@ export const TALLY_VECTORS: readonly TallyVector[] = Object.values(VECTOR_FILES)
 /** Every fold vector, file by file. */
 export const FOLD_VECTORS: readonly FoldVector[] = Object.values(VECTOR_FILES).flatMap((file) =>
   file.kind === 'fold' ? file.vectors : [],
+);
+
+/** Every vector with several logs, file by file (#100). */
+export const COALITION_VECTORS: readonly LogsVector[] = Object.values(VECTOR_FILES).flatMap(
+  (file) => (file.kind === 'coalition' ? file.vectors : []),
+);
+
+/** Every vector with nested coalitions, file by file (#122). */
+export const NESTED_VECTORS: readonly NestedVector[] = Object.values(VECTOR_FILES).flatMap(
+  (file) => (file.kind === 'nested' ? file.vectors : []),
+);
+
+/** Every room vector, file by file (#125). */
+export const ROOM_VECTORS: readonly RoomVector[] = Object.values(VECTOR_FILES).flatMap((file) =>
+  file.kind === 'room' ? file.vectors : [],
 );
 
 /**

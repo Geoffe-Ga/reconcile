@@ -1,0 +1,598 @@
+{
+  "kind": "fold",
+  "vectors": [
+    {
+      "name": "sections-dispatch-add: an add carrying a Dispatch passes on its second ballot, so its new section lands and the Dispatch goes out at its close, from the Proposal, pointing to the Document the section joined",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [{ "title": "House rules", "atoms": ["A\n", "B\n"] }]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "add",
+                "document": "@1",
+                "after": "@1.0"
+              },
+              "title": "Add guests",
+              "why": "Guests come often.",
+              "text": "Guests leave by 11pm.\n",
+              "dispatch": {
+                "title": "Updated: House rules",
+                "text": "Guests now have a rule."
+              }
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501200000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501260000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3": 4
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29375030,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@3",
+            "atom": "@3",
+            "target": {
+              "kind": "add",
+              "after": "@1.0"
+            },
+            "dispatch": {
+              "title": "Updated: House rules",
+              "text": "Guests now have a rule."
+            },
+            "closedAt": 29375021,
+            "final": true,
+            "outcome": {
+              "kind": "pass",
+              "version": "@3"
+            }
+          }
+        ],
+        "atoms": [
+          {
+            "id": "@1.0",
+            "documentId": "@1",
+            "text": "A\n"
+          },
+          {
+            "id": "@3",
+            "documentId": "@1",
+            "text": "Guests leave by 11pm.\n"
+          },
+          {
+            "id": "@1.1",
+            "documentId": "@1",
+            "text": "B\n"
+          }
+        ],
+        "dispatches": [
+          {
+            "id": "@3",
+            "by": {
+              "proposal": "@3"
+            },
+            "title": "Updated: House rules",
+            "text": "Guests now have a rule.",
+            "doc": "@1",
+            "received": 29375021
+          }
+        ]
+      }
+    },
+    {
+      "name": "sections-dispatch-remove: a removal carrying a Dispatch passes, so its section leaves the Document and the Dispatch still points to the Document it changed",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [{ "title": "House rules", "atoms": ["A\n", "B\n"] }]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500600000,
+            "body": {
+              "atom": "@1.1",
+              "title": "No bins rule",
+              "why": "The council collects now.",
+              "text": "",
+              "dispatch": {
+                "title": "Updated: House rules",
+                "text": "The bins rule is gone."
+              }
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501200000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501260000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3": 4
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29375030,
+      "expect": {
+        "atoms": [
+          {
+            "id": "@1.0",
+            "documentId": "@1",
+            "text": "A\n"
+          }
+        ],
+        "dispatches": [
+          {
+            "id": "@3",
+            "by": {
+              "proposal": "@3"
+            },
+            "title": "Updated: House rules",
+            "text": "The bins rule is gone.",
+            "doc": "@1",
+            "received": 29375021
+          }
+        ]
+      }
+    },
+    {
+      "name": "sections-dispatch-added-edit: a change to a section an add created carries a Dispatch, which points to the one Document though genesis never founded that section",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [{ "title": "House rules", "atoms": ["A\n", "B\n"] }]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "add",
+                "document": "@1",
+                "after": null
+              },
+              "title": "Add a preamble",
+              "why": "Say who we are.",
+              "text": "We share a house.\n"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501200000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501260000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375030,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501800000,
+            "body": {
+              "atom": "@3",
+              "title": "A warmer preamble",
+              "why": "Friendlier.",
+              "text": "We share a home.\n",
+              "dispatch": {
+                "title": "Updated: House rules",
+                "text": ""
+              }
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375040,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762502400000,
+            "body": {
+              "proposal": "@6",
+              "scores": {
+                "@6": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375041,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762502460000,
+            "body": {
+              "proposal": "@6",
+              "scores": {
+                "@6": 4
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29375050,
+      "expect": {
+        "atoms": [
+          {
+            "id": "@3",
+            "documentId": "@1",
+            "text": "We share a home.\n"
+          },
+          {
+            "id": "@1.0",
+            "documentId": "@1",
+            "text": "A\n"
+          },
+          {
+            "id": "@1.1",
+            "documentId": "@1",
+            "text": "B\n"
+          }
+        ],
+        "dispatches": [
+          {
+            "id": "@6",
+            "by": {
+              "proposal": "@6"
+            },
+            "title": "Updated: House rules",
+            "text": "",
+            "doc": "@1",
+            "received": 29375041
+          }
+        ]
+      }
+    },
+    {
+      "name": "sections-dispatch-ignored: an add whose Dispatch title is over 80 code points is ignored, and one whose Dispatch isn't two strings is a bad shape with no id, so neither adds a section or a Dispatch",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [{ "title": "House rules", "atoms": ["A\n", "B\n"] }]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "add",
+                "document": "@1",
+                "after": "@1.0"
+              },
+              "title": "Add guests",
+              "why": "Guests come often.",
+              "text": "Guests leave by 11pm.\n",
+              "dispatch": {
+                "title": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "text": ""
+              }
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500660000,
+            "body": {
+              "target": {
+                "kind": "add",
+                "document": "@1",
+                "after": "@1.1"
+              },
+              "title": "Add pets",
+              "why": "Pets come often.",
+              "text": "Pets stay leashed.\n",
+              "dispatch": {
+                "title": 7,
+                "text": ""
+              }
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501200000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501260000,
+            "body": {
+              "proposal": "@3",
+              "scores": {
+                "@3": 4
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29375030,
+      "expect": {
+        "proposals": [],
+        "atoms": [
+          {
+            "id": "@1.0",
+            "documentId": "@1",
+            "text": "A\n"
+          },
+          {
+            "id": "@1.1",
+            "documentId": "@1",
+            "text": "B\n"
+          }
+        ],
+        "dispatches": [],
+        "ignored": [
+          {
+            "seq": 3,
+            "id": "@3"
+          },
+          {
+            "seq": 4,
+            "id": null
+          },
+          {
+            "seq": 5,
+            "id": "@5"
+          },
+          {
+            "seq": 6,
+            "id": "@6"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -31,7 +31,7 @@ import {
   scan,
   textCanary,
 } from './support/scan';
-import { derive, storedGroups } from './support/stored';
+import { derive, groupMailboxes, storedGroups } from './support/stored';
 
 /**
  * TEST-NET-3 (RFC 5737): an address no tester has. Loopback can't be the
@@ -142,7 +142,9 @@ test('the relay keeps none of the group’s words, names or keys, nor the tester
     await page.getByRole('textbox', { name: 'Your name' }).fill(words.ben);
     await page.getByRole('button', { name: 'Join group' }).click();
     const people = page.getByRole('region', { name: 'People' }).getByRole('listitem');
-    await expect(people).toHaveText([
+    // Each row also holds what Ben may do about that person, such as Propose removing (#115).
+    await expect(people).toHaveCount(2);
+    await expect(people).toContainText([
       `${words.ana}, Co-Creator, Steward`,
       `${words.ben}, invited by ${words.ana}, Collaborator`,
     ]);
@@ -150,7 +152,7 @@ test('the relay keeps none of the group’s words, names or keys, nor the tester
 
   await test.step('A proposes, and both vote, B with a note', async () => {
     const { page } = ana;
-    await page.getByRole('link', { name: words.title }).click();
+    await page.getByRole('link', { name: words.title, exact: true }).click();
     await page.getByRole('button', { name: 'Propose a change to section 1' }).click();
     await page.getByRole('textbox', { name: 'Title' }).fill(words.proposal);
     await page.getByRole('textbox', { name: 'Why' }).fill(words.why);
@@ -197,7 +199,8 @@ test('the relay keeps none of the group’s words, names or keys, nor the tester
   }
   expect([theirs.groupId, theirs.secret]).toEqual([mine.groupId, mine.secret]);
   const secret = Uint8Array.from(mine.secret);
-  const mailbox = derive(secret, 'reconcile/v1/mailbox').toString('base64url');
+  // Its weekly mailboxes (#110), whichever week this run fell in.
+  const mailboxes = groupMailboxes(secret);
   const seed = Buffer.from(new URL(inviteLink).hash.slice('#join/'.length), 'base64url');
 
   await test.step('the relay stops, and its database, WAL, shared memory and log hold no canary', async () => {
@@ -229,7 +232,7 @@ test('the relay keeps none of the group’s words, names or keys, nor the tester
     // The controls: the scan reads what the relay stored.
     const controls = scan(files, [textCanary('control', control)]);
     expect(controls.map(({ encoding }) => encoding)).toContain('bytes');
-    const mailboxes = scan(files, [textCanary('the group’s mailbox id', mailbox)]);
-    expect(mailboxes.map(({ encoding }) => encoding)).toContain('bytes');
+    const ids = mailboxes.map((id) => textCanary('the group’s mailbox id', id));
+    expect(scan(files, ids).map(({ encoding }) => encoding)).toContain('bytes');
   });
 });

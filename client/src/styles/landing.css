@@ -1,5 +1,5 @@
 /*
- * The landing page (ADR-0077, src/screens/Landing.tsx), over a hand-painted
+ * The landing page (ADR-0078, src/screens/Landing.tsx), over a hand-painted
  * background. Colors and type come from tokens.css (DESIGN.md). The
  * background is one tall painting made by ../../../painting/paint.py and cut
  * into a piece per section (public/painting/).

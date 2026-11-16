@@ -15,6 +15,14 @@
  * - **The relay backup (#97).** Its key rides in the bundle, and the laptop
  *   keeps it unless it holds one of its own, so its first complete pass keeps
  *   the same backup fresh.
+ * - **Dispatches (#112).** They live in the group's log, so the laptop reads
+ *   the ones already sent and sends as the same member, with its own wake; a
+ *   Dispatch drafted on the phone's composer stays there, as every draft does.
+ * - **Shares by link (#105).** A share belongs to the device that made it,
+ *   since personal Documents don't sync, so the bundle leaves it out
+ *   (`withoutShares`): the laptop gets the Document unshared, posts nothing
+ *   for the phone's link, and can make its own; the phone keeps its share and
+ *   alone can stop it.
  */
 import { waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -37,9 +45,11 @@ import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { testKeys } from '../test/keys';
 import { linkDevice } from '../test/link';
+import { keepSharesAlive, readShare, type ShareLink, startSharing } from '../share/shareLink';
 import { FOUNDING, go, members, type MountedApp, mountApp } from '../test/members';
 import { groupLog } from '../test/votes';
 import { leaveGroup } from './actions';
+import { sendDispatch } from './proposals';
 
 freshIndexedDBPerTest();
 
@@ -222,6 +232,56 @@ describe('personal Documents in a link (#96, #93)', () => {
   });
 });
 
+describe('Dispatches on a linked device (#96, #112)', () => {
+  it('reads the phone’s Dispatch, sends one as the same member with a wake, and leaves the phone’s draft behind', async () => {
+    const fake = createFakeRelay();
+    const { phone, groupId, devices } = await phoneIn(fake, ['Ana', 'Ben']);
+    const [, ben] = devices;
+    if (ben === undefined) throw new Error('Expected Ben’s device.');
+    const first = await sendDispatch(phone.services, groupId, {
+      title: 'Meet on Sunday',
+      text: '',
+      doc: null,
+    });
+    await phone.services.sync.syncOnce();
+    const draft = {
+      title: 'Later quiet hours',
+      why: 'Weekends run late.',
+      text: 'Quiet after 11pm.',
+      link: '',
+      dispatch: { title: 'Updated: House rules', text: 'Drafted on the phone.' },
+    };
+    await phone.services.store.writeDraft(groupId, `${groupId}.0`, draft);
+
+    const laptop = await laptopOf(fake, phone);
+    const onLaptop = await held(laptop, groupId);
+    expect(fold(onLaptop.log, onLaptop.relayNow).dispatches.map((d) => d.id)).toEqual([first]);
+    expect(await laptop.services.store.readDraft(groupId, `${groupId}.0`)).toBeUndefined();
+    expect(await phone.services.store.readDraft(groupId, `${groupId}.0`)).toEqual(draft);
+    // A linked copy reads only until its first sync hears from the group (#231).
+    await laptop.services.sync.syncOnce();
+
+    const before = fake.requests.length;
+    const second = await sendDispatch(laptop.services, groupId, {
+      title: 'Sent from my laptop',
+      text: '',
+      doc: groupId,
+    });
+    await laptop.services.sync.syncOnce();
+    const puts = fake.requests
+      .slice(before)
+      .filter((request) => request.method === 'PUT' && request.url.startsWith('/v1/mailbox/'));
+    expect(puts.map((request) => request.url.endsWith('&wake=1'))).toEqual([true]);
+    await ben.services.sync.syncOnce();
+    const onBen = await held(ben, groupId);
+    const state = fold(onBen.log, onBen.relayNow);
+    expect(state.dispatches.map((d) => [d.id, d.by])).toEqual([
+      [first, onLaptop.me.author],
+      [second, onLaptop.me.author],
+    ]);
+  });
+});
+
 describe('push on a linked device (#96, #99)', () => {
   it('starts with push off, leaves the phone’s registration alone, and turns on with its own switch', async () => {
     const fake = createFakeRelay();
@@ -230,7 +290,7 @@ describe('push on a linked device (#96, #99)', () => {
     expect(await phone.services.push.turnOn(groupId)).toBe('on');
     await phone.services.sync.syncOnce();
     const phonePush = (await held(phone, groupId)).push;
-    const mailbox = mailboxAt(await held(phone, groupId), 0);
+    const mailbox = mailboxAt(await held(phone, groupId), fake.minute);
     expect(fake.endpoints(mailbox)).toEqual([fakeEndpoint(1)]);
 
     const laptop = await laptopOf(fake, phone);
@@ -313,5 +373,54 @@ describe('the relay backup key in a link (#96, #97)', () => {
 
     expect(await backupKeyOf(laptop)).toEqual(own);
     expect(await backupKeyOf(phone)).not.toEqual(own);
+  });
+});
+
+/** Shares Document `id` on `device` by link (#105), and hands back the link. */
+async function shared(device: TestDevice, id: string): Promise<ShareLink> {
+  const outcome = await startSharing(device.services, id);
+  if (outcome.kind !== 'shared') throw new Error(`Expected a share, not ${outcome.kind}.`);
+  return outcome.link;
+}
+
+describe('a share by link in a link (#96, #105)', () => {
+  it('gives the laptop the Document with no share, and leaves the phone’s share and link as they were', async () => {
+    const fake = createFakeRelay();
+    const { phone } = await phoneIn(fake, ['Ana']);
+    const [statement, other] = STATEMENTS;
+    if (statement === undefined || other === undefined) throw new Error('Expected two Documents.');
+    for (const document of STATEMENTS) await phone.services.store.savePersonal(document);
+    const link = await shared(phone, statement.id);
+    await startRelayBackup(phone.services);
+    const phoneShare = (await phone.services.store.getPersonal(statement.id))?.share;
+    expect(phoneShare).toBeDefined();
+
+    const laptop = await laptopOf(fake, phone);
+
+    // The laptop's copy holds the words alone: no seed, keys, n, or post times.
+    const onLaptop = await laptop.services.store.getPersonal(statement.id);
+    expect(onLaptop).toEqual(statement);
+    expect(onLaptop).not.toHaveProperty('share');
+    expect(await laptop.services.store.listPersonal()).toEqual(STATEMENTS);
+    // Leaving the share out keeps the rest of the bundle: the relay backup key (#97) came too.
+    expect(await backupKeyOf(laptop)).toEqual(await backupKeyOf(phone));
+    // The phone keeps its share, untouched, and its link still reads.
+    expect((await phone.services.store.getPersonal(statement.id))?.share).toEqual(phoneShare);
+    expect(await readShare(phone.services, link)).toEqual({
+      kind: 'shown',
+      title: statement.title,
+      text: statement.text,
+    });
+
+    // The laptop has nothing to keep alive, so it never posts to the phone's link.
+    const before = fake.requests.length;
+    expect(await keepSharesAlive(laptop.services)).toEqual([]);
+    expect(fake.requests.slice(before)).toEqual([]);
+
+    // Its own Share link makes a link of its own, under a fresh seed and key.
+    const own = await shared(laptop, statement.id);
+    expect(local(own.seed)).not.toEqual(local(link.seed));
+    expect(local(own.publicKey)).not.toEqual(local(link.publicKey));
+    expect((await phone.services.store.getPersonal(statement.id))?.share).toEqual(phoneShare);
   });
 });

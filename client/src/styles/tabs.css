@@ -1,0 +1,75 @@
+/*
+ * The tab bar (#423; DESIGN.md "Tab bar", ADR-0077 §7): Groups, Discover and
+ * Me, at the bottom of the viewport on the four pages that are their places.
+ *
+ * The page scrolls in its own region above the bar (frame.css), so the bar
+ * never covers it. The bar's own padding below clears the iPhone home
+ * indicator in the installed app.
+ *
+ * Its classes all start `tab-bar`: `.tab-list` and `.tab` are the Write and
+ * Preview tabs' (app.css, MarkdownField).
+ */
+.tab-bar {
+  background: var(--surface);
+  border-top: 1px solid var(--hairline);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
+.tab-bar-list {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  max-width: var(--reading);
+  margin: 0 auto;
+  padding: 0;
+  list-style: none;
+}
+
+.tab-bar-link {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: var(--space-1);
+  min-height: var(--touch);
+  padding: var(--space-2) var(--space-1);
+  font: var(--type-caption);
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.tab-bar-link[data-hovered]:not([aria-current]) {
+  color: var(--ink);
+}
+
+/* The focus ring sits inside the cell, where the viewport's bottom edge can't clip it. */
+.tab-bar-link[data-focus-visible] {
+  outline-offset: -3px;
+}
+
+.tab-bar-glyph {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* The current place: primary, semibold, and a rule along its top edge, so it never rests on color. */
+.tab-bar-current {
+  color: var(--primary);
+  font-weight: 650;
+}
+
+.tab-bar-current::before {
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: 50%;
+  width: var(--space-6);
+  height: 3px;
+  margin-left: calc(var(--space-6) / -2);
+  border-radius: var(--radius-full);
+  background: var(--primary);
+}

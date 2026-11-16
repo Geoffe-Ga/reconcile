@@ -6,7 +6,9 @@
  * same on every device that has synced the same records. Events still in the
  * outbox are listed as pending and never folded: the relay hasn't ordered or
  * timed them yet. A dissolved group whose ballots this device has cleared
- * shows the state it kept instead (#108).
+ * shows the state it kept instead (#108). A group that holds a seat in a
+ * coalition on this device folds with the coalition's motions its seat
+ * decides, so its members vote on them as on its own Proposals (#114).
  */
 
 import {
@@ -21,15 +23,18 @@ import {
 import { parseRecord } from '../engine/event';
 import type { ParsedEvent } from '../engine/event';
 import type { GroupState, LogRecord } from '../engine/fold';
-import { shownState } from '../store/archive';
-import type { ClearedArchive, Group, Me, Store } from '../store/db';
+import type { ReceivedApplication, ReceivedCard } from '../store/applications';
+import { foldCoalitions, foldWithCoalitions, type HeldCoalition } from '../store/coalitions';
+import type { CarryPlan, ClearedArchive, Group, Me, Store } from '../store/db';
 import { type KeyChange, keyChangeOf } from '../store/epochs';
+import { type HeldShare, heldSharesIn } from '../store/recovery';
 
 /** What `useGroup` reads: the device's store and the sync loop's reachability. */
 export interface GroupServices {
   /** The store (`openStore`), or anything that reads and announces groups like it. */
   readonly store: {
     readonly getGroup: Store['getGroup'];
+    readonly listCoalitions: Store['listCoalitions'];
     readonly subscribe: Store['subscribe'];
   };
   /** The sync loop (`createSync`), or anything that reports reachability like it. */
@@ -69,6 +74,12 @@ export interface GroupView {
    */
   leaving: boolean;
   /**
+   * Whether this copy came back from a backup and hasn't heard from the
+   * group since (#231): it reads, and takes nothing new, until a sync brings
+   * word from the group or the person opens a new invite link.
+   */
+  unconfirmed: boolean;
+  /**
    * Why this device can't read what the group writes now (#98): `left` when
    * this membership left on another device, `missed` when the group's key
    * changed and this device didn't get the new one; null while it can, and
@@ -81,10 +92,61 @@ export interface GroupView {
    * now, and it isn't a read-only archive, which no backup carries (#108).
    */
   suggestBackup: boolean;
-  /** Whether the store has answered for this group; with `me` still null, the device isn't in it. */
+  /**
+   * Whether the store has answered for this group, and for the device's
+   * coalitions, which its fold and its home read (#334): a screen drawn
+   * before the coalitions would show none, then the rows jump in. With `me`
+   * still null, the device isn't in it.
+   */
   loaded: boolean;
   /** Once this device has cleared a dissolved group's ballots (#108): when, and the tallies it kept. */
   cleared: Pick<ClearedArchive, 'at' | 'tallies'> | null;
+  /**
+   * The recovery shares this device holds in the group that its home hasn't
+   * shown yet (#109): its quiet card shows each once, until the person puts it away.
+   */
+  newShares: readonly HeldShare[];
+  /**
+   * The front door's applications this device read from its inbox (#121),
+   * dismissed ones included, oldest first: none until it has read one.
+   */
+  applications: readonly ReceivedApplication[];
+  /** The reconcile cards this device read from the door's inbox (#426), oldest first: none until one. */
+  cards: readonly ReceivedCard[];
+  /** Every coalition on this device, each with its log folded (#114). */
+  coalitions: readonly HeldCoalition[];
+  /** The carried scores this device means to cast in this group (#126): none until the first. */
+  carries: readonly CarryPlan[];
+}
+
+/** No shares: one shared empty list, so it never looks changed. */
+const NO_SHARES: readonly HeldShare[] = [];
+
+/**
+ * The shares this device holds in `group` that its home hasn't shown yet
+ * (#109), from `state`, the fold `useGroup` already made, so no group screen
+ * folds its log twice.
+ */
+function newSharesIn(group: Group | undefined, state: GroupState | null): readonly HeldShare[] {
+  if (group === undefined || state === null) return NO_SHARES;
+  const seen = new Set(group.recoverySeen ?? []);
+  const fresh = heldSharesIn(group, state).filter(({ id }) => !seen.has(id));
+  return fresh.length === 0 ? NO_SHARES : fresh;
+}
+
+/** No applications: one shared empty list, so it never looks changed. */
+const NO_APPLICATIONS: readonly ReceivedApplication[] = [];
+
+/** No cards (#426): one shared empty list, so it never looks changed. */
+const NO_CARDS: readonly ReceivedCard[] = [];
+
+/** What this device read from the group's front-door inbox (#121, #426): its applications and cards. */
+function doorOf(group: Group | undefined): Pick<GroupView, 'applications' | 'cards'> {
+  const door = group?.door;
+  return {
+    applications: door?.applications ?? NO_APPLICATIONS,
+    cards: door?.cards ?? NO_CARDS,
+  };
 }
 
 /** The log of a group that isn't loaded: one shared empty list, so it never looks changed. */
@@ -93,10 +155,14 @@ const NO_RECORDS: readonly LogRecord[] = [];
 /** The group `groupId`, kept current as sync and the user change it. */
 export function useGroup(groupId: string): GroupView {
   const { store, sync } = useServices();
-  const { group, loaded } = useStoredGroup(store, groupId);
+  const { group, coalitions, loaded } = useGroupAndCoalitions(store, groupId);
   const reachable = useSyncExternalStore(sync.subscribe, sync.isReachable);
-  const state = useMemo(() => (group === undefined ? null : shownState(group)), [group]);
+  const state = useMemo(() => {
+    if (group === undefined) return null;
+    return group.archived?.cleared?.state ?? foldWithCoalitions(group, coalitions);
+  }, [group, coalitions]);
   const pending = useMemo(() => (group === undefined ? [] : parsePending(group.outbox)), [group]);
+  const newShares = useMemo(() => newSharesIn(group, state), [group, state]);
   return {
     state,
     log: group?.log ?? NO_RECORDS,
@@ -107,7 +173,63 @@ export function useGroup(groupId: string): GroupView {
     me: group?.me ?? null,
     loaded,
     cleared: clearedOf(group),
+    newShares,
+    ...doorOf(group),
+    coalitions,
+    carries: group?.carries ?? NO_CARRIES,
   };
+}
+
+const NO_CARRIES: readonly CarryPlan[] = [];
+
+/**
+ * The group `groupId` as stored, the device's coalitions, and whether the
+ * store has answered for both (#334): every group screen folds the group
+ * with its coalitions, and Group home lists them, so none shows the group
+ * before it can show them too.
+ */
+function useGroupAndCoalitions(store: GroupServices['store'], groupId: string) {
+  const { group, loaded } = useStoredGroup(store, groupId);
+  const listed = useCoalitionList(store);
+  return { group, coalitions: listed ?? NO_COALITIONS, loaded: loaded && listed !== null };
+}
+
+/** No coalitions: one shared empty list, so it never looks changed. */
+const NO_COALITIONS: readonly HeldCoalition[] = [];
+
+/**
+ * Every coalition entry on this device, each with its log folded with the
+ * motions it decides from the coalitions above it (#114, #122), read again
+ * whenever the store says anything changed; null until the store has first
+ * answered, so a screen can tell loading from none (#120, #334).
+ */
+export function useCoalitionList(
+  store: Pick<GroupServices['store'], 'listCoalitions' | 'subscribe'>,
+): readonly HeldCoalition[] | null {
+  const [coalitions, setCoalitions] = useState<readonly HeldCoalition[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    let latest = 0;
+    const load = (): void => {
+      latest += 1;
+      const ticket = latest;
+      store.listCoalitions().then(
+        (entries) => {
+          if (!live || ticket !== latest) return;
+          setCoalitions(entries.length === 0 ? NO_COALITIONS : foldCoalitions(entries));
+        },
+        // A failed read keeps the last list; the next change reads again.
+        () => undefined,
+      );
+    };
+    load();
+    const unsubscribe = store.subscribe(load);
+    return () => {
+      live = false;
+      unsubscribe();
+    };
+  }, [store]);
+  return coalitions;
 }
 
 /**
@@ -124,17 +246,35 @@ function clearedOf(group: Group | undefined): GroupView['cleared'] {
   return group?.archived?.cleared ?? null;
 }
 
-/** What a stored group says of its syncs, its leave and its backup, or nothing yet before it loads. */
+/**
+ * What a stored group says of its syncs, its leave, whether it has heard from
+ * the group since a restore (#231) and its backup, or nothing yet before it loads.
+ */
 function syncStatusOf(
   group: Group | undefined,
-): Pick<GroupView, 'lastSyncAt' | 'relayNow' | 'missingHistory' | 'leaving' | 'suggestBackup'> {
+): Pick<
+  GroupView,
+  'lastSyncAt' | 'relayNow' | 'missingHistory' | 'leaving' | 'unconfirmed' | 'suggestBackup'
+> {
   return {
     lastSyncAt: group?.lastSyncAt ?? null,
     relayNow: group?.relayNow ?? null,
     missingHistory: group?.missingHistory === true,
     leaving: group?.leaving !== undefined,
-    suggestBackup:
-      group !== undefined && group.backup === undefined && group.archived === undefined,
+    ...standingOf(group),
+  };
+}
+
+/**
+ * Whether a stored group is a copy back from a backup that hasn't heard from
+ * the group (#231), and whether group home suggests a backup of it (#78): not
+ * for a read-only copy, which no backup carries.
+ */
+function standingOf(group: Group | undefined): Pick<GroupView, 'unconfirmed' | 'suggestBackup'> {
+  if (group === undefined) return { unconfirmed: false, suggestBackup: false };
+  return {
+    unconfirmed: group.archived?.reason === 'unconfirmed',
+    suggestBackup: group.backup === undefined && group.archived === undefined,
   };
 }
 
@@ -152,8 +292,11 @@ interface Loaded {
   readonly group: Group | undefined;
 }
 
-/** The stored group, read again whenever the store says it changed, and whether it has been read. */
-function useStoredGroup(
+/**
+ * The stored group, or any entry (a coalition's room, #125), read again
+ * whenever the store says it changed, and whether it has been read.
+ */
+export function useStoredGroup(
   store: GroupServices['store'],
   groupId: string,
 ): { group: Group | undefined; loaded: boolean } {

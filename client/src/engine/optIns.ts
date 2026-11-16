@@ -17,9 +17,16 @@
  *
  * The webhook URL is a credential: anyone holding it can post into the
  * channel. It lives only in sealed group events and in folded state on
- * members' devices, so it never reaches the relay readable.
+ * members' devices, so it never reaches the relay readable. So do a front
+ * door's two secrets (#121): the proposer's device makes them, and they
+ * travel only inside the rules Proposal that opens the door. They don't
+ * change with the group key, so whoever leaves keeps them: a membership's end
+ * closes the door, and only a door with fresh secrets opens again (#288,
+ * fold.ts's `endMembership`).
  */
+import { base64url, fromBase64url } from '../crypto/base64url';
 import { can, type Roster } from './capabilities';
+import { type Closing, isOpenAt } from './open';
 
 /** The opt-ins, in the order screens list them. */
 export const OPT_INS = ['chatBot', 'frontDoor'] as const;
@@ -33,14 +40,27 @@ export interface ChatBot {
 }
 
 /**
+ * The front door, open (#121; ADR-0038): its two secrets, each 32 bytes in
+ * unpadded base64url, and whether its page shows how many people are in the
+ * group. `sign` is the Ed25519 secret key the page is signed with, whose
+ * public half is the door's address; `box` is the X25519 secret key that
+ * opens the applications sealed to the page's `box` (src/crypto/door.ts).
+ */
+export interface FrontDoor {
+  readonly sign: string;
+  readonly box: string;
+  readonly showCount: boolean;
+}
+
+/**
  * A value for each opt-in: the chat bot is `null` (off) or `{webhook}`, and
- * the front door is open (`true`) or closed (`false`). #121 may make the
- * front door an object; {@link isWider} then compares only whether it is open
- * and whether it shows a count (ADR-0075 §5).
+ * the front door is `false` (closed) or a {@link FrontDoor}. {@link isWider}
+ * compares only whether the door is open and whether it shows a count
+ * (ADR-0075 §5), never its keys.
  */
 export interface OptIns {
   readonly chatBot: ChatBot | null;
-  readonly frontDoor: boolean;
+  readonly frontDoor: FrontDoor | false;
 }
 
 /** A value one of the opt-ins can hold. */
@@ -93,10 +113,35 @@ function isChatBot(value: unknown): value is ChatBot {
   return keys.length === 1 && 'webhook' in value && isWebhook(value.webhook);
 }
 
+/** 32 bytes in canonical unpadded base64url: 43 characters, with no spare bit set in the last. */
+const SECRET = /^[A-Za-z0-9_-]{43}$/;
+
+/** True when `value` spells a 32-byte secret in its one canonical form. */
+function isSecret(value: unknown): value is string {
+  return (
+    typeof value === 'string' && SECRET.test(value) && base64url(fromBase64url(value)) === value
+  );
+}
+
+/** The fields of a front door, sorted, as `Object.keys` lists them. */
+const DOOR_KEYS = 'box,showCount,sign';
+
+/**
+ * True for exactly `{sign, box, showCount}`: two canonical 32-byte secrets
+ * and a boolean, with no other field, `__proto__` included. Any 32 bytes are
+ * a key of each kind, so nothing else needs checking.
+ */
+export function isFrontDoor(value: unknown): value is FrontDoor {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  if (Object.keys(value).sort().join() !== DOOR_KEYS) return false;
+  const { sign, box, showCount } = value as Record<string, unknown>;
+  return isSecret(sign) && isSecret(box) && typeof showCount === 'boolean';
+}
+
 /** Each opt-in's validator: true for a value that opt-in can hold. */
 export const VALIDATORS: { readonly [K in OptIn]: (value: unknown) => value is OptIns[K] } = {
   chatBot: (value): value is ChatBot | null => value === null || isChatBot(value),
-  frontDoor: (value): value is boolean => typeof value === 'boolean',
+  frontDoor: (value): value is FrontDoor | false => value === false || isFrontDoor(value),
 };
 
 /** True when `value` passes `optIn`'s validator. */
@@ -109,10 +154,15 @@ function webhookOf(value: unknown): string | null {
   return isChatBot(value) ? value.webhook : null;
 }
 
+/** A front door's fields as one text, or null when it is closed or not a door. */
+function doorText(value: unknown): string | null {
+  return isFrontDoor(value) ? `${value.sign}.${value.box}.${String(value.showCount)}` : null;
+}
+
 /** How two values of each opt-in compare: by what they hold. */
 const SAME: { readonly [K in OptIn]: (a: unknown, b: unknown) => boolean } = {
   chatBot: (a, b) => webhookOf(a) === webhookOf(b),
-  frontDoor: (a, b) => a === b,
+  frontDoor: (a, b) => doorText(a) === doorText(b),
 };
 
 /** True when `a` and `b`, values `optIn`'s validator accepts, hold the same. */
@@ -130,12 +180,26 @@ export function isOff(optIn: OptIn, value: unknown): boolean {
 }
 
 /**
+ * How much of the group a value lets outsiders see or reach, as a rank: 0
+ * off, then 1 for on. A front door that shows its count ranks 2, and so does
+ * a value that is on but no validator accepts, so it can only ever class as
+ * wider. A door's keys never count (ADR-0075 §5).
+ */
+function exposure(optIn: OptIn, value: unknown): number {
+  if (isOff(optIn, value)) return 0;
+  if (optIn === 'chatBot') return 1;
+  return isFrontDoor(value) && !value.showCount ? 1 : 2;
+}
+
+/**
  * True when changing `optIn` from `from` to `to` widens what outsiders can
- * see or reach (ADR-0040, ADR-0075 §5): only off to on. Closing it, and
- * replacing one webhook with another, narrow or keep it, so they're ordinary.
+ * see or reach (ADR-0040, ADR-0075 §5): off to on, and a front door that
+ * starts showing its count (#121). Closing it, replacing one webhook with
+ * another, rotating a door's keys and hiding its count narrow or keep it, so
+ * they're ordinary.
  */
 export function isWider(optIn: OptIn, from: unknown, to: unknown): boolean {
-  return isOff(optIn, from) && !isOff(optIn, to);
+  return exposure(optIn, to) > exposure(optIn, from);
 }
 
 /**
@@ -173,6 +237,27 @@ export function withChange(optIns: OptIns, change: RulesChange): OptIns {
 }
 
 /**
+ * The front door a rules change would open or keep open, carrying its two
+ * secrets, or null for any other change: one to the chat bot, or one that
+ * closes the door.
+ */
+export function doorIn(change: RulesChange | null): FrontDoor | null {
+  return change?.optIn === 'frontDoor' && isFrontDoor(change.value) ? change.value : null;
+}
+
+/**
+ * Where a membership ended and closed the front door (#288): the `leave` or
+ * `remove` whose fold ended it, by event id, relay seq and receipt. Whoever
+ * left keeps the door's secrets, so the door closes on every device, and only
+ * a new opening Proposal, with fresh secrets, opens it again.
+ */
+export interface DoorClosure {
+  readonly id: string;
+  readonly seq: number;
+  readonly received: number;
+}
+
+/**
  * A steward's narrowing (ADR-0040, ADR-0075 §3): from the relay's receipt of
  * its `narrow`, `optIn` is off until `proposal`, the same steward's
  * off-Proposal, closes. `by` is the steward.
@@ -186,13 +271,33 @@ export interface Narrowing {
   readonly proposal: string;
 }
 
-/** What the opt-in rules read of a Proposal: who made it, what it changes, and when it closes. */
-export interface OptInProposalState {
+/**
+ * What the opt-in rules read of a Proposal: who made it, what it changes, and
+ * when it closes, which they read as every rule does ({@link isOpenAt}, #289).
+ */
+export interface OptInProposalState extends Closing {
   readonly id: string;
   readonly author: string;
-  readonly target: { readonly kind: 'edit' | 'steward' | 'dissolve' } | RulesChange;
-  readonly deadline: number;
-  readonly closedAt: number | null;
+  /** A rules change, or any other kind of target, whose details the opt-in rules don't read. */
+  readonly target:
+    | {
+        readonly kind:
+          | 'edit'
+          | 'add'
+          | 'new-document'
+          | 'move'
+          | 'class'
+          | 'steward'
+          | 'dissolve'
+          | 'remove'
+          | 'reconcile'
+          | 'motion'
+          | 'priority'
+          | 'admit'
+          | 'dispatch'
+          | 'promote';
+      }
+    | RulesChange;
 }
 
 /** What the opt-in rules read of a group, at relay minute `at`. */
@@ -208,17 +313,12 @@ export function rulesChangeOf(proposal: Pick<OptInProposalState, 'target'>): Rul
   return target.kind === 'rules' ? target : null;
 }
 
-/** True while a Proposal takes ballots at relay minute `at`: before its deadline and any early close. */
-function isOpen(proposal: OptInProposalState, at: number): boolean {
-  return proposal.closedAt === null && at < proposal.deadline;
-}
-
 /** The rules Proposal open on `optIn` at `state.at`, if any. An opt-in takes one at a time. */
 export function openRulesProposal(
   state: Pick<OptInState, 'proposals' | 'at'>,
   optIn: OptIn,
 ): OptInProposalState | undefined {
-  return state.proposals.find((p) => rulesChangeOf(p)?.optIn === optIn && isOpen(p, state.at));
+  return state.proposals.find((p) => rulesChangeOf(p)?.optIn === optIn && isOpenAt(p, state.at));
 }
 
 /** True while a steward's narrowing of `optIn` is in force: its off-Proposal is still open. */
@@ -229,7 +329,7 @@ export function isNarrowed(
   return state.narrowings.some((narrowing) => {
     if (narrowing.optIn !== optIn) return false;
     const proposal = state.proposals.find((p) => p.id === narrowing.proposal);
-    return proposal !== undefined && isOpen(proposal, state.at);
+    return proposal !== undefined && isOpenAt(proposal, state.at);
   });
 }
 

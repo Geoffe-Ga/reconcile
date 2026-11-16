@@ -7,37 +7,108 @@
 import { describe, expect, it } from 'vitest';
 
 import { concat, fromHex } from '../test/bytes';
+import { type FoldedLog, folded, foldLogs, seatOf } from '../test/coalitions';
 import {
+  buildLogs,
   buildRecords,
+  clearedLog,
+  COALITION_VECTORS,
   FOLD_VECTORS,
+  type LogsVector,
+  NESTED_VECTORS,
+  type NestedVector,
   publicKeyNamed,
   resolve,
   SEEDS,
   TALLY_VECTORS,
   VECTOR_FILES,
 } from '../test/vectors';
-import { fold } from './fold';
+import { settlesAt } from './coalition';
+import {
+  foldTogether,
+  promotionsOwed,
+  resultMismatches,
+  resultsToReport,
+  seatIn,
+} from './crossing';
+import { fold, type GroupState, type LogRecord } from './fold';
 import { DEFAULT_RULES } from './rules';
-import { tally } from './tally';
+import { rank, tally } from './tally';
+
+/** What a member group owes and what it would flag, each for the seat it holds (#100). */
+function crossings(logs: Record<string, FoldedLog>, log: string) {
+  const { state } = folded(logs, log);
+  const seat = seatOf(logs, log);
+  const coalition = folded(logs, 'coalition').state;
+  return {
+    report: resultsToReport(state, coalition, seat),
+    mismatches: resultMismatches(state, coalition, seat),
+  };
+}
 
 describe('vector files', () => {
-  it('are the keys, then tally, fold or atom-text files', () => {
+  it('are the keys, then tally, fold, coalition or atom-text files', () => {
     expect(Object.keys(VECTOR_FILES).sort()).toEqual([
       'atom-text.json',
       'bars-entrenched-edges.json',
       'bars-ordinary-pairs.json',
+      'bars-removal-edges.json',
       'bootstrap-joins.json',
       'bootstrap-member-churn.json',
       'chat-posted-first.json',
       'chat-posted-ignored.json',
+      'chat-thread-first.json',
+      'chat-thread-ignored.json',
+      'classes-bar.json',
+      'classes-chat-thread.json',
+      'classes-cleared.json',
+      'classes-coalition.json',
+      'classes-dispatch.json',
+      'classes-entrenched-edit.json',
+      'classes-eternal.json',
+      'classes-ignored.json',
+      'classes-moves.json',
+      'classes-start.json',
+      'classes-unchanged.json',
+      'coalition-admit.json',
+      'coalition-contest.json',
+      'coalition-expiry.json',
+      'coalition-forgery.json',
+      'coalition-formation.json',
+      'coalition-group.json',
+      'coalition-room-wrap.json',
+      'coalition-thresholds.json',
+      'dispatch-carried.json',
+      'dispatch-limits.json',
+      'dispatch-sent.json',
       'dissolve-bar.json',
+      'dissolve-cleared.json',
       'dissolve-ignored.json',
       'dissolve-proposal.json',
       'dissolve-rotate.json',
       'dissolve-terminal.json',
       'dissolve-unfinished.json',
       'dissolve-window.json',
+      'documents-add.json',
+      'documents-chat-thread.json',
+      'documents-cleared.json',
+      'documents-coalition.json',
+      'documents-dispatch.json',
+      'documents-genesis.json',
+      'documents-new.json',
+      'door-card-closed.json',
+      'door-class.json',
+      'door-close.json',
+      'door-invited.json',
+      'epoch-honest.json',
+      'epoch-race.json',
+      'epoch-recovers.json',
+      'epoch-refused.json',
+      'epoch-stranded-remove.json',
+      'epoch-stranded.json',
       'fold.json',
+      'follow-dispatch.json',
+      'follow-join.json',
       'home-two-open-proposals.json',
       'invite.json',
       'keys.json',
@@ -49,9 +120,61 @@ describe('vector files', () => {
       'levels-eligible-count.json',
       'levels-step-down.json',
       'levels-step-up-after-open.json',
+      'move-anchor-removed.json',
+      'move-chat-thread.json',
+      'move-cleared.json',
+      'move-close-order.json',
+      'move-coalition.json',
+      'move-dispatch.json',
+      'move-ignored.json',
+      'move-place.json',
+      'move-unchanged.json',
+      'nested-contest.json',
+      'nested-forgery.json',
+      'nested-levels.json',
+      'nested-three-levels.json',
+      'nested-two-levels.json',
       'optin-class.json',
+      'optin-cleared.json',
       'optin-ignored.json',
       'optin-narrow.json',
+      'priority-admission.json',
+      'priority-chat-thread.json',
+      'priority-cleared.json',
+      'priority-coalition.json',
+      'priority-dispatch.json',
+      'priority-dissolve.json',
+      'priority-focus.json',
+      'priority-options.json',
+      'priority-rank.json',
+      'priority-suspend.json',
+      'promote-ceiling.json',
+      'promote-coalitions.json',
+      'promote-dispatch.json',
+      'promote-forgery.json',
+      'proposal-number.json',
+      'recovery-alert-coalition.json',
+      'recovery-alert.json',
+      'recovery-cancel.json',
+      'recovery-share-coalition.json',
+      'recovery-share.json',
+      'removal-bar.json',
+      'removal-priority.json',
+      'removal-proposal.json',
+      'removal-remove.json',
+      'removal-response.json',
+      'removal-rotate.json',
+      'removal-suspension.json',
+      'removal-target-ineligible.json',
+      'result-checks.json',
+      'result-cleared.json',
+      'result-closing-minute.json',
+      'result-forged-early.json',
+      'result-mismatch.json',
+      'result-no-votes.json',
+      'room-fold.json',
+      'room-ignored.json',
+      'room-keys.json',
       'rotate-admission.json',
       'rotate-epochs.json',
       'rotate-exact-recipients.json',
@@ -61,7 +184,18 @@ describe('vector files', () => {
       'rules-genesis-defaults.json',
       'rules-genesis-differs.json',
       'rules-genesis-missing.json',
+      'sections-add.json',
+      'sections-admission.json',
+      'sections-anchor-removed.json',
+      'sections-chat-thread.json',
+      'sections-coalition.json',
+      'sections-dispatch.json',
+      'sections-dissolve.json',
+      'sections-pass-order.json',
+      'sections-remove.json',
+      'sections-rotate.json',
       'signatures.json',
+      'steward-cleared.json',
       'steward-recall.json',
       'steward-seats.json',
       'steward-step-down.json',
@@ -88,6 +222,32 @@ describe('vector files', () => {
       'atom-text',
       'tally',
       'tally',
+      'tally',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'coalition',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'coalition',
+      'coalition',
+      'coalition',
+      'coalition',
+      'coalition',
+      'coalition',
+      'coalition',
+      'coalition',
       'fold',
       'fold',
       'fold',
@@ -100,6 +260,25 @@ describe('vector files', () => {
       'fold',
       'fold',
       'fold',
+      'fold',
+      'fold',
+      'coalition',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'coalition',
+      'coalition',
       'fold',
       'fold',
       'keys',
@@ -115,8 +294,71 @@ describe('vector files', () => {
       'fold',
       'fold',
       'fold',
+      'coalition',
       'fold',
       'fold',
+      'fold',
+      'fold',
+      'nested',
+      'nested',
+      'nested',
+      'nested',
+      'nested',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'coalition',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'tally',
+      'fold',
+      'nested',
+      'nested',
+      'fold',
+      'nested',
+      'fold',
+      'coalition',
+      'fold',
+      'fold',
+      'coalition',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'room',
+      'fold',
+      'room-keys',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'fold',
+      'coalition',
       'fold',
       'fold',
       'fold',
@@ -148,7 +390,7 @@ describe('vector files', () => {
     ]);
   });
 
-  it('name ten keys, each derived as a second implementation (WebCrypto) derives it', async () => {
+  it('name twelve keys, each derived as a second implementation (WebCrypto) derives it', async () => {
     expect([...SEEDS.keys()]).toEqual([
       'ana',
       'ben',
@@ -160,6 +402,8 @@ describe('vector files', () => {
       'fay',
       'gus',
       'hal',
+      'ivy',
+      'jon',
     ]);
     for (const [name, seed] of SEEDS) {
       const pkcs8 = concat(fromHex('302e020100300506032b657004220420'), seed);
@@ -192,6 +436,13 @@ describe('vector files', () => {
     'an average of exactly 2.5 with no zeros fails the entrenched bar',
     'an average of exactly 2.5 with no zeros passes the ordinary bar',
     'entrenched lapse below quorum',
+    'priority-rank: of four options, A and B pass and tie on average and zeros, so A, the earlier, comes first; C is below quorum and D fails the floor',
+    'priority-rank: the higher average ranks first, wherever it sits on the ballot',
+    'priority-rank: an equal average ranks the option with fewer zeros first, then the earlier option',
+    'priority-rank: two options, one at exactly 2.0 and one just under, rank only the one at 2.0',
+    'priority-rank: seven options, of which the three that clear the floor and quorum rank by average',
+    'priority-rank: options at quorum that all miss the floor rank nothing, and the vote fails',
+    'priority-rank: options that all miss quorum rank nothing, and the vote lapses',
   ])('include the tally vector "%s"', (name) => {
     expect(TALLY_VECTORS.map((vector) => vector.name)).toContain(name);
   });
@@ -248,6 +499,23 @@ describe('vector files', () => {
     "a late version scored 4 by only 2 of 10 eligible members can't win, because it never reaches quorum",
     'a three-version tie goes to the earliest version',
     'a tie between later versions goes to the one the relay received first, whatever their ts',
+    "a passed add lands right after its anchor, as a new Atom of the same Document whose id is the Proposal's",
+    'an add with after: null lands first',
+    "an add whose anchor isn't in the Document when it's made is ignored, and one made once the anchor's own add has passed lands after it",
+    "an add or a version of one whose text is empty is ignored, and an add's versions compete on its ballot as an edit's do",
+    'a Proposal on an added section is ignored until its add passes, and changes it after',
+    "an add runs the voting window its proposer chose, and one outside its class's bounds is ignored",
+    'a passed removal deletes its Atom, and the fold then ignores a Proposal on it and an add anchored on it',
+    'a removal and a rewording of one Atom share one ballot; when the removal wins, only it applies, and the fold ignores a later Proposal on the Atom',
+    'when a rewording beats a removal on one ballot, only the rewording applies and the section stays in its place',
+    'a removal that fails leaves its section in place',
+    'a removal that passes at its deadline takes its Atom out from that minute, so a Proposal on it or anchored on it received then is ignored',
+    'sections-anchor-removed: the Atoms are [A, B, C]; P1 adds D after B and P2 removes B; P2 closes early, before P1 reaches its deadline, so the Document ends as [A, C, D]',
+    'passes apply in order of close time, not relay order: of two adds on one anchor, the one that closes later ends directly after it',
+    "adds that close in the same minute apply in their Proposals' relay order, whatever order their closing ballots came in",
+    'sections-dissolve: an add and a removal still open when the group dissolves never close or apply, even once relay time passes their deadlines; an add that passed before it keeps its section, and an add, a ballot and a version on a section change after it are ignored',
+    "sections-rotate: after a key change, a ballot on a removal and an add read from epoch 0's mailbox change nothing; the add's copy in epoch 1's opens once, the removal opened in epoch 0 closes on epoch 1's ballots, and both apply",
+    "sections-admission: a newcomer still earning voting rights can't propose an add or a removal, put a removal on a ballot or score an add, and isn't eligible on one; from the minute their rights arrive they propose a removal, and their ballot counts toward closing it",
     'a genesis without rules folds with DEFAULT_RULES',
     "a Proposal's class is ordinary and its deadline is its received plus 7 × 1,440 minutes",
     'a genesis that writes DEFAULT_RULES out in full, as Create group does, folds with them',
@@ -296,6 +564,35 @@ describe('vector files', () => {
     "leave-steward: a steward's leave empties their seat, and a suspend they send after it is ignored",
     "leave-suspended: a suspended member's leave is honored though their level change is ignored, and the suspension stays on record",
     'window-steward: a steward Proposal that writes a window of 10 still runs the ordinary default, 7 days',
+    "result-mismatch: with 2 eligible, Ana scores 4 and Ben 0 with a reason; Ben's result counting two 4s is ignored and flagged, and Ana's [1,0,0,0,1] is canonical",
+    "a result whose commit doesn't match this device's ballots is ignored and flagged",
+    "a result whose closedAt isn't the close this device's ballots give is ignored and flagged",
+    "a result whose outcome its own counts don't give is ignored and flagged, even when its counts match",
+    "a result whose eligible count isn't the Proposal's is ignored and flagged",
+    "a result naming versions the Proposal doesn't have is ignored and flagged",
+    "a result received before the close is ignored, and isn't flagged",
+    "a result received in the close's own minute, after the closing ballot, is ignored, and isn't flagged",
+    "a result from someone who isn't a member is ignored, and isn't flagged",
+    'the first valid result in relay order wins, and a later valid one is ignored',
+    'a mismatching result after the canonical one is ignored and still flagged',
+    'a Proposal that closes at its deadline takes a result whose closedAt is the deadline, received after it, not in it',
+    'a result claiming a pass on a Proposal nobody voted on is ignored and flagged, and the Proposal lapses',
+    'a result claiming a pass on a Proposal in cleared is taken as it stands, and the Atom changes',
+    'a zero-count lapse is the canonical result of a Proposal nobody voted on',
+    'a Proposal in cleared takes its outcome and early close from its result, and its pass applies',
+    "with the ballots held, a version in the early close's minute but after the closing ballot is ignored, as is one after",
+    "with the ballots cleared, a version in the early close's minute joins only if the result lists it, and one after is ignored",
+    "with the ballots held, a second Proposal on the same Atom opens in the minute of the first's early close, after the closing ballot",
+    "with the ballots cleared, a second Proposal on the same Atom opens in the minute of the first's early close, before the result arrives",
+    'for a Proposal in cleared, a ballot left in the log is ignored, and only the first result counts',
+    "for a Proposal in cleared, a result from someone who isn't a member is ignored, so it neither closes nor decides it",
+    "for a Proposal in cleared, a result received in its own close's minute is ignored, so it neither closes nor decides it",
+    "for a Proposal in cleared, a result whose outcome its counts don't give is ignored",
+    'for a Proposal in cleared, an early close whose counts leave an eligible voter out is ignored',
+    "with the ballots held, a Member's result received a minute after the Proposal opens, closing it then with counts nobody cast, is ignored and isn't flagged, and the result the ballots give counts",
+    "with the ballots held, a Member's result received a minute after the Proposal opens, matching the ballots then, none cast, with a lapse at the deadline, is ignored and isn't flagged, and the result the ballots give counts",
+    "with the ballots held, a Member's result received after the close, with counts the ballots don't give, is ignored and flagged, and the result the ballots give counts",
+    'once the ballots are cleared, the log that clearing leaves, with the result the ballots gave as its only result, decides the Proposal as the ballots did',
     'turning the chat bot on is entrenched: its deadline is received plus 14 × 1,440 minutes, and an average of 2.5 with no zeros fails it',
     'turning the chat bot on passes at the entrenched bar and sets its webhook, and turning it off again is ordinary: received plus 7 × 1,440 minutes',
     'replacing one webhook with another is ordinary, so an average of 2.5 passes it and sets the new webhook',
@@ -318,6 +615,33 @@ describe('vector files', () => {
     'after the group turns an off-Proposal down, a narrow 30 × 1,440 minutes later is ignored and one a minute after that holds',
     'a narrow from a steward facing an open recall is ignored',
     "a steward closes the front door at once the same way, and the chat bot isn't touched",
+    'a recovery-share from someone who never joined, with no box text, or from someone who has left is ignored and changes nothing',
+    'a recovery-share from a member changes no Atom, Proposal or member: the fold keeps each one, opaque, in relay order, and the Proposal around them passes as it would without them',
+    "a suspended member's recovery-share still counts: it governs nothing, so the suspension that ignores their proposal leaves it in",
+    'a recovery-alert from someone who never joined, with no box text, or from someone who has left is ignored and changes nothing',
+    'a recovery-alert from a member changes no Atom, Proposal or member: the fold keeps each one, opaque, in relay order with its receipt, drops any other field, and the Proposal around them passes as it would without them',
+    "a suspended member's recovery-alert still counts: it governs nothing, and the person it warns must hear of it, so the suspension that ignores their proposal leaves it in",
+    'a recovery-cancel from someone who never joined, naming an event id or a tag of 15 bytes instead of 16, naming nothing, or from someone who has left is ignored and changes nothing',
+    'a recovery-cancel from a member changes no Atom, Proposal or member: the fold keeps each one, with the tag it names, in relay order with its receipt, drops any other field, and the Proposal around them passes as it would without them',
+    "a suspended member's recovery-cancel still counts: cancelling a recovery is always possible, as leaving is, so the suspension that ignores their proposal leaves it in",
+    'priority-options: a priority vote with 2 options opens, each option a version with the id `${proposalId}.${i}`, and no text of its own',
+    'priority-options: a priority vote with 7 options opens',
+    'priority-options: a priority vote with 1 option is ignored, and so is one with 8',
+    'priority-options: an option of 121 code points is ignored, and one of exactly 120 opens, though it takes 240 UTF-16 units',
+    'priority-options: a priority vote with two equal options is ignored, and so is one with a blank or empty option',
+    'priority-options: a second priority vote while one is open is ignored, and one opens once the first has closed early, even in the same minute',
+    'priority-options: an edit Proposal opens beside an open priority vote',
+    'priority-options: a priority vote\'s window of 3 days sets its deadline to received + 4,320; one of 15 days is ignored, and one of "7", a string, holds no event',
+    'priority-options: a version on a priority vote is ignored, so its options stay as proposed',
+    "priority-options: a Collaborator's priority vote is ignored, since asking needs propose",
+    'priority-options: a priority vote that also names an Atom or text, lacks options, has a non-string option or list, or names an unknown target holds no event, and one with an empty question is ignored',
+    'priority-focus: of four options, Fix the website and Plan the picnic pass and tie, so the earlier, Fix the website, becomes the focus, and every Atom stays byte-identical',
+    'priority-focus: a priority vote whose top option passes sets no focus until its pass is final',
+    'priority-focus: a later priority vote that lapses leaves the focus unchanged',
+    'priority-focus: a later priority vote in which no option passes leaves the focus unchanged',
+    'priority-focus: a later priority vote that passes replaces the focus with its top option',
+    'priority-focus: an edit that passes after a priority vote changes its Atom and leaves the focus',
+    'priority-focus: a group whose only priority vote fails has no focus',
     "dissolve-terminal: Ana, Ben and Cy pass a dissolve with three 4s, which closes it early at 30,000,000; Ana's dissolve at 30,000,001 ends the group, so Ben's ballot on the other open Proposal at 30,000,002 and a join at 30,000,003 are ignored, and that Proposal has no outcome",
     'dissolve-bar: a dissolve Proposal averaging exactly 2.5 with no zeros fails, because it is entrenched, so a dissolve naming it is ignored and the group goes on',
     'dissolve-open: a dissolve naming a dissolve Proposal that is still open is ignored, and the ballot that closes it still counts',
@@ -333,6 +657,34 @@ describe('vector files', () => {
     'dissolve-unfinished: an edit and a steward election still open when the group dissolves never close, apply or seat, even once later records and relay time pass their deadlines, and a Proposal decided before keeps its outcome and its text',
   ])('include the fold vector "%s"', (name) => {
     expect(FOLD_VECTORS.map((vector) => vector.name)).toContain(name);
+  });
+
+  it.each([
+    "a leave read from epoch 0's mailbox after the key change out of it ends no membership there, and the fold names it stranded",
+    "its copy in epoch 1's mailbox ends the membership there and makes the next key change due, and a device that never read the old copy folds the same",
+    'the next key change must leave the leaver out: one that still wraps to them is ignored, and one to the rest moves the group to epoch 2',
+  ])('include the stranded leave vector "%s" (#225)', (name) => {
+    expect(FOLD_VECTORS.map((vector) => vector.name)).toContain(name);
+  });
+
+  it.each([
+    'door-card-closed-first',
+    'door-card-closed-door',
+    'door-invited-first',
+    'door-invited-ignored',
+    'door-count',
+    'door-rotate',
+    'door-shape',
+    'door-close-leave',
+    'door-close-removal-pass',
+    'door-close-remove',
+    'door-close-reopen',
+    'door-close-pending',
+    'door-close-late',
+    'door-close-carried',
+    'door-close-narrowed',
+  ])('include the front door vector "%s" (#121, #288, #426)', (name) => {
+    expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
   });
 
   it.each([
@@ -363,6 +715,548 @@ describe('vector files', () => {
   ])('include the admission vector "%s" (#101)', (name) => {
     expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
   });
+
+  it.each([
+    'removal-target-ineligible',
+    'removal-average-2.5',
+    'removal-one-zero',
+    'removal-lapse',
+    'removal-proposal',
+    'removal-proposal-who',
+    'removal-proposal-shape',
+    'removal-dissolved',
+    'removal-response-length',
+    'removal-response-who',
+    'removal-response-after-close',
+    'removal-response-deadline',
+    'removal-response-last-minute',
+    'removal-response-suspended',
+    'removal-remove-first',
+    'removal-remove-suspended',
+    'removal-ballot-before',
+    'removal-steward-seat',
+    'removal-pending-only-leave',
+    'removal-rotate',
+    'removal-suspension-day-6',
+    'removal-suspension-failed',
+    'removal-suspension-none',
+    'removal-suspension-early-fail',
+    'removal-suspension-opened-before',
+    'removal-suspension-opened-before-closes-early',
+  ])('include the removal vector "%s" (#115)', (name) => {
+    expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
+  });
+
+  it.each([
+    'proposal-number',
+    'chat-thread-first',
+    'chat-thread-ignored',
+    'chat-thread-narrowed',
+    'chat-thread-off',
+    'chat-thread-later-claim',
+  ])('include the Discord thread vector "%s" (#123, #245)', (name) => {
+    expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
+  });
+
+  it.each([
+    'removal pass with 20 scorers and one 0',
+    'removal fail with two 0s among 10 scorers',
+    'removal pass with 41 scorers and two 0s',
+    'removal fail with two 0s among 40 scorers, exactly 5%',
+    'removal fail at an average of 2.99',
+    'removal pass at an average of exactly 3.0 among 100 scorers',
+    'a dissolve’s entrenched bar still fails 20 scorers with one 0',
+    'an average of exactly 2.5 with no zeros fails the removal bar',
+  ])('include the removal bar vector "%s" (#115)', (name) => {
+    expect(TALLY_VECTORS.map((vector) => vector.name)).toContain(name);
+  });
+
+  it.each([
+    'dispatch-co-creator',
+    'dispatch-rights',
+    'dispatch-level',
+    'dispatch-title',
+    'dispatch-text',
+    'dispatch-doc',
+    'dispatch-carried-pass',
+    'dispatch-carried-open',
+    'dispatch-carried-lapse',
+    'dispatch-carried-fail',
+    'dispatch-carried-invalid',
+    'dispatch-carried-close-order',
+    'dispatch-carried-same-deadline',
+    'dispatch-carried-dissolve',
+  ])('include the Dispatch vector "%s" (#112)', (name) => {
+    expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
+  });
+
+  it.each([
+    'sections-dispatch-add',
+    'sections-dispatch-remove',
+    'sections-dispatch-added-edit',
+    'sections-dispatch-ignored',
+  ])('include the sections Dispatch vector "%s" (#75, #112)', (name) => {
+    expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
+  });
+
+  it.each([
+    'documents-genesis-two',
+    'documents-genesis-none',
+    'documents-genesis-blank-title',
+    'documents-genesis-title-length',
+    'documents-genesis-no-atoms',
+    'documents-genesis-edit-second',
+    'documents-new-passes',
+    'documents-new-close-order',
+    'documents-new-versions',
+    'documents-new-ignored',
+    'documents-new-sections',
+    'documents-new-dissolve',
+    'documents-add-other-document',
+    'documents-add-start',
+    'documents-add-anchor-removed',
+    'documents-add-unknown-document',
+    'documents-add-emptied',
+    'documents-dispatch-new',
+    'documents-dispatch-second',
+    'documents-dispatch-sent',
+    'documents-chat-thread',
+    'documents-cleared-new',
+    'documents-cleared-add',
+  ])('include the Documents vector "%s" (#92)', (name) => {
+    expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
+  });
+
+  it.each([
+    'move-after',
+    'move-first',
+    'move-to-end',
+    'move-in-place',
+    'move-open',
+    'move-second-document',
+    'move-heading',
+    'move-anchor-removed',
+    'move-section-removed',
+    'move-section-removed-at-deadline',
+    'move-fail',
+    'move-lapse',
+    'move-dissolve',
+    'move-close-order',
+    'move-same-minute',
+    'move-and-add',
+    'move-after-added',
+    'move-self-anchor',
+    'move-other-document',
+    'move-unknown',
+    'move-version',
+    'move-busy',
+    'move-racing-edit',
+    'move-collaborator',
+    'move-window',
+    'move-dispatch',
+    'move-dispatch-fail',
+    'move-chat-thread',
+    'move-cleared',
+    'move-cleared-fail',
+  ])('include the move vector "%s" (#103)', (name) => {
+    expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
+  });
+
+  it.each([
+    'classes-entrenched-fail',
+    'classes-entrenched-pass',
+    'classes-eternal-fail',
+    'classes-eternal-pass',
+    'classes-unprotect-fail',
+    'classes-unprotect-pass',
+    'classes-entrenched-to-eternal',
+    'classes-chat-thread',
+    'classes-cleared',
+    'classes-cleared-fail',
+    'classes-cleared-understated',
+    'classes-dispatch',
+    'classes-dispatch-fail',
+    'classes-entrenched-edit',
+    'classes-entrenched-edit-control',
+    'classes-entrenched-edit-passes',
+    'classes-entrenched-edit-open',
+    'classes-eternal-ignored',
+    'classes-eternal-at-deadline',
+    'classes-eternal-anchor',
+    'classes-eternal-from-entrenched',
+    'classes-same-class',
+    'classes-unknown-class',
+    'classes-unknown-section',
+    'classes-busy-edit',
+    'classes-busy-class',
+    'classes-collaborator',
+    'classes-window',
+    'classes-entrenched-window',
+    'classes-add-anchor',
+    'classes-entrenched-move',
+    'classes-entrenched-move-window',
+    'classes-entrenched-removal',
+    'classes-entrenched-version',
+    'classes-start-ordinary',
+    'classes-second-document',
+    'classes-lapse',
+    'classes-open',
+    'classes-dissolve',
+  ])('include the class vector "%s" (#116)', (name) => {
+    expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
+  });
+
+  it('include the class vector "classes-coalition" (#116, #100)', () => {
+    expect(COALITION_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(
+      'classes-coalition',
+    );
+  });
+
+  it('include the move vector "move-coalition" (#103, #100)', () => {
+    expect(COALITION_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(
+      'move-coalition',
+    );
+  });
+
+  it.each(['documents-coalition-genesis', 'documents-coalition-motion'])(
+    'include the coalition Documents vector "%s" (#92, #100)',
+    (name) => {
+      expect(COALITION_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
+    },
+  );
+
+  it.each(['coalition-motion-cleared', 'coalition-motion-held'])(
+    'include the coalition motion expiry vector "%s" (#111, #278)',
+    (name) => {
+      expect(COALITION_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
+    },
+  );
+
+  it.each(['room-commit-kept', 'room-commit-missing'])(
+    'include the room commitment vector "%s" (#371)',
+    (name) => {
+      expect(COALITION_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
+    },
+  );
+
+  it('include the sections vector "sections-coalition" (#75, #100)', () => {
+    expect(COALITION_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(
+      'sections-coalition',
+    );
+  });
+
+  it('include the sections vector "sections-chat-thread" (#75, #123)', () => {
+    expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(
+      'sections-chat-thread',
+    );
+  });
+
+  it.each([
+    'priority-chat-thread',
+    'priority-dispatch-pass',
+    'priority-dispatch-lapse',
+    'priority-dispatch-ignored',
+    'priority-dissolve',
+    'priority-suspend',
+    'priority-admission',
+    'priority-cleared',
+    'priority-cleared-fail',
+  ])(
+    'include the priority vote vector "%s" (#107 with #101, #102, #108, #111, #112, #123)',
+    (name) => {
+      expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
+    },
+  );
+
+  it('include the priority vote vector "priority-coalition" (#107, #100)', () => {
+    expect(COALITION_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(
+      'priority-coalition',
+    );
+  });
+
+  it.each(['steward-cleared', 'optin-cleared', 'dissolve-cleared', 'closing-minute'])(
+    'include the vector "%s", folded both with the ballots held and cleared (#289)',
+    (name) => {
+      const found = FOLD_VECTORS.find((vector) => vector.name.split(':')[0] === name);
+      expect(found?.alsoCleared ?? []).not.toEqual([]);
+    },
+  );
+});
+
+describe('coalition vector files (#100)', () => {
+  it.each([
+    'formation-formed',
+    'formation-declined',
+    'formation-forming-motion',
+    'formation-atoms-differ',
+    'threshold-4',
+    'threshold-5-pass',
+    'threshold-5-fail',
+    'threshold-6',
+    'forgery-other-seat',
+    'forgery-join-no-proof',
+    'forgery-join-other-coalition',
+    'forgery-join-other-joiner',
+    'forgery-repeat',
+    'forgery-extra-key',
+    'forgery-vote',
+    'contest-pass-then-fail',
+    'contest-fail-then-pass',
+    'group-join-after',
+    'group-lapse',
+    'group-deadline-final',
+    'group-mismatch',
+    'group-motion-number',
+    'group-motion-chat',
+    'group-motion-dispatch',
+    'recovery-alert-coalition',
+    'admit-pass',
+    'admit-open',
+    'admit-fail',
+    'admit-every-seat',
+    'forgery-admit-proof',
+    'forgery-admit-participant',
+    'forgery-admit-seat',
+    'forgery-admit-repeat',
+    'forgery-admit-dispatch',
+    'forgery-admit-in-group',
+    'forgery-admit-genesis-result',
+    'forgery-admit-forming',
+    'follow-motion-dispatch',
+    'follow-motion-dispatch-not-yet',
+    'follow-motion-dispatch-fail',
+    'follow-motion-dispatch-contested',
+    'follow-motion-dispatch-lapse',
+    'follow-motion-dispatch-order',
+    'follow-motion-dispatch-limits',
+    'follow-motion-dispatch-admit',
+    'follow-motion-dispatch-group',
+    'follow-dispatch-participant',
+    'follow-join-no-seat',
+    'follow-join-no-seat-then-seat',
+  ])('include "%s"', (name) => {
+    expect(COALITION_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
+  });
+
+  it('pin every forgery and ignored event as a removal that changes nothing', () => {
+    const forgeries = COALITION_VECTORS.filter((vector) => vector.name.startsWith('forgery-'));
+    expect(forgeries.length).toBeGreaterThan(10);
+    for (const vector of forgeries) {
+      expect(Object.values(vector.unchangedWithout ?? {}).flat(), vector.name).not.toEqual([]);
+    }
+  });
+});
+
+/** A nested vector's logs, each folded as a device holding them all folds it (#122), by name. */
+function foldNested(logs: Readonly<Record<string, readonly LogRecord[]>>, relayNow: number | null) {
+  const names = Object.keys(logs);
+  const states = foldTogether(names.map((name) => ({ records: logs[name] ?? [], relayNow })));
+  return new Map(names.map((name, i) => [name, states[i] ?? fold([], relayNow)]));
+}
+
+/** The state folded for `log`, failing the test when there is none. */
+function stateOf(states: ReadonlyMap<string, GroupState>, log: string): GroupState {
+  const state = states.get(log);
+  if (state === undefined) throw new Error(`no log is named "${log}"`);
+  return state;
+}
+
+/** What a lower log owes the log above it for its seat there: its results, or its promotion records. */
+type Owes = (below: GroupState, above: GroupState, seat: string) => unknown[];
+
+/**
+ * What `lower` owes `upper` for the seat it holds there, by `owes`, or null
+ * when it holds none (#122, #126).
+ */
+function owed(
+  states: ReadonlyMap<string, GroupState>,
+  lower: string,
+  upper: string,
+  owes: Owes = resultsToReport,
+) {
+  const below = stateOf(states, lower);
+  const above = stateOf(states, upper);
+  const seat = seatIn(below, above);
+  return seat === null ? null : owes(below, above, seat);
+}
+
+/**
+ * Checks what each lower log owes each log above it, by `owes`, against
+ * `expected`: `{C: {D: [...]}}`, `null` for no seat there (#122, #126).
+ */
+function expectOwed(
+  states: ReadonlyMap<string, GroupState>,
+  ids: Parameters<typeof resolve>[1],
+  expected: NonNullable<NestedVector['report']>,
+  owes: Owes,
+) {
+  for (const [lower, uppers] of Object.entries(expected)) {
+    for (const [upper, list] of Object.entries(uppers)) {
+      const label = `${lower} → ${upper} (${owes.name})`;
+      expect(owed(states, lower, upper, owes), label).toEqual(resolve(list, ids));
+    }
+  }
+}
+
+describe('nested vector files (#122)', () => {
+  it.each([
+    'two-levels-pass',
+    'two-levels-fail',
+    'two-levels-owed-groups',
+    'two-levels-owed-coalition',
+    'forgery-straight-to-higher',
+    'three-levels',
+    'level-3-reconcile',
+    'level-2-reconcile',
+    'genesis-level-4',
+    'genesis-level-3',
+    'genesis-level-stated',
+    'genesis-level-misstated',
+    'admit-level',
+    'admit-level-open',
+    'forgery-admit-level-4',
+    'forgery-admit-a-seat-here',
+    'forgery-admit-own-seat-above',
+    'forgery-reconcile-plain-in-coalition',
+    'forgery-reconcile-sealed-and-plain',
+    'forgery-reconcile-sealed-short',
+    'forgery-reconcile-own-seat',
+    'forgery-reconcile-dispatch',
+    'forgery-reconcile-non-participant',
+    'forgery-reconcile-repeat-key',
+    'forgery-reconcile-forming',
+    'forgery-reconcile-sealed-in-group',
+    'early-pass-contested-owed',
+    'early-pass-contested',
+    'withdrawn-pass-owed',
+    'withdrawn-pass',
+    'withdrawn-pass-recovered',
+    'withdrawn-pass-genesis',
+  ])('include "%s"', (name) => {
+    expect(NESTED_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
+  });
+
+  it('pin every forgery as a removal that changes nothing', () => {
+    const forgeries = NESTED_VECTORS.filter((vector) => vector.name.startsWith('forgery-'));
+    expect(forgeries.length).toBeGreaterThan(10);
+    for (const vector of forgeries) {
+      expect(Object.values(vector.unchangedWithout ?? {}).flat(), vector.name).not.toEqual([]);
+    }
+  });
+});
+
+describe('promotion vector files (#126)', () => {
+  it.each([
+    'ceiling-1-owed',
+    'ceiling-1-opens-in-C',
+    'ceiling-1-stops-at-C',
+    'ceiling-1-passed-not-final',
+    'ceiling-2-stops-at-D',
+    'coalitions-owed-D',
+    'coalitions-opens-in-E',
+    'coalitions-to-D-stops',
+    'coalitions-owed-F',
+    'forgery-promote-not-bound',
+    'forgery-promote-non-participant',
+    'forgery-promote-second',
+    'forgery-promote-level-unfit',
+    'forgery-promote-above-ceiling',
+    'forgery-promote-title',
+    'forgery-promote-why',
+    'forgery-promote-too-long',
+    'forgery-promote-in-group',
+    'forgery-promote-forming',
+    'altered-text-fails',
+    'altered-text-reported-fail',
+    'never-passed-fails',
+    'before-final-waits',
+    'before-final-waits-reported',
+    'stale-owes-nothing',
+  ])('include the nested vector "%s"', (name) => {
+    expect(NESTED_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
+  });
+
+  it.each([
+    'dispatch-vote-pass',
+    'dispatch-vote-version-ignored',
+    'dispatch-vote-collaborator-ignored',
+    'dispatch-vote-unknown-document-ignored',
+    'dispatch-vote-too-long-ignored',
+    'dispatch-vote-window',
+    'dispatch-vote-fail',
+    'dispatch-vote-lapse',
+  ])('include the fold vector "%s"', (name) => {
+    expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
+  });
+});
+
+describe('nested vectors (#122)', () => {
+  it.each(NESTED_VECTORS.map((vector) => [vector.name, vector] as const))(
+    '%s',
+    (_name, vector: NestedVector) => {
+      const { logs, ids } = buildLogs(vector);
+      const states = foldNested(logs, vector.relayNow);
+      for (const [log, expected] of Object.entries(vector.expect)) {
+        expect(stateOf(states, log), log).toMatchObject(resolve(expected, ids) as object);
+      }
+      expectOwed(states, ids, vector.report ?? {}, resultsToReport);
+      expectOwed(states, ids, vector.promote ?? {}, promotionsOwed);
+      for (const [log, seqs] of Object.entries(vector.unchangedWithout ?? {})) {
+        const kept = (logs[log] ?? []).filter((record) => !seqs.includes(record.seq));
+        const without = foldNested({ ...logs, [log]: kept }, vector.relayNow);
+        for (const [name, state] of states) {
+          expect({ ...stateOf(without, name), ignored: [] }, name).toEqual({
+            ...state,
+            ignored: [],
+          });
+        }
+      }
+    },
+  );
+});
+
+describe('a Dispatch on a nested motion (#122, #124)', () => {
+  /** two-levels-pass, with D's motion carrying a Dispatch, folded together at `relayNow`. */
+  function withDispatch(relayNow: number | null) {
+    const base = NESTED_VECTORS.find((vector) => vector.name.startsWith('two-levels-pass:'));
+    if (base === undefined) throw new Error('Expected the vector two-levels-pass.');
+    const copy = JSON.parse(JSON.stringify(base)) as NestedVector;
+    const motion = copy.logs.D?.find((record) => record.seq === 25);
+    if (motion === undefined || !('event' in motion)) throw new Error('Expected D’s motion.');
+    const { body } = motion.event as { body: Record<string, unknown> };
+    body.dispatch = { title: 'Rent stays fair', text: 'Metro Renters passed it.' };
+    const { logs, ids } = buildLogs(copy);
+    return { states: foldNested(logs, relayNow ?? base.relayNow), id: ids.get(25) ?? '' };
+  }
+
+  it('goes out once, from D, once its pass is final, and never from a log it crossed down to', () => {
+    const { states, id } = withDispatch(null);
+    const d = stateOf(states, 'D');
+    const proposal = d.proposals.find((p) => p.id === id);
+    if (proposal === undefined) throw new Error('Expected D’s motion.');
+    expect(proposal).toMatchObject({ final: true, outcome: { kind: 'pass' } });
+    expect(d.dispatches).toEqual([
+      expect.objectContaining({
+        id,
+        by: { proposal: id },
+        title: 'Rent stays fair',
+        received: settlesAt(proposal),
+      }),
+    ]);
+    // C decides the motion for its seat and A, B and E vote on it, but none of them sends it.
+    for (const log of ['C', 'A', 'B', 'E']) {
+      const below = stateOf(states, log);
+      expect(below.proposals.find((p) => p.id === id)?.dispatch, log).toBeNull();
+      expect(below.dispatches, log).toEqual([]);
+    }
+  });
+
+  it('sends nothing from D while its pass can still be contested', () => {
+    const { states, id } = withDispatch(null);
+    const proposal = stateOf(states, 'D').proposals.find((p) => p.id === id);
+    const before = withDispatch(settlesAt(proposal ?? { deadline: 0 }) - 1);
+    expect(stateOf(before.states, 'D').dispatches).toEqual([]);
+  });
 });
 
 describe('tally vectors', () => {
@@ -370,16 +1264,84 @@ describe('tally vectors', () => {
     const bar = DEFAULT_RULES.bars[vector.bar ?? 'ordinary'];
     const { eligible, versions } = vector;
     expect(tally({ eligible, versions, bar })).toEqual({ ...vector.expect, bar });
+    if (vector.rank !== undefined) {
+      expect(rank({ eligible, versions, bar }).map((option) => option.id)).toEqual(vector.rank);
+    }
   });
 });
 
+/** By log, the Proposals whose ballots that log's device has cleared in `vector` (#111, #278). */
+function clearedIn(vector: LogsVector, ids: Parameters<typeof resolve>[1]) {
+  return resolve(vector.cleared ?? {}, ids) as Record<string, readonly string[]>;
+}
+
+describe('coalition vectors (#100)', () => {
+  it.each(COALITION_VECTORS.map((vector) => [vector.name, vector] as const))(
+    '%s',
+    (_name, vector) => {
+      const { logs, ids } = buildLogs(vector);
+      const cleared = clearedIn(vector, ids);
+      const states = foldLogs(logs, vector.relayNow, cleared);
+      for (const [log, expected] of Object.entries(vector.expect)) {
+        expect(folded(states, log).state, log).toMatchObject(resolve(expected, ids) as object);
+      }
+      for (const [log, expected] of Object.entries(vector.report ?? {})) {
+        expect(crossings(states, log).report, log).toEqual(resolve(expected, ids));
+      }
+      for (const [log, expected] of Object.entries(vector.mismatches ?? {})) {
+        expect(crossings(states, log).mismatches, log).toMatchObject(resolve(expected, ids) as []);
+      }
+      for (const [log, seqs] of Object.entries(vector.unchangedWithout ?? {})) {
+        const kept = (logs[log] ?? []).filter((record) => !seqs.includes(record.seq));
+        const without = foldLogs({ ...logs, [log]: kept }, vector.relayNow, cleared);
+        for (const name of Object.keys(states)) {
+          const left = folded(without, name).state;
+          expect({ ...left, ignored: [] }, name).toEqual({
+            ...folded(states, name).state,
+            ignored: [],
+          });
+        }
+      }
+    },
+  );
+});
+
+/**
+ * What a device that holds the ballots and one that has cleared them must
+ * agree on (#289): the whole state but the ballots, whether each Proposal is
+ * cleared, whom it flagged for a result its ballots don't match, and the
+ * ignored records the cleared log no longer has.
+ */
+function agreed(state: GroupState, seqs: ReadonlySet<number>) {
+  return {
+    ...state,
+    proposals: state.proposals.map((p) => ({ ...p, ballots: [], cleared: false, mismatched: [] })),
+    ignored: state.ignored.filter((record) => seqs.has(record.seq)),
+  };
+}
+
 describe('fold vectors', () => {
   it.each(FOLD_VECTORS.map((vector) => [vector.name, vector] as const))('%s', (_name, vector) => {
-    const { records, ids } = buildRecords(vector);
-    const state = fold(records, vector.relayNow);
-    expect(state).toMatchObject(resolve(vector.expect, ids) as object);
+    const log = buildRecords(vector);
+    const { records, ids, cleared } = log;
+    const state = fold(records, vector.relayNow, [], cleared);
+    const expected = resolve(vector.expect, ids) as object;
+    expect(state).toMatchObject(expected);
     const without = vector.unchangedWithout ?? [];
     const kept = records.filter((record) => !without.includes(record.seq));
-    expect({ ...fold(kept, vector.relayNow), ignored: [] }).toEqual({ ...state, ignored: [] });
+    // `ignored` always differs, and so may whatever `unchangedExcept` names (#109's recoveryShares).
+    const apart = (folded: object): object =>
+      Object.fromEntries(
+        Object.entries(folded).filter(
+          ([key]) => key !== 'ignored' && !(vector.unchangedExcept ?? []).includes(key),
+        ),
+      );
+    expect(apart(fold(kept, vector.relayNow, [], cleared))).toEqual(apart(state));
+    if (log.alsoCleared.length === 0) return;
+    const after = clearedLog(log, state);
+    const clearedState = fold(after.records, vector.relayNow, [], after.cleared);
+    expect(clearedState, 'cleared').toMatchObject(expected);
+    const seqs = new Set(after.records.map((record) => record.seq));
+    expect(agreed(clearedState, seqs)).toEqual(agreed(state, seqs));
   });
 });

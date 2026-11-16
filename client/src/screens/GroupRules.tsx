@@ -1,11 +1,13 @@
 import { useId } from 'react';
 import { Link, VisuallyHidden } from 'react-aria-components';
 
+import { CopyLink } from '../app/CopyLink';
 import { messages } from '../app/messages';
 import { optInState, type OptInStanding } from '../app/optInLines';
 import { routeHref } from '../app/router';
 import { Named, SuspendedNote } from '../app/stewards';
 import { BackLink, PageHeader } from '../app/ui';
+import { addressOf, doorLinkOf } from '../door/page';
 import { can, isSuspended } from '../engine/capabilities';
 import type { GroupState } from '../engine/fold';
 import { displayName } from '../engine/names';
@@ -18,6 +20,10 @@ export interface GroupRulesProps {
   readonly state: GroupState;
   /** This device's author id in the group. */
   readonly me: string;
+  /** The app's origin, which an open front door's link starts with (#121). */
+  readonly origin?: string;
+  /** Puts the front door's link on the clipboard; rejects when the browser blocks it. */
+  readonly copyText?: (text: string) => Promise<void>;
 }
 
 interface CardProps extends GroupRulesProps {
@@ -100,8 +106,42 @@ function Actions({ state, me, optIn }: CardProps) {
   );
 }
 
+/**
+ * An open front door's link, to post anywhere, and whether its page shows the
+ * count (#121): only while the door is open in effect.
+ */
+function DoorLink({ state, origin, copyText }: GroupRulesProps) {
+  const door = state.optIns.frontDoor;
+  if (door === false || origin === undefined || copyText === undefined) return null;
+  const words = messages.door;
+  return (
+    <div className="stack door-link">
+      <p className="caption">{door.showCount ? words.counted : words.uncounted}</p>
+      <CopyLink
+        link={doorLinkOf(origin, addressOf(door))}
+        label={words.linkLabel}
+        hint={words.linkHint}
+        button={words.copyLink}
+        primary={false}
+        copyText={copyText}
+      />
+    </div>
+  );
+}
+
+/**
+ * Why the front door is closed, once a member's leave or removal closed it
+ * (#288), and that a new Proposal to open it reopens it: until a door opens
+ * again.
+ */
+function ClosedByLeave({ state }: { readonly state: GroupState }) {
+  if (state.doorClosure === null) return null;
+  return <p className="caption">{messages.optIns.doorClosedByLeave}</p>;
+}
+
 /** One opt-in: its name, where it stands, its warning, and what this member can do about it. */
-function OptInCard({ state, me, optIn }: CardProps) {
+function OptInCard(props: CardProps) {
+  const { state, me, optIn } = props;
   const heading = useId();
   return (
     <section className="card opt-in" aria-labelledby={heading}>
@@ -109,6 +149,8 @@ function OptInCard({ state, me, optIn }: CardProps) {
         {messages.optIns.names[optIn]}
       </h2>
       <Standing state={state} standing={optInState(state, optIn)} />
+      {optIn === 'frontDoor' ? <ClosedByLeave state={state} /> : null}
+      {optIn === 'frontDoor' ? <DoorLink {...props} /> : null}
       <p className="opt-in-warning">{messages.optIns.warnings[optIn]}</p>
       <Actions state={state} me={me} optIn={optIn} />
     </section>
@@ -119,11 +161,14 @@ function OptInCard({ state, me, optIn }: CardProps) {
  * Group rules (`#/g/{groupId}/rules`; ADR-0038, ADR-0039, ADR-0040, #117):
  * the chat bot and the front door, each with where it stands, the plain
  * warning of what the outside platform would hold, and a link to propose a
- * change. Nothing here changes an opt-in: only a passed Proposal does, and a
+ * change. While the front door is open, its card holds its link to copy and
+ * says whether its page shows the count (#121); once a member's leave or
+ * removal has closed it, why, and how to reopen it (#288). Nothing here changes an opt-in: only a passed Proposal does, and a
  * steward's Turn off now goes through its own off-Proposal. The other rules
  * were set at founding and don't change.
  */
-export function GroupRules({ state, me }: GroupRulesProps) {
+export function GroupRules(props: GroupRulesProps) {
+  const { state, me } = props;
   const { optIns } = messages;
   return (
     <main className="shell" data-scene="trunks">
@@ -133,7 +178,7 @@ export function GroupRules({ state, me }: GroupRulesProps) {
       <SuspendedNote state={state} me={me} />
       <div className="opt-ins">
         {OPT_INS.map((optIn) => (
-          <OptInCard key={optIn} state={state} me={me} optIn={optIn} />
+          <OptInCard key={optIn} {...props} optIn={optIn} />
         ))}
       </div>
       <p className="caption">{optIns.founding}</p>

@@ -16,7 +16,7 @@
 }
 
 /*
- * Painted edges (DESIGN.md, ADR-0077). A screen that names a scene shows a
+ * Painted edges (DESIGN.md, ADR-0078). A screen that names a scene shows a
  * few pixels of the painting around the window, and stays plain paper inside.
  * Screens that need deep focus name no scene.
  */
@@ -94,11 +94,45 @@
   align-items: center;
 }
 
+/* Words that keep the room their longest form takes (#407): what they say
+ * now, in the one child, and `data-room`, the longest they can say, set
+ * invisibly in the same grid cell. So a sync that shortens or lengthens them
+ * moves nothing after them, and a tap lands where it was aimed. Generated
+ * content, hidden, so no screen reader, search or copy meets the room. */
+.steady {
+  display: grid;
+}
+
+.steady > *,
+.steady::after,
+.steady[data-room-alt]::before {
+  grid-area: 1 / 1;
+}
+
+/* First in grid order, so the room's text gives the box its baseline even
+ * while it says nothing yet, and a row aligned by baseline stays put. */
+.steady::after {
+  order: -1;
+  content: attr(data-room);
+  visibility: hidden;
+}
+
+/* Where the words can say either of two longest things, `data-room-alt`
+ * keeps the other's room in the same cell, so the wider wins whatever its
+ * glyphs (#417). Made only with the attribute, so a box with one room keeps
+ * its baseline as above. */
+.steady[data-room-alt]::before {
+  order: -1;
+  content: attr(data-room-alt);
+  visibility: hidden;
+}
+
 /* Type -------------------------------------------------------------------- */
 
 h1,
 h2,
 h3,
+h4,
 p,
 ul,
 ol {
@@ -422,6 +456,13 @@ a[data-focus-visible] {
   font: var(--type-ui);
 }
 
+/* A passed priority vote's top option, on its Decided card (#107). */
+.card-link-focus {
+  color: var(--body);
+  font: var(--type-body);
+  overflow-wrap: anywhere;
+}
+
 .sections {
   display: grid;
 }
@@ -514,11 +555,160 @@ a[data-focus-visible] {
   justify-items: start;
 }
 
+/* With its actions and gaps between them, the Document sets its rhythm from those rows. */
+.document-editable {
+  gap: var(--space-2);
+}
+
+/* Propose a change and Propose removing this section, side by side, wrapping on a phone.
+ * The row spans the column, so a wrapped button keeps its text on the column's edge. */
+.atom-actions {
+  justify-self: stretch;
+  column-gap: var(--space-3);
+  row-gap: 0;
+}
+
+/* A quiet "Add a section here" in each gap (#75), over a hairline that marks the spot. */
+.atom-gap {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.atom-gap::after {
+  content: '';
+  flex: 1;
+  border-top: 1px dashed var(--hairline);
+}
+
+.button-gap {
+  flex: none;
+  color: var(--muted);
+  font: var(--type-caption);
+  font-weight: 600;
+}
+
+.button-gap[data-hovered] {
+  color: var(--primary);
+}
+
+/* Add a section here's choices (#103): a floating menu on surface, with the one soft
+ * shadow DESIGN.md allows floating layers, from the scrim as a dialog's is. */
+.menu-popover {
+  min-width: 13rem;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: 0 12px 32px var(--scrim);
+}
+
+.menu {
+  display: grid;
+  padding: var(--space-1);
+  outline: none;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  min-height: var(--touch);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  font: var(--type-ui);
+  cursor: pointer;
+  outline: none;
+}
+
+.menu-item[data-focused] {
+  background: var(--primary-soft);
+}
+
+.menu-item[data-focus-visible] {
+  outline: 3px solid var(--ochre);
+  outline-offset: -3px;
+}
+
+/* A section header (#103) opens a part of the Document: a little more room above it. */
+.document > .atom-heading:not(:first-child) {
+  padding-block-start: var(--space-3);
+}
+
+/* Move this section and Protect this section (#103, #116) start a row of their own under the
+ * section's change actions, so a wide screen never leaves one of them alone on a second row. */
+.atom-actions-break {
+  flex-basis: 100%;
+  height: 0;
+}
+
+/* Why Move this section and Protect this section wait (#103, #116): one line under the
+ * section's actions. */
+.atom-actions .wait-reason {
+  flex-basis: 100%;
+  min-height: 0;
+  margin-block-start: calc(-1 * var(--space-2));
+}
+
+/* Copy as Markdown, after the Document, and its fallback when the clipboard is blocked. */
+.copy-markdown {
+  justify-items: start;
+  padding-block-start: var(--space-5);
+  border-top: 1px solid var(--hairline);
+}
+
+.copy-markdown .field {
+  width: 100%;
+}
+
+.input-markdown {
+  background: var(--sunken);
+  color: var(--body);
+  font: var(--type-mono);
+}
+
 /* A line in place of an Atom's button keeps the button's height, so sections stay evenly spaced. */
 .atom-note {
   display: flex;
   align-items: center;
   min-height: var(--touch);
+}
+
+/* A protected section's badge (#116; DESIGN.md Atom block): an eyebrow at the top of its
+ * block, in the gutter its text starts from. Entrenched has a clay outline and a lock glyph;
+ * eternal a double ink rule above and below. The word says the class, never the color alone. */
+/* As wide as its word wherever it sits: the Document, a composer's section or a result. */
+.atom-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  width: fit-content;
+  padding: var(--space-1) var(--space-2);
+}
+
+.atom-badge-entrenched {
+  border: 1px solid var(--clay);
+  border-radius: var(--radius-sm);
+  color: var(--clay);
+}
+
+.atom-badge-eternal {
+  padding-inline: 0;
+  border-block: 3px double var(--ink);
+  color: var(--ink);
+}
+
+.atom-badge-glyph {
+  flex: none;
+}
+
+/* Under Protect this section's choice (#116): while Eternal is chosen, that it's permanent, in
+ * body text set off by a clay rule, warm emphasis rather than an alert. */
+.protect-permanent {
+  max-width: 30em;
+  padding-inline-start: var(--space-3);
+  border-inline-start: 3px solid var(--clay);
+  color: var(--ink);
+  font: var(--type-body);
 }
 
 /* An Atom's Markdown, built by <AtomText> from an allowlist of elements. */
@@ -541,6 +731,11 @@ a[data-focus-visible] {
   color: var(--ink);
   font: var(--type-heading-2);
   text-wrap: balance;
+}
+
+/* A subsection header raised a level in a Document's outline keeps its own look (#103). */
+.atom-text .atom-subheading {
+  font: var(--type-heading-3);
 }
 
 .atom-text :where(h3, h4, h5, h6) {
@@ -735,6 +930,39 @@ a[data-focus-visible] {
   font: var(--type-ui);
 }
 
+/* The priority composer's options (#107): a fieldset of rows, each a field
+ * with Remove beside its input, then Add option. */
+.options-field {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.options-field > legend {
+  margin-block-end: var(--space-2);
+  padding: 0;
+}
+
+.option-row {
+  display: grid;
+  gap: var(--space-2);
+  align-items: start;
+}
+
+/* Remove sits beside the input once there are more than two options. */
+.option-row:has(.option-remove) {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+/* Remove lines up with the input, under the field's label. */
+.option-remove {
+  margin-block-start: calc(var(--space-2) + 1lh);
+  margin-inline-start: 0;
+}
+
 /* A quiet button beside the primary one keeps its own space. */
 .form-actions .button-quiet {
   margin-inline-start: 0;
@@ -831,6 +1059,17 @@ a[data-focus-visible] {
 
 .level-option[data-disabled]:not([data-selected]) {
   opacity: 0.6;
+}
+
+/* Where a moving section is now (#103): shown in full, with a dashed edge, but not chosen. */
+.level-option.place-here[data-disabled] {
+  border-style: dashed;
+  background: transparent;
+  opacity: 1;
+}
+
+.place-here .level-button::before {
+  border-style: dashed;
 }
 
 /* The line under each level's name starts where the name does, after the ring. */
@@ -1222,6 +1461,31 @@ a[data-focus-visible] {
   border-top: 1px solid var(--hairline);
 }
 
+/* Removal (#115) ---------------------------------------------------------- */
+
+/* The bar a removal needs, and how long it runs, in words, kept to the lede's reading measure. */
+.removal-terms .caption {
+  max-width: 34em;
+}
+
+/* The response the person a removal names posted on its ballot: their own
+ * words as plain text with its line breaks kept, set apart by a hairline rule
+ * as a ballot note is. */
+.removal-response {
+  display: grid;
+  gap: var(--space-2);
+  max-width: 42rem;
+}
+
+.response-text {
+  padding-inline-start: var(--space-3);
+  border-inline-start: 2px solid var(--hairline);
+  color: var(--ink);
+  font: var(--type-body);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 /* Earning a vote (#101) --------------------------------------------------- */
 
 /* A newcomer's progress, who vouched for them and Vouch, across their row in People. */
@@ -1255,4 +1519,119 @@ a[data-focus-visible] {
   background: var(--sunken);
   color: var(--body);
   font: var(--type-ui);
+}
+
+/* Dispatches (#112) ------------------------------------------------------- */
+
+/* The Dispatches view: one card each, newest first. */
+.dispatch-list {
+  display: grid;
+  gap: var(--space-3);
+  padding: 0;
+  list-style: none;
+}
+
+/* A Dispatch: its title, who sent it and when, its plain text, then its Document. */
+.dispatch.card {
+  gap: var(--space-2);
+}
+
+.dispatch-title {
+  overflow-wrap: anywhere;
+}
+
+/* "From Ana · Mon 16 Nov": a name or a Proposal's title can be long, so it
+ * wraps. It's text, not a flex row (#453), so "· <date>" waits on the
+ * sender's last line, or takes its last word down with it: no line starts
+ * with the dot. */
+.dispatch-meta {
+  color: var(--muted);
+  font: var(--type-caption);
+  overflow-wrap: anywhere;
+}
+
+/* "· <date>", which never wraps inside. */
+.dispatch-when {
+  white-space: nowrap;
+}
+
+/* The space either side of the dot that the flex row's gap gave. */
+.dispatch-separator {
+  margin-inline: var(--space-2);
+}
+
+/* A word joiner (U+2060), so no line breaks before the dot, even after a name
+ * in a script that may break between any two letters. It's generated, so the
+ * line's text stays as it was. */
+.dispatch-separator::before {
+  content: '\2060';
+}
+
+/* Plain text, never Markdown or links: line breaks and spaces show as typed. */
+.dispatch-text {
+  max-width: 34em;
+  color: var(--body);
+  font: var(--type-body);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.dispatch-open {
+  justify-self: start;
+  overflow-wrap: anywhere;
+}
+
+/* The Dispatch an open Proposal would send, under its why. */
+.dispatch-carried {
+  max-width: 34rem;
+}
+
+/* The composer's Dispatch: the checkbox's card, then its title and text. */
+.dispatch-choice {
+  gap: var(--space-4);
+}
+
+/* Share by link (#105) ------------------------------------------------------ */
+
+/* The shared page's first line, where the app's back link would sit, so the title lands as on every screen. */
+.shared-note {
+  display: flex;
+  align-items: center;
+  min-height: var(--touch);
+  color: var(--muted);
+  font: var(--type-ui);
+}
+
+/* How edits reach a shared Document's link, and anything holding them back. */
+.share-notes {
+  display: grid;
+  gap: var(--space-2);
+  max-width: 34em;
+}
+
+/* Create group's Document blocks (#92): each Document's title and first draft, under its
+ * "Document N" heading and a hairline, as the form's other rows are spaced. The legend floats,
+ * so it sits in the block's grid as its first row rather than in its border. */
+.document-block {
+  display: grid;
+  gap: var(--space-5);
+  min-width: 0;
+  margin: 0;
+  padding: var(--space-5) 0 0;
+  border: 0;
+  border-top: 1px solid var(--hairline);
+}
+
+.document-block > legend {
+  float: left;
+  padding: 0;
+}
+
+/* The Document a Proposal changes or creates (#92), leading its card, ballot and result:
+ * one quiet line in caption type, the title in <bdi>. */
+.document-of {
+  color: var(--muted);
+  font: var(--type-caption);
+  font-weight: 600;
+  overflow-wrap: anywhere;
 }

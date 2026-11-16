@@ -85,13 +85,19 @@ while IFS= read -r path; do
         # requirements.txt is what the relay runs on; scripts/relay.sh is shared tooling.
         reconcile/*|requirements.txt)               python=true; e2e=true ;;
         # stubs/ types third-party Python packages for mypy (pyproject.toml).
-        tests/*|stubs/*|pyproject.toml|requirements*.txt|.pylintrc)
+        # scripts/ralph/ is the merge recap, Python with its own tests.
+        tests/*|stubs/*|pyproject.toml|requirements*.txt|.pylintrc|scripts/ralph/*)
                                                     python=true ;;
+        # The graph scripts feed graph-build.yml and graph-docs.yml, never a gate.
+        scripts/graph/*)                            ;;
         # Shared contract and shared tooling: every area must re-check.
         protocol/*|scripts/*|.github/workflows/ci.yml|.pre-commit-config.yaml|.secrets.baseline)
                                                     all ;;
+        # tests/ checks every other workflow (test_workflows.py, and
+        # test_code_review_workflow.py for the review); no other gate reads them.
+        .github/workflows/*)                        python=true ;;
         # Prose and planning never need a code gate.
-        docs/*|plans/*|*.md|.claude/*|.github/workflows/code-review.yml|.gitignore|.gitattributes)
+        docs/*|plans/*|*.md|.claude/*|.gitignore|.gitattributes)
                                                     ;;
         *)                                          all ;;
     esac

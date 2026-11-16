@@ -1,13 +1,13 @@
 /**
  * Leave on this device (#77; docs/spec/phase-1-spec.md §9, Local data): the
  * leave waits in the outbox, survives a reload while the relay can't be
- * reached, and only once the relay has returned a seq for it does the group
- * go, every record of it, from every object store, leaving other groups as
- * they were.
+ * reached, and only once the relay has returned a seq for it, and the pass
+ * has read where it landed (#225), does the group go, every record of it,
+ * from every object store, leaving other groups as they were.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { deriveMailboxId, deriveSealKey } from '../crypto/groupKeys';
+import { deriveSealKey, deriveWeekMailboxId, weekOf } from '../crypto/groupKeys';
 import { open, xchachaSeal } from '../crypto/seal';
 import { parseRecord, type SignedEvent } from '../engine/event';
 import { createRelay, type Relay } from '../net/relay';
@@ -42,13 +42,14 @@ function founding(name: string, fill: number) {
     body: {
       name,
       founder: 'Ana',
-      title: `${name} rules`,
-      atoms: [`${name}: be kind.`],
+      documents: [{ title: `${name} rules`, atoms: [`${name}: be kind.`] }],
       kx: testKx('ana').kx,
     },
   });
   const secret = new Uint8Array(32).fill(fill);
-  return { genesis, secret, mailbox: deriveMailboxId(secret), key: deriveSealKey(secret) };
+  // The fake relay's first week, which these tests stay in (#110).
+  const mailbox = deriveWeekMailboxId(secret, weekOf(29_000_000));
+  return { genesis, secret, mailbox, key: deriveSealKey(secret) };
 }
 
 type Founded = ReturnType<typeof founding>;
@@ -158,7 +159,7 @@ describe('leaving a group on this device', () => {
     expect(await second.store.listGroups()).toEqual([]);
   });
 
-  it('keeps the group while the relay refuses the leave, and reads nothing more once it accepts it', async () => {
+  it('keeps the group while the relay refuses the leave, and once it accepts it reads where it landed, then nothing more', async () => {
     const fake = createFakeRelay();
     let refuse = true;
     const relay = createRelay({
@@ -181,7 +182,54 @@ describe('leaving a group on this device', () => {
     const requests = fake.requests.length;
     expect(await refusing.syncOnce()).toBe(true);
     expect(refusing.isReachable()).toBe(true);
-    expect(fake.requests.slice(requests).map((request) => request.method)).toEqual(['PUT']);
+    // The GET that gives the week (#110), the leave, then last week's and this week's mailbox once
+    // more, to see that no key change came before it (#225).
+    expect(fake.requests.slice(requests).map((request) => request.method)).toEqual([
+      'GET',
+      'PUT',
+      'GET',
+      'GET',
+    ]);
+    expect(await store.getGroup(group.genesis.id)).toBeUndefined();
+    const after = fake.requests.length;
+    expect(await refusing.syncOnce()).toBe(true);
+    expect(fake.requests).toHaveLength(after);
+  });
+
+  it('stays, leaving, when the read after its leave fails, then posts the leave again, which folds once, and goes (#225, #349)', async () => {
+    const fake = createFakeRelay();
+    let puts = 0;
+    const relay = createRelay({
+      fetch: (input, init) => {
+        if (init?.method === 'PUT') puts += 1;
+        // The relay takes the leave, then can't be reached for the read after it.
+        if (puts > 0 && init?.method !== 'PUT') return Promise.reject(new TypeError('offline'));
+        return fake.fetch(input, init);
+      },
+    });
+    const { store, sync } = await openDevice(createRelay({ fetch: fake.fetch }));
+    const group = founding(CANARY, 3);
+    await keep(store, sync, group);
+    const flaky = createSync({ store, relay, seal: xchachaSeal, clock: () => TS });
+    opened.push(flaky);
+    const leave = anaSays(group.genesis, 'leave');
+    await store.markLeaving(group.genesis.id, leave.record);
+
+    expect(await flaky.syncOnce()).toBe(false);
+    const held = await store.getGroup(group.genesis.id);
+    // No pull read the leave back, so it stays queued, as every entry does until its pull (#349).
+    const queued = held?.outbox.map((bytes) => parseRecord(bytes)?.id);
+    expect([held?.leaving !== undefined, queued]).toEqual([true, [leave.id]]);
+
+    expect(await sync.syncOnce()).toBe(true);
+    // The next pass posts it again and reads where it landed; both copies are one event, which folds once.
+    expect(onRelay(fake, group)).toEqual(['genesis', 'leave', 'leave']);
+    const copies = fake.blobs(group.mailbox).slice(1);
+    expect(
+      copies.map(
+        (blob) => parseRecord(open(group.mailbox, group.key, blob) ?? new Uint8Array())?.id,
+      ),
+    ).toEqual([leave.id, leave.id]);
     expect(await store.getGroup(group.genesis.id)).toBeUndefined();
   });
 });

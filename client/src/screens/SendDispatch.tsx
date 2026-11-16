@@ -1,0 +1,226 @@
+/**
+ * Send a Dispatch (`#/g/{groupId}/dispatch/new`; ADR-0003, ADR-0012,
+ * ADR-0074, #112): a title, a short plain text and, optionally, the Document
+ * it points to. Submitting queues one `dispatch`, whose PUT wakes the
+ * group's opted-in phones with the usual content-free push. It shows a form
+ * only to someone who holds `dispatch` (`can()`, as the fold asks) and isn't
+ * leaving, and says why otherwise.
+ *
+ * Once the group sits in a formed coalition, the form asks how far it can go
+ * (#126; ADR-0037, ADR-0071): this group only sends it at once, as before,
+ * and any other choice puts it to the group's vote with that ceiling, so each
+ * coalition above can vote on it in turn.
+ */
+import { type SyntheticEvent, useState } from 'react';
+import { Button, Form } from 'react-aria-components';
+
+import { documentTitle } from '../app/dispatchLines';
+import { holdPresses } from '../app/holdPresses';
+import { messages } from '../app/messages';
+import { checkDispatchText, checkDispatchTitle } from '../app/proposalFields';
+import { RadioCards } from '../app/RadioCards';
+import type { DispatchValues, RisingValues } from '../app/proposals';
+import { SuspendedNote } from '../app/stewards';
+import { BackLink, Field, PageHeader } from '../app/ui';
+import { useSaving } from '../app/useSaving';
+import { can, isSuspended } from '../engine/capabilities';
+import { documentIds } from '../engine/dispatches';
+import { type Ceiling, CEILINGS } from '../engine/event';
+import type { GroupState } from '../engine/fold';
+
+/** Props for {@link SendDispatch}. */
+export interface SendDispatchProps {
+  /** The group, folded from relay records. */
+  readonly state: GroupState;
+  /** This device's author id in the group. */
+  readonly me: string;
+  /** Whether this device's leave waits for the relay (#77): then nothing new is sent. */
+  readonly leaving?: boolean;
+  /** Queues the Dispatch from valid entries; rejects when it couldn't be saved. */
+  readonly onSend: (values: DispatchValues) => Promise<void>;
+  /**
+   * Puts the Dispatch to the group's vote with the ceiling chosen (#126);
+   * rejects when it couldn't be saved. Given only once the group sits in a
+   * formed coalition, which is when the form asks how far it can go.
+   */
+  readonly onPropose?: (values: RisingValues) => Promise<void>;
+}
+
+/** How far a Dispatch can go: this group only, or a ceiling above it (#126). */
+type Reach = 0 | Ceiling;
+
+/** Every choice, this group only first. */
+const REACHES: readonly Reach[] = [0, ...CEILINGS];
+
+/** The picker's value for pointing to no Document: never a Document id, which is 43 characters. */
+const NO_DOCUMENT = 'none';
+
+/** The screen without a form: why this member can't send a Dispatch here. */
+function Unavailable({ state, me, leaving }: { state: GroupState; me: string; leaving: boolean }) {
+  const { sendDispatch, leave } = messages;
+  const title = leaving ? leave.noProposingTitle : sendDispatch.notAllowedTitle;
+  return (
+    <main className="shell">
+      <BackLink
+        to={{ name: 'dispatches', groupId: state.group ?? '' }}
+        label={messages.dispatches.title}
+      />
+      <PageHeader title={title} pageTitle={sendDispatch.pageTitle} />
+      {!leaving && isSuspended(state, me) ? (
+        <SuspendedNote state={state} me={me} />
+      ) : (
+        <p className="lede">{leaving ? sendDispatch.leaving : sendDispatch.notAllowed}</p>
+      )}
+    </main>
+  );
+}
+
+interface DocumentPickerProps {
+  readonly state: GroupState;
+  readonly value: string;
+  readonly onChange: (value: string) => void;
+}
+
+/** "Point to a Document (optional)": No Document, or each of the group's Documents by title. */
+function DocumentPicker({ state, value, onChange }: DocumentPickerProps) {
+  const { sendDispatch } = messages;
+  const documents = documentIds(state).map((id) => ({
+    value: id,
+    label: <bdi>{documentTitle(state, id) ?? ''}</bdi>,
+  }));
+  const cards = [{ value: NO_DOCUMENT, label: sendDispatch.noDocument }, ...documents];
+  return (
+    <RadioCards
+      label={sendDispatch.documentLabel}
+      name="doc"
+      value={value}
+      onChange={onChange}
+      cards={cards}
+    />
+  );
+}
+
+interface CeilingPickerProps {
+  readonly value: Reach;
+  readonly onChange: (value: Reach) => void;
+}
+
+/**
+ * "How far can it go?" (#126): this group only, one level up, two levels up,
+ * or as high as the group's coalitions reach, each a card with the line that
+ * says what happens.
+ */
+function CeilingPicker({ value, onChange }: CeilingPickerProps) {
+  const { ceilingLabel, ceilings, ceilingHints } = messages.sendDispatch;
+  const pick = (picked: string) => {
+    const reach = REACHES.find((candidate) => String(candidate) === picked);
+    if (reach !== undefined) onChange(reach);
+  };
+  const cards = REACHES.map((reach) => ({
+    value: String(reach),
+    label: ceilings[reach],
+    description: ceilingHints[reach],
+  }));
+  return (
+    <RadioCards
+      label={ceilingLabel}
+      name="ceiling"
+      value={String(value)}
+      onChange={pick}
+      cards={cards}
+    />
+  );
+}
+
+/** Sends the Dispatch at once for this group only, else puts it to a vote with its ceiling (#126). */
+function sender(props: Pick<SendDispatchProps, 'onSend' | 'onPropose'>) {
+  return async ({ reach, ...values }: DispatchValues & { readonly reach: Reach }) => {
+    if (reach === 0 || props.onPropose === undefined) await props.onSend(values);
+    else await props.onPropose({ ...values, ceiling: reach });
+  };
+}
+
+/**
+ * The form: title, text, Document and, once the group sits in a formed
+ * coalition, how far it can go (#126). Submitting queues one `dispatch`, or
+ * one Proposal that puts it to a vote.
+ */
+function DispatchForm(props: Pick<SendDispatchProps, 'state' | 'onSend' | 'onPropose'>) {
+  const { state, onPropose } = props;
+  const [title, setTitle] = useState('');
+  const [text, setText] = useState('');
+  const [doc, setDoc] = useState(NO_DOCUMENT);
+  const [reach, setReach] = useState<Reach>(0);
+  const { run, running, outcome } = useSaving(sender(props));
+  const { sendDispatch } = messages;
+  const submit = (event: SyntheticEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const chosen = doc === NO_DOCUMENT ? null : doc;
+    void run({ title: title.trim(), text: text.trim(), doc: chosen, reach });
+  };
+  const voted = reach !== 0;
+  return (
+    <Form className="form" onSubmit={submit}>
+      <Field
+        name="title"
+        label={sendDispatch.titleLabel}
+        hint={sendDispatch.titleHint}
+        autoComplete="off"
+        isRequired
+        validate={checkDispatchTitle}
+        value={title}
+        onChange={setTitle}
+      />
+      <Field
+        name="text"
+        label={sendDispatch.textLabel}
+        hint={sendDispatch.textHint}
+        multiline
+        validate={checkDispatchText}
+        value={text}
+        onChange={setText}
+      />
+      <DocumentPicker state={state} value={doc} onChange={setDoc} />
+      {onPropose === undefined ? null : <CeilingPicker value={reach} onChange={setReach} />}
+      <p className="caption">{voted ? sendDispatch.visibilityVote : sendDispatch.visibility}</p>
+      {outcome === 'failed' ? (
+        <p role="alert" className="form-error">
+          {sendDispatch.failed}
+        </p>
+      ) : null}
+      <div className="row form-actions" onPointerDownCapture={holdPresses(running)}>
+        <Button type="submit" className="button button-primary" isDisabled={running}>
+          {voted ? sendDispatch.submitVote : sendDispatch.submit}
+        </Button>
+      </div>
+    </Form>
+  );
+}
+
+/** Send a Dispatch to everyone in the group, for someone who may send one. */
+export function SendDispatch(props: SendDispatchProps) {
+  const { state, me, leaving = false, onSend, onPropose } = props;
+  if (leaving || !can(state, me, 'dispatch')) {
+    return <Unavailable state={state} me={me} leaving={leaving} />;
+  }
+  const { sendDispatch } = messages;
+  return (
+    <main className="shell">
+      <BackLink
+        to={{ name: 'dispatches', groupId: state.group ?? '' }}
+        label={messages.dispatches.title}
+      />
+      <PageHeader
+        eyebrow={sendDispatch.eyebrow}
+        title={sendDispatch.title}
+        pageTitle={sendDispatch.pageTitle}
+      />
+      <p className="lede">{sendDispatch.lede}</p>
+      <DispatchForm
+        state={state}
+        onSend={onSend}
+        {...(onPropose === undefined ? {} : { onPropose })}
+      />
+    </main>
+  );
+}

@@ -6,13 +6,13 @@
  * context tag (`sign.ts`). Nothing reads an event until its record verifies,
  * so bytes a member didn't sign never reach the parser or claim an event id.
  */
-import { sha256 } from '@noble/hashes/sha2.js';
-import { bytesToHex, concatBytes } from '@noble/hashes/utils.js';
+import { concatBytes } from '@noble/hashes/utils.js';
 
 import {
   EVENT_CONTEXT,
   PUBLIC_KEY_BYTES,
   SIGNATURE_BYTES,
+  type SignContext,
   type SigningKeys,
   sign,
   verify,
@@ -52,18 +52,6 @@ export interface VerifiedRecord {
 }
 
 /**
- * The SHA-256 hex of every record that has verified in this page's life.
- *
- * A re-fold reads the same records again, and Ed25519 verification costs a
- * millisecond or more each, so a verdict is kept per record. Keying by a
- * collision-resistant hash of the whole record means only identical bytes
- * share a verdict. Only passes are kept, and the set holds one entry per
- * valid record the device has folded, a small fraction of the logs it
- * already holds in memory.
- */
-const verified = new Set<string>();
-
-/**
  * The record for `eventBytes`, signed with `keys`: public key ‖ signature ‖
  * event bytes. A public key that isn't the secret key's own makes a record
  * that never verifies.
@@ -74,18 +62,49 @@ export function signRecord(keys: SigningKeys, eventBytes: Uint8Array): Uint8Arra
 }
 
 /**
+ * A record framed as an event's is, signed under `ctx` instead: public key ‖
+ * signature ‖ message. A shared Document's copy (#105) and a front door's
+ * page (#121) travel this way, each under its own tag, so neither is ever an
+ * event nor the other.
+ */
+export function signTagged(
+  ctx: SignContext,
+  keys: SigningKeys,
+  message: Uint8Array,
+): Uint8Array<ArrayBuffer> {
+  return Uint8Array.from(concatBytes(keys.publicKey, sign(ctx, keys.secretKey, message), message));
+}
+
+/**
+ * The message inside a {@link signTagged} record when its key is exactly
+ * `publicKey` and its signature verifies under `ctx`; otherwise `null`, for
+ * bytes too short to hold a key and a signature as for any other key or any
+ * changed byte. The message comes back in bytes of its own.
+ */
+export function openTagged(
+  ctx: SignContext,
+  record: Uint8Array,
+  publicKey: Uint8Array,
+): Uint8Array | null {
+  if (record.length < RECORD_HEADER_BYTES || publicKey.length !== PUBLIC_KEY_BYTES) return null;
+  const key = record.subarray(0, PUBLIC_KEY_BYTES);
+  if (!key.every((byte, i) => byte === publicKey[i])) return null;
+  const signature = record.subarray(PUBLIC_KEY_BYTES, RECORD_HEADER_BYTES);
+  const message = record.subarray(RECORD_HEADER_BYTES);
+  return verify(ctx, publicKey, signature, message) ? message.slice() : null;
+}
+
+/**
  * The key and event bytes of a record whose signature verifies, or `null` for
  * bytes too short to hold a key and a signature, or any signature that fails.
+ * A re-fold reads the same records again, and {@link verify} keeps each
+ * verdict that passed (#362), so only identical bytes skip the Ed25519 work.
  */
 export function verifyRecord(record: Uint8Array): VerifiedRecord | null {
   if (record.length < RECORD_HEADER_BYTES) return null;
   const publicKey = record.subarray(0, PUBLIC_KEY_BYTES);
   const signature = record.subarray(PUBLIC_KEY_BYTES, RECORD_HEADER_BYTES);
   const eventBytes = record.subarray(RECORD_HEADER_BYTES);
-  const digest = bytesToHex(sha256(record));
-  if (!verified.has(digest)) {
-    if (!verify(EVENT_CONTEXT, publicKey, signature, eventBytes)) return null;
-    verified.add(digest);
-  }
+  if (!verify(EVENT_CONTEXT, publicKey, signature, eventBytes)) return null;
   return { publicKey, eventBytes };
 }

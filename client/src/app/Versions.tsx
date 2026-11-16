@@ -1,20 +1,22 @@
 /**
  * A Proposal's versions, side by side (DESIGN.md, Ballot; spec §8; ADR-0004).
  *
- * Every version on the ballot shows the same way: "Version N · <name>", its
- * word diff against the section's text now, and "How it will read". Nobody
- * filters which versions voters see. Wide screens set them in equal columns
- * and phones stack them (src/styles/proposals.css).
+ * Every version on the ballot shows the same way: "Version N · <name>", what
+ * it does when it adds or removes a section (#75), its word diff against the
+ * section's text now, and "How it will read". A removal's diff strikes the
+ * whole section through and has nothing to read; an add's marks its whole text
+ * as added. Nobody filters which versions voters see. Wide screens set them in
+ * equal columns and phones stack them (src/styles/proposals.css).
  */
 import { type ReactNode, useId } from 'react';
 import { Button, Disclosure, DisclosurePanel, Heading } from 'react-aria-components';
 
 import { messages } from './messages';
 import type { RulesView } from './optInLines';
-import { MotionTitle } from './stewards';
+import { MotionTitle, Named } from './stewards';
 import { AtomText } from './text/AtomText';
 import { WordDiff } from './text/WordDiff';
-import type { VersionView } from './versionViews';
+import type { MoveView, VersionView } from './versionViews';
 
 /** A version's text as the Document will show it, one tap away from the diff. */
 export function ReadsAs({ text, level }: { readonly text: string; readonly level: 3 | 4 }) {
@@ -38,13 +40,18 @@ interface VersionCardProps {
   readonly children: ReactNode;
 }
 
-/** A version's change: its text, or its word diff against the section's text now. */
+/**
+ * A version's change: a word diff against `current`, and how it will read
+ * unless it removes the section. With nothing to compare, its text as it
+ * reads, and nothing at all for a removal.
+ */
 function Change({ version, current }: Omit<VersionCardProps, 'children'>) {
-  if (current === null) return <AtomText text={version.text} className="atom-card" />;
+  const { text } = version;
+  if (current === null) return text === '' ? null : <AtomText text={text} className="atom-card" />;
   return (
     <>
-      <WordDiff current={current} proposed={version.text} />
-      <ReadsAs text={version.text} level={4} />
+      <WordDiff current={current} proposed={text} />
+      {text === '' ? null : <ReadsAs text={text} level={4} />}
     </>
   );
 }
@@ -63,12 +70,20 @@ function RulesLines({ rules }: { readonly rules: RulesView }) {
   );
 }
 
-/** A version's heading: "Version N · <name>", or what a steward, rules or dissolve ballot decides. */
+/**
+ * A version's heading: "Version N · <name>", or what a steward, rules,
+ * dissolve, member removal, coalition, move or class ballot decides (#116).
+ */
 function VersionHeading({ version }: { readonly version: VersionView }) {
-  const { steward, rules, dissolve } = version;
+  const { steward, rules, dissolve, removal, decision } = version;
+  const section = version.move ?? version.protect;
+  if (section !== undefined) return <>{section.line}</>;
   if (steward !== undefined) return <MotionTitle motion={steward.motion} />;
   if (rules !== undefined) return <>{rules.title}</>;
   if (dissolve !== undefined) return <>{dissolve.title}</>;
+  if (removal !== undefined)
+    return <Named parts={messages.removal.ballotTitle} name={removal.name} />;
+  if (decision !== undefined) return <bdi>{decision.title}</bdi>;
   return (
     <>
       {messages.ballot.version(version.number)} {messages.ballot.separator}{' '}
@@ -77,21 +92,44 @@ function VersionHeading({ version }: { readonly version: VersionView }) {
   );
 }
 
-/** Under the heading: the version's change, or what passing a steward, rules or dissolve ballot does. */
+/**
+ * A move's (#103) or a class Proposal's (#116) card under its heading: the
+ * section as it reads, or nothing once it has gone.
+ */
+function SectionBody({ section }: { readonly section: MoveView }) {
+  if (section.text === null) return null;
+  return <AtomText text={section.text} className="atom-card atom-card-current" />;
+}
+
+/** What passing a dissolve, member removal or coalition ballot does, or undefined for any other card. */
+function decidedLine({ dissolve, removal, decision }: VersionView): string | undefined {
+  return dissolve?.line ?? removal?.line ?? decision?.line;
+}
+
+/**
+ * Under the heading: the version's change, what passing a steward, rules,
+ * dissolve, member removal or coalition ballot does, or the section a move
+ * moves (#103) or a class Proposal protects (#116), as it reads.
+ */
 function VersionBody({ version, current }: Omit<VersionCardProps, 'children'>) {
-  const { steward, rules, dissolve } = version;
+  const { steward, rules } = version;
+  const section = version.move ?? version.protect;
+  if (section !== undefined) return <SectionBody section={section} />;
   if (steward !== undefined) return <p className="caption">{steward.line}</p>;
   if (rules !== undefined) return <RulesLines rules={rules} />;
-  if (dissolve !== undefined) return <p className="caption">{dissolve.line}</p>;
+  const line = decidedLine(version);
+  if (line !== undefined) return <p className="caption">{line}</p>;
   return <Change version={version} current={current} />;
 }
 
 /**
- * One version: its heading, its change, and whatever goes under it. A steward
- * ballot's one version is headed by what it decides, "Make <name> steward
- * (seat N)", with what passing does in place of a change (#102), and so is a
- * rules ballot's, "Turn on the Discord chat bot" (#117), and a dissolve
- * ballot's, "Dissolve the group" (#108).
+ * One version: its heading, what it does when it adds or removes a section
+ * (#75), its change, and whatever goes under it. A steward ballot's one
+ * version is headed by what it decides, "Make <name> steward (seat N)", with
+ * what passing does in place of a change (#102), and so is a rules ballot's,
+ * "Turn on the Discord chat bot" (#117), a dissolve ballot's, "Dissolve the
+ * group" (#108), and a member removal's, "Remove <name> from the group"
+ * (#115).
  */
 function VersionCard({ version, current, children }: VersionCardProps) {
   const heading = useId();
@@ -100,6 +138,7 @@ function VersionCard({ version, current, children }: VersionCardProps) {
       <h3 id={heading} className="version-heading">
         <VersionHeading version={version} />
       </h3>
+      {version.does === undefined ? null : <p className="version-does">{version.does}</p>}
       <VersionBody version={version} current={current} />
       {children}
     </section>

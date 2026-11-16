@@ -7,7 +7,8 @@ import type { TestDevice } from '../test/appServices';
 import { axeViolations } from '../test/axe';
 import { createFakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
-import { go, members, type MountedApp, mountApp, proposeFrom } from '../test/members';
+import { APP_USER, go, members, type MountedApp, mountApp, proposeFrom } from '../test/members';
+import { pastPressFallback } from '../test/press';
 import { Ballot, type BallotProps } from './Ballot';
 import { castBallot } from './proposals';
 import type { VersionView } from './versionViews';
@@ -23,9 +24,6 @@ const PILLS = [
 ];
 
 type OnVote = (scores: Readonly<Record<string, Score>>, note: string) => Promise<void>;
-
-/** How long React Aria's usePress waits for a click after a pointerup before clicking itself. */
-const PRESS_FALLBACK_MS = 80;
 
 const CURRENT = 'Quiet hours start at ten.\n';
 const V1: VersionView = { id: 'v1', number: 1, author: 'Ana', text: 'Quiet from eleven.\n' };
@@ -79,6 +77,20 @@ describe('Ballot', () => {
     expect(group).toHaveAccessibleDescription('Everyone in your group sees your scores and note.');
     expect(screen.getByRole('textbox', { name: 'Note (optional)' })).not.toBeRequired();
     expect(send()).toHaveTextContent('Send your vote');
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('scores a move like a one-version Proposal: its pills read “Your score” under where it moves the section (#103)', async () => {
+    const move = { line: 'Moves this section to the start', text: 'Bins go out on Tuesday.\n' };
+    const { user, onVote } = setup({
+      versions: [{ id: 'm', number: 1, author: 'Ana', text: '', move }],
+      current: null,
+    });
+    expect(screen.getByRole('region', { name: 'Moves this section to the start' })).toBeVisible();
+    const pills = screen.getByRole('radiogroup', { name: 'Your score' });
+    await user.click(within(pills).getByRole('radio', { name: '3 · Supportive' }));
+    await user.click(send());
+    expect(onVote).toHaveBeenCalledWith({ m: 3 }, '');
     expect(await axeViolations()).toEqual([]);
   });
 
@@ -329,7 +341,7 @@ describe('Ballot', () => {
     // A press on a disabled React Aria button still gets pointerdown and pointerup
     // (Chromium sends both), and usePress clicks the button itself when no click
     // follows within 80 ms. Wait past that so a late click can't hide (#190).
-    await act(() => new Promise((resolve) => setTimeout(resolve, PRESS_FALLBACK_MS + 20)));
+    await pastPressFallback();
     expect(send()).toBeEnabled();
     expect(screen.getByText('Sent')).toBeVisible();
     expect(onVote).toHaveBeenCalledTimes(1);
@@ -365,11 +377,11 @@ describe('Ballot, in the app', () => {
   });
 
   it('replaces a voter’s earlier ballot in the result when they vote again before the close', async () => {
-    const user = userEvent.setup();
-    const { groupId, devices } = await members(createFakeRelay(), ['Ana', 'Ben', 'Cy']);
+    const user = userEvent.setup(APP_USER);
+    const { groupId, devices } = await members(createFakeRelay(), ['Ana', 'Ben']);
     opened.push(...devices);
-    const [ana, ben, cy] = devices;
-    if (ana === undefined || ben === undefined || cy === undefined) throw new Error('Expected 3.');
+    const [ana, ben] = devices;
+    if (ana === undefined || ben === undefined) throw new Error('Expected 2.');
     go(`#/g/${groupId}/doc`);
     const app = mountApp(ben.services, 'b');
     mounted.push(app);
@@ -381,7 +393,8 @@ describe('Ballot, in the app', () => {
 
     // Ben first blocks his own Proposal with a 0, then changes his mind before the close.
     await user.click(await b.findByRole('radio', { name: '0 · Strongly opposed' }));
-    await user.type(b.getByRole('textbox', { name: 'Your reason for a 0' }), 'Wrong day.');
+    await user.click(b.getByRole('textbox', { name: 'Your reason for a 0' }));
+    await user.paste('Wrong day.');
     await user.click(b.getByRole('button', { name: 'Send your vote' }));
     await b.findByText('Sent');
     await user.click(b.getByRole('radio', { name: '4 · Strongly supportive' }));
@@ -393,13 +406,11 @@ describe('Ballot, in the app', () => {
       );
     });
 
-    // Ana and Cy score 3. Were Ben's 0 still counted, a third of the scores would be zeros.
+    // Ana scores 3. Were Ben's 0 still counted, at least a third of the scores would be zeros.
     const proposal = window.location.hash.split('/').at(-1) ?? '';
-    for (const device of [ana, cy]) {
-      await device.services.sync.syncOnce();
-      await castBallot(device.services, groupId, { proposal, scores: { [proposal]: 3 }, note: '' });
-      await device.services.sync.syncOnce();
-    }
+    await ana.services.sync.syncOnce();
+    await castBallot(ana.services, groupId, { proposal, scores: { [proposal]: 3 }, note: '' });
+    await ana.services.sync.syncOnce();
     await act(() => ben.services.sync.syncOnce());
     expect(await b.findByRole('region', { name: 'Result' })).toHaveTextContent(
       'This passed. The Document now reads:Bins go out on Monday.',

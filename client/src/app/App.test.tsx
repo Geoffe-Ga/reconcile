@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -8,6 +8,7 @@ import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { createGroup, makeInvite } from './actions';
 import { App } from './App';
+import { PULL_BACK, SWIPE_AWAY } from './barGestures';
 
 freshIndexedDBPerTest();
 
@@ -28,8 +29,7 @@ const VALUES = {
   groupName: 'Riverside Tenants',
   yourName: 'Ana',
   chat: null,
-  title: 'House rules',
-  text: 'Quiet hours start at ten.',
+  documents: [{ title: 'House rules', text: 'Quiet hours start at ten.' }],
 };
 
 /** A group created on `owner` and sent to the relay. */
@@ -81,6 +81,8 @@ describe('App', () => {
       ['Document text', 'Quiet hours start at ten.'],
     ];
     for (const [label, value] of entries) {
+      // The first Document starts titled Mission statement (#92), so each field is cleared.
+      await user.clear(screen.getByRole('textbox', { name: label }));
       await user.click(screen.getByRole('textbox', { name: label }));
       await user.paste(value);
     }
@@ -135,7 +137,21 @@ describe('App', () => {
     expect(await axeViolations()).toEqual([]);
   });
 
-  it('opens a pasted invite without putting it in the address bar', async () => {
+  it('opens a Document’s change log from the Document view, and its founding text from there (#104)', async () => {
+    const user = userEvent.setup();
+    const ana = await device(createFakeRelay(), 'ana');
+    const groupId = await existingGroup(ana);
+    at(`#/g/${groupId}/doc/${groupId}`);
+    render(<App services={ana.services} />);
+    await user.click(await screen.findByRole('link', { name: 'Change log' }));
+    expect(window.location.hash).toBe(`#/g/${groupId}/doc/${groupId}/log`);
+    expect(await screen.findByRole('heading', { level: 1, name: 'House rules' })).toBeVisible();
+    expect(screen.getByText('Nothing has changed this Document since it began.')).toBeVisible();
+    expect(screen.getByRole('list', { name: 'Change log' })).toHaveTextContent('Founding text');
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('opens an invite pasted into the link bar without putting it in the address bar', async () => {
     const user = userEvent.setup();
     const fake = createFakeRelay();
     const ana = await device(fake, 'ana');
@@ -143,9 +159,9 @@ describe('App', () => {
     const ben = await device(fake, 'ben');
     render(<App services={ben.services} />);
 
-    await user.click(await screen.findByRole('textbox', { name: 'Invite link' }));
+    await user.click(await screen.findByRole('searchbox', { name: 'Search or paste a link' }));
     await user.paste(link);
-    await user.click(screen.getByRole('button', { name: 'Join with an invite link' }));
+    await user.keyboard('{Enter}');
 
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Riverside Tenants' }),
@@ -162,5 +178,31 @@ describe('App', () => {
       'href',
       `#/g/${groupId}`,
     );
+  });
+
+  it('tucks the link bar away on a swipe up, and brings it back on a pull down past the page’s top', async () => {
+    const { services } = await device(createFakeRelay(), 'ana');
+    const { container } = render(<App services={services} />);
+    const field = await screen.findByRole('searchbox', { name: 'Search or paste a link' });
+    const pill = field.closest<HTMLElement>('.link-bar-pill');
+    const frame = container.querySelector<HTMLElement>('.app-frame');
+    const page = container.querySelector<HTMLElement>('.app-page');
+    if (pill === null || frame === null || page === null) throw new Error('no frame');
+    expect(frame).toHaveAttribute('data-tucked', 'false');
+
+    const touch = { pointerId: 1, pointerType: 'touch', clientX: 0 };
+    fireEvent.pointerDown(pill, { ...touch, clientY: 100 });
+    fireEvent.pointerUp(pill, { ...touch, clientY: 100 - SWIPE_AWAY });
+
+    expect(frame).toHaveAttribute('data-tucked', 'true');
+    expect(screen.getByRole('search').parentElement).toHaveAttribute('inert');
+
+    fireEvent.touchStart(page, { touches: [{ clientY: 100 }] });
+    fireEvent.touchMove(page, { touches: [{ clientY: 100 + PULL_BACK }] });
+    fireEvent.touchEnd(page, { touches: [] });
+
+    expect(frame).toHaveAttribute('data-tucked', 'false');
+    expect(screen.getByRole('search').parentElement).not.toHaveAttribute('inert');
+    expect(await axeViolations()).toEqual([]);
   });
 });

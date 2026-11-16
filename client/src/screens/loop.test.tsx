@@ -3,8 +3,8 @@
  * that share one fake relay. Each device's app stays mounted throughout, so
  * every change on screen comes from sync, never from a reload.
  */
-import { act, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { act, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { DEFAULT_RULES, defaultWindowMinutes } from '../engine/rules';
@@ -12,6 +12,7 @@ import type { TestDevice } from '../test/appServices';
 import { createFakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import {
+  APP_USER,
   go,
   joinLater,
   members,
@@ -50,51 +51,65 @@ async function sync(device: TestDevice | undefined): Promise<void> {
   await act(() => device?.services.sync.syncOnce());
 }
 
+/**
+ * The heaviest loop here: two devices' apps, two ballots and both Documents,
+ * about 1.1 s once the app is compiled. As the file's first test it also
+ * compiles the whole app, which takes it to about 2 s alone and past 5 s
+ * under two concurrent runs (#260).
+ */
+const FIRST_AND_HEAVIEST = { timeout: 10_000 };
+
 describe('propose, vote, and see the Update', () => {
-  it('closes early once everyone has scored, and both devices show the new text', async () => {
-    const user = userEvent.setup();
-    const { fake, groupId, devices } = await group(['Ana', 'Ben']);
-    const [ana, ben] = devices;
-    const startMinute = fake.minute;
-    go(`#/g/${groupId}/doc`);
-    const a = mount(ana, 'a');
-    const b = mount(ben, 'b');
+  it(
+    'closes early once everyone has scored, and both devices show the new text',
+    FIRST_AND_HEAVIEST,
+    async () => {
+      const user = userEvent.setup(APP_USER);
+      const { fake, groupId, devices } = await group(['Ana', 'Ben']);
+      const [ana, ben] = devices;
+      const startMinute = fake.minute;
+      go(`#/g/${groupId}/doc`);
+      const a = mount(ana, 'a');
 
-    // A proposes new wording for the first section, and lands on its ballot.
-    await proposeFrom(within(a), user, 1, { title: 'Quiet hours', text: 'Quiet after 10pm.' });
-    // Proposing reads the group's key from the store and signs before the route moves on.
-    await waitFor(() => {
-      expect(window.location.hash).toMatch(new RegExp(`^#/g/${groupId}/p/[A-Za-z0-9_-]{43}$`));
-    });
-    await score(within(a), user, '3 · Supportive');
-    expect(await within(a).findByText('Sent')).toBeVisible();
+      // A proposes new wording for the first section, and lands on its ballot.
+      await proposeFrom(within(a), user, 1, { title: 'Quiet hours', text: 'Quiet after 10pm.' });
+      // Proposing reads the group's key from the store and signs before the route moves on.
+      await waitFor(() => {
+        expect(window.location.hash).toMatch(new RegExp(`^#/g/${groupId}/p/[A-Za-z0-9_-]{43}$`));
+      });
+      await score(within(a), user, '3 · Supportive');
+      expect(await within(a).findByText('Sent')).toBeVisible();
 
-    // B syncs, sees the Proposal appear, and scores it.
-    await sync(ben);
-    expect(await within(b).findByRole('heading', { level: 1, name: 'Quiet hours' })).toBeVisible();
-    await score(within(b), user, '4 · Strongly supportive');
+      // B, open on the same route, syncs, sees the Proposal appear, and scores it.
+      const b = mount(ben, 'b');
+      await sync(ben);
+      expect(
+        await within(b).findByRole('heading', { level: 1, name: 'Quiet hours' }),
+      ).toBeVisible();
+      await score(within(b), user, '4 · Strongly supportive');
 
-    // B's send reads back both ballots: everyone has scored, so the vote closes early.
-    const bResult = await within(b).findByRole('region', { name: 'Result' });
-    expect(bResult).toHaveTextContent('This passed. The Document now reads:Quiet after 10pm.');
-    await sync(ana);
-    const aResult = await within(a).findByRole('region', { name: 'Result' });
-    expect(aResult).toHaveTextContent('This passed. The Document now reads:Quiet after 10pm.');
-    expect(fake.minute).toBe(startMinute);
-    for (const app of [a, b]) {
-      for (const radio of within(app).getAllByRole('radio')) expect(radio).toBeDisabled();
-    }
+      // B's send reads back both ballots: everyone has scored, so the vote closes early.
+      const bResult = await within(b).findByRole('region', { name: 'Result' });
+      expect(bResult).toHaveTextContent('This passed. The Document now reads:Quiet after 10pm.');
+      await sync(ana);
+      const aResult = await within(a).findByRole('region', { name: 'Result' });
+      expect(aResult).toHaveTextContent('This passed. The Document now reads:Quiet after 10pm.');
+      expect(fake.minute).toBe(startMinute);
+      for (const app of [a, b]) {
+        for (const radio of within(app).getAllByRole('radio')) expect(radio).toBeDisabled();
+      }
 
-    // Both Documents now read the new text.
-    go(`#/g/${groupId}/doc`);
-    for (const app of [a, b]) {
-      expect(await within(app).findByText('Quiet after 10pm.')).toBeVisible();
-      expect(within(app).queryByText('Quiet hours start at ten.')).not.toBeInTheDocument();
-    }
-  });
+      // Both Documents now read the new text.
+      go(`#/g/${groupId}/doc`);
+      for (const app of [a, b]) {
+        expect(await within(app).findByText('Quiet after 10pm.')).toBeVisible();
+        expect(within(app).queryByText('Quiet hours start at ten.')).not.toBeInTheDocument();
+      }
+    },
+  );
 
   it('lapses with only the proposer’s ballot once relay time passes the deadline', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup(APP_USER);
     const { fake, groupId, devices } = await group(['Ana', 'Ben']);
     const [ana, ben] = devices;
     go(`#/g/${groupId}/doc`);
@@ -123,7 +138,7 @@ describe('propose, vote, and see the Update', () => {
   });
 
   it('tells a voter whose offline ballot reached the relay after the deadline, and nobody else', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup(APP_USER);
     const { fake, groupId, devices } = await group(['Ana', 'Ben', 'Cy']);
     const [ana, ben] = devices;
     go(`#/g/${groupId}/doc`);
@@ -151,7 +166,7 @@ describe('propose, vote, and see the Update', () => {
   });
 
   it('proposes a lapse again: the same wording, as a fresh Proposal with its own window', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup(APP_USER);
     const { fake, groupId, devices } = await group(['Ana', 'Ben', 'Cy']);
     const [ana] = devices;
     go(`#/g/${groupId}/doc`);
@@ -187,8 +202,55 @@ describe('propose, vote, and see the Update', () => {
     expect(stored?.log.at(-1)?.received).toBe(proposedAt);
   });
 
+  it('proposes a lapsed add again in Add a section, starting from its text (#75)', async () => {
+    const user = userEvent.setup(APP_USER);
+    const { fake, groupId, devices } = await group(['Ana', 'Ben', 'Cy']);
+    const [ana] = devices;
+    go(`#/g/${groupId}/add/${groupId}.0`);
+    const a = mount(ana, 'a');
+    await user.type(await within(a).findByRole('textbox', { name: 'Title' }), 'Guests');
+    await user.type(within(a).getByRole('textbox', { name: 'Why' }), 'They visit.');
+    await user.type(within(a).getByRole('textbox', { name: 'Section text' }), 'Guests by 11.');
+    await user.click(within(a).getByRole('button', { name: 'Propose this section' }));
+    await within(a).findByRole('radio', { name: '4 · Strongly supportive' });
+    // Let the pass that sent the add finish, its nudges (#99) included, as for a change above.
+    await sync(ana);
+    fake.minute += defaultWindowMinutes(DEFAULT_RULES, 'ordinary');
+    await sync(ana);
+
+    const result = await within(a).findByRole('region', { name: 'Result' });
+    await user.click(within(result).getByRole('button', { name: 'Propose again' }));
+    expect(
+      await within(a).findByRole('heading', { level: 1, name: 'Propose again' }),
+    ).toBeVisible();
+    expect(within(a).getByRole('textbox', { name: 'Section text' })).toHaveValue('Guests by 11.\n');
+    expect(within(a).getByRole('button', { name: 'Propose this section' })).toBeVisible();
+  });
+
+  it('proposes a lapsed removal again in the removal composer, with no text to write (#75)', async () => {
+    const user = userEvent.setup(APP_USER);
+    const { fake, groupId, devices } = await group(['Ana', 'Ben', 'Cy']);
+    const [ana] = devices;
+    go(`#/g/${groupId}/remove/${groupId}.0`);
+    const a = mount(ana, 'a');
+    await user.type(await within(a).findByRole('textbox', { name: 'Title' }), 'No quiet hours');
+    await user.type(within(a).getByRole('textbox', { name: 'Why' }), 'Nobody keeps them.');
+    await user.click(within(a).getByRole('button', { name: 'Propose removing it' }));
+    await within(a).findByRole('radio', { name: '4 · Strongly supportive' });
+    // Let the pass that sent the removal finish, its nudges (#99) included, as for a change above.
+    await sync(ana);
+    fake.minute += defaultWindowMinutes(DEFAULT_RULES, 'ordinary');
+    await sync(ana);
+
+    const result = await within(a).findByRole('region', { name: 'Result' });
+    await user.click(within(result).getByRole('button', { name: 'Propose again' }));
+    expect(await within(a).findByRole('textbox', { name: 'Title' })).toHaveValue('No quiet hours');
+    expect(within(a).queryByRole('textbox', { name: /text/i })).not.toBeInTheDocument();
+    expect(within(a).getByRole('button', { name: 'Propose removing it' })).toBeVisible();
+  });
+
   it('keeps a ballot cast offline on the device, sends it on recovery, and says so', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup(APP_USER);
     const { fake, groupId, devices } = await group(['Ana', 'Ben', 'Cy']);
     const [ana, ben] = devices;
     go(`#/g/${groupId}/doc`);
@@ -226,7 +288,7 @@ describe('propose, vote, and see the Update', () => {
   });
 
   it('makes a Proposal’s new chat link the next prefill and Group home’s Join discussion', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup(APP_USER);
     const { groupId, devices } = await group(['Ana', 'Ben'], 'https://chat.example.org/riverside');
     const [ana] = devices;
     go(`#/g/${groupId}/doc`);
@@ -257,7 +319,7 @@ describe('propose, vote, and see the Update', () => {
   });
 
   it('tells someone who joined after a Proposal opened that they can’t vote on it', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup(APP_USER);
     const { fake, groupId, devices } = await group(['Ana', 'Ben']);
     const [ana] = devices;
     if (ana === undefined) throw new Error('Expected Ana.');
@@ -274,5 +336,104 @@ describe('propose, vote, and see the Update', () => {
       await within(c).findByText('You joined after this opened, so you can’t vote on it.'),
     ).toBeVisible();
     expect(within(c).queryAllByRole('radio')).toEqual([]);
+  });
+});
+
+describe('ask what to focus on, vote, and see the focus (#107)', () => {
+  /** From Group home, asks about `options` with a why, and lands on the new vote. */
+  async function ask(
+    app: HTMLElement,
+    user: ReturnType<typeof userEvent.setup>,
+    options: string[],
+  ) {
+    const view = within(app);
+    await user.click(await view.findByRole('link', { name: 'Ask what to focus on' }));
+    await user.click(await view.findByRole('textbox', { name: 'Why' }));
+    await user.paste('One thing at a time.');
+    for (const [index, option] of options.entries()) {
+      if (index >= 2) await user.click(view.getByRole('button', { name: 'Add option' }));
+      await user.click(view.getByRole('textbox', { name: `Option ${String(index + 1)}` }));
+      await user.paste(option);
+    }
+    await user.click(view.getByRole('button', { name: 'Ask your group' }));
+    await view.findByRole('region', { name: 'Options' });
+  }
+
+  /** Scores each option with its pill, in order, and sends the ballot. */
+  async function scoreEach(
+    app: HTMLElement,
+    user: ReturnType<typeof userEvent.setup>,
+    pills: Record<string, string>,
+  ) {
+    const view = within(app);
+    for (const [option, pill] of Object.entries(pills)) {
+      const group = await view.findByRole('radiogroup', { name: `Score for ${option}` });
+      await user.click(within(group).getByRole('radio', { name: pill }));
+    }
+    await user.click(view.getByRole('button', { name: 'Send your vote' }));
+    expect(await view.findByText('Sent')).toBeVisible();
+  }
+
+  it('closes early once both have scored both options, and Group home shows the focus', async () => {
+    const user = userEvent.setup(APP_USER);
+    const { groupId, devices } = await group(['Ana', 'Ben']);
+    const [ana, ben] = devices;
+    go(`#/g/${groupId}`);
+    const a = mount(ana, 'a');
+    await ask(a, user, ['Fix the website', 'Plan the picnic']);
+    expect(window.location.hash).toMatch(new RegExp(`^#/g/${groupId}/p/[A-Za-z0-9_-]{43}$`));
+    await scoreEach(a, user, {
+      'Fix the website': '3 · Supportive',
+      'Plan the picnic': '4 · Strongly supportive',
+    });
+
+    await sync(ben);
+    const b = mount(ben, 'b');
+    await scoreEach(b, user, {
+      'Fix the website': '4 · Strongly supportive',
+      'Plan the picnic': '4 · Strongly supportive',
+    });
+    const result = await within(b).findByRole('region', { name: 'Result' });
+    expect(within(result).getByRole('list', { name: 'Passed, best first' })).toHaveTextContent(
+      'Plan the picnicFix the website',
+    );
+
+    // e2e/priority.spec.ts checks both profiles' Group home; here, the device that closed it.
+    go(`#/g/${groupId}`);
+    const focus = await within(b).findByRole('region', { name: 'Focus' });
+    expect(await within(focus).findByRole('link', { name: /Current focus/ })).toHaveTextContent(
+      'Current focusPlan the picnic',
+    );
+  });
+
+  it('asks a lapsed priority vote again, from its options, as a fresh vote', async () => {
+    const user = userEvent.setup(APP_USER);
+    const { fake, groupId, devices } = await group(['Ana', 'Ben', 'Cy']);
+    const [ana] = devices;
+    go(`#/g/${groupId}`);
+    const a = mount(ana, 'a');
+    await ask(a, user, ['Fix the website', 'Plan the picnic']);
+    const lapsed = window.location.hash;
+    // Let the pass that sent the vote finish, its nudges (#99) included, so the next starts after
+    // the window: a pass still running when time moves would be joined, not run afresh.
+    await sync(ana);
+    fake.minute += defaultWindowMinutes(DEFAULT_RULES, 'ordinary');
+    await sync(ana);
+
+    const result = await within(a).findByRole('region', { name: 'Result' });
+    await user.click(within(result).getByRole('button', { name: 'Propose again' }));
+    expect(window.location.hash).toBe(lapsed.replace('/p/', '/again/'));
+    expect(await within(a).findByRole('textbox', { name: 'Option 2' })).toHaveValue(
+      'Plan the picnic',
+    );
+    // The test devices' clocks stand still, so a changed question keeps the new event's id apart.
+    await user.type(within(a).getByRole('textbox', { name: 'Question' }), ' Again');
+    await user.click(within(a).getByRole('button', { name: 'Ask your group' }));
+    await within(a).findByRole('region', { name: 'Options' });
+    expect(window.location.hash).not.toBe(lapsed);
+    await sync(ana);
+    expect(
+      await within(a).findByRole('heading', { level: 1, name: 'What should we focus on? Again' }),
+    ).toBeVisible();
   });
 });

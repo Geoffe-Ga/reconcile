@@ -20,6 +20,7 @@ import { createFakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { deadlineOf, groupLog, START_MINUTE } from '../test/votes';
 import { authorOf } from '../test/keys';
+import { held, pastPressFallback } from '../test/press';
 import { Composer, type ComposeOutcome } from './Composer';
 
 freshIndexedDBPerTest();
@@ -120,7 +121,7 @@ describe('Composer', () => {
     expect(screen.queryByRole('button', { name: 'Discard draft' })).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'House rules' })).toHaveAttribute(
       'href',
-      `#/g/${state.group ?? ''}/doc`,
+      `#/g/${state.group ?? ''}/doc/${state.group ?? ''}`,
     );
     expect(document.title).toBe('Propose a change · Reconcile');
     expect(await axeViolations()).toEqual([]);
@@ -311,6 +312,21 @@ describe('Composer', () => {
     expect(onPropose).toHaveBeenCalledTimes(1);
   });
 
+  it('proposes once when it is tapped again while it proposes and the save fails (#193)', async () => {
+    const proposing = held<ComposeOutcome>();
+    const onPropose = vi.fn<OnPropose>(() => proposing.promise);
+    const { user } = await setup({ onPropose });
+    await fill(user, { Title: 'Later', Why: 'Weekends.', 'New text': 'Quiet after 11pm.' });
+    await user.click(submit());
+    expect(submit()).toBeDisabled();
+    await user.click(submit());
+    proposing.resolve('failed');
+    expect(await screen.findByRole('alert')).toBeVisible();
+    await pastPressFallback();
+    expect(submit()).toBeEnabled();
+    expect(onPropose).toHaveBeenCalledTimes(1);
+  });
+
   it('says when the section isn’t in the Document', async () => {
     const state = groupLog().state();
     const { drafts } = memoryDrafts();
@@ -361,6 +377,62 @@ function busy(...versions: readonly string[]) {
 }
 
 const addSubmit = () => screen.getByRole('button', { name: 'Add your version' });
+
+/** Ana and Ben's group with its first section made `to` by a passed class Proposal (#116). */
+function protectedGroup(to: 'entrenched' | 'eternal'): GroupState {
+  const log = groupLog({ chat: 'https://chat.example.org/riverside' });
+  const proposal = log.protect('Ana', `${log.group}.0`, to);
+  log.vote('Ana', proposal, 4);
+  log.vote('Ben', proposal, 4);
+  return log.state();
+}
+
+const ENTRENCHED_NOTE =
+  'This section is entrenched. Changing, moving or removing it needs your group’s higher bar: an average of 3.0 or more, with zeros under 5%, and a longer vote.';
+
+describe('Composer on a protected section (#116)', () => {
+  it('says an entrenched section needs the higher bar, badges it, and runs 14 days to start', async () => {
+    const { user, onPropose, atomId } = await setup({ state: protectedGroup('entrenched') });
+    expect(screen.getByText(ENTRENCHED_NOTE)).toBeVisible();
+    expect(
+      within(screen.getByRole('region', { name: 'Section 1 now reads' })).getByText('Entrenched'),
+    ).toHaveClass('atom-badge-entrenched');
+    expect(box('Voting time (days)')).toHaveValue('14');
+    await fill(user, { Title: 'Later quiet hours', Why: 'Weekends run late.' });
+    await replace(user, 'New text', 'Quiet after 11pm.');
+    await user.click(submit());
+    expect(onPropose.mock.calls[0]?.[0]).toMatchObject({ atom: atomId, window: 14 });
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('says nothing of the higher bar on an ordinary section, which runs 7 days', async () => {
+    await setup();
+    expect(screen.queryByText(ENTRENCHED_NOTE)).not.toBeInTheDocument();
+    expect(box('Voting time (days)')).toHaveValue('7');
+  });
+
+  it('shows no form on an eternal section, only that no vote can change it', async () => {
+    await setup({ state: protectedGroup('eternal') });
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'This section is eternal' }),
+    ).toBeVisible();
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('offers no version while a vote on the section’s protection is open', async () => {
+    const log = groupLog();
+    log.protect('Ana', `${log.group}.0`, 'entrenched');
+    await setup({ state: log.state() });
+    expect(
+      screen.getByRole('heading', {
+        level: 1,
+        name: 'This section’s protection is being decided',
+      }),
+    ).toBeVisible();
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+  });
+});
 
 describe('Composer, adding a version', () => {
   it('becomes “Add your version” on a busy section: the text alone, prefilled with the section', async () => {
@@ -457,11 +529,44 @@ describe('Composer, adding a version', () => {
     expect(addSubmit()).toBeEnabled();
   });
 
+  it('adds the version once when it is tapped again while it adds and the save fails (#193)', async () => {
+    const adding = held<ComposeOutcome>();
+    const onAddVersion = vi.fn<OnAddVersion>(() => adding.promise);
+    const { state } = busy();
+    const { user } = await setup({ state, onAddVersion });
+    await replace(user, 'Your version', 'Quiet after midnight.');
+    await user.click(addSubmit());
+    expect(addSubmit()).toBeDisabled();
+    await user.click(addSubmit());
+    adding.resolve('failed');
+    expect(await screen.findByRole('alert')).toBeVisible();
+    await pastPressFallback();
+    expect(addSubmit()).toBeEnabled();
+    expect(onAddVersion).toHaveBeenCalledTimes(1);
+  });
+
   it('says the ballot is full once it holds three versions, with no form', async () => {
     const { state } = busy('Quiet after midnight.\n', 'Quiet after 10pm.\n');
     const { memory } = await setup({ state });
     expect(screen.getByRole('heading', { level: 1, name: 'This ballot is full' })).toBeVisible();
     expect(screen.getByText('This ballot already has three versions.')).toBeVisible();
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    expect(memory.drafts.load).not.toHaveBeenCalled();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('says the section is being moved, with no form, while a move of it is open (#103)', async () => {
+    const log = groupLog();
+    log.move('ben', `${log.group}.0`, null);
+    const { memory } = await setup({ state: log.state() });
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'This section is being moved' }),
+    ).toBeVisible();
+    expect(
+      screen.getByText(
+        'Score its move on the open Proposal. You can propose a change once that vote closes.',
+      ),
+    ).toBeVisible();
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
     expect(memory.drafts.load).not.toHaveBeenCalled();
     expect(await axeViolations()).toEqual([]);
@@ -484,6 +589,143 @@ describe('Composer, adding a version', () => {
     });
     expect(memory.shelf.get(`${state.group ?? ''}.0`)).toEqual(atomDraft);
     expect(memory.drafts.load).toHaveBeenCalledWith(proposal);
+  });
+});
+
+describe('Composer, adding a version of a new section', () => {
+  /** Ben's open add after section 1, and the composer on it. */
+  async function onAdd() {
+    const log = groupLog();
+    const add = log.addSection('ben', `${log.group}.0`, {
+      title: 'Guests',
+      text: 'Guests leave by 11pm.\n',
+    });
+    const state = log.state();
+    const onAddVersion = vi.fn<OnAddVersion>(() => Promise.resolve('added'));
+    const memory = memoryDrafts();
+    render(
+      <Composer
+        state={state}
+        me={authorOf('ana')}
+        atomId={add}
+        drafts={memory.drafts}
+        now={NOW}
+        onPropose={vi.fn()}
+        onAddVersion={onAddVersion}
+      />,
+    );
+    await screen.findByRole('heading', { level: 1 });
+    return { user: userEvent.setup(), state, add, onAddVersion, memory };
+  }
+
+  it('says where the section goes, and starts from the add’s own text', async () => {
+    const { state, add, memory } = await onAdd();
+    expect(screen.getByRole('heading', { level: 1, name: 'Add your version' })).toBeVisible();
+    expect(
+      screen.getByText(
+        'This new section has an open Proposal. Your wording goes on its ballot beside the others, and everyone scores each version.',
+      ),
+    ).toBeVisible();
+    expect(screen.getByText('Adds a section after ‘Quiet hours start at ten.’')).toBeVisible();
+    expect(screen.queryByRole('region', { name: /now reads$/ })).not.toBeInTheDocument();
+    expect(box('Your version')).toHaveValue('Guests leave by 11pm.\n');
+    expect(box('Your version')).toHaveAccessibleDescription(
+      `If your group passes it, this becomes the new section. ${HINT}`,
+    );
+    expect(screen.getByRole('link', { name: 'Guests' })).toHaveAttribute(
+      'href',
+      `#/g/${state.group ?? ''}/p/${add}`,
+    );
+    expect(memory.drafts.load).toHaveBeenCalledWith(add);
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('hands over the version for the add', async () => {
+    const { user, add, onAddVersion } = await onAdd();
+    await replace(user, 'Your version', 'Guests leave by midnight.');
+    await user.click(addSubmit());
+    expect(onAddVersion).toHaveBeenCalledWith({ proposal: add, text: 'Guests leave by midnight.' });
+  });
+
+  it.each([
+    ['blank text', ' \n', 'Write the new section.'],
+    [
+      'the add’s own text',
+      'Guests leave by 11pm.',
+      'This reads the same as a version already on the ballot. Change it to add something new.',
+    ],
+  ])('blocks %s, with the reason tied to the field', async (_label, text, reason) => {
+    const { user, onAddVersion } = await onAdd();
+    await replace(user, 'Your version', text);
+    await user.click(addSubmit());
+    expect(onAddVersion).not.toHaveBeenCalled();
+    expect(box('Your version')).toHaveAccessibleDescription(
+      `If your group passes it, this becomes the new section. ${reason} ${HINT}`,
+    );
+  });
+});
+
+describe('Composer, adding a version of a new Document (#92)', () => {
+  /** Ben's open new Document, and the composer on it. */
+  async function onNewDocument() {
+    const log = groupLog();
+    const created = log.newDocument('ben', 'Budget', {
+      title: 'Start a budget',
+      text: '# Budget\n\nWe share costs.\n',
+    });
+    const state = log.state();
+    const onAddVersion = vi.fn<OnAddVersion>(() => Promise.resolve('added'));
+    const memory = memoryDrafts();
+    render(
+      <Composer
+        state={state}
+        me={authorOf('ana')}
+        atomId={created}
+        drafts={memory.drafts}
+        now={NOW}
+        onPropose={vi.fn()}
+        onAddVersion={onAddVersion}
+      />,
+    );
+    await screen.findByRole('heading', { level: 1 });
+    return { user: userEvent.setup(), state, created, onAddVersion, memory };
+  }
+
+  it('names the new Document, and starts from its own first sections', async () => {
+    const { state, created, memory } = await onNewDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Add your version' })).toBeVisible();
+    expect(
+      screen.getByText(
+        'This new Document has an open Proposal. Your wording goes on its ballot beside the others, and everyone scores each version.',
+      ),
+    ).toBeVisible();
+    expect(document.querySelector('.document-of')).toHaveTextContent('New Document: Budget');
+    expect(box('Your version')).toHaveValue('# Budget\n\nWe share costs.\n');
+    expect(box('Your version')).toHaveAccessibleDescription(
+      `If your group passes it, these become the new Document’s first sections. Leave a blank line between sections. ${HINT}`,
+    );
+    expect(screen.getByRole('link', { name: 'Start a budget' })).toHaveAttribute(
+      'href',
+      `#/g/${state.group ?? ''}/p/${created}`,
+    );
+    expect(memory.drafts.load).toHaveBeenCalledWith(created);
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('hands over the version, and refuses blank text with its own reason', async () => {
+    const { user, created, onAddVersion } = await onNewDocument();
+    await replace(user, 'Your version', ' \n\n ');
+    await user.click(addSubmit());
+    expect(onAddVersion).not.toHaveBeenCalled();
+    expect(box('Your version')).toHaveAccessibleDescription(
+      `If your group passes it, these become the new Document’s first sections. Leave a blank line between sections. Write at least one section. ${HINT}`,
+    );
+    await replace(user, 'Your version', '# Budget\n\nWe split costs.');
+    await user.click(addSubmit());
+    expect(onAddVersion).toHaveBeenCalledWith({
+      proposal: created,
+      text: '# Budget\n\nWe split costs.',
+    });
   });
 });
 
@@ -594,8 +836,9 @@ describe('Composer drafts, against fake IndexedDB', () => {
       groupName: 'Riverside Tenants',
       yourName: 'Ana',
       chat: null,
-      title: 'House rules',
-      text: 'Quiet hours start at ten.\n\nBins go out on Tuesday.',
+      documents: [
+        { title: 'House rules', text: 'Quiet hours start at ten.\n\nBins go out on Tuesday.' },
+      ],
     });
     if (created.outcome !== 'created') throw new Error('Expected a group.');
     const { groupId } = created;

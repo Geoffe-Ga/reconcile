@@ -11,6 +11,7 @@
  */
 import { base64url, fromBase64url } from '../crypto/base64url';
 import { sha256 } from '../crypto/hash';
+import { SEALED_FIELD_CHARS } from '../crypto/innerSeal';
 import { signRecord, verifyRecord } from '../crypto/record';
 import { publicKeyOf } from '../crypto/sign';
 
@@ -29,26 +30,81 @@ export const SCORE_MIN = 0;
 export const SCORE_MAX = 4;
 
 /**
- * Founds a group with its first Document and its founding rules. Carries
- * `group: ""`, as it can't contain its own hash. `rules` is kept as written:
- * the fold checks it against `DEFAULT_RULES` (rules.ts), and a genesis without
- * it takes every default.
+ * One Document a genesis founds (#92): its title and its first sections, each
+ * as written. The fold checks the title and that it has a section.
+ */
+export interface FoundingDocument {
+  readonly title: string;
+  readonly atoms: readonly string[];
+}
+
+/**
+ * Founds a group with its Documents, in order, and its founding rules (#92).
+ * Carries `group: ""`, as it can't contain its own hash. `rules` is kept as
+ * written: the fold checks it against `DEFAULT_RULES` (rules.ts), and a
+ * genesis without it takes every default.
  */
 export interface GenesisBody {
   readonly name: string;
   readonly chat?: string;
   readonly founder: string;
-  readonly title: string;
-  readonly atoms: readonly string[];
+  readonly documents: readonly FoundingDocument[];
   readonly rules?: Readonly<Record<string, unknown>>;
   /** The founder's X25519 public key in base64url (#98), when the genesis carries a well-shaped one. */
   readonly kx?: string;
 }
 
 /**
+ * One member's seat in a coalition (#100): its name there, its public seat
+ * key in base64url, and its `level` as stated (#122): 0 for a group, else the
+ * level of the coalition that holds it. A seat with no `level` is a group's.
+ */
+export interface SeatEntry {
+  readonly name: string;
+  readonly key: string;
+  readonly level?: number;
+}
+
+/**
+ * Founds a coalition (#100): a group genesis body, rules included, with no
+ * founder, since its author isn't a participant, plus the seats of the groups
+ * that reconcile. Carries `group: ""` like a group's genesis. The fold checks
+ * that the seats hold two or more distinct keys, and that it founds exactly
+ * one Document (#92): a coalition's statement. `commit` is the commitment to
+ * the room's `inner` (`crypto/room.ts`'s `roomCommit`, #371), 32 bytes in
+ * canonical base64url, which a group admitted later checks each wrap of
+ * `inner` against; a genesis from before #371 has none.
+ */
+export interface CoalitionGenesisBody {
+  readonly kind: 'coalition';
+  readonly name: string;
+  readonly chat?: string;
+  readonly documents: readonly FoundingDocument[];
+  readonly rules?: Readonly<Record<string, unknown>>;
+  readonly seats: readonly SeatEntry[];
+  readonly commit?: string;
+}
+
+/**
+ * True when a genesis founds a coalition rather than a group (#100): its
+ * `kind` is `"coalition"`, not merely there (#258), so a field of that name
+ * a group's genesis may one day gain never reads it as a coalition's. The
+ * parser takes no genesis with any other `kind` (`parseGenesis`), so a
+ * parsed one reads as it always has.
+ */
+export function isCoalitionGenesis(
+  body: GenesisBody | CoalitionGenesisBody,
+): body is CoalitionGenesisBody {
+  const kind: unknown = 'kind' in body ? body.kind : undefined;
+  return kind === 'coalition';
+}
+
+/**
  * Joins the group under a name fixed at join, at an involvement level. The
  * level is kept as written: the fold reads a missing one as Collaborator and
- * ignores a join that names a level it doesn't know.
+ * ignores a join that names a level it doesn't know. A coalition's join (#100)
+ * names the seat its author comes from and carries the seat's proof instead,
+ * and the fold reads neither level, token nor kx there.
  */
 export interface JoinBody {
   readonly name: string;
@@ -57,6 +113,10 @@ export interface JoinBody {
   readonly token?: InviteToken;
   /** The joiner's X25519 public key in base64url (#98), when the join carries a well-shaped one. */
   readonly kx?: string;
+  /** A coalition's seat key in base64url (#100), when the join carries a well-shaped one. */
+  readonly seat?: string;
+  /** That seat's proof for the joiner's key in base64url (#100, `crypto/seat.ts`), when well-shaped. */
+  readonly proof?: string;
 }
 
 /**
@@ -76,10 +136,22 @@ export interface LevelBody {
 }
 
 /**
+ * The Dispatch a Proposal carries (#112): a title and a short text, kept as
+ * written. The fold checks their lengths, and sends it to the whole group when
+ * the Proposal's pass is final.
+ */
+export interface CarriedDispatch {
+  readonly title: string;
+  readonly text: string;
+}
+
+/**
  * Proposes new text for one Atom, with a title, a justification, an optional
- * discussion link and an optional voting window in whole days (#106). The
- * window is kept as written: the fold checks it against the bounds of the
- * Proposal's class, and a Proposal without one runs the class default.
+ * discussion link, an optional voting window in whole days (#106) and an
+ * optional Dispatch to send if it passes (#112). Empty text proposes removing
+ * the Atom (#75). The window is kept as written: the fold checks it against
+ * the bounds of the Proposal's class, and a Proposal without one runs the
+ * class default.
  */
 export interface ProposalBody {
   readonly atom: string;
@@ -88,6 +160,109 @@ export interface ProposalBody {
   readonly text: string;
   readonly link?: string;
   readonly window?: number;
+  readonly dispatch?: CarriedDispatch;
+}
+
+/**
+ * Where an add puts its new section (#75): in the Document `document` (#92),
+ * right after the Atom `after`, or first in it when that's null. The new
+ * Atom's id is the Proposal's own id.
+ */
+export interface AddTarget {
+  readonly kind: 'add';
+  readonly document: string;
+  readonly after: string | null;
+}
+
+/**
+ * Proposes a new section (#75): it carries `target` in place of an Atom, its
+ * text, and, like an edit, an optional voting window in whole days (#106) and
+ * an optional Dispatch to send if it passes (#112).
+ */
+export interface AddProposalBody {
+  readonly target: AddTarget;
+  readonly title: string;
+  readonly why: string;
+  readonly text: string;
+  readonly link?: string;
+  readonly window?: number;
+  readonly dispatch?: CarriedDispatch;
+}
+
+/**
+ * A new Document (#92), titled `title`, whose first sections are the
+ * Proposal's text, split at blank lines. Its id is the Proposal's own id.
+ */
+export interface NewDocumentTarget {
+  readonly kind: 'new-document';
+  readonly title: string;
+}
+
+/**
+ * Proposes a new Document (#92): it carries `target` in place of an Atom, its
+ * first sections as its text, and, like an add, an optional voting window in
+ * whole days (#106) and an optional Dispatch to send if it passes (#112).
+ */
+export interface NewDocumentProposalBody {
+  readonly target: NewDocumentTarget;
+  readonly title: string;
+  readonly why: string;
+  readonly text: string;
+  readonly link?: string;
+  readonly window?: number;
+  readonly dispatch?: CarriedDispatch;
+}
+
+/**
+ * Where a move puts a section (#103): the Atom `atom` comes out of its place
+ * and goes right after the Atom `after`, in the same Document, or first in it
+ * when that's null.
+ */
+export interface MoveTarget {
+  readonly kind: 'move';
+  readonly atom: string;
+  readonly after: string | null;
+}
+
+/**
+ * Proposes moving one section (#103): it carries `target` in place of an
+ * Atom, and no text, so its ballot has one version, under the Proposal's id.
+ * Like an add, it may name a voting window in whole days (#106) and carry a
+ * Dispatch to send if it passes (#112).
+ */
+export interface MoveProposalBody {
+  readonly target: MoveTarget;
+  readonly title: string;
+  readonly why: string;
+  readonly link?: string;
+  readonly window?: number;
+  readonly dispatch?: CarriedDispatch;
+}
+
+/**
+ * The class a Proposal would give one section (#116; ADR-0015 §2–3):
+ * `"ordinary"`, `"entrenched"` or `"eternal"`. `to` is kept as written: the
+ * fold checks it against the section's class when the Proposal opens.
+ */
+export interface ClassTarget {
+  readonly kind: 'class';
+  readonly atom: string;
+  readonly to: string;
+}
+
+/**
+ * Proposes a new class for one section (#116): it carries `target` in place
+ * of an Atom, and no text, so its ballot has one version, under the
+ * Proposal's id. Like a move, it may name a voting window in whole days
+ * (#106) and carry a Dispatch to send if it passes (#112).
+ */
+export interface ClassProposalBody {
+  readonly target: ClassTarget;
+  readonly title: string;
+  readonly why: string;
+  readonly link?: string;
+  readonly window?: number;
+  readonly dispatch?: CarriedDispatch;
 }
 
 /**
@@ -103,14 +278,16 @@ export interface StewardTarget {
 
 /**
  * Elects or recalls a steward (#102): an ordinary Proposal with a title, a
- * justification and an optional discussion link, whose target is a seat. It
- * carries no text, so its ballot has one version, under the Proposal's id.
+ * justification, an optional discussion link and an optional Dispatch to send
+ * if it passes (#112), whose target is a seat. It carries no text, so its
+ * ballot has one version, under the Proposal's id.
  */
 export interface StewardProposalBody {
   readonly target: StewardTarget;
   readonly title: string;
   readonly why: string;
   readonly link?: string;
+  readonly dispatch?: CarriedDispatch;
 }
 
 /**
@@ -122,6 +299,29 @@ export interface RulesTarget {
   readonly kind: 'rules';
   readonly optIn: string;
   readonly value: unknown;
+}
+
+/** A priority vote's target (#107): it asks what the group should focus on, and changes no Atom. */
+export interface PriorityTarget {
+  readonly kind: 'priority';
+}
+
+/**
+ * Asks the group what to focus on (#107): `title` is the question, `why` its
+ * justification, and `options` the 2–7 answers everyone scores, in ballot
+ * order. It carries `target` in place of an Atom, and no text. Its `window`
+ * is kept as written, as an edit's is (#106), and like any of the group's own
+ * Proposals it may carry a Dispatch to send if it passes (#112).
+ */
+export interface PriorityProposalBody {
+  readonly target: PriorityTarget;
+  readonly title: string;
+  readonly why: string;
+  readonly options: readonly string[];
+  readonly link?: string;
+  readonly window?: number;
+  /** A Dispatch to send if it passes (#112). */
+  readonly dispatch?: CarriedDispatch;
 }
 
 /**
@@ -137,6 +337,8 @@ export interface RulesProposalBody {
   readonly why: string;
   readonly link?: string;
   readonly window?: number;
+  /** A Dispatch to send if it passes (#112). */
+  readonly dispatch?: CarriedDispatch;
 }
 
 /**
@@ -160,18 +362,266 @@ export interface DissolveProposalBody {
   readonly why: string;
   readonly link?: string;
   readonly window?: number;
+  /** A Dispatch to send if it passes (#112). */
+  readonly dispatch?: CarriedDispatch;
 }
 
 /**
- * What a `proposal` event carries: new text for an Atom, a steward seat
- * (#102), an opt-in (#117), or dissolving the group (#108).
+ * Removing a member by vote (ADR-0049, ADR-0075 §3, #115): it names the key
+ * of the person it would remove, kept as written; the fold checks it.
+ */
+export interface RemoveTarget {
+  readonly kind: 'remove';
+  readonly member: string;
+}
+
+/**
+ * Proposes removing a member (#115): a Proposal with a title, a
+ * justification, an optional discussion link and, like every targeted
+ * Proposal, an optional Dispatch to send if it passes (#112), whose target
+ * names them. It always runs a fixed 14 days, so it carries no window, and no
+ * text, so its ballot has one version, under the Proposal's id.
+ */
+export interface RemovalProposalBody {
+  readonly target: RemoveTarget;
+  readonly title: string;
+  readonly why: string;
+  readonly link?: string;
+  /** A Dispatch to send if it passes (#112). */
+  readonly dispatch?: CarriedDispatch;
+}
+
+/**
+ * Reconciling with other groups into a coalition (#100; ADR-0036): the
+ * coalition secret its mailbox derives from; `inner`, 32 random bytes that
+ * only seated groups hold, which #125's room and #122's higher seats derive
+ * from; this group's 32-byte Ed25519 seat secret; and the coalition's
+ * proposed name and founding statement. Each secret is 32 bytes in canonical
+ * base64url, and lives only in this group's sealed log. A founding group's
+ * target carries `inner`, from the card that founded the coalition; a group
+ * asking into a formed coalition writes none, since its card carries none,
+ * and receives it through its seat once admitted (#313, `crypto/room.ts`).
+ */
+export interface ReconcileTarget {
+  readonly kind: 'reconcile';
+  readonly secret: string;
+  readonly inner?: string;
+  readonly seat: string;
+  readonly name: string;
+  readonly title: string;
+  readonly atoms: readonly string[];
+}
+
+/**
+ * A coalition's reconcile target (#122): coalition C reconciling into, or
+ * asking into, a coalition above it. The coalition above's secret and
+ * `inner`, and C's seat secret there, travel in one `sealed` field, sealed
+ * under a key derived from C's `inner` (`crypto/innerSeal.ts`), so C's
+ * followers, who read C's log, can't open them. Asking into a formed
+ * coalition, C seals no `inner`, as a group's target holds none, and receives
+ * it through its seat once admitted (#313). `key` is the public seat key,
+ * which the seat secret makes, and the name and statement stay readable.
+ */
+export interface SealedReconcileTarget {
+  readonly kind: 'reconcile';
+  readonly sealed: string;
+  readonly key: string;
+  readonly name: string;
+  readonly title: string;
+  readonly atoms: readonly string[];
+}
+
+/**
+ * Proposes reconciling into a coalition (#100): an ordinary Proposal with a
+ * title, a justification, an optional discussion link and an optional voting
+ * window in whole days, whose target carries the coalition's secrets and
+ * statement. It carries no text, so its ballot has one version, under the
+ * Proposal's id. Like any of the group's own Proposals, it may carry a
+ * Dispatch to the group if it passes (#112).
+ */
+export interface ReconcileProposalBody {
+  readonly target: ReconcileTarget;
+  readonly title: string;
+  readonly why: string;
+  readonly link?: string;
+  readonly window?: number;
+  /** A Dispatch to send if it passes (#112). */
+  readonly dispatch?: CarriedDispatch;
+}
+
+/**
+ * A coalition's motion to take a seat above it (#122): its sealed reconcile
+ * target, as a coalition motion, with a title, a justification and the
+ * fields every motion may carry.
+ */
+export interface SealedReconcileProposalBody extends Omit<ReconcileProposalBody, 'target'> {
+  readonly target: SealedReconcileTarget;
+}
+
+/**
+ * Admitting a further group into a formed coalition (#114; ADR-0036): the
+ * group's seat, its name there and public seat key, and that seat's proof for
+ * the author's key (`crypto/seat.ts`), which shows that the author holds the
+ * group's seat secret. `kx` is the seat's X25519 public key, from its seat
+ * secret (`crypto/room.ts`), to which a seated group's participant seals
+ * the room's `inner` once the group is admitted (#313). A coalition asking in
+ * (#122) states its level on its seat, and its member groups' names in
+ * `groups`, which the ballot shows.
+ */
+export interface AdmitTarget {
+  readonly kind: 'admit';
+  readonly seat: SeatEntry;
+  readonly proof: string;
+  readonly kx: string;
+  readonly groups?: readonly string[];
+}
+
+/**
+ * Proposes admitting a group into a coalition (#114): a coalition motion with
+ * a title, a justification, an optional discussion link and an optional
+ * voting window in whole days, whose target is the group's seat. Someone from
+ * that group posts it once the group has passed its own reconcile Proposal.
+ * The fold ignores one that carries a Dispatch, as it does any motion's.
+ */
+export interface AdmitProposalBody {
+  readonly target: AdmitTarget;
+  readonly title: string;
+  readonly why: string;
+  readonly link?: string;
+  readonly window?: number;
+  readonly dispatch?: CarriedDispatch;
+}
+
+/**
+ * How far a Dispatch may rise above the group it starts in (#126; ADR-0037,
+ * ADR-0071): one level up, two, or as far as the coalitions go. This group
+ * only is a plain `dispatch`, so no target carries 0, and there is no
+ * Reconcile-wide broadcast.
+ */
+export type Ceiling = 1 | 2 | 'coalitions';
+
+/** Every ceiling a target may carry, lowest first (#126). */
+export const CEILINGS: readonly Ceiling[] = [1, 2, 'coalitions'];
+
+/**
+ * A Dispatch put to the group's vote so it can rise (#126): how far it may
+ * go, fixed once it opens, and the Document in this group it points to, if
+ * any, which no level above sees.
+ */
+export interface DispatchTarget {
+  readonly kind: 'dispatch';
+  readonly ceiling: Ceiling;
+  readonly doc?: string;
+}
+
+/**
+ * Proposes sending a Dispatch that may rise (#126): an ordinary Proposal with
+ * a title, a justification, an optional discussion link and an optional
+ * voting window in whole days, whose target is its ceiling, and the
+ * Dispatch it sends when it passes. It changes no Document, and its ballot
+ * has one version, under its own id, which is the Dispatch's id at every
+ * level it reaches.
+ */
+export interface DispatchProposalBody {
+  readonly target: DispatchTarget;
+  readonly title: string;
+  readonly why: string;
+  readonly link?: string;
+  readonly window?: number;
+  readonly dispatch: CarriedDispatch;
+}
+
+/**
+ * The Dispatch a promotion record carries up (#126): its stable id, the id
+ * of the group Proposal that first passed it, and its title and text.
+ */
+export interface PromotedDispatch {
+  readonly id: string;
+  readonly title: string;
+  readonly text: string;
+}
+
+/**
+ * A promotion record (#126; ADR-0037): a level below passed `dispatch`, so a
+ * participant bound to its seat, `from`, posts it in the coalition directly
+ * above. `level` counts the lines it has crossed, 1 in the coalition above
+ * the group it started in, and `ceiling` is the one its author set there.
+ */
+export interface PromoteTarget {
+  readonly kind: 'promote';
+  readonly dispatch: PromotedDispatch;
+  readonly ceiling: Ceiling;
+  readonly level: number;
+  readonly from: string;
+}
+
+/**
+ * A coalition's motion to send on a Dispatch a level below passed (#126):
+ * the promotion record, with the Dispatch's title as its own title and an
+ * empty why. It carries nothing else: no link, window or Dispatch of its own.
+ */
+export interface PromoteProposalBody {
+  readonly target: PromoteTarget;
+  readonly title: string;
+  readonly why: string;
+  readonly link?: never;
+  readonly window?: never;
+  readonly dispatch?: never;
+}
+
+/**
+ * What a `proposal` event carries: new text for an Atom, a new section (#75),
+ * a new Document (#92), a section's new place (#103) or class (#116), a
+ * steward seat (#102), an opt-in (#117), dissolving the group (#108),
+ * removing a member (#115), reconciling into a coalition (#100), a priority
+ * vote's question and options (#107), a Dispatch that may rise (#126), or, in
+ * a coalition, admitting a group (#114) or a promotion record (#126).
  */
 export type ProposalEventBody =
-  ProposalBody | StewardProposalBody | RulesProposalBody | DissolveProposalBody;
+  | ProposalBody
+  | AddProposalBody
+  | NewDocumentProposalBody
+  | MoveProposalBody
+  | ClassProposalBody
+  | StewardProposalBody
+  | RulesProposalBody
+  | DissolveProposalBody
+  | RemovalProposalBody
+  | ReconcileProposalBody
+  | SealedReconcileProposalBody
+  | PriorityProposalBody
+  | AdmitProposalBody
+  | DispatchProposalBody
+  | PromoteProposalBody;
 
 /** True when a Proposal's body targets a steward seat rather than an Atom or an opt-in. */
 export function isStewardProposal(body: ProposalEventBody): body is StewardProposalBody {
   return 'target' in body && body.target.kind === 'steward';
+}
+
+/** True when a Proposal's body adds a new section (#75). */
+export function isAddProposal(body: ProposalEventBody): body is AddProposalBody {
+  return 'target' in body && body.target.kind === 'add';
+}
+
+/** True when a Proposal's body proposes a new Document (#92). */
+export function isNewDocumentProposal(body: ProposalEventBody): body is NewDocumentProposalBody {
+  return 'target' in body && body.target.kind === 'new-document';
+}
+
+/** True when a Proposal's body moves a section (#103). */
+export function isMoveProposal(body: ProposalEventBody): body is MoveProposalBody {
+  return 'target' in body && body.target.kind === 'move';
+}
+
+/** True when a Proposal's body gives a section a new class (#116). */
+export function isClassProposal(body: ProposalEventBody): body is ClassProposalBody {
+  return 'target' in body && body.target.kind === 'class';
+}
+
+/** True when a Proposal's body is a priority vote (#107). */
+export function isPriorityProposal(body: ProposalEventBody): body is PriorityProposalBody {
+  return 'target' in body && body.target.kind === 'priority';
 }
 
 /** True when a Proposal's body targets an opt-in (#117). */
@@ -182,6 +632,38 @@ export function isRulesProposal(body: ProposalEventBody): body is RulesProposalB
 /** True when a Proposal's body proposes dissolving the group (#108). */
 export function isDissolveProposal(body: ProposalEventBody): body is DissolveProposalBody {
   return 'target' in body && body.target.kind === 'dissolve';
+}
+
+/** True when a Proposal's body proposes removing a member (#115). */
+export function isRemovalProposal(body: ProposalEventBody): body is RemovalProposalBody {
+  return 'target' in body && body.target.kind === 'remove';
+}
+
+/** True when a Proposal's body proposes reconciling into a coalition (#100). */
+export function isReconcileProposal(body: ProposalEventBody): body is ReconcileProposalBody {
+  return 'target' in body && body.target.kind === 'reconcile' && !('sealed' in body.target);
+}
+
+/** True when a Proposal's body is a coalition's sealed reconcile target (#122). */
+export function isSealedReconcileProposal(
+  body: ProposalEventBody,
+): body is SealedReconcileProposalBody {
+  return 'target' in body && body.target.kind === 'reconcile' && 'sealed' in body.target;
+}
+
+/** True when a Proposal's body proposes admitting a group into a coalition (#114). */
+export function isAdmitProposal(body: ProposalEventBody): body is AdmitProposalBody {
+  return 'target' in body && body.target.kind === 'admit';
+}
+
+/** True when a Proposal's body puts a Dispatch that may rise to the group's vote (#126). */
+export function isDispatchProposal(body: ProposalEventBody): body is DispatchProposalBody {
+  return 'target' in body && body.target.kind === 'dispatch';
+}
+
+/** True when a Proposal's body is a promotion record (#126). */
+export function isPromoteProposal(body: ProposalEventBody): body is PromoteProposalBody {
+  return 'target' in body && body.target.kind === 'promote';
 }
 
 /**
@@ -227,6 +709,37 @@ export interface ChatPostedBody {
 }
 
 /**
+ * Records that the author sent an invite to someone who asked to join at the
+ * group's front door (#121; ADR-0038): `application` is the SHA-256, in
+ * unpadded base64url, of the sealed application blob the relay holds, so
+ * everyone sees who invited them and nobody sends a second. Kept as written:
+ * the fold checks it (frontDoor.ts).
+ */
+export interface DoorInvitedBody {
+  readonly application: string;
+}
+
+/**
+ * Closes a reconcile card that reached the group's front door (#426): a
+ * member brought it to a vote or dismissed it, so no device shows it again.
+ * `card` is the SHA-256 of the card's sealed inbox blob, in unpadded
+ * base64url, kept as written: the fold checks it (frontDoor.ts).
+ */
+export interface DoorCardClosedBody {
+  readonly card: string;
+}
+
+/**
+ * Records a Proposal's Discord thread (#123): `url` is the link to the
+ * forum thread the author's device opened with the Proposal's first notice.
+ * Both are kept as written: the fold checks them (chatPosts.ts).
+ */
+export interface ChatThreadBody {
+  readonly proposal: string;
+  readonly url: string;
+}
+
+/**
  * Adds a competing wording to an open Proposal's ballot (ADR-0004). Its id is
  * its event id; the Proposal's own text is version 1, under the Proposal's id.
  */
@@ -235,11 +748,54 @@ export interface VersionBody {
   readonly text: string;
 }
 
-/** Scores the versions of one Proposal, keyed by version id, with one optional note. */
+/**
+ * Scores the versions of one Proposal, keyed by version id, with one optional
+ * note. `salt` is 16 random bytes in base64url (#111), so nobody can test
+ * guesses against a result's commitment once the ballots are gone. A ballot
+ * cast before #111 has none, and enters the commitment with an empty salt.
+ */
 export interface VoteBody {
   readonly proposal: string;
   readonly scores: Readonly<Record<string, Score>>;
   readonly note?: string;
+  readonly salt?: string;
+}
+
+/** How many ballots gave a version each score, from 0 to 4. */
+export type ScoreCounts = readonly [number, number, number, number, number];
+
+/** One version's line in a result: its id and its counts. */
+export interface ResultVersion {
+  readonly id: string;
+  readonly counts: ScoreCounts;
+}
+
+/** A decided Proposal's outcome as its result names it, without the bar, which its class sets. */
+export type RecordedOutcome =
+  | { readonly kind: 'pass'; readonly version: string }
+  | { readonly kind: 'fail' }
+  | { readonly kind: 'lapse' };
+
+/**
+ * A decided Proposal's signed record (#111, ADR-0017): when it closed (the
+ * early close's minute, or its deadline), the size of its eligible set, each
+ * version's counts in ballot order, the outcome, and `commit`, a commitment
+ * to the counted ballots (`commit.ts`) that never covers notes (ADR-0065).
+ * Devices keep it, and only it, once they clear the ballots.
+ *
+ * `closedSeq` is the relay seq of the ballot that closed it early (#289), so
+ * a device that has cleared the ballots knows where in the close's minute the
+ * Proposal closed. A deadline close has none, and nor does a result from
+ * before #289, which still counts.
+ */
+export interface ResultBody {
+  readonly proposal: string;
+  readonly closedAt: number;
+  readonly closedSeq?: number;
+  readonly eligible: number;
+  readonly versions: readonly ResultVersion[];
+  readonly outcome: RecordedOutcome;
+  readonly commit: string;
 }
 
 /**
@@ -252,10 +808,40 @@ export interface DissolveBody {
 }
 
 /**
+ * The one response the person a removal names may post on its ballot
+ * (ADR-0049, #115): `text` is kept as written, and the fold counts its code
+ * points. The author trims it and normalizes it to NFC before signing.
+ */
+export interface RemovalResponseBody {
+  readonly proposal: string;
+  readonly text: string;
+}
+
+/**
+ * Removes a member once a removal Proposal's pass is final (#115): any
+ * member's device that folds that pass posts one. The fold takes the first
+ * valid one, and the group's key changes after it, as after a leave (#98).
+ */
+export interface RemoveBody {
+  readonly proposal: string;
+}
+
+/**
  * Leaves the group (ADR-0010: exit is always possible). It carries nothing:
  * the author is the one who leaves, and the fold reads any object as `{}`.
  */
 export type LeaveBody = Readonly<Record<string, never>>;
+
+/**
+ * A Dispatch a Co-Creator sends to the whole group (#112): a title, a short
+ * text and, optionally, the id of a Document it points to. All are kept as
+ * written: the fold checks the sender, the lengths and the Document.
+ */
+export interface DispatchBody {
+  readonly title: string;
+  readonly text: string;
+  readonly doc?: string;
+}
 
 /**
  * Gives a member who has none an encryption key (#98): the X25519 public key,
@@ -277,9 +863,91 @@ export interface KeyRotateBody {
   readonly wraps: Readonly<Record<string, string>>;
 }
 
+/**
+ * Names a key change by its event id (#224): a member's `unwrap-failed` says
+ * their wrap in it doesn't open, or opens to a secret that doesn't make every
+ * other wrap (`crypto/epoch.ts`), and goes to the old epoch's mailbox; a
+ * `key-taken` says a device took it up all the same, and goes to the new
+ * epoch's. An id, unlike a commit, can't be copied into another key change.
+ */
+export interface KeyCheckBody {
+  readonly rotation: string;
+}
+
+/**
+ * Hands one recovery share to one contact (#109; ADR-0043 §1, ADR-0074):
+ * `box` is the share sealed to the contact's encryption key
+ * (`crypto/shares.ts`), in unpadded base64url. It names no recipient, so
+ * the rest of the group sees only that the author sent one. The fold keeps
+ * it from any current member and changes nothing else.
+ */
+export interface RecoveryShareBody {
+  readonly box: string;
+}
+
+/**
+ * Tells the person that a contact approved a recovery of their share (#118;
+ * ADR-0043 §2, ADR-0075 §4): `box` is sealed to the person's encryption key
+ * (`crypto/recovery.ts`), in unpadded base64url, and names no one, so the rest
+ * of the group sees only that the author sent one. The fold keeps it from any
+ * current member and changes nothing else; the contact's device holds the
+ * share for 72 hours of relay time from its receipt.
+ */
+export interface RecoveryAlertBody {
+  readonly box: string;
+}
+
+/**
+ * Cancels a recovery (#118): `alert` is the 16-byte tag sealed inside the
+ * alert it answers, in unpadded base64url, never the alert's event id, so
+ * only the person and the contact who posted it can tell which alert that
+ * is. The fold keeps it from any current member and changes nothing else;
+ * only the contact's device decides whether it counts, by its author.
+ */
+export interface RecoveryCancelBody {
+  readonly alert: string;
+}
+
+/** A member group's decision on a coalition motion, the one thing that crosses group lines (ADR-0036). */
+export type GroupResultValue = 'pass' | 'fail';
+
+/**
+ * A member group's result on a coalition motion, or on the coalition's
+ * genesis (#100): exactly the motion's id, the seat key and `pass` or
+ * `fail`. A body with any other key is a bad shape, so no ballot, score,
+ * count, note or name can ride along.
+ */
+export interface GroupResultBody {
+  readonly motion: string;
+  readonly seat: string;
+  readonly result: GroupResultValue;
+}
+
+/**
+ * A message in a coalition's room (#125; ADR-0011): plain text, kept as
+ * written. A body with any other key is a bad shape. It belongs to the room's
+ * own log, sealed under keys from the coalition's `inner`, and `room.ts`
+ * reads it there: the fold of a group's or a coalition's own log ignores it.
+ */
+export interface MessageBody {
+  readonly text: string;
+}
+
+/**
+ * The room's `inner` for a group admitted into a coalition (#313): exactly
+ * the admitted seat's public key and `wrap`, a box of `inner` sealed to the
+ * seat's `kx` (`crypto/room.ts`), in unpadded base64url. A body with any
+ * other key is a bad shape. It belongs to the coalition's own log, from a
+ * participant whose group already holds `inner`.
+ */
+export interface RoomWrapBody {
+  readonly seat: string;
+  readonly wrap: string;
+}
+
 /** The body each event type carries. */
 export interface EventBodies {
-  readonly genesis: GenesisBody;
+  readonly genesis: GenesisBody | CoalitionGenesisBody;
   readonly join: JoinBody;
   readonly proposal: ProposalEventBody;
   readonly version: VersionBody;
@@ -288,11 +956,26 @@ export interface EventBodies {
   readonly leave: LeaveBody;
   readonly suspend: SuspendBody;
   readonly narrow: NarrowBody;
+  readonly result: ResultBody;
   readonly dissolve: DissolveBody;
   readonly vouch: VouchBody;
   readonly 'chat-posted': ChatPostedBody;
+  readonly 'chat-thread': ChatThreadBody;
+  readonly dispatch: DispatchBody;
   readonly kx: KxBody;
   readonly 'key-rotate': KeyRotateBody;
+  readonly 'unwrap-failed': KeyCheckBody;
+  readonly 'key-taken': KeyCheckBody;
+  readonly 'recovery-share': RecoveryShareBody;
+  readonly 'recovery-alert': RecoveryAlertBody;
+  readonly 'recovery-cancel': RecoveryCancelBody;
+  readonly 'removal-response': RemovalResponseBody;
+  readonly remove: RemoveBody;
+  readonly 'door-invited': DoorInvitedBody;
+  readonly 'door-card-closed': DoorCardClosedBody;
+  readonly 'group-result': GroupResultBody;
+  readonly message: MessageBody;
+  readonly 'room-wrap': RoomWrapBody;
 }
 
 /** The event types this engine understands. */
@@ -346,6 +1029,11 @@ const SIGNATURE = /^[A-Za-z0-9_-]{86}$/;
 
 /** Unpadded base64url of at least one byte: a wrap's text. */
 const BASE64URL = /^[A-Za-z0-9_-]{2,}$/;
+/** 16 bytes in canonical unpadded base64url: an alert's tag (#118). */
+const TAG16 = /^[A-Za-z0-9_-]{21}[AQgw]$/;
+
+/** A room wrap (#313): a box of 32 bytes, 104 in all, in 139 unpadded base64url characters. */
+const ROOM_WRAP = /^[A-Za-z0-9_-]{139}$/;
 
 /** The largest epoch a key change names: a big-endian u32 carries it (#98). */
 const MAX_EPOCH = 0xffff_ffff;
@@ -414,6 +1102,11 @@ function isKey32(value: unknown): value is string {
   return isAuthor(value) && base64url(fromBase64url(value)) === value;
 }
 
+/** A key, as {@link isKey32} reads one, or nothing (#313). */
+function isOptionalKey32(value: unknown): value is string | undefined {
+  return value === undefined || isKey32(value);
+}
+
 function isTimestamp(value: unknown): value is number {
   return isWholeNumber(value) && value >= 0;
 }
@@ -427,15 +1120,76 @@ function kxField(value: unknown): { readonly kx?: string } {
   return isKey32(value) ? { kx: value } : {};
 }
 
-function parseGenesis(body: Json): GenesisBody | null {
-  const { name, chat, founder, title, atoms, rules } = body;
-  if (!isString(name) || !isString(founder) || !isString(title)) return null;
-  if (!isStringList(atoms) || !isOptionalString(chat) || !isOptionalObject(rules)) return null;
+/** A seat's name, key and any stated level, a whole number from 0, or null for any other shape (#100, #122). */
+function parseSeat(value: unknown): SeatEntry | null {
+  if (!isObject(value)) return null;
+  const { name, key, level } = value;
+  if (!isString(name) || !isKey32(key)) return null;
+  if (level === undefined) return { name, key };
+  return isWholeNumber(level) && level >= 0 ? { name, key, level } : null;
+}
+
+/** A list of well-shaped seats, or null when it isn't a list or any seat is badly shaped (#100). */
+function parseSeats(value: unknown): SeatEntry[] | null {
+  if (!Array.isArray(value)) return null;
+  const parsed = value.map(parseSeat);
+  return parsed.every((seat) => seat !== null) ? parsed : null;
+}
+
+/** A founding Document's title and Atoms, any other key dropped, or null for any other shape (#92). */
+function parseFoundingDocument(value: unknown): FoundingDocument | null {
+  if (!isObject(value)) return null;
+  const { title, atoms } = value;
+  return isString(title) && isStringList(atoms) ? { title, atoms } : null;
+}
+
+/**
+ * A genesis's Documents (#92), or null when they aren't a list or any of them
+ * is badly shaped. How many there are, and their titles, the fold checks.
+ */
+function parseDocuments(value: unknown): FoundingDocument[] | null {
+  if (!Array.isArray(value)) return null;
+  const parsed = value.map(parseFoundingDocument);
+  return parsed.every((document) => document !== null) ? parsed : null;
+}
+
+/** A coalition genesis: a group genesis body without its founder, plus its seats (#100). */
+/**
+ * A coalition genesis's optional fields, each as given: its chat link, its
+ * rules, and its commitment to the room's `inner` (#371); or null when any is
+ * a bad shape.
+ */
+function coalitionExtras(
+  body: Json,
+): Pick<CoalitionGenesisBody, 'chat' | 'rules' | 'commit'> | null {
+  const { chat, rules, commit } = body;
+  if (!isOptionalString(chat) || !isOptionalObject(rules) || !isOptionalKey32(commit)) return null;
+  return {
+    ...(chat === undefined ? {} : { chat }),
+    ...(rules === undefined ? {} : { rules }),
+    ...(commit === undefined ? {} : { commit }),
+  };
+}
+
+function parseCoalitionGenesis(body: Json): CoalitionGenesisBody | null {
+  const { kind, name } = body;
+  const documents = parseDocuments(body.documents);
+  const seats = parseSeats(body.seats);
+  const extras = coalitionExtras(body);
+  if (kind !== 'coalition' || !isString(name) || documents === null) return null;
+  return seats === null || extras === null ? null : { kind, name, documents, seats, ...extras };
+}
+
+function parseGenesis(body: Json): GenesisBody | CoalitionGenesisBody | null {
+  if (body.kind !== undefined) return parseCoalitionGenesis(body);
+  const { name, chat, founder, rules } = body;
+  const documents = parseDocuments(body.documents);
+  if (!isString(name) || !isString(founder) || documents === null) return null;
+  if (!isOptionalString(chat) || !isOptionalObject(rules)) return null;
   return {
     name,
     founder,
-    title,
-    atoms,
+    documents,
     ...(chat === undefined ? {} : { chat }),
     ...(rules === undefined ? {} : { rules }),
     ...kxField(body.kx),
@@ -449,6 +1203,15 @@ function parseToken(value: unknown): InviteToken | undefined {
   return isAuthor(by) && isString(sig) && SIGNATURE.test(sig) ? { by, sig } : undefined;
 }
 
+/** A well-shaped seat and proof on a join, each as its own field, or nothing (#100). */
+function seatFields(body: Json): { readonly seat?: string; readonly proof?: string } {
+  const { seat, proof } = body;
+  return {
+    ...(isKey32(seat) ? { seat } : {}),
+    ...(isString(proof) && SIGNATURE.test(proof) ? { proof } : {}),
+  };
+}
+
 function parseJoin(body: Json): JoinBody | null {
   const { name, level } = body;
   if (!isString(name) || !isOptionalString(level)) return null;
@@ -458,11 +1221,36 @@ function parseJoin(body: Json): JoinBody | null {
     ...(level === undefined ? {} : { level }),
     ...(token === undefined ? {} : { token }),
     ...kxField(body.kx),
+    ...seatFields(body),
   };
 }
 
 function parseLevel(body: Json): LevelBody | null {
   return isString(body.level) ? { level: body.level } : null;
+}
+
+/** An add's target, keeping only its kind, Document and anchor, or null for any other shape (#75, #92). */
+function parseAddTarget(value: Json): AddTarget | null {
+  const { document, after } = value;
+  if (!isString(document)) return null;
+  return after === null || isString(after) ? { kind: 'add', document, after } : null;
+}
+
+/** A new Document's target, keeping only its kind and title, or null for any other shape (#92). */
+function parseNewDocumentTarget(value: Json): NewDocumentTarget | null {
+  return isString(value.title) ? { kind: 'new-document', title: value.title } : null;
+}
+
+/**
+ * An add (#75) or a new Document (#92) carries `target` in place of `atom`,
+ * never both, its text, and any window (#106).
+ */
+function parseTextProposal<T>(body: Json, target: T | null) {
+  const { atom, title, why, text } = body;
+  if (target === null || atom !== undefined || !isString(text)) return null;
+  if (!isString(title) || !isString(why)) return null;
+  const options = editOptions(body);
+  return options === null ? null : { target, title, why, text, ...options };
 }
 
 /** A steward target's kind, seat and member, or null for any other shape (#102). */
@@ -482,19 +1270,43 @@ function parseRulesTarget(value: unknown): RulesTarget | null {
     : { kind: 'rules', optIn: value.optIn, value: value.value };
 }
 
-/** What every targeted Proposal carries beside its target: a title, a why and an optional link, and no `atom`. */
+/**
+ * A Proposal's `dispatch` (#112) as `{dispatch}`: its title and text, any
+ * other key dropped. `{}` when there is none, and null for any other shape,
+ * which makes the whole Proposal a bad shape.
+ */
+function dispatchField(value: unknown): { readonly dispatch?: CarriedDispatch } | null {
+  if (value === undefined) return {};
+  if (!isObject(value)) return null;
+  const { title, text } = value;
+  return isString(title) && isString(text) ? { dispatch: { title, text } } : null;
+}
+
+/**
+ * What every targeted Proposal carries beside its target: a title, a why, an
+ * optional link and an optional Dispatch (#112), and no `atom`.
+ */
 function parseTargetedFields(body: Json): Omit<StewardProposalBody, 'target'> | null {
   const { atom, title, why, link } = body;
+  const carried = dispatchField(body.dispatch);
   if (atom !== undefined || !isString(title) || !isString(why) || !isOptionalString(link)) {
     return null;
   }
-  return { title, why, ...(link === undefined ? {} : { link }) };
+  return carried === null
+    ? null
+    : { title, why, ...(link === undefined ? {} : { link }), ...carried };
 }
 
 /** A dissolve target's kind and wipe, which must be true or false (#108). */
 function parseDissolveTarget(value: unknown): DissolveTarget | null {
   if (!isObject(value) || value.kind !== 'dissolve') return null;
   return typeof value.wipe === 'boolean' ? { kind: 'dissolve', wipe: value.wipe } : null;
+}
+
+/** A removal target's kind and member, or null for any other shape (#115). */
+function parseRemoveTarget(value: unknown): RemoveTarget | null {
+  if (!isObject(value) || value.kind !== 'remove' || !isString(value.member)) return null;
+  return { kind: 'remove', member: value.member };
 }
 
 /**
@@ -507,44 +1319,231 @@ function withWindow<T>(target: T | null, body: Json, fields: Omit<StewardProposa
   return { ...fields, target, ...(window === undefined ? {} : { window }) };
 }
 
-/** The target a Proposal names other than a steward seat: an opt-in (#117), or dissolving (#108). */
-function parseWindowedProposal(
-  body: Json,
-  fields: Omit<StewardProposalBody, 'target'>,
-): RulesProposalBody | DissolveProposalBody | null {
-  const dissolve = parseDissolveTarget(body.target);
-  return dissolve === null
-    ? withWindow(parseRulesTarget(body.target), body, fields)
-    : withWindow(dissolve, body, fields);
+/** A sealed field's text: unpadded base64url of exactly one smallest blob (#122). */
+const SEALED_FIELD = new RegExp(`^[A-Za-z0-9_-]{${String(SEALED_FIELD_CHARS)}}$`);
+
+/** Exactly one smallest sealed blob in canonical base64url: a sealed field's text (#122). */
+function isSealedField(value: unknown): value is string {
+  return isString(value) && SEALED_FIELD.test(value) && base64url(fromBase64url(value)) === value;
 }
 
 /**
- * A steward (#102), rules (#117) or dissolve (#108) Proposal carries `target`
- * and no `atom`; any `text` is dropped, and so is a steward Proposal's
- * `window` (#106).
+ * A coalition's sealed reconcile target (#122): its sealed field, public
+ * seat key, name, title and Atoms, and none of the secrets a group's carries
+ * readable; or null for any other shape.
  */
-function parseTargetedProposal(
+function parseSealedTarget(value: Json): SealedReconcileTarget | null {
+  const { sealed, key, name, title, atoms, secret, inner, seat } = value;
+  if (secret !== undefined || inner !== undefined || seat !== undefined) return null;
+  if (!isSealedField(sealed) || !isKey32(key)) return null;
+  if (!isString(name) || !isString(title) || !isStringList(atoms)) return null;
+  return { kind: 'reconcile', sealed, key, name, title, atoms };
+}
+
+/**
+ * A group's reconcile target (#100): its secrets, name, title and Atoms, or
+ * null for any other shape. `inner` may be missing, as a group asking into a
+ * formed coalition writes it (#313), but a present one must be a key.
+ */
+function parsePlainTarget(value: Json): ReconcileTarget | null {
+  const { secret, inner, seat, name, title, atoms } = value;
+  if (!isKey32(secret) || !isKey32(seat) || !isOptionalKey32(inner)) return null;
+  if (!isString(name) || !isString(title) || !isStringList(atoms)) return null;
+  const target = { kind: 'reconcile', secret, seat, name, title, atoms } as const;
+  return inner === undefined ? target : { ...target, inner };
+}
+
+/** A move's target, keeping only its kind, Atom and anchor, or null for any other shape (#103). */
+function parseMoveTarget(value: unknown): MoveTarget | null {
+  if (!isObject(value) || value.kind !== 'move' || !isString(value.atom)) return null;
+  const { atom, after } = value;
+  return after === null || isString(after) ? { kind: 'move', atom, after } : null;
+}
+
+/** A class change's target, keeping only its kind, Atom and class, or null for any other shape (#116). */
+function parseClassTarget(value: unknown): ClassTarget | null {
+  if (!isObject(value) || value.kind !== 'class') return null;
+  const { atom, to } = value;
+  return isString(atom) && isString(to) ? { kind: 'class', atom, to } : null;
+}
+
+/**
+ * A reconcile target: a group's, with its secrets readable (#100), or a
+ * coalition's sealed one (#122); or null for any other shape.
+ */
+function parseReconcileTarget(value: unknown): ReconcileTarget | SealedReconcileTarget | null {
+  if (!isObject(value) || value.kind !== 'reconcile') return null;
+  return value.sealed === undefined ? parsePlainTarget(value) : parseSealedTarget(value);
+}
+
+/**
+ * An admit target's kind, seat, proof, seat `kx` (#313) and any member
+ * groups' names (#122), or null for any other shape (#114).
+ */
+function parseAdmitTarget(value: unknown): AdmitTarget | null {
+  if (!isObject(value) || value.kind !== 'admit') return null;
+  const seat = parseSeat(value.seat);
+  const { proof, kx, groups } = value;
+  if (seat === null || !isString(proof) || !SIGNATURE.test(proof) || !isKey32(kx)) return null;
+  if (groups === undefined) return { kind: 'admit', seat, proof, kx };
+  return isStringList(groups) ? { kind: 'admit', seat, proof, kx, groups } : null;
+}
+
+/**
+ * The target a Proposal names other than a steward seat: an opt-in (#117),
+ * dissolving (#108), reconciling (#100), a coalition's sealed reconcile
+ * target (#122), admitting a group (#114), moving a section (#103), or a
+ * section's class (#116).
+ */
+function parseWindowedProposal(
   body: Json,
-): StewardProposalBody | RulesProposalBody | DissolveProposalBody | null {
+  fields: Omit<StewardProposalBody, 'target'>,
+): Exclude<ProposalEventBody, ProposalBody | StewardProposalBody> | null {
+  const move = parseMoveTarget(body.target);
+  if (move !== null) return withWindow(move, body, fields);
+  const cls = parseClassTarget(body.target);
+  if (cls !== null) return withWindow(cls, body, fields);
+  const dissolve = parseDissolveTarget(body.target);
+  if (dissolve !== null) return withWindow(dissolve, body, fields);
+  const reconcile = parseReconcileTarget(body.target);
+  if (reconcile !== null && 'sealed' in reconcile) return withWindow(reconcile, body, fields);
+  if (reconcile !== null) return withWindow(reconcile, body, fields);
+  const admit = parseAdmitTarget(body.target);
+  if (admit !== null) return withWindow(admit, body, fields);
+  return withWindow(parseRulesTarget(body.target), body, fields);
+}
+
+/**
+ * A steward (#102), rules (#117), dissolve (#108), reconcile (#100), admit
+ * (#114), removal (#115), move (#103) or class (#116) Proposal carries
+ * `target` and no `atom`; any `text` is dropped, and so is a steward or
+ * removal Proposal's `window` (#106).
+ */
+function parseTargetedProposal(body: Json): Exclude<ProposalEventBody, ProposalBody> | null {
   const fields = parseTargetedFields(body);
   if (fields === null) return null;
   const steward = parseStewardTarget(body.target);
-  return steward === null ? parseWindowedProposal(body, fields) : { ...fields, target: steward };
+  if (steward !== null) return { ...fields, target: steward };
+  const removal = parseRemoveTarget(body.target);
+  return removal === null ? parseWindowedProposal(body, fields) : { ...fields, target: removal };
 }
 
-function parseProposal(body: Json): ProposalEventBody | null {
-  if (body.target !== undefined) return parseTargetedProposal(body);
-  const { atom, title, why, text, link, window } = body;
-  if (!isString(atom) || !isString(title) || !isString(why) || !isString(text)) return null;
-  if (!isOptionalString(link) || !isOptionalNumber(window)) return null;
+/**
+ * An edit's or an add's optional fields (#75): a discussion link, a voting
+ * window (#106) and a Dispatch (#112), each kept when present, or null when
+ * one is a bad shape.
+ */
+function editOptions(body: Json): Pick<ProposalBody, 'link' | 'window' | 'dispatch'> | null {
+  const { link, window } = body;
+  const carried = dispatchField(body.dispatch);
+  if (!isOptionalString(link) || !isOptionalNumber(window) || carried === null) return null;
   return {
-    atom,
-    title,
-    why,
-    text,
     ...(link === undefined ? {} : { link }),
     ...(window === undefined ? {} : { window }),
+    ...carried,
   };
+}
+
+/**
+ * A priority vote's body (#107): its target, question, why and options, and,
+ * like an edit's, an optional link, window (#106) and Dispatch (#112), or
+ * null for any other shape. It names no Atom and has no text.
+ */
+function parsePriority(body: Json): PriorityProposalBody | null {
+  const { atom, text, title, why, options } = body;
+  if (atom !== undefined || text !== undefined) return null;
+  if (!isString(title) || !isString(why) || !isStringList(options)) return null;
+  const extra = editOptions(body);
+  return extra === null ? null : { target: { kind: 'priority' }, title, why, options, ...extra };
+}
+
+/** A ceiling a target may carry (#126). */
+function isCeiling(value: unknown): value is Ceiling {
+  return CEILINGS.some((ceiling) => ceiling === value);
+}
+
+/** A rising Dispatch's target: its ceiling and any Document, or null for any other shape (#126). */
+function parseDispatchTarget(value: Json): DispatchTarget | null {
+  const { ceiling, doc } = value;
+  if (value.kind !== 'dispatch' || !isCeiling(ceiling) || !isOptionalString(doc)) return null;
+  return { kind: 'dispatch', ceiling, ...(doc === undefined ? {} : { doc }) };
+}
+
+/** A promoted Dispatch's id, title and text, any other key dropped, or null (#126). */
+function parsePromoted(value: unknown): PromotedDispatch | null {
+  if (!isObject(value)) return null;
+  const { id, title, text } = value;
+  return isString(id) && isString(title) && isString(text) ? { id, title, text } : null;
+}
+
+/** A promotion record's target, or null for any other shape (#126). */
+function parsePromoteTarget(value: Json): PromoteTarget | null {
+  const dispatch = parsePromoted(value.dispatch);
+  const { ceiling, level, from } = value;
+  if (value.kind !== 'promote' || dispatch === null || !isCeiling(ceiling)) return null;
+  if (!isKey32(from) || !isWholeNumber(level) || level < 1) return null;
+  return { kind: 'promote', dispatch, ceiling, level, from };
+}
+
+/**
+ * A promotion record (#126): its target, title and why, and nothing else. A
+ * link, a window or a Dispatch of its own makes it a bad shape, so only the
+ * record crosses.
+ */
+function parsePromoteProposal(body: Json, target: Json): PromoteProposalBody | null {
+  const fields = parseTargetedFields(body);
+  const parsed = parsePromoteTarget(target);
+  if (fields === null || parsed === null || body.window !== undefined) return null;
+  if (fields.link !== undefined || fields.dispatch !== undefined) return null;
+  return { target: parsed, title: fields.title, why: fields.why };
+}
+
+/**
+ * A Dispatch put to a vote (#126): its target, the Dispatch it carries,
+ * which it must, and the fields every targeted Proposal carries, with any
+ * window, or null for any other shape.
+ */
+function parseDispatchProposal(body: Json, target: Json): DispatchProposalBody | null {
+  const fields = parseTargetedFields(body);
+  const parsed = parseDispatchTarget(target);
+  const { window } = body;
+  if (fields === null || parsed === null || !isOptionalNumber(window)) return null;
+  const { dispatch } = fields;
+  if (dispatch === undefined) return null;
+  return { ...fields, target: parsed, dispatch, ...(window === undefined ? {} : { window }) };
+}
+
+/**
+ * A Proposal with a `target` in place of an Atom: an add (#75), a new
+ * Document (#92), a priority vote (#107), a rising Dispatch or a promotion
+ * record (#126), a steward seat (#102), an opt-in (#117), dissolving the
+ * group (#108) or reconciling into a coalition (#100).
+ */
+function parseTargeted(body: Json): ProposalEventBody | null {
+  const target = isObject(body.target) ? body.target : {};
+  switch (target.kind) {
+    case 'add':
+      return parseTextProposal(body, parseAddTarget(target));
+    case 'new-document':
+      return parseTextProposal(body, parseNewDocumentTarget(target));
+    case 'priority':
+      return parsePriority(body);
+    case 'dispatch':
+      return parseDispatchProposal(body, target);
+    case 'promote':
+      return parsePromoteProposal(body, target);
+    default:
+      return parseTargetedProposal(body);
+  }
+}
+
+/** An edit names an `atom`; every other Proposal carries `target` (#75, #100, #102, #107, #108, #117). */
+function parseProposal(body: Json): ProposalEventBody | null {
+  if (body.target !== undefined) return parseTargeted(body);
+  const { atom, title, why, text } = body;
+  if (!isString(atom) || !isString(title) || !isString(why) || !isString(text)) return null;
+  const options = editOptions(body);
+  return options === null ? null : { atom, title, why, text, ...options };
 }
 
 function parseSuspend(body: Json): SuspendBody | null {
@@ -572,6 +1571,17 @@ function parseChatPosted(body: Json): ChatPostedBody | null {
   return { proposal, moment, ...(nonce === undefined ? {} : { nonce }) };
 }
 
+function parseChatThread(body: Json): ChatThreadBody | null {
+  const { proposal, url } = body;
+  return isString(proposal) && isString(url) ? { proposal, url } : null;
+}
+
+function parseDispatch(body: Json): DispatchBody | null {
+  const { title, text, doc } = body;
+  if (!isString(title) || !isString(text) || !isOptionalString(doc)) return null;
+  return { title, text, ...(doc === undefined ? {} : { doc }) };
+}
+
 function parseKx(body: Json): KxBody | null {
   return isKey32(body.kx) ? { kx: body.kx } : null;
 }
@@ -594,6 +1604,70 @@ function parseKeyRotate(body: Json): KeyRotateBody | null {
   return isKey32(commit) && wraps !== null ? { epoch, commit, wraps } : null;
 }
 
+function parseKeyCheck(body: Json): KeyCheckBody | null {
+  return isString(body.rotation) ? { rotation: body.rotation } : null;
+}
+
+/** A body that is one opaque box: a share (#109) or an alert (#118). Any other field is dropped. */
+function parseBox(body: Json): RecoveryShareBody | null {
+  return isString(body.box) && BASE64URL.test(body.box) ? { box: body.box } : null;
+}
+
+/** A cancel naming a 16-byte alert tag (#118). Any other field is dropped. */
+function parseRecoveryCancel(body: Json): RecoveryCancelBody | null {
+  return isString(body.alert) && TAG16.test(body.alert) ? { alert: body.alert } : null;
+}
+
+function parseRemovalResponse(body: Json): RemovalResponseBody | null {
+  const { proposal, text } = body;
+  return isString(proposal) && isString(text) ? { proposal, text } : null;
+}
+
+function parseRemove(body: Json): RemoveBody | null {
+  return isString(body.proposal) ? { proposal: body.proposal } : null;
+}
+
+function parseDoorInvited(body: Json): DoorInvitedBody | null {
+  return isString(body.application) ? { application: body.application } : null;
+}
+
+function parseDoorCardClosed(body: Json): DoorCardClosedBody | null {
+  return isString(body.card) ? { card: body.card } : null;
+}
+
+/** The only keys a group-result may carry, so nothing else crosses group lines (#100). */
+const RESULT_KEYS = ['motion', 'result', 'seat'];
+
+/** A group-result with exactly a motion, a seat key and `pass` or `fail`, or null (#100). */
+function parseGroupResult(body: Json): GroupResultBody | null {
+  const { motion, seat, result } = body;
+  const exact = Object.keys(body).sort().join() === RESULT_KEYS.join();
+  if (!exact || !isString(motion) || !isKey32(seat)) return null;
+  return result === 'pass' || result === 'fail' ? { motion, seat, result } : null;
+}
+
+/** The keys a room wrap carries, sorted (#313). */
+const ROOM_WRAP_KEYS = ['seat', 'wrap'];
+
+/** A wrap: 104 bytes in canonical unpadded base64url (#313). */
+function isRoomWrap(value: unknown): value is string {
+  return isString(value) && ROOM_WRAP.test(value) && base64url(fromBase64url(value)) === value;
+}
+
+/** A room wrap's body: exactly its seat and wrap (#313). */
+function parseRoomWrap(body: Json): RoomWrapBody | null {
+  const { seat, wrap } = body;
+  const exact = Object.keys(body).sort().join() === ROOM_WRAP_KEYS.join();
+  return exact && isKey32(seat) && isRoomWrap(wrap) ? { seat, wrap } : null;
+}
+
+/** A room message's body: exactly its text (#125). */
+function parseMessage(body: Json): MessageBody | null {
+  const { text } = body;
+  const exact = Object.keys(body).join() === 'text';
+  return exact && isString(text) ? { text } : null;
+}
+
 function parseVersion(body: Json): VersionBody | null {
   const { proposal, text } = body;
   return isString(proposal) && isString(text) ? { proposal, text } : null;
@@ -612,10 +1686,71 @@ function parseScores(value: unknown): Record<string, Score> | null {
 }
 
 function parseVote(body: Json): VoteBody | null {
-  const { proposal, note } = body;
+  const { proposal, note, salt } = body;
   const scores = parseScores(body.scores);
   if (!isString(proposal) || scores === null || !isOptionalString(note)) return null;
-  return { proposal, scores, ...(note === undefined ? {} : { note }) };
+  if (!isOptionalString(salt)) return null;
+  return {
+    proposal,
+    scores,
+    ...(note === undefined ? {} : { note }),
+    ...(salt === undefined ? {} : { salt }),
+  };
+}
+
+function isCount(value: unknown): value is number {
+  return isWholeNumber(value) && value >= 0;
+}
+
+/** Five whole numbers of at least 0: how many ballots gave a version each score. */
+function parseCounts(value: unknown): ScoreCounts | null {
+  if (!Array.isArray(value) || value.length !== SCORE_MAX + 1) return null;
+  const list: readonly unknown[] = value;
+  const [n0, n1, n2, n3, n4] = list;
+  const whole = isCount(n0) && isCount(n1) && isCount(n2) && isCount(n3) && isCount(n4);
+  return whole ? [n0, n1, n2, n3, n4] : null;
+}
+
+function parseResultVersion(value: unknown): ResultVersion | null {
+  if (!isObject(value) || !isString(value.id)) return null;
+  const counts = parseCounts(value.counts);
+  return counts === null ? null : { id: value.id, counts };
+}
+
+/** Every version a result lists, in order, or null when the list or any version is malformed. */
+function parseResultVersions(value: unknown): ResultVersion[] | null {
+  if (!Array.isArray(value)) return null;
+  const list: readonly unknown[] = value;
+  const versions: ResultVersion[] = [];
+  for (const item of list) {
+    const version = parseResultVersion(item);
+    if (version === null) return null;
+    versions.push(version);
+  }
+  return versions;
+}
+
+function parseOutcome(value: unknown): RecordedOutcome | null {
+  if (!isObject(value)) return null;
+  const { kind, version } = value;
+  if (kind === 'pass') return isString(version) ? { kind, version } : null;
+  return kind === 'fail' || kind === 'lapse' ? { kind } : null;
+}
+
+/** A result's `closedSeq` (#289) as a field: `{}` when it has none, or null when it isn't a seq. */
+function closedSeqField(value: unknown): { readonly closedSeq?: number } | null {
+  if (value === undefined) return {};
+  return isCount(value) ? { closedSeq: value } : null;
+}
+
+function parseResult(body: Json): ResultBody | null {
+  const { proposal, closedAt, eligible, commit } = body;
+  if (!isString(proposal) || !isTimestamp(closedAt) || !isCount(eligible)) return null;
+  const versions = parseResultVersions(body.versions);
+  const outcome = parseOutcome(body.outcome);
+  const place = closedSeqField(body.closedSeq);
+  if (versions === null || outcome === null || place === null || !isString(commit)) return null;
+  return { proposal, closedAt, ...place, eligible, versions, outcome, commit };
 }
 
 /** The event a parsed body makes, or null when the body didn't parse. */
@@ -650,8 +1785,8 @@ function withBody(head: Head, type: unknown, body: Json): GroupEvent | null {
 
 /**
  * {@link withBody} for the types the restored features added: `suspend`
- * (#102), `narrow` (#117), `dissolve` (#108), `vouch` (#101) and
- * `chat-posted` (#119).
+ * (#102), `narrow` (#117), `dissolve` (#108), `vouch` (#101), `chat-posted`
+ * (#119), `chat-thread` (#123) and `dispatch` (#112).
  */
 function withLaterBody(head: Head, type: unknown, body: Json): GroupEvent | null {
   switch (type) {
@@ -665,18 +1800,72 @@ function withLaterBody(head: Head, type: unknown, body: Json): GroupEvent | null
       return attach(parseVouch(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'chat-posted':
       return attach(parseChatPosted(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'chat-thread':
+      return attach(parseChatThread(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'dispatch':
+      return attach(parseDispatch(body), (parsed) => ({ ...head, type, body: parsed }));
+    default:
+      return withRecoveryBody(head, type, body);
+  }
+}
+
+/**
+ * {@link withBody} for the recovery types: #109's `recovery-share`, and
+ * #118's `recovery-alert` and `recovery-cancel`.
+ */
+function withRecoveryBody(head: Head, type: unknown, body: Json): GroupEvent | null {
+  switch (type) {
+    case 'recovery-share':
+    case 'recovery-alert':
+      return attach(parseBox(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'recovery-cancel':
+      return attach(parseRecoveryCancel(body), (parsed) => ({ ...head, type, body: parsed }));
     default:
       return withKeyBody(head, type, body);
   }
 }
 
-/** {@link withBody} for #98's types: `kx` and `key-rotate`. */
+/**
+ * {@link withBody} for the key types: #98's `kx` and `key-rotate`, and
+ * #224's `unwrap-failed` and `key-taken`.
+ */
 function withKeyBody(head: Head, type: unknown, body: Json): GroupEvent | null {
   switch (type) {
     case 'kx':
       return attach(parseKx(body), (parsed) => ({ ...head, type, body: parsed }));
     case 'key-rotate':
       return attach(parseKeyRotate(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'unwrap-failed':
+    case 'key-taken':
+      return attach(parseKeyCheck(body), (parsed) => ({ ...head, type, body: parsed }));
+    default:
+      return withNewerBody(head, type, body);
+  }
+}
+
+/**
+ * {@link withBody} for #115's `removal-response` and `remove`, #100's
+ * `group-result`, #111's `result`, #121's `door-invited`, #426's
+ * `door-card-closed`, #125's `message` and #313's `room-wrap`.
+ */
+function withNewerBody(head: Head, type: unknown, body: Json): GroupEvent | null {
+  switch (type) {
+    case 'removal-response':
+      return attach(parseRemovalResponse(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'remove':
+      return attach(parseRemove(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'group-result':
+      return attach(parseGroupResult(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'result':
+      return attach(parseResult(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'door-invited':
+      return attach(parseDoorInvited(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'door-card-closed':
+      return attach(parseDoorCardClosed(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'message':
+      return attach(parseMessage(body), (parsed) => ({ ...head, type, body: parsed }));
+    case 'room-wrap':
+      return attach(parseRoomWrap(body), (parsed) => ({ ...head, type, body: parsed }));
     default:
       return null;
   }

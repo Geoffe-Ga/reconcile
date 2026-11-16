@@ -66,6 +66,25 @@ const NETWORK_GLOBALS = ['fetch', 'XMLHttpRequest', 'WebSocket', 'EventSource'];
 const NETWORK_MESSAGE =
   'Only src/net/ talks to the network (spec §2), so every request can be audited in one place.';
 
+/** Each network global's restricted reads through `window`, `self` and `globalThis`. */
+const NETWORK_PROPERTIES = ['window', 'self', 'globalThis'].flatMap((object) =>
+  NETWORK_GLOBALS.map((property) => ({ object, property, message: NETWORK_MESSAGE })),
+);
+
+/**
+ * WebAuthn (#95): only src/platform/webauthn.ts reaches `navigator.credentials`, so every
+ * passkey request, and so every PRF output, comes from one audited file.
+ */
+const WEBAUTHN = 'src/platform/webauthn.ts';
+const CREDENTIALS_PROPERTIES = [
+  {
+    object: 'navigator',
+    property: 'credentials',
+    message:
+      'Only src/platform/webauthn.ts reaches WebAuthn (#95), so every passkey request can be audited in one place.',
+  },
+];
+
 /** Every visible string comes from src/app/messages.ts (spec §2, ADR-0055), so none escapes it. */
 const TEXT_ATTRIBUTE = 'JSXAttribute[name.name=/^(aria-label|placeholder|title|alt)$/]';
 const MESSAGES_ONLY = [
@@ -75,6 +94,31 @@ const MESSAGES_ONLY = [
   `${TEXT_ATTRIBUTE} > Literal`,
   `${TEXT_ATTRIBUTE} > JSXExpressionContainer > :matches(Literal, TemplateLiteral)`,
 ].map((selector) => ({ selector, message: 'Visible text comes from src/app/messages.ts.' }));
+
+/**
+ * No press starts on a disabled submit button (#193). React Aria's usePress starts one on
+ * pointerdown even while a button is disabled, and clicks the button itself 80 ms on; if
+ * the form's action ended by then, that click submits again. So a submit Button with
+ * `isDisabled` needs `onPointerDownCapture={holdPresses(…)}` on it or on a parent in the
+ * same JSX (src/app/holdPresses.ts). A plain button is safe: no `onPress` runs for a press
+ * that started while disabled.
+ */
+const HOLDS_PRESSES =
+  "JSXAttribute[name.name='onPointerDownCapture'] > JSXExpressionContainer > CallExpression[callee.name='holdPresses']";
+const HELD_SUBMIT = [
+  {
+    selector: [
+      "JSXOpeningElement[name.name='Button']",
+      ":has(> JSXAttribute[name.name='type'][value.value='submit'])",
+      ":has(> JSXAttribute[name.name='isDisabled'])",
+      // esquery takes one `>` step after a relative `:has(> …)`, so the hold nests a second `:has`.
+      `:not(:has(${HOLDS_PRESSES}))`,
+      `:not(JSXElement:has(> JSXOpeningElement:has(${HOLDS_PRESSES})) *)`,
+    ].join(''),
+    message:
+      'A submit Button that is disabled while its form sends needs holdPresses(…) as onPointerDownCapture on it or on a parent (#193): React Aria clicks a button pressed while disabled itself, 80 ms on, and that click sends the form again once the button is enabled.',
+  },
+];
 
 export default tseslint.config(
   { ignores: ['dist', 'coverage', 'reports', '.stryker-tmp', 'plans/architecture/*.cjs'] },
@@ -112,27 +156,40 @@ export default tseslint.config(
     rules: { 'no-restricted-syntax': ['error', ...NO_CLOCK, ...INTEGERS_ONLY, ...NO_RAW_HTML] },
   },
   {
+    // Each of the three blocks below sets `no-restricted-properties` for its own files, and
+    // none overlap, so no block replaces another's options.
     files: ['**/*.{ts,tsx}'],
     // e2e/support/connect.ts sends requests from inside the page on purpose: e2e/csp.spec.ts
     // proves the deploy CSP lets the page reach only its own origin and Discord's webhooks (#119).
-    ignores: ['src/net/**', 'e2e/support/connect.ts'],
+    ignores: ['src/net/**', 'e2e/support/connect.ts', WEBAUTHN],
     rules: {
       'no-restricted-globals': [
         'error',
         ...NETWORK_GLOBALS.map((name) => ({ name, message: NETWORK_MESSAGE })),
       ],
-      'no-restricted-properties': [
-        'error',
-        ...['window', 'self', 'globalThis'].flatMap((object) =>
-          NETWORK_GLOBALS.map((property) => ({ object, property, message: NETWORK_MESSAGE })),
-        ),
-      ],
+      'no-restricted-properties': ['error', ...NETWORK_PROPERTIES, ...CREDENTIALS_PROPERTIES],
     },
+  },
+  {
+    // The one file that reaches WebAuthn still may not reach the network.
+    files: [WEBAUTHN],
+    rules: {
+      'no-restricted-globals': [
+        'error',
+        ...NETWORK_GLOBALS.map((name) => ({ name, message: NETWORK_MESSAGE })),
+      ],
+      'no-restricted-properties': ['error', ...NETWORK_PROPERTIES],
+    },
+  },
+  {
+    // The files that reach the network still may not reach WebAuthn.
+    files: ['src/net/**/*.{ts,tsx}', 'e2e/support/connect.ts'],
+    rules: { 'no-restricted-properties': ['error', ...CREDENTIALS_PROPERTIES] },
   },
   {
     files: ['src/app/**/*.tsx', 'src/screens/**/*.tsx'],
     ignores: ['**/*.test.tsx'],
-    rules: { 'no-restricted-syntax': ['error', ...MESSAGES_ONLY, ...NO_RAW_HTML] },
+    rules: { 'no-restricted-syntax': ['error', ...MESSAGES_ONLY, ...HELD_SUBMIT, ...NO_RAW_HTML] },
   },
   { files: ['eslint.config.js'], extends: [tseslint.configs.disableTypeChecked] },
 );

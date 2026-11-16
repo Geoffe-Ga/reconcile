@@ -41,7 +41,7 @@ Quote each node's `source_location` (code) or `source_file` (docs) when you cite
 ## Cost, limits, and privacy (docs graph)
 
 - **The LLM runs only when docs change.** graphify's semantic cache is keyed on each doc's content, so an unchanged doc never reaches the LLM again. The workflow keeps that cache between runs with `actions/cache`.
-- **It draws on the same Claude subscription as the review bot** (`CLAUDE_CODE_OAUTH_TOKEN`, model sonnet), and that weekly limit has been hit before. A push touching a few docs is one `claude -p` call. A full rebuild of `docs/` is about 11 calls (around 7 minutes). Full rebuilds happen on the first run, after `actions/cache` evicts an entry unused for 7 days, or when someone dispatches the workflow with `full_rebuild`.
+- **It draws on the same Claude subscription as the review bot** (`CLAUDE_CODE_OAUTH_TOKEN`, model sonnet), and that weekly limit has been hit before. A nightly run after a day that changed a few docs is one `claude -p` call. A full rebuild of `docs/` is about 11 calls (around 7 minutes). Full rebuilds happen on the first run, after `actions/cache` evicts an entry unused for 7 days, or when someone dispatches the workflow with `full_rebuild`.
 - **Locally, `build-docs.sh` bills whatever your `claude` uses:** `ANTHROPIC_API_KEY` when it's set (pay-as-you-go), otherwise your signed-in subscription.
 - **Depth versus calls:** `build-docs.sh` packs docs into 8k-token chunks, one call each. Bigger chunks mean fewer calls, but the model then writes about one node per doc. Pass `--token-budget N` to change it.
 - **Privacy:** docs go to Anthropic through Claude Code, the same provider that already reviews every PR diff. Never the local-only drafts.
@@ -51,7 +51,7 @@ Quote each node's `source_location` (code) or `source_file` (docs) when you cite
 ## How it's published
 
 - `.github/workflows/graph-build.yml` (code) runs on code pushes to `main` (incremental), nightly at 04:40 UTC (full rebuild), and on manual dispatch. It uploads `graph.json` and `graph-meta.json`.
-- `.github/workflows/graph-docs.yml` (docs) runs on pushes to `main` that touch `docs/`, and on manual dispatch. It never runs on a schedule or a pull request. It uploads `docs-graph.json` and `docs-graph-meta.json`.
+- `.github/workflows/graph-docs.yml` (docs) runs nightly at 15:23 UTC and on manual dispatch (the founder's choice on 2026-11-14). It never runs on a merge to `main` or a pull request, so a doc merged today reaches the published graph by the next nightly run, or at once if you dispatch it. It uploads `docs-graph.json` and `docs-graph-meta.json`.
 
 Both upload to the rolling `knowledge-graph` release and share one concurrency group, so uploads never overlap. GitHub keeps one pending run per group, so a newer code-graph run can replace a docs run that's still waiting, and it shows as cancelled. Dispatch the docs workflow to catch up.
 

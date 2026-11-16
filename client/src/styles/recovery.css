@@ -1,0 +1,231 @@
+/*
+ * Recovery contacts (#109), from tokens.css (DESIGN.md "Recovery contacts").
+ * Quiet like every protective feature: the picker's groups are plain cards
+ * of checkboxes, Settings' status is a short list, and a held share is one
+ * line on group home's sunken card. No alert color but the notice's warning
+ * rule when fewer than t contacts are left, and no counts beyond the
+ * person's own t of n.
+ */
+
+/* What recovery contacts are, and whom to pick, at the lede's reading width. */
+.recovery-about {
+  max-width: 34em;
+}
+
+/* The choose-again note in caption type ends where the ledes above it do (30em at 16px). */
+.recovery-about .caption {
+  max-width: 37em;
+}
+
+/* The two counts sit side by side where there's room, and stack on a phone. */
+.recovery-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4) var(--space-6);
+}
+
+.recovery-any,
+.recovery-picked {
+  max-width: 34em;
+  color: var(--body);
+  font: var(--type-ui);
+}
+
+/* One group's people: a card on surface with a hairline border, its name above the boxes. */
+.recovery-group {
+  display: grid;
+  gap: var(--space-1);
+  max-width: 30rem;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.recovery-group-label {
+  color: var(--ink);
+  font: var(--type-heading-3);
+  overflow-wrap: anywhere;
+}
+
+.recovery-people {
+  display: grid;
+  padding: 0;
+  list-style: none;
+}
+
+/* A name is whatever its owner typed, so it may need to break anywhere. */
+.recovery-people .checkbox,
+.recovery-contacts li,
+.recovery-held li {
+  overflow-wrap: anywhere;
+}
+
+/* Settings: "<n> recovery contacts · <t> needed", then each contact on a line. */
+.recovery-count {
+  color: var(--ink);
+  font: var(--type-heading-3);
+}
+
+.recovery-contacts,
+.recovery-held {
+  display: grid;
+  gap: var(--space-2);
+  max-width: 34em;
+  padding: 0;
+  color: var(--ink);
+  font: var(--type-ui);
+  list-style: none;
+}
+
+.recovery-contacts .caption {
+  color: var(--muted);
+}
+
+/* "No longer in a shared group": words on a sunken chip, never a color alone. */
+.recovery-gone {
+  display: inline-block;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--sunken);
+  color: var(--body);
+  font: var(--type-caption);
+}
+
+/* In a stack, the gap spaces the notice; its own top margin would double it. */
+.recovery-status .notice {
+  margin-block-start: 0;
+}
+
+/* Group home's card: the same lines as Settings, then OK. */
+.recovery-card .recovery-held {
+  color: var(--body);
+}
+
+/* After a recovery with contacts (#118), the notice to choose again: the stack's gap spaces it. */
+.recovery-again {
+  max-width: 34em;
+}
+
+.stack > .notice.recovery-again {
+  margin-block-start: 0;
+}
+
+/*
+ * The recovery alert (#118) on Start and group home: a notice with a warning
+ * rule, the issue's words in ui type, then Cancel this recovery (secondary).
+ * Never a modal or a banner. Once cancelled, the rule turns hairline and the
+ * words say so, so the state never rests on color alone.
+ */
+.recovery-alert {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+  max-width: 34em;
+  padding: var(--space-3) var(--space-4);
+  border-inline-start: 3px solid var(--warning);
+  border-radius: var(--radius-sm);
+  background: var(--sunken);
+  color: var(--body);
+  font: var(--type-ui);
+}
+
+.recovery-alert > p {
+  margin: 0;
+}
+
+/* Cancel this recovery with its live status beside it, so the empty line adds no height. */
+.recovery-alert > .field-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  align-items: center;
+}
+
+.recovery-alert-cancelled {
+  border-inline-start-color: var(--hairline);
+}
+
+@media (min-width: 40rem) {
+  .backup-slot > .recovery-alert {
+    grid-column: 2;
+  }
+}
+
+/* The new device's wait (#118), in caption type, at the lede's measure. */
+.recover-wait {
+  max-width: 37em;
+}
+
+/*
+ * The two numbers the person reads out (#398), in the linking number's card:
+ * each named in an eyebrow over its digits, side by side where there's room
+ * and stacked on a phone.
+ */
+.recover-numbers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-8);
+  margin: 0;
+  padding-block-start: var(--space-2);
+}
+
+/* Why the second number matters, without a lone last word. */
+.recover-numbers + .caption {
+  text-wrap: pretty;
+}
+
+.recover-numbers dd {
+  margin: 0;
+}
+
+/* The shares that came with another second number sit under the live line, as one status. */
+.recover-status {
+  gap: var(--space-2);
+}
+
+/*
+ * "Are these your groups?" (#398): the names a backup holds, one per line, on
+ * a surface card with a hairline border, as the picker's groups. A name is
+ * whatever its owner typed, so it may need to break anywhere.
+ */
+.recover-found {
+  display: grid;
+  gap: var(--space-2);
+  max-width: 30rem;
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--ink);
+  font: var(--type-ui);
+  list-style: none;
+  overflow-wrap: anywhere;
+}
+
+.recover-found-none {
+  color: var(--body);
+  font: var(--type-ui);
+}
+
+/* After No, what to do next: a notice, which the shell's gap spaces. */
+.shell > .notice.recover-declined {
+  max-width: 34em;
+  margin-block-start: 0;
+}
+
+/*
+ * Help someone recover (#398): a sent share's line, then Send it again under
+ * it. Its parts take the line's width, so the quiet button keeps its own
+ * width and its words line up with the line's.
+ */
+.recover-hold {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.recover-resend {
+  width: 100%;
+  max-width: 30rem;
+}

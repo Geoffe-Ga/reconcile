@@ -14,6 +14,7 @@ import { createFakeRelay } from '../test/fakeRelay';
 import type { FakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { authorOf, signedAs, testKeys, testKx } from '../test/keys';
+import { groupLog, START_MINUTE } from '../test/votes';
 import { GroupServicesContext, useGroup } from './useGroup';
 import type { GroupServices } from './useGroup';
 
@@ -37,8 +38,7 @@ function genesis(title = 'House rules'): SignedEvent {
     body: {
       name: 'Riverside Tenants',
       founder: 'Ana',
-      title,
-      atoms: ['Quiet after 10pm.'],
+      documents: [{ title: title, atoms: ['Quiet after 10pm.'] }],
       kx: testKx('ana').kx,
     },
   });
@@ -84,7 +84,7 @@ describe('useGroup', () => {
     const { result } = renderHook(() => useGroup(GROUP), { wrapper: wrapperFor({ store, sync }) });
 
     await waitFor(() => {
-      expect(result.current.state?.title).toBe('House rules');
+      expect(result.current.state?.documents[0]?.title).toBe('House rules');
     });
     expect(result.current.state?.members.map((member) => member.name)).toEqual(['Ana']);
     expect(result.current.pending.map((parsed) => parsed.id)).toEqual([benJoins.id]);
@@ -112,6 +112,43 @@ describe('useGroup', () => {
       expect(result.current.state?.members.map((member) => member.name)).toEqual(['Ana', 'Ben']);
     });
     expect(result.current.pending).toEqual([]);
+  });
+
+  it('folds with the Proposals whose ballots this device has cleared (#111)', async () => {
+    const log = groupLog({ members: ['Ben'] });
+    const proposalId = log.propose('ana');
+    log.minute += 2;
+    log.result('ana', {
+      proposal: proposalId,
+      closedAt: START_MINUTE + 1,
+      eligible: 2,
+      versions: [{ id: proposalId, counts: [0, 0, 0, 1, 1] }],
+      outcome: { kind: 'pass', version: proposalId },
+      commit: 'kept',
+    });
+    const group: Group = {
+      ...groupWith(genesis()),
+      log: [...log.records],
+      relayNow: log.minute,
+      cleared: [proposalId],
+    };
+    const store = {
+      getGroup: () => Promise.resolve(group),
+      listCoalitions: () => Promise.resolve([]),
+      subscribe: () => () => undefined,
+    };
+    const sync = { isReachable: () => true, subscribe: () => () => undefined };
+
+    const { result } = renderHook(() => useGroup(GROUP), { wrapper: wrapperFor({ store, sync }) });
+
+    await waitFor(() => {
+      expect(result.current.state?.proposals[0]).toMatchObject({
+        cleared: true,
+        closedAt: START_MINUTE + 1,
+        outcome: { kind: 'pass' },
+      });
+    });
+    expect(result.current.state?.atoms[0]?.text).toBe('Quiet after 11pm.');
   });
 
   it('leaves bytes that are not an event out of pending', async () => {
@@ -196,9 +233,15 @@ describe('useGroup', () => {
       me: null,
       missingHistory: false,
       leaving: false,
+      unconfirmed: false,
       suggestBackup: false,
       loaded: true,
       cleared: null,
+      newShares: [],
+      applications: [],
+      cards: [],
+      coalitions: [],
+      carries: [],
     });
   });
 
@@ -220,6 +263,23 @@ describe('useGroup', () => {
     expect(result.current.pending.map(({ event }) => event.type)).toEqual(['leave']);
   });
 
+  it('hands over the carried scores this device means to cast here, once it plans one (#126)', async () => {
+    const fake = createFakeRelay();
+    const { store, sync } = await setUp(fake);
+    const { result } = renderHook(() => useGroup(GROUP), { wrapper: wrapperFor({ store, sync }) });
+    await waitFor(() => {
+      expect(result.current.loaded).toBe(true);
+    });
+    expect(result.current.carries).toEqual([]);
+
+    const plan = { motion: 'm', dispatch: 'd', score: 3, castAt: 10, deadline: 20 } as const;
+    await act(() => store.updateCarried(GROUP, (held) => ({ ...held, carries: [plan] })));
+
+    await waitFor(() => {
+      expect(result.current.carries).toEqual([plan]);
+    });
+  });
+
   it('suggests a backup for a group no backup holds, and none once it is a read-only archive (#108)', async () => {
     const fake = createFakeRelay();
     const { store, sync } = await setUp(fake);
@@ -235,7 +295,7 @@ describe('useGroup', () => {
     await waitFor(() => {
       expect(result.current.suggestBackup).toBe(false);
     });
-    expect(result.current.state?.title).toBe('House rules');
+    expect(result.current.state?.documents[0]?.title).toBe('House rules');
   });
 
   it('says this device missed the group’s new key, and nothing of it once the group is a read-only archive (#98, #108)', async () => {
@@ -335,7 +395,7 @@ describe('useGroup', () => {
       wrapper: wrapperFor({ store, sync }),
     });
     await waitFor(() => {
-      expect(result.current.state?.title).toBe('House rules');
+      expect(result.current.state?.documents[0]?.title).toBe('House rules');
     });
 
     rerender({ id: 'other' });
@@ -343,20 +403,24 @@ describe('useGroup', () => {
 
     expect(whileLoading).toMatchObject({ state: null, me: null, loaded: false });
     await waitFor(() => {
-      expect(result.current.state?.title).toBe('');
+      expect(result.current.state?.documents).toEqual([]);
     });
   });
 
   it('keeps the newest read when an older one answers late', async () => {
     const reads: ((group: Group | undefined) => void)[] = [];
-    let notify: (groupId: string) => void = () => undefined;
+    const listeners: ((groupId: string) => void)[] = [];
+    const notify = (groupId: string) => {
+      for (const listener of listeners) listener(groupId);
+    };
     const store: GroupServices['store'] = {
       getGroup: () =>
         new Promise((resolve) => {
           reads.push(resolve);
         }),
+      listCoalitions: () => Promise.resolve([]),
       subscribe: (listener) => {
-        notify = listener;
+        listeners.push(listener);
         return () => undefined;
       },
     };
@@ -373,7 +437,7 @@ describe('useGroup', () => {
       await Promise.resolve();
     });
 
-    expect(result.current.state?.title).toBe('Newer');
+    expect(result.current.state?.documents[0]?.title).toBe('Newer');
   });
 
   it('keeps its last state when a read fails, and stops reading once unmounted', async () => {
@@ -381,12 +445,16 @@ describe('useGroup', () => {
     const getGroup = vi.fn(() =>
       fail ? Promise.reject(new Error('closed')) : Promise.resolve(groupWith(genesis())),
     );
-    let notify: (groupId: string) => void = () => undefined;
+    const listeners: ((groupId: string) => void)[] = [];
+    const notify = (groupId: string) => {
+      for (const listener of listeners) listener(groupId);
+    };
     const unsubscribe = vi.fn();
     const store: GroupServices['store'] = {
       getGroup,
+      listCoalitions: () => Promise.resolve([]),
       subscribe: (listener) => {
-        notify = listener;
+        listeners.push(listener);
         return unsubscribe;
       },
     };
@@ -395,7 +463,7 @@ describe('useGroup', () => {
       wrapper: wrapperFor({ store, sync }),
     });
     await waitFor(() => {
-      expect(result.current.state?.title).toBe('House rules');
+      expect(result.current.state?.documents[0]?.title).toBe('House rules');
     });
 
     fail = true;
@@ -403,14 +471,15 @@ describe('useGroup', () => {
       notify(GROUP);
       await Promise.resolve();
     });
-    const afterFailure = result.current.state?.title;
+    const afterFailure = result.current.state?.documents[0]?.title;
     fail = false;
     notify(GROUP);
     unmount();
     await Promise.resolve();
 
     expect(afterFailure).toBe('House rules');
-    expect(unsubscribe).toHaveBeenCalledOnce();
+    // Once for the group, once for the coalitions it reads beside it (#114).
+    expect(unsubscribe).toHaveBeenCalledTimes(2);
   });
 
   it('needs a provider', () => {

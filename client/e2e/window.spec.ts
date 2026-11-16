@@ -20,10 +20,12 @@ const PROPOSAL = 'Later quiet hours';
 /** A phone's width: the composer must fit it without scrolling sideways. */
 const PHONE = { width: 390, height: 844 };
 
-/** True when nothing on the page scrolls sideways. */
+/** True when nothing on the page scrolls sideways: the document, nor the region it scrolls in under the link bar (#444). */
 async function fitsWidth(page: Page): Promise<boolean> {
-  return page.evaluate(
-    () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+  return page.evaluate(() =>
+    [document.documentElement, document.querySelector('.app-page')].every(
+      (box) => box === null || box.scrollWidth <= box.clientWidth,
+    ),
   );
 }
 
@@ -64,7 +66,7 @@ test('A proposes with a 10-day window, and both profiles fold its 10-day deadlin
   await test.step('the composer offers 7 days, and refuses 20 with a tied message', async () => {
     const { page } = ana;
     await expect(page.getByRole('region', { name: 'People', exact: true })).toContainText('Ben');
-    await page.getByRole('link', { name: TITLE }).click();
+    await page.getByRole('link', { name: TITLE, exact: true }).click();
     await page.getByRole('button', { name: 'Propose a change to section 1' }).click();
     const days = page.getByRole('textbox', { name: 'Voting time (days)' });
     await expect(days).toHaveValue('7');

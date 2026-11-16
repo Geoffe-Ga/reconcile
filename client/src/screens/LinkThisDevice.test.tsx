@@ -144,7 +144,7 @@ describe('LinkThisDevice', () => {
     const { onLinked } = setup(() => Promise.resolve(link.join));
     await paste(freshCode().text);
 
-    link.show({ kind: 'linked', groups: 2 });
+    link.show({ kind: 'linked', groups: 2, skipped: 0, skippedDocuments: 0 });
     await wait(LINK_POLL_MS);
 
     expect(screen.getByText('Linked. This device now has 2 groups.')).toBeVisible();
@@ -155,6 +155,34 @@ describe('LinkThisDevice', () => {
     await wait(LINK_POLL_MS * 3);
     expect(link.join.poll).toHaveBeenCalledTimes(polls);
     expect(onLinked).toHaveBeenCalledOnce();
+  });
+
+  it('says how many of the other device’s groups it left out, after how many it has (#336)', async () => {
+    const link = fakeJoin();
+    setup(() => Promise.resolve(link.join));
+    await paste(freshCode().text);
+
+    link.show({ kind: 'linked', groups: 1, skipped: 1, skippedDocuments: 0 });
+    await wait(LINK_POLL_MS);
+
+    expect(screen.getByRole('status')).toHaveTextContent(
+      /^Linked\. This device now has 1 group\. One group from your other device couldn’t be read and was left out\.$/,
+    );
+    vi.useRealTimers();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('says how many of the other device’s personal Documents it left out, after its groups (#351)', async () => {
+    const link = fakeJoin();
+    setup(() => Promise.resolve(link.join));
+    await paste(freshCode().text);
+
+    link.show({ kind: 'linked', groups: 2, skipped: 1, skippedDocuments: 3 });
+    await wait(LINK_POLL_MS);
+
+    expect(screen.getByRole('status')).toHaveTextContent(
+      /^Linked\. This device now has 2 groups\. One group from your other device couldn’t be read and was left out\. 3 personal Documents from your other device couldn’t be read and were left out\.$/,
+    );
   });
 
   it.each<[JoinStep['kind'], string]>([

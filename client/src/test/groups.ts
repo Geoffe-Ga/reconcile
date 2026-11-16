@@ -79,7 +79,8 @@ export function testGroup(options: TestGroupOptions = {}): TestGroup {
     records.push({ seq: records.length + 1, received: start + records.length, bytes: record });
     return id;
   };
-  const body = { name, founder, title, atoms, ...(chat === undefined ? {} : { chat }) };
+  const documents = [{ title, atoms }];
+  const body = { name, founder, documents, ...(chat === undefined ? {} : { chat }) };
   const group = add(founder, { type: 'genesis', group: '', ts: 0, body });
   for (const joiner of joiners) add(joiner, joinDraft(group, joiner, options));
   for (const [voucher, joiner] of settlingVouches(founder, joiners, options.levels ?? {})) {

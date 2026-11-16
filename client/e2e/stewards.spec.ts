@@ -30,10 +30,12 @@ const SUSPENDED =
 /** A phone's width: the narrowest Group home and the composer must fit without scrolling sideways. */
 const PHONE = { width: 390, height: 844 };
 
-/** True when nothing on the page scrolls sideways. */
+/** True when nothing on the page scrolls sideways: the document, nor the region it scrolls in under the link bar (#444). */
 async function fitsWidth(page: Page): Promise<boolean> {
-  return page.evaluate(
-    () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+  return page.evaluate(() =>
+    [document.documentElement, document.querySelector('.app-page')].every(
+      (box) => box === null || box.scrollWidth <= box.clientWidth,
+    ),
   );
 }
 
@@ -80,7 +82,7 @@ test('a steward suspends Kim, everyone sees it, and Ben proposes himself for sea
 
   await test.step('Ana proposes, and Kim scores it', async () => {
     const { page } = ana;
-    await page.getByRole('link', { name: TITLE }).click();
+    await page.getByRole('link', { name: TITLE, exact: true }).click();
     await page.getByRole('button', { name: 'Propose a change to section 1' }).click();
     await page.getByRole('textbox', { name: 'Title' }).fill('Later quiet hours');
     await page.getByRole('textbox', { name: 'Why' }).fill('Weekday evenings run later now.');

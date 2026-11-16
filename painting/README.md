@@ -2,7 +2,7 @@
 
 One hand-painted forest, read from top to bottom: sky, canopy, intertwining branches, trunks, soil,
 roots, and the mycelial network that joins them. The app uses it in two places
-([ADR-0077](../docs/adr/0077-landing-page-and-painted-edges.md), [`DESIGN.md`](../DESIGN.md)):
+([ADR-0078](../docs/adr/0078-landing-page-and-painted-edges.md), [`DESIGN.md`](../DESIGN.md)):
 
 - **Behind the landing page** (`client/src/screens/Landing.tsx`), whole, cut into a piece per
   section: `client/public/painting/wide/` for windows 1200px and up, `client/public/painting/tall/`

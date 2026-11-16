@@ -22,17 +22,59 @@ export interface Draft {
    * (#106), NaN while it's blank. Absent, the composer shows the class default.
    */
   readonly window?: number;
+  /**
+   * The Dispatch to send if the Proposal passes (#112), its title and text as
+   * typed, while "Send a Dispatch if this passes" is checked; absent otherwise.
+   */
+  readonly dispatch?: DraftDispatch;
+  /** A new Document's title (#92), as typed, in a new-Document Proposal's draft alone. */
+  readonly documentTitle?: string;
+  /**
+   * Where a move puts its section (#103), in a move's draft alone: the Atom it
+   * would follow, or null for first; absent until one is chosen.
+   */
+  readonly moveAfter?: string | null;
+  /**
+   * The class a class Proposal would give its section (#116), in its draft
+   * alone, as the composer's choice holds it; absent until one is chosen.
+   */
+  readonly classTo?: string;
+}
+
+/** A draft's Dispatch (#112): its title and text, as typed. */
+export interface DraftDispatch {
+  readonly title: string;
+  readonly text: string;
 }
 
 /** A group's drafts by target. Absent from records kept before drafts existed. */
 export type DraftShelf = ReadonlyMap<string, Draft>;
 
-/** True for a value shaped like a {@link Draft}: four strings, nothing missing, and any window a number. */
-export function isDraft(value: unknown): value is Draft {
+/** True for a value that is an object, not null, whose fields named `keys` are all strings. */
+function hasStrings(value: unknown, keys: readonly string[]): value is Record<string, unknown> {
   if (typeof value !== 'object' || value === null) return false;
-  const { title, why, text, link, window } = value as Record<string, unknown>;
-  const strings = [title, why, text, link].every((field) => typeof field === 'string');
-  return strings && (window === undefined || typeof window === 'number');
+  return keys.every((key) => typeof (value as Record<string, unknown>)[key] === 'string');
+}
+
+/** True for a field that is absent or a string. */
+function optionalString(value: unknown): boolean {
+  return value === undefined || typeof value === 'string';
+}
+
+/**
+ * True for a value shaped like a {@link Draft}: four strings, nothing
+ * missing, any window a number, any Dispatch a title and a text (#112), any
+ * new Document's title a string (#92), any move's place a string or null
+ * (#103), and any class chosen a string (#116).
+ */
+export function isDraft(value: unknown): value is Draft {
+  if (!hasStrings(value, ['title', 'why', 'text', 'link'])) return false;
+  const { window, dispatch, documentTitle, moveAfter, classTo } = value;
+  const windowFits = window === undefined || typeof window === 'number';
+  const ownFits = optionalString(documentTitle) && optionalString(classTo);
+  const placeFits = moveAfter === null || optionalString(moveAfter);
+  const dispatchFits = dispatch === undefined || hasStrings(dispatch, ['title', 'text']);
+  return windowFits && ownFits && placeFits && dispatchFits;
 }
 
 /** The draft a group's record holds for `target`, or undefined for none or for one that isn't whole. */

@@ -3,7 +3,7 @@ import fc from 'fast-check';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { base64url } from './base64url';
-import { deriveMailboxId, deriveSealKey } from './groupKeys';
+import { deriveSealKey, deriveWeekMailboxId } from './groupKeys';
 import {
   INVITE_KEY_INFO,
   INVITE_MAILBOX_INFO,
@@ -100,7 +100,7 @@ describe('the invite derivations', () => {
 
         expect(mailbox).toMatch(/^[A-Za-z0-9_-]{43}$/);
         expect(key).toHaveLength(32);
-        expect(mailbox).not.toBe(deriveMailboxId(seed));
+        expect(mailbox).not.toBe(deriveWeekMailboxId(seed, 2963));
         expect(mailbox).not.toBe(base64url(seed));
         expect(bytesToHex(key)).not.toBe(bytesToHex(deriveSealKey(seed)));
         expect(bytesToHex(key)).not.toBe(bytesToHex(seed));

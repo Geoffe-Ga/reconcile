@@ -7,15 +7,20 @@ import { openDB } from 'idb';
 import { describe, expect, it } from 'vitest';
 
 import { fromBase64url } from '../crypto/base64url';
+import { newSigningKeys } from '../crypto/sign';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { DATABASE_NAME, openStore } from './db';
 import {
   isPersonalDocument,
+  isShareState,
   keepsHeldCopy,
   newPersonalId,
   PERSONAL_ID_BYTES,
   PERSONAL_TITLE_MAX,
   type PersonalDocument,
+  restoredCopy,
+  resumedShare,
+  type ShareState,
 } from './personal';
 
 freshIndexedDBPerTest();
@@ -33,6 +38,21 @@ function doc(changes: Partial<PersonalDocument> = {}): PersonalDocument {
 }
 
 const OTHER = 'BBBBBBBBBBBBBBBBBBBBBA';
+
+const KEYS = newSigningKeys();
+
+/** A well-formed share (#105), with `changes` over it. */
+function share(changes: Partial<ShareState> = {}): ShareState {
+  return {
+    seed: new Uint8Array(32).fill(5),
+    secretKey: KEYS.secretKey,
+    publicKey: KEYS.publicKey,
+    n: 1,
+    postedAt: 29_377_500,
+    pending: false,
+    ...changes,
+  };
+}
 
 describe('newPersonalId', () => {
   it('is 16 random bytes in unpadded base64url, new each time', () => {
@@ -84,12 +104,128 @@ describe('isPersonalDocument', () => {
   });
 });
 
+describe('isShareState', () => {
+  it('accepts a share before its first post and after one, pending or not', () => {
+    expect(isShareState(share())).toBe(true);
+    expect(isShareState(share({ n: 0, postedAt: null, pending: true }))).toBe(true);
+    expect(isPersonalDocument(doc({ share: share() }))).toBe(true);
+  });
+
+  it('accepts a share whose time is unmeasured, and one with its mailbox’s last relay minute (#347)', () => {
+    expect(isShareState(share({ postedAt: 'unmeasured' }))).toBe(true);
+    expect(isShareState(share({ seenAt: 29_400_000 }))).toBe(true);
+  });
+
+  it('accepts a share a restore paused (#328)', () => {
+    expect(isShareState(share({ paused: true }))).toBe(true);
+    expect(isPersonalDocument(doc({ share: share({ paused: true }) }))).toBe(true);
+  });
+
+  it.each<[string, unknown]>([
+    ['nothing', null],
+    ['a seed of 31 bytes', share({ seed: new Uint8Array(31) })],
+    ['a seed of 33 bytes', share({ seed: new Uint8Array(33) })],
+    ['a seed that isn’t bytes', { ...share(), seed: Array.from(new Uint8Array(32)) }],
+    ['a secret key of 31 bytes', share({ secretKey: KEYS.secretKey.subarray(0, 31) })],
+    ['a public key of 31 bytes', share({ publicKey: KEYS.publicKey.subarray(0, 31) })],
+    ['a public key that isn’t its secret key’s', share({ publicKey: newSigningKeys().publicKey })],
+    ['a negative n', share({ n: -1 })],
+    ['a fractional n', share({ n: 1.5 })],
+    ['a fractional post time', share({ postedAt: 1.5 })],
+    ['a post time that is another word', { ...share(), postedAt: '1' }],
+    ['no post time', { ...share(), postedAt: undefined }],
+    [
+      'a post time in the shape from before #347, which only a stored record’s read takes',
+      (() => {
+        const old: Record<string, unknown> = { ...share(), lastPostedAt: 1_762_650_000_000 };
+        delete old.postedAt;
+        return old;
+      })(),
+    ],
+    ['a fractional relay reading', share({ seenAt: 1.5 })],
+    ['a pending that isn’t true or false', { ...share(), pending: 1 }],
+    ['a paused that is false, which a share never holds', { ...share(), paused: false }],
+    ['a paused that isn’t true', { ...share(), paused: 'yes' }],
+  ])('refuses %s, alone and on a Document', (_name, value) => {
+    expect(isShareState(value)).toBe(false);
+    expect(isPersonalDocument({ ...doc(), share: value })).toBe(false);
+  });
+});
+
 describe('keepsHeldCopy', () => {
   it('keeps the device’s copy unless the incoming one was edited later', () => {
     expect(keepsHeldCopy(undefined, doc())).toBe(false);
     expect(keepsHeldCopy(doc({ updatedAt: 5 }), doc({ updatedAt: 6 }))).toBe(false);
     expect(keepsHeldCopy(doc({ updatedAt: 6 }), doc({ updatedAt: 6 }))).toBe(true);
     expect(keepsHeldCopy(doc({ updatedAt: 7 }), doc({ updatedAt: 6 }))).toBe(true);
+  });
+});
+
+describe('restoredCopy (#105, #328)', () => {
+  const brought = share({ seed: new Uint8Array(32).fill(7), n: 4 });
+  const later = doc({ updatedAt: 1_762_650_000_500 });
+
+  it('pauses a share the backup brings, keeping everything else of it', () => {
+    expect(restoredCopy(undefined, { ...later, share: brought })).toEqual({
+      ...later,
+      share: { ...brought, paused: true },
+    });
+    expect(restoredCopy(doc(), { ...later, share: brought })).toEqual({
+      ...later,
+      share: { ...brought, paused: true },
+    });
+  });
+
+  it('keeps the device’s own live share, marked pending, when the backup holds none', () => {
+    const own = share();
+
+    expect(restoredCopy(doc({ share: own }), later)).toEqual({
+      ...later,
+      share: { ...own, pending: true },
+    });
+  });
+
+  it('keeps the device’s own share live when the backup holds that same share', () => {
+    const own = share({ seed: brought.seed, n: 6 });
+
+    expect(restoredCopy(doc({ share: own }), { ...later, share: brought })).toEqual({
+      ...later,
+      share: { ...own, pending: true },
+    });
+  });
+
+  it('pauses the backup’s share over the device’s when they’re different links, or the device’s is paused', () => {
+    const paused = share({ seed: brought.seed, paused: true });
+
+    expect(restoredCopy(doc({ share: share() }), { ...later, share: brought })).toEqual({
+      ...later,
+      share: { ...brought, paused: true },
+    });
+    expect(restoredCopy(doc({ share: paused }), { ...later, share: brought })).toEqual({
+      ...later,
+      share: { ...brought, paused: true },
+    });
+    expect(restoredCopy(doc({ share: paused }), later)).toEqual({
+      ...later,
+      share: { ...paused, pending: true },
+    });
+  });
+
+  it('brings a Document with no share back as it is', () => {
+    expect(restoredCopy(undefined, later)).toEqual(later);
+    expect(restoredCopy(doc(), later)).toEqual(later);
+  });
+});
+
+describe('resumedShare (#328)', () => {
+  it('drops the pause and marks the share pending, keeping the rest', () => {
+    const paused = share({ paused: true, n: 3 });
+
+    const resumed = resumedShare(paused);
+
+    expect(resumed).toEqual({ ...share({ n: 3 }), pending: true });
+    expect('paused' in resumed).toBe(false);
+    expect(paused.paused).toBe(true);
   });
 });
 
@@ -194,8 +330,116 @@ describe('personal Documents in the store', () => {
     expect(await store.listPersonal()).toEqual([]);
     store.close();
     const upgraded = await openDB(DATABASE_NAME);
-    expect([...upgraded.objectStoreNames].sort()).toEqual(['device', 'groups', 'personal']);
-    expect(upgraded.version).toBe(5);
+    expect([...upgraded.objectStoreNames].sort()).toEqual([
+      'device',
+      'groups',
+      'personal',
+      'sent',
+      'vault',
+    ]);
+    // Version 5 adds #97's device store after #93's version 4, version 6 the passkey vault (#95),
+    // version 7 the front door's sent store (#121), and version 8 marks the vault's format 2 (#391).
+    expect(upgraded.version).toBe(8);
     upgraded.close();
+  });
+});
+
+/** `value` with every byte array spelled as a plain list, so arrays IndexedDB cloned compare equal. */
+function plain(value: unknown): unknown {
+  return JSON.parse(
+    JSON.stringify(value, (_key, item: unknown) =>
+      Object.prototype.toString.call(item) === '[object Uint8Array]'
+        ? Array.from(item as Uint8Array)
+        : item,
+    ),
+  ) as unknown;
+}
+
+describe('a shared Document in the store (#105)', () => {
+  it('keeps its share state when the editor saves it again, marking the link behind once the words change', async () => {
+    const store = await openStore();
+    await store.savePersonal(doc());
+    await store.updateShare(doc().id, () => share());
+
+    await store.savePersonal(doc({ updatedAt: 1_762_650_100_000 }));
+    expect(plain(await store.getPersonal(doc().id))).toEqual(
+      plain(doc({ updatedAt: 1_762_650_100_000, share: share() })),
+    );
+
+    await store.savePersonal(doc({ title: 'Renamed', updatedAt: 1_762_650_200_000 }));
+    expect(plain((await store.getPersonal(doc().id))?.share)).toEqual(
+      plain(share({ pending: true })),
+    );
+
+    await store.updateShare(doc().id, () => share());
+    await store.savePersonal(doc({ title: 'Renamed', text: 'New words.' }));
+    expect(plain((await store.getPersonal(doc().id))?.share)).toEqual(
+      plain(share({ pending: true })),
+    );
+  });
+
+  it('never takes a share from what the editor saves: only updateShare sets one', async () => {
+    const store = await openStore();
+    await store.savePersonal(doc({ share: share() }));
+
+    expect(await store.getPersonal(doc().id)).toEqual(doc());
+
+    await store.updateShare(doc().id, () => share());
+    await store.savePersonal(doc({ share: share({ n: 9 }) }));
+    expect(plain((await store.getPersonal(doc().id))?.share)).toEqual(plain(share()));
+  });
+
+  it('sets, changes and drops a share in one change, handing the edit the stored Document', async () => {
+    const store = await openStore();
+    await store.savePersonal(doc());
+    const seen: (ShareState | undefined)[] = [];
+
+    const set = await store.updateShare(doc().id, (held) => {
+      seen.push(held.share);
+      return share();
+    });
+    const changed = await store.updateShare(doc().id, (held) => {
+      seen.push(held.share);
+      return held.share === undefined ? undefined : { ...held.share, n: 2 };
+    });
+    const dropped = await store.updateShare(doc().id, () => undefined);
+
+    expect(plain(seen)).toEqual(plain([undefined, share()]));
+    expect(plain(set)).toEqual(plain(doc({ share: share() })));
+    expect(plain(changed)).toEqual(plain(doc({ share: share({ n: 2 }) })));
+    expect(dropped).toEqual(doc());
+    expect(await store.getPersonal(doc().id)).toEqual(doc());
+    expect(await store.listPersonal()).toEqual([doc()]);
+  });
+
+  it('changes nothing for a Document the device no longer holds, so no share brings one back', async () => {
+    const store = await openStore();
+
+    const kept = await store.updateShare(doc().id, () => share());
+
+    expect(kept).toBeUndefined();
+    expect(await store.listPersonal()).toEqual([]);
+  });
+
+  it('refuses a share that isn’t well formed, keeping what was there', async () => {
+    const store = await openStore();
+    await store.savePersonal(doc());
+    await store.updateShare(doc().id, () => share());
+
+    await expect(store.updateShare(doc().id, () => share({ n: -1 }))).rejects.toThrow(
+      'This isn’t a share this device can keep.',
+    );
+
+    expect(plain((await store.getPersonal(doc().id))?.share)).toEqual(plain(share()));
+  });
+
+  it('deletes a shared Document whole, share state and all', async () => {
+    const store = await openStore();
+    await store.savePersonal(doc());
+    await store.updateShare(doc().id, () => share());
+
+    await store.deletePersonal(doc().id);
+
+    expect(await store.listPersonal()).toEqual([]);
   });
 });

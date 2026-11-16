@@ -134,6 +134,13 @@ describe('draft helpers', () => {
     expect(await store.readDraft(group.groupId, 'atom-1')).toEqual({ ...draft, window: 10 });
   });
 
+  it('read back a draft’s Dispatch with it (#112)', async () => {
+    const store = await storeWithGroup();
+    const dispatch = { title: 'Updated: House rules', text: 'Quiet hours moved.' };
+    await store.writeDraft(group.groupId, 'atom-1', { ...draft, dispatch });
+    expect(await store.readDraft(group.groupId, 'atom-1')).toEqual({ ...draft, dispatch });
+  });
+
   it('skip a stored value that isn’t a whole draft', () => {
     const odd = new Map<string, unknown>([['atom-1', { title: 'x' }]]);
     expect(draftIn({ drafts: odd as Map<string, Draft> }, 'atom-1')).toBeUndefined();
@@ -158,6 +165,27 @@ describe('draft helpers', () => {
     ['a draft with a voting window', { ...draft, window: 10 }, true],
     ['a draft with a blank voting window', { ...draft, window: Number.NaN }, true],
     ['a draft with a voting window as text', { ...draft, window: '10' }, false],
+    [
+      'a draft with a Dispatch (#112)',
+      { ...draft, dispatch: { title: 'Updated', text: '' } },
+      true,
+    ],
+    ['a new Document’s draft, with its title (#92)', { ...draft, documentTitle: 'Budget' }, true],
+    ['a new Document’s draft with a numeric title', { ...draft, documentTitle: 1 }, false],
+    ['a move’s draft, put after a section (#103)', { ...draft, moveAfter: 'g.1' }, true],
+    ['a move’s draft, put first (#103)', { ...draft, moveAfter: null }, true],
+    ['a move’s draft with a numeric place', { ...draft, moveAfter: 1 }, false],
+    ['a class Proposal’s draft, its class chosen (#116)', { ...draft, classTo: 'eternal' }, true],
+    ['a class Proposal’s draft with a numeric class', { ...draft, classTo: 2 }, false],
+    ['a class Proposal’s draft with no class', { ...draft, classTo: null }, false],
+    ['a draft with a Dispatch as text', { ...draft, dispatch: 'Updated' }, false],
+    ['a draft with a null Dispatch', { ...draft, dispatch: null }, false],
+    ['a draft with a Dispatch missing its text', { ...draft, dispatch: { title: 'U' } }, false],
+    [
+      'a draft with a Dispatch title as a number',
+      { ...draft, dispatch: { title: 1, text: '' } },
+      false,
+    ],
   ])('know %s when they see it', (_name, value, expected) => {
     expect(isDraft(value)).toBe(expected);
   });

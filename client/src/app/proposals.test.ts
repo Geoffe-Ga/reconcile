@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { RECORD_HEADER_BYTES } from '../crypto/record';
 import { publicKeyOf } from '../crypto/sign';
 import { LEVELS } from '../engine/capabilities';
-import { base64url, parseRecord } from '../engine/event';
+import { base64url, fromBase64url, parseRecord } from '../engine/event';
 import { fold } from '../engine/fold';
 import { testDevice, type TestDevice } from '../test/appServices';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
@@ -10,20 +11,34 @@ import { freshIndexedDBPerTest } from '../test/idb';
 import { deadlineOf } from '../test/votes';
 import { createGroup } from './actions';
 import {
+  addDraft,
   addVersion,
   againDraft,
+  askPriority,
   castBallot,
   chooseLevel,
+  moveDraft,
+  protectDraft,
+  NEW_DOCUMENT_DRAFT,
+  optionText,
   propose,
   type ProposalValues,
   proposeDissolve,
+  proposeDispatch,
+  proposeRemoval,
   proposeRules,
   proposeSteward,
+  removalDraft,
+  respondToRemoval,
+  sendDispatch,
   suspend,
   vouch,
 } from './proposals';
 
 freshIndexedDBPerTest();
+
+/** A ballot's salt: 16 bytes in unpadded base64url. */
+const SALT: unknown = expect.stringMatching(/^[A-Za-z0-9_-]{22}$/);
 
 const devices: TestDevice[] = [];
 
@@ -39,8 +54,7 @@ async function founded(fake: FakeRelay) {
     groupName: 'Riverside Tenants',
     yourName: 'Ana',
     chat: null,
-    title: 'House rules',
-    text: 'Quiet hours start at ten.',
+    documents: [{ title: 'House rules', text: 'Quiet hours start at ten.' }],
   });
   if (created.outcome !== 'created') throw new Error('Expected a group.');
   await device.services.sync.syncOnce();
@@ -66,6 +80,117 @@ async function queuedProposal(device: TestDevice, groupId: string) {
   if (queued?.type !== 'proposal') throw new Error('Expected a queued proposal.');
   return queued.body;
 }
+
+describe('proposeDispatch (#126)', () => {
+  it('queues one Proposal putting the Dispatch to a vote with its ceiling and Document, NFC-normalized, titled as the Dispatch, and returns its id', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, author } = await founded(fake);
+    fake.offline = true;
+    const result = await proposeDispatch(device.services, groupId, {
+      title: 'Cafe\u0301 on Sunday',
+      text: 'Bring a chair.',
+      doc: groupId,
+      ceiling: 'coalitions',
+    });
+
+    const queued = await outbox(device, groupId);
+    expect(queued).toEqual([
+      {
+        v: 1,
+        type: 'proposal',
+        group: groupId,
+        author,
+        ts: expect.any(Number) as number,
+        body: {
+          target: { kind: 'dispatch', ceiling: 'coalitions', doc: groupId },
+          title: 'Caf\u00e9 on Sunday',
+          why: '',
+          dispatch: { title: 'Caf\u00e9 on Sunday', text: 'Bring a chair.' },
+        },
+      },
+    ]);
+    const group = await device.services.store.getGroup(groupId);
+    expect(result).toEqual({
+      outcome: 'proposed',
+      proposalId: parseRecord(group?.outbox[0] ?? new Uint8Array())?.id,
+    });
+  });
+
+  it('leaves out a Document when none is chosen, and the fold opens it once the relay has it', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId } = await founded(fake);
+    const result = await proposeDispatch(device.services, groupId, {
+      title: 'Meet on Sunday',
+      text: '',
+      doc: null,
+      ceiling: 1,
+    });
+    await device.services.sync.syncOnce();
+
+    const group = await device.services.store.getGroup(groupId);
+    const state = fold(group?.log ?? [], group?.relayNow ?? null);
+    const id = result.outcome === 'proposed' ? result.proposalId : '';
+    expect(state.proposals.find((p) => p.id === id)).toMatchObject({
+      target: { kind: 'dispatch', ceiling: 1 },
+      dispatch: { title: 'Meet on Sunday', text: '' },
+      class: 'ordinary',
+    });
+  });
+});
+
+describe('sendDispatch (#112)', () => {
+  it('queues one dispatch, NFC-normalized, with its Document, and returns its id', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, author } = await founded(fake);
+    fake.offline = true;
+    const id = await sendDispatch(device.services, groupId, {
+      title: 'Cafe\u0301 on Sunday',
+      text: 'Bring a chair.\nWe start at 10.',
+      doc: groupId,
+    });
+
+    const queued = await outbox(device, groupId);
+    expect(queued).toEqual([
+      {
+        v: 1,
+        type: 'dispatch',
+        group: groupId,
+        author,
+        ts: expect.any(Number) as number,
+        body: {
+          title: 'Caf\u00e9 on Sunday',
+          text: 'Bring a chair.\nWe start at 10.',
+          doc: groupId,
+        },
+      },
+    ]);
+    const group = await device.services.store.getGroup(groupId);
+    expect(id).toBe(parseRecord(group?.outbox[0] ?? new Uint8Array())?.id);
+  });
+
+  it('leaves out a doc when none is chosen, and sends it once the relay is back', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId } = await founded(fake);
+    const id = await sendDispatch(device.services, groupId, {
+      title: 'Meet on Sunday',
+      text: '',
+      doc: null,
+    });
+    await device.services.sync.syncOnce();
+
+    const group = await device.services.store.getGroup(groupId);
+    const state = fold(group?.log ?? [], group?.relayNow ?? null);
+    expect(group?.outbox).toEqual([]);
+    expect(state.dispatches).toEqual([
+      expect.objectContaining({
+        id,
+        title: 'Meet on Sunday',
+        text: '',
+        doc: null,
+      }),
+    ]);
+  });
+});
 
 describe('propose', () => {
   it('queues one proposal, NFC-normalized, and returns its id', async () => {
@@ -100,6 +225,44 @@ describe('propose', () => {
       outcome: 'proposed',
       proposalId: parseRecord(group?.outbox[0] ?? new Uint8Array())?.id,
     });
+  });
+
+  it('signs for another log when asked, as a coalition’s entry does (#120), queued under its key', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, atom } = await founded(fake);
+    fake.offline = true;
+    const values = { atom, title: 'Banks too', why: 'Yes.', text: 'Clean banks.', link: null };
+    await propose(device.services, groupId, values, 'coalition-id');
+
+    const queued = await outbox(device, groupId);
+    expect(queued).toHaveLength(1);
+    expect(queued[0]).toMatchObject({ type: 'proposal', group: 'coalition-id' });
+  });
+
+  it('carries a Dispatch, NFC-normalized, when the values hold one (#112)', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, atom } = await founded(fake);
+    fake.offline = true;
+    await propose(device.services, groupId, {
+      atom,
+      title: 'Quiet hours',
+      why: 'Sleep.',
+      text: 'Quiet after 10pm.',
+      link: null,
+      dispatch: { title: 'Updated: House rules', text: 'Cafe\u0301 hours moved.' },
+    });
+    expect(await queuedProposal(device, groupId)).toMatchObject({
+      dispatch: { title: 'Updated: House rules', text: 'Caf\u00e9 hours moved.' },
+    });
+  });
+
+  it('carries no dispatch key when the values hold none', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, atom } = await founded(fake);
+    fake.offline = true;
+    const values = { atom, title: 'Quiet hours', why: 'Sleep.', text: 'Quiet.', link: null };
+    await propose(device.services, groupId, values);
+    expect(Object.keys(await queuedProposal(device, groupId))).not.toContain('dispatch');
   });
 
   it('normalizes the proposed text as Atom text before signing it', async () => {
@@ -200,6 +363,237 @@ describe('propose', () => {
     );
   });
 
+  it('queues an add with its target in place of an Atom, and clears only the add’s draft', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, atom } = await founded(fake);
+    const draft = { title: 'Guests', why: 'They visit.', text: 'Guests leave by 11.', link: '' };
+    const start = addDraft({ document: groupId, after: null });
+    const after = addDraft({ document: groupId, after: atom });
+    await device.services.store.writeDraft(groupId, after, draft);
+    await device.services.store.writeDraft(groupId, start, draft);
+    await device.services.store.writeDraft(groupId, atom, draft);
+    const target = { kind: 'add', document: groupId, after: atom } as const;
+    const values = { ...draft, target, link: null, window: 10 };
+    const result = await propose(device.services, groupId, values);
+    const [queued] = await outbox(device, groupId);
+    expect(queued?.body).toEqual({
+      target: { kind: 'add', document: groupId, after: atom },
+      title: 'Guests',
+      why: 'They visit.',
+      text: 'Guests leave by 11.\n',
+      window: 10,
+    });
+    expect(result.outcome).toBe('proposed');
+    expect(await device.services.store.readDraft(groupId, after)).toBeUndefined();
+    expect(await device.services.store.readDraft(groupId, start)).toEqual(draft);
+    expect(await device.services.store.readDraft(groupId, atom)).toEqual(draft);
+  });
+
+  it('keeps each add’s draft apart: each Document’s start, each anchor’s, and no Atom’s own (#92)', () => {
+    const keys = [
+      addDraft({ document: 'a', after: null }),
+      addDraft({ document: 'a:1', after: null }),
+      addDraft({ document: 'a', after: 'a.0' }),
+      addDraft({ document: 'a', after: 'a.1' }),
+      'a.0',
+      NEW_DOCUMENT_DRAFT,
+    ];
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(
+      new Set([removalDraft('a.0'), addDraft({ document: 'a', after: 'a.0' }), 'a.0']).size,
+    ).toBe(3);
+    expect(NEW_DOCUMENT_DRAFT).toBe('new-document');
+  });
+
+  it('queues a new Document with its target and normalized text, and clears only its draft (#92)', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, atom } = await founded(fake);
+    const draft = {
+      title: 'Start a budget',
+      why: 'We spend together.',
+      text: '# Budget  \r\n\r\nWe share costs.',
+      link: '',
+      documentTitle: 'Budget',
+    };
+    const other = { title: 'Later', why: 'Why not.', text: 'Quiet after 11.', link: '' };
+    await device.services.store.writeDraft(groupId, NEW_DOCUMENT_DRAFT, draft);
+    await device.services.store.writeDraft(groupId, atom, other);
+    const target = { kind: 'new-document', title: 'Budget' } as const;
+    const { title, why, text } = draft;
+    const values = { title, why, text, target, link: null };
+    const result = await propose(device.services, groupId, values);
+    expect(result.outcome).toBe('proposed');
+    expect(await queuedProposal(device, groupId)).toEqual({
+      target: { kind: 'new-document', title: 'Budget' },
+      title: 'Start a budget',
+      why: 'We spend together.',
+      text: '# Budget\n\nWe share costs.\n',
+    });
+    expect(await device.services.store.readDraft(groupId, NEW_DOCUMENT_DRAFT)).toBeUndefined();
+    expect(await device.services.store.readDraft(groupId, atom)).toEqual(other);
+  });
+
+  it('keeps a header’s draft apart from a section’s at the same spot, and a move’s apart from its section’s (#103)', () => {
+    const start = { document: 'a', after: null };
+    const after = { document: 'a', after: 'a.0' };
+    const keys = [
+      addDraft(start),
+      addDraft(start, 1),
+      addDraft(start, 2),
+      addDraft(after),
+      addDraft(after, 1),
+      addDraft(after, 2),
+      moveDraft('a.0'),
+      protectDraft('a.0'),
+      removalDraft('a.0'),
+      'a.0',
+    ];
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(addDraft(after, 1)).toBe('header:add:a.0');
+    expect(addDraft(start, 2)).toBe('subheader:add-first:a');
+    expect(moveDraft('a.0')).toBe('move:a.0');
+    expect(protectDraft('a.0')).toBe('protect:a.0');
+  });
+
+  it('queues a header add with its built text, clearing only the header’s draft (#103)', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, atom } = await founded(fake);
+    const header = {
+      title: 'Add section header: Values',
+      why: 'An outline.',
+      text: '# Values',
+      link: '',
+    };
+    const section = { title: 'Guests', why: 'They visit.', text: 'Guests leave by 11.', link: '' };
+    const place = { document: groupId, after: atom };
+    await device.services.store.writeDraft(groupId, addDraft(place, 1), header);
+    await device.services.store.writeDraft(groupId, addDraft(place), section);
+    const target = { kind: 'add', ...place } as const;
+    await propose(device.services, groupId, { ...header, target, heading: 1, link: null });
+    expect(await queuedProposal(device, groupId)).toEqual({
+      target,
+      title: 'Add section header: Values',
+      why: 'An outline.',
+      text: '# Values\n',
+    });
+    expect(await device.services.store.readDraft(groupId, addDraft(place, 1))).toBeUndefined();
+    expect(await device.services.store.readDraft(groupId, addDraft(place))).toEqual(section);
+  });
+
+  it('queues a move with its target and no text, and clears only the move’s draft (#103)', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, atom } = await founded(fake);
+    const moving = {
+      title: 'Quiet first',
+      why: 'It matters most.',
+      text: '',
+      link: '',
+      moveAfter: null,
+    };
+    const rewording = { title: 'Later', why: 'Why not.', text: 'Quiet after 11.', link: '' };
+    await device.services.store.writeDraft(groupId, moveDraft(atom), moving);
+    await device.services.store.writeDraft(groupId, atom, rewording);
+    const target = { kind: 'move', atom, after: null } as const;
+    const dispatch = { title: 'Updated: House rules', text: 'Quiet comes first.' };
+    const values = { ...moving, target, link: 'https://chat.example/t', window: 5, dispatch };
+    const result = await propose(device.services, groupId, values);
+    expect(result.outcome).toBe('proposed');
+    expect(await queuedProposal(device, groupId)).toEqual({
+      target: { kind: 'move', atom, after: null },
+      title: 'Quiet first',
+      why: 'It matters most.',
+      link: 'https://chat.example/t',
+      window: 5,
+      dispatch,
+    });
+    // The signed bytes themselves carry no text, not even an empty one the parser would drop.
+    const [record] = (await device.services.store.getGroup(groupId))?.outbox ?? [];
+    const signed = new TextDecoder().decode(record?.slice(RECORD_HEADER_BYTES));
+    expect(Object.keys((JSON.parse(signed) as { body: object }).body)).toEqual([
+      'target',
+      'title',
+      'why',
+      'link',
+      'window',
+      'dispatch',
+    ]);
+    expect(await device.services.store.readDraft(groupId, moveDraft(atom))).toBeUndefined();
+    expect(await device.services.store.readDraft(groupId, atom)).toEqual(rewording);
+  });
+
+  it('queues a class Proposal with its target and no text, and clears only its own draft (#116)', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, atom } = await founded(fake);
+    const protecting = {
+      title: 'Protect quiet hours',
+      why: 'We rely on them.',
+      text: '',
+      link: '',
+      classTo: 'entrenched',
+    };
+    const rewording = { title: 'Later', why: 'Why not.', text: 'Quiet after 11.', link: '' };
+    await device.services.store.writeDraft(groupId, protectDraft(atom), protecting);
+    await device.services.store.writeDraft(groupId, atom, rewording);
+    const target = { kind: 'class', atom, to: 'entrenched' } as const;
+    const dispatch = { title: 'Updated: House rules', text: 'Quiet hours are protected.' };
+    const values = { ...protecting, target, link: 'https://chat.example/t', window: 21, dispatch };
+    const result = await propose(device.services, groupId, values);
+    expect(result.outcome).toBe('proposed');
+    expect(await queuedProposal(device, groupId)).toEqual({
+      target,
+      title: 'Protect quiet hours',
+      why: 'We rely on them.',
+      link: 'https://chat.example/t',
+      window: 21,
+      dispatch,
+    });
+    // The signed bytes carry no text, not even an empty one the parser would drop.
+    const [record] = (await device.services.store.getGroup(groupId))?.outbox ?? [];
+    const signed = new TextDecoder().decode(record?.slice(RECORD_HEADER_BYTES));
+    expect(Object.keys((JSON.parse(signed) as { body: object }).body)).toEqual([
+      'target',
+      'title',
+      'why',
+      'link',
+      'window',
+      'dispatch',
+    ]);
+    expect(await device.services.store.readDraft(groupId, protectDraft(atom))).toBeUndefined();
+    expect(await device.services.store.readDraft(groupId, atom)).toEqual(rewording);
+  });
+
+  it('queues a class Proposal with no link, window or Dispatch as its target, title and why alone (#116)', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, atom } = await founded(fake);
+    const target = { kind: 'class', atom, to: 'eternal' } as const;
+    const values = { target, title: 'Forever', why: 'It is who we are.', text: '', link: null };
+    await propose(device.services, groupId, values);
+    expect(await queuedProposal(device, groupId)).toEqual({
+      target,
+      title: 'Forever',
+      why: 'It is who we are.',
+    });
+  });
+
+  it('queues a removal as an edit whose text is empty, clearing the removal’s draft, not the Atom’s', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, atom } = await founded(fake);
+    const removing = { title: 'No quiet hours', why: 'Nobody keeps them.', text: '', link: '' };
+    const rewording = { title: 'Later', why: 'Why not.', text: 'Quiet after 11.', link: '' };
+    await device.services.store.writeDraft(groupId, removalDraft(atom), removing);
+    await device.services.store.writeDraft(groupId, atom, rewording);
+    await propose(device.services, groupId, { ...removing, atom, link: null });
+    const [queued] = await outbox(device, groupId);
+    expect(queued?.body).toEqual({
+      atom,
+      title: 'No quiet hours',
+      why: 'Nobody keeps them.',
+      text: '',
+    });
+    expect(await device.services.store.readDraft(groupId, removalDraft(atom))).toBeUndefined();
+    expect(await device.services.store.readDraft(groupId, atom)).toEqual(rewording);
+  });
+
   it('refuses a Proposal over 64,000 bytes, and queues nothing', async () => {
     const fake = createFakeRelay();
     const { device, groupId, atom } = await founded(fake);
@@ -275,6 +669,57 @@ describe('propose, again', () => {
   });
 });
 
+describe('askPriority (#107)', () => {
+  it('queues one priority vote, its options NFC-normalized and trimmed, and the fold opens it', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, author } = await founded(fake);
+    fake.offline = true;
+    const result = await askPriority(device.services, groupId, {
+      title: 'What should we focus on?',
+      why: 'One thing at a time.',
+      options: ['  Fix the cafe\u0301 sign ', 'Plan the picnic\t'],
+      window: 5,
+    });
+    const queued = await outbox(device, groupId);
+    expect(queued).toHaveLength(1);
+    expect(queued[0]).toMatchObject({
+      type: 'proposal',
+      author,
+      body: {
+        target: { kind: 'priority' },
+        title: 'What should we focus on?',
+        why: 'One thing at a time.',
+        options: ['Fix the caf\u00e9 sign', 'Plan the picnic'],
+        window: 5,
+      },
+    });
+    expect(result.outcome).toBe('proposed');
+    fake.offline = false;
+    await device.services.sync.syncOnce();
+    const group = await device.services.store.getGroup(groupId);
+    const state = fold(group?.log ?? [], group?.relayNow ?? null);
+    const opened = state.proposals.find((proposal) => proposal.target.kind === 'priority');
+    expect(opened?.id).toBe(result.outcome === 'proposed' ? result.proposalId : null);
+    expect(opened?.window).toBe(5);
+    expect(opened?.versions.map((version) => version.text)).toEqual([
+      'Fix the caf\u00e9 sign',
+      'Plan the picnic',
+    ]);
+  });
+
+  it('refuses a question over 64,000 bytes before queuing anything', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId } = await founded(fake);
+    const values = { title: 'Q', why: 'x'.repeat(70_000), options: ['a', 'b'] };
+    expect(await askPriority(device.services, groupId, values)).toEqual({ outcome: 'too-large' });
+    expect(await outbox(device, groupId)).toEqual([]);
+  });
+
+  it('writes each option NFC-normalized, then trimmed', () => {
+    expect(optionText(' Cafe\u0301 ')).toBe('Caf\u00e9');
+  });
+});
+
 describe('addVersion', () => {
   /** A founded group with Ana's Proposal on its first Atom, sent to the relay. */
   async function proposed(fake: FakeRelay) {
@@ -335,6 +780,22 @@ describe('addVersion', () => {
     expect(await device.services.store.readDraft(groupId, atom)).toEqual(draft);
   });
 
+  it('adds a removal as an empty version, and keeps the version drafted for the Proposal', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, proposal } = await proposed(fake);
+    const draft = { title: '', why: '', text: 'Later.', link: '' };
+    await device.services.store.writeDraft(groupId, proposal, draft);
+    const result = await addVersion(device.services, groupId, { proposal, text: '' });
+    await device.services.sync.syncOnce();
+    const group = await device.services.store.getGroup(groupId);
+    const state = fold(group?.log ?? [], group?.relayNow ?? null);
+    expect(state.proposals[0]?.versions.map((v) => [v.id, v.text])).toEqual([
+      [proposal, 'Quiet.\n'],
+      [result.outcome === 'added' ? result.versionId : '', ''],
+    ]);
+    expect(await device.services.store.readDraft(groupId, proposal)).toEqual(draft);
+  });
+
   it('takes a version record of exactly 64,000 bytes and refuses one a byte longer', async () => {
     const fake = createFakeRelay();
     const { device, groupId, proposal } = await proposed(fake);
@@ -389,9 +850,25 @@ describe('castBallot', () => {
           proposal: 'proposal-1',
           scores: { 'proposal-1': 0 },
           note: 'Too early for the café.',
+          salt: SALT,
         },
       }),
     ]);
+  });
+
+  it('salts each ballot with 16 fresh random bytes, so a result’s commitment can’t be tested (#111)', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId } = await founded(fake);
+    fake.offline = true;
+    const values = { proposal: 'proposal-1', scores: { 'proposal-1': 3 as const }, note: '' };
+    await castBallot(device.services, groupId, values);
+    await castBallot(device.services, groupId, values);
+    const salts = (await outbox(device, groupId)).map((event) =>
+      event?.type === 'vote' ? event.body.salt : undefined,
+    );
+    expect(salts).toEqual([SALT, SALT]);
+    expect(fromBase64url(salts[0] ?? '')).toHaveLength(16);
+    expect(salts[0]).not.toBe(salts[1]);
   });
 
   it('scores every version it is given, by version id', async () => {
@@ -407,6 +884,7 @@ describe('castBallot', () => {
     expect(vote?.body).toEqual({
       proposal: 'proposal-1',
       scores: { 'proposal-1': 2, 'version-2': 4, 'version-3': 1 },
+      salt: SALT,
     });
   });
 
@@ -420,7 +898,7 @@ describe('castBallot', () => {
       note: '  \n ',
     });
     const [vote] = await outbox(device, groupId);
-    expect(vote?.body).toEqual({ proposal: 'proposal-1', scores: { 'proposal-1': 4 } });
+    expect(vote?.body).toEqual({ proposal: 'proposal-1', scores: { 'proposal-1': 4 }, salt: SALT });
   });
 });
 
@@ -643,6 +1121,68 @@ describe('proposeDissolve', () => {
       outcome: 'too-large',
     });
     expect(await outbox(device, groupId)).toEqual([]);
+  });
+});
+
+describe('proposeRemoval and respondToRemoval (#115)', () => {
+  const KIM = 'S2ltS2ltS2ltS2ltS2ltS2ltS2ltS2ltS2ltS2ltS2k';
+
+  it('queues one removal with no window, NFC-normalized, and returns its id', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, author } = await founded(fake);
+    fake.offline = true;
+    const result = await proposeRemoval(device.services, groupId, {
+      member: KIM,
+      title: 'Remove Kim from the cafe\u0301',
+      why: 'Threats in the chat.',
+    });
+    expect(await outbox(device, groupId)).toEqual([
+      {
+        v: 1,
+        type: 'proposal',
+        group: groupId,
+        author,
+        ts: 1_762_650_000_000,
+        body: {
+          target: { kind: 'remove', member: KIM },
+          title: 'Remove Kim from the caf\u00e9',
+          why: 'Threats in the chat.',
+        },
+      },
+    ]);
+    const group = await device.services.store.getGroup(groupId);
+    const id = parseRecord(group?.outbox[0] ?? new Uint8Array())?.id;
+    expect(result).toEqual({ outcome: 'proposed', proposalId: id });
+  });
+
+  it('refuses a removal too large for any blob, and queues nothing', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId } = await founded(fake);
+    const values = { member: KIM, title: 'Remove Kim', why: 'x'.repeat(70_000) };
+    expect(await proposeRemoval(device.services, groupId, values)).toEqual({
+      outcome: 'too-large',
+    });
+    expect(await outbox(device, groupId)).toEqual([]);
+  });
+
+  it('queues one response, trimmed and NFC-normalized', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId, author } = await founded(fake);
+    fake.offline = true;
+    await respondToRemoval(device.services, groupId, {
+      proposal: 'p1',
+      text: '  I wasn’t at the cafe\u0301.\n ',
+    });
+    expect(await outbox(device, groupId)).toEqual([
+      {
+        v: 1,
+        type: 'removal-response',
+        group: groupId,
+        author,
+        ts: 1_762_650_000_000,
+        body: { proposal: 'p1', text: 'I wasn’t at the caf\u00e9.' },
+      },
+    ]);
   });
 });
 

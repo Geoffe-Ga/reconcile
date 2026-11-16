@@ -20,9 +20,31 @@ function comparable(state: RelayBackupState | undefined) {
   return state === undefined ? undefined : { ...state, key: local(state.key) };
 }
 
-/** A fresh state for `key`: nothing uploaded, nothing checked. */
+/** A group record as versions 3 and 4 kept it: its keys in the record. */
+const KEPT = {
+  groupId: 'kept',
+  secret: new Uint8Array(32),
+  signingKey: new Uint8Array(32).fill(7),
+  me: { author: 'author-ana', name: 'Ana' },
+  log: [],
+  cursor: 0,
+  relayNow: null,
+  instance: null,
+  outbox: [],
+  lastSyncAt: null,
+};
+
+/** A fresh state for `key`: nothing uploaded or checked yet, no Document (#247) and no group (#327). */
 function fresh(key: Uint8Array): RelayBackupState {
-  return { key, digest: null, checkedDay: null, uploadedAt: null, tooLarge: false };
+  return {
+    key,
+    digest: null,
+    checkedDay: null,
+    uploadedAt: null,
+    tooLarge: false,
+    uploaded: [],
+    uploadedGroups: [],
+  };
 }
 
 describe('the relay backup’s state', () => {
@@ -36,7 +58,8 @@ describe('the relay backup’s state', () => {
     const store = await openStore();
 
     const none = await store.setRelayBackupKey(KEY);
-    await store.updateRelayBackup(KEY, { digest: 'd1', checkedDay: 7, uploadedAt: 9 });
+    const uploaded = ['Q2FuYXJ5IHN0YXRlbWVudA'];
+    await store.updateRelayBackup(KEY, { digest: 'd1', checkedDay: 7, uploadedAt: 9, uploaded });
     const previous = await store.setRelayBackupKey(NEW_KEY);
 
     expect(none).toBeUndefined();
@@ -45,6 +68,7 @@ describe('the relay backup’s state', () => {
       digest: 'd1',
       checkedDay: 7,
       uploadedAt: 9,
+      uploaded,
     });
     expect(comparable(await store.getRelayBackup())).toEqual(fresh(local(NEW_KEY)));
   });
@@ -116,6 +140,46 @@ describe('the relay backup’s state', () => {
     expect(comparable(await store.getRelayBackup())).toEqual(fresh(local(KEY)));
   });
 
+  it('keeps the split a key was cut into beside it, set or adopted, and none when it’s given none (#272)', async () => {
+    const store = await openStore();
+
+    expect(await store.adoptRelayBackupKey(KEY, 'split-of-a-db-test-2')).toBe(true);
+    expect((await store.getRelayBackup())?.split).toBe('split-of-a-db-test-2');
+    await store.setRelayBackupKey(KEY, 'split-of-a-db-test-1');
+    expect(comparable(await store.getRelayBackup())).toEqual({
+      ...fresh(local(KEY)),
+      split: 'split-of-a-db-test-1',
+    });
+    await store.setRelayBackupKey(NEW_KEY);
+    expect(comparable(await store.getRelayBackup())).toEqual(fresh(local(NEW_KEY)));
+  });
+
+  it('retires only the key it names: forgets it and notes when, and a new key clears the note (#272)', async () => {
+    const store = await openStore();
+    const heard = vi.fn();
+    await store.setRelayBackupKey(KEY, 'split-of-a-db-test-1');
+    store.subscribe(heard);
+
+    expect(await store.retireRelayBackup(NEW_KEY, 5)).toBe(false);
+    expect(comparable(await store.getRelayBackup())?.key).toEqual(local(KEY));
+    expect(await store.getRelayBackupRetiredAt()).toBeUndefined();
+    expect(heard).not.toHaveBeenCalled();
+
+    expect(await store.retireRelayBackup(KEY, 7)).toBe(true);
+    expect(await store.getRelayBackup()).toBeUndefined();
+    expect(await store.getRelayBackupRetiredAt()).toBe(7);
+    expect(heard.mock.calls).toContainEqual([RELAY_BACKUP_CHANGED]);
+    expect(await store.retireRelayBackup(KEY, 8)).toBe(false);
+    expect(await store.getRelayBackupRetiredAt()).toBe(7);
+
+    // A key from a link, a file or a new choice starts afresh.
+    expect(await store.adoptRelayBackupKey(NEW_KEY)).toBe(true);
+    expect(await store.getRelayBackupRetiredAt()).toBeUndefined();
+    await store.retireRelayBackup(NEW_KEY, 9);
+    await store.setRelayBackupKey(KEY);
+    expect(await store.getRelayBackupRetiredAt()).toBeUndefined();
+  });
+
   it('tells listeners when the state changes, under its own name and no group’s', async () => {
     const store = await openStore();
     const heard = vi.fn();
@@ -146,7 +210,8 @@ describe('the relay backup’s state', () => {
         database.createObjectStore('groups', { keyPath: 'groupId' });
       },
     });
-    await old.put('groups', { groupId: 'kept', secret: new Uint8Array(32) });
+    // A real record holds its keys (#95 reads a record without them as sealed in the vault).
+    await old.put('groups', KEPT);
     old.close();
 
     const store = await openStore();
@@ -171,7 +236,8 @@ describe('the relay backup’s state', () => {
         database.createObjectStore('personal', { keyPath: 'id' });
       },
     });
-    await old.put('groups', { groupId: 'kept', secret: new Uint8Array(32) });
+    // A real record holds its keys (#95 reads a record without them as sealed in the vault).
+    await old.put('groups', KEPT);
     await old.put('personal', statement);
     old.close();
 

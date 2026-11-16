@@ -2,8 +2,9 @@
  * The chat bot's claims (#119; ADR-0039 step 1, ADR-0074; docs/spec/phase-1-spec.md §4, Chat bot).
  *
  * Once a group turns its Discord bot on by Proposal, its channel hears of each
- * Proposal three times: when it opens, when its last day starts, and when it
- * is decided. No server holds the webhook, so a member's device posts each
+ * of the group's own Proposals three times: when it opens, when its last day
+ * starts, and when it is decided; never of a coalition motion it votes on
+ * (#100). No server holds the webhook, so a member's device posts each
  * notice, and the group's log decides which one: every device that sees a
  * moment come due claims it with a `chat-posted` event, the fold keeps the
  * first claim per (Proposal, moment) in relay order, and only the device that
@@ -18,8 +19,19 @@
  *
  * The fold and the devices ask the same function ({@link mayClaim}), so a
  * device never makes a claim the fold would ignore.
+ *
+ * With a forum channel's webhook, each Proposal gets its own Discord thread
+ * (#123; ADR-0011). The device that won a Proposal's `open` claim opens the
+ * thread with that post, and records its link with a `chat-thread` event,
+ * which the fold keeps once per Proposal ({@link mayRecordThread}): only from
+ * a member who won one of its claims, so no one who posted nothing for it can
+ * point Join discussion at another server, and only a link of the one form
+ * {@link THREAD_URL} names. When the opening post never landed, the next
+ * post's claimant opens and records the thread instead (#245). Later posts
+ * for the Proposal go into the thread. The link sits only in the sealed log,
+ * and points into the group's own Discord server.
  */
-import { can, isSuspended, type Roster } from './capabilities';
+import { can, isOusted, isSuspended, type Roster } from './capabilities';
 import { effectiveOptIn, type OptInState } from './optIns';
 import { DAY_MINUTES } from './rules';
 
@@ -86,6 +98,66 @@ export interface ChatPostState extends Roster, Pick<OptInState, 'rules' | 'narro
   readonly chatPosts: readonly ChatPost[];
 }
 
+/**
+ * A Proposal's Discord thread (#123): the first valid `chat-thread` for it, in
+ * relay order. `by` is the member whose device opened it, and `url` its link.
+ */
+export interface ChatThread {
+  readonly id: string;
+  readonly seq: number;
+  readonly received: number;
+  readonly by: string;
+  readonly proposal: string;
+  readonly url: string;
+}
+
+/** What the thread rules read of a group: the claim rules' state and the threads kept so far. */
+export interface ChatThreadState extends ChatPostState {
+  readonly chatThreads: readonly ChatThread[];
+}
+
+/** A Discord id (a snowflake) as Discord writes it: 17 to 20 digits and nothing else. */
+const DISCORD_ID = /^\d{17,20}$/;
+
+/**
+ * The one form of thread link the fold keeps:
+ * `https://discord.com/channels/{server id}/{thread id}` and nothing else, no
+ * path past the thread, query or fragment. Written as one pattern over the
+ * whole string, as the webhook's is, so every device folds the same answer.
+ */
+export const THREAD_URL = /^https:\/\/discord\.com\/channels\/(\d{17,20})\/(\d{17,20})$/;
+
+/** True when `value` is a Discord id: 17 to 20 digits. */
+export function isDiscordId(value: unknown): value is string {
+  return typeof value === 'string' && DISCORD_ID.test(value);
+}
+
+/** True when `value` is a thread link in the form {@link THREAD_URL} names. */
+export function isThreadUrl(value: unknown): value is string {
+  return typeof value === 'string' && THREAD_URL.test(value);
+}
+
+/** The link to thread `thread` in server `guild`, or null unless both are Discord ids. */
+export function threadUrl(guild: string, thread: string): string | null {
+  return isDiscordId(guild) && isDiscordId(thread)
+    ? `https://discord.com/channels/${guild}/${thread}`
+    : null;
+}
+
+/** The thread id in a link {@link isThreadUrl} accepts, or null for anything else. */
+export function threadIdOf(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  return THREAD_URL.exec(value)?.[2] ?? null;
+}
+
+/** The thread kept for `proposal`, if one has folded. */
+export function threadFor(
+  state: Pick<ChatThreadState, 'chatThreads'>,
+  proposal: string,
+): ChatThread | undefined {
+  return state.chatThreads.find((thread) => thread.proposal === proposal);
+}
+
 /** The winning claim of `moment` on `proposal`, if one has folded. */
 export function claimFor(
   state: Pick<ChatPostState, 'chatPosts'>,
@@ -95,16 +167,23 @@ export function claimFor(
   return state.chatPosts.find((post) => post.proposal === proposal && post.moment === moment);
 }
 
-/** True when `author`'s events count now: a member, not suspended (ADR-0016). */
+/**
+ * True when `author`'s events count now: a member, not suspended (ADR-0016),
+ * and not named by a removal whose pass is final, whose events the fold
+ * ignores from then on (#115).
+ */
 function mayAct(state: Roster, author: string): boolean {
-  return can(state, author, 'read') && !isSuspended(state, author);
+  return can(state, author, 'read') && !isSuspended(state, author) && !isOusted(state, author);
 }
 
 /**
  * Whether `author` may claim `moment` on `proposal` at `state.at`: they are a
- * member who isn't suspended, the bot is on in effect (not off, nor narrowed
- * by a steward), the Proposal is known and `moment` is the one due, and
- * nobody has claimed it yet.
+ * member who isn't suspended and whom no passed removal names (#115), the bot
+ * is on in effect (not off, nor narrowed by a steward), the Proposal is the
+ * group's own and `moment` is the one due, and nobody has claimed it yet. A coalition motion the group votes on (#100)
+ * is never claimed: it isn't the group's own, has no number to name a thread,
+ * and a device without the coalition's log, as the bot's fold is, doesn't
+ * know it. So no thread is ever recorded for one either.
  */
 export function mayClaim(
   state: ChatPostState,
@@ -115,10 +194,32 @@ export function mayClaim(
   const target = state.proposals.find((p) => p.id === proposal);
   return (
     target !== undefined &&
+    target.target.kind !== 'motion' &&
     mayAct(state, author) &&
     effectiveOptIn(state, 'chatBot') !== null &&
     dueMoment(target, state.at) === moment &&
     claimFor(state, proposal, moment) === undefined
+  );
+}
+
+/**
+ * Whether `author` may record `proposal`'s Discord thread at `state.at`
+ * (#123): they are a member who isn't suspended and whom no passed removal
+ * names (#115), the bot is on in effect, `author` made one of the Proposal's
+ * winning claims (so it is a Proposal the fold knows), and no thread is kept
+ * for it yet. Any moment's winner may (#245), not only the opening's: when
+ * the opening post never landed, or nobody claimed it, as for the vote that
+ * turned the bot on, the next post opens the thread, and its claimant records
+ * it, so the posts after go into it rather than each opening another. The
+ * first kept still wins. The fold also needs the link to be a
+ * {@link THREAD_URL}.
+ */
+export function mayRecordThread(state: ChatThreadState, author: string, proposal: string): boolean {
+  return (
+    mayAct(state, author) &&
+    effectiveOptIn(state, 'chatBot') !== null &&
+    BOT_MOMENTS.some((moment) => claimFor(state, proposal, moment)?.by === author) &&
+    threadFor(state, proposal) === undefined
   );
 }
 

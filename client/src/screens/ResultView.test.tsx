@@ -4,13 +4,17 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { ChatDetails, ChatMoment } from '../app/chatMessages';
 import type { ShareOutcome } from '../app/share';
+import { formatDay } from '../app/format';
+import { messages } from '../app/messages';
 import { formatMinute, minuteIso } from '../app/time';
+import { resultFor } from '../engine/expiry';
 import { LEVELS } from '../engine/capabilities';
 import type { GroupState, Proposal } from '../engine/fold';
 import { type OwnBallot, ownBallot } from '../engine/ownBallot';
 import { axeViolations } from '../test/axe';
 import { authorOf } from '../test/keys';
 import { deadlineOf, groupLog, type LogBuilder, START_MINUTE } from '../test/votes';
+import { Thanks } from './ResultParts';
 import { ResultView } from './ResultView';
 
 const [, VOTING] = LEVELS;
@@ -131,6 +135,21 @@ describe('ResultView', () => {
     expect(await axeViolations()).toEqual([]);
   });
 
+  it('leads an add’s pass with its sentence and the new section’s text, as an edit’s (#75)', () => {
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    const proposalId = log.addSection('ana', null, { text: 'Bins out on Thursdays.' });
+    for (const voter of ['ana', 'ben', 'cal']) {
+      log.minute += 10;
+      log.vote(voter, proposalId, 4);
+    }
+    const { result } = show({ state: log.state(), proposalId });
+
+    const [sentence, text, thanks] = within(outcomeBlock(result)).getAllByRole('paragraph');
+    expect(sentence).toHaveTextContent('This passed. The Document now reads:');
+    expect(text).toHaveTextContent('Bins out on Thursdays.');
+    expect(thanks).toHaveTextContent(/^Thank you, Ana\.$/);
+  });
+
   it('thanks the winning version’s author and the proposer, and names the version', () => {
     const { log, proposalId } = bensVersionPasses();
     const { result } = show({ state: log.state(), proposalId });
@@ -241,6 +260,38 @@ describe('ResultView', () => {
     expect(again.getAttribute('aria-describedby')?.split(' ')).toContain(reason.id);
   });
 
+  it('says a passed new Document reads as its winning text, naming the version when there were several (#92)', async () => {
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    const alone = log.newDocument('ana', 'Budget', { text: '# Budget\n\nWe share costs.\n' });
+    for (const name of ['ana', 'ben', 'cal']) log.vote(name, alone, 4);
+    const { result } = show({ state: log.state(), proposalId: alone });
+    const block = outcomeBlock(result);
+    expect(block.querySelector('.outcome-sentence')).toHaveTextContent(
+      /^This passed\. The new Document reads:$/,
+    );
+    expect(within(block).getByRole('heading', { name: 'Budget' })).toBeVisible();
+    expect(within(block).getByText('We share costs.')).toBeVisible();
+    expect(await axeViolations()).toEqual([]);
+    cleanup();
+    const shared = log.newDocument('ana', 'Chores', { text: 'Ana cooks.\n' });
+    const other = log.version('ben', shared, 'Ben cooks.\n');
+    for (const name of ['ana', 'ben', 'cal']) log.ballot(name, shared, { [shared]: 2, [other]: 4 });
+    const second = show({ state: log.state(), proposalId: shared });
+    expect(outcomeBlock(second.result).querySelector('.outcome-sentence')).toHaveTextContent(
+      /^Version 2 passed\. The new Document reads:$/,
+    );
+  });
+
+  it('offers Propose again on a lapsed new Document, as on a change (#92)', async () => {
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    const proposalId = log.newDocument('ana', 'Budget');
+    const { result, onProposeAgain, user } = show({ state: log.state(DEADLINE), proposalId });
+    const again = within(result).getByRole('button', { name: 'Propose again' });
+    expect(again).toBeEnabled();
+    await user.click(again);
+    expect(onProposeAgain).toHaveBeenCalledTimes(1);
+  });
+
   it('offers no Propose again to someone who can’t propose', () => {
     const log = groupLog({ members: ['Ben', 'Cal'], levels: { Cal: VOTING } });
     const proposalId = log.propose('ana');
@@ -327,6 +378,66 @@ describe('ResultView', () => {
     expect(within(second.result).getByText('Nobody scored it.')).toBeVisible();
   });
 
+  it('says until when individual scores and notes are visible, and that screenshots can outlast that', async () => {
+    const { log, proposalId } = decided([4, 3, 2]);
+    const state = log.state();
+    const closedAt = state.proposals[0]?.closedAt ?? 0;
+    const { result } = show({ state, proposalId });
+    const { visibleUntil, visibleUntilEnd } = messages.result;
+    const line = within(result).getByText(
+      (_text, element) => element?.tagName === 'P' && element.textContent.startsWith(visibleUntil),
+    );
+    expect(line).toBeVisible();
+    expect(line).toHaveTextContent(
+      `${visibleUntil} ${formatDay(closedAt + 43_200)}${visibleUntilEnd}`,
+    );
+    expect(line.querySelector('time')?.getAttribute('datetime')).toBe(minuteIso(closedAt + 43_200));
+    expect(within(result).getByRole('button', { name: 'Individual ballots (3)' })).toBeVisible();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('says when individual scores and notes were cleared, offers no ballots, and keeps the totals', async () => {
+    const { log, proposalId } = decided([4, 3, 2]);
+    const held = log.state();
+    const closedAt = held.proposals[0]?.closedAt ?? 0;
+    const body = resultFor(held.proposals[0] as Proposal);
+    log.minute = closedAt + 1;
+    log.result('ben', body);
+    // Clearing keeps every record's relay seq, which the result's closedSeq names (#289).
+    const state = log.state(closedAt + 43_200, [proposalId]);
+    const { result } = show({ state, proposalId });
+    const { clearedOn, clearedOnEnd, totalsLine } = messages.result;
+    expect(result).toHaveTextContent(`${clearedOn} ${formatDay(closedAt + 43_200)}${clearedOnEnd}`);
+    expect(within(result).queryByRole('button', { name: /Individual ballots/ })).toBeNull();
+    expect(within(result).getByText(totalsLine(3, '3.0', 0))).toBeVisible();
+    expect(within(result).getByText(messages.result.passed)).toBeVisible();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('flags a record of the decision that doesn’t match the ballots on this device, naming who posted it', async () => {
+    const { log, proposalId } = decided([4, 3, 2]);
+    const held = log.state();
+    const body = resultFor(held.proposals[0] as Proposal);
+    log.minute += 1;
+    log.result('ben', { ...body, versions: [{ id: proposalId, counts: [0, 0, 0, 0, 3] }] });
+    log.result('cal', body);
+    const { result } = show({ state: log.state(), proposalId });
+    const { mismatchBefore, mismatchAfter } = messages.result;
+    const flag = within(result).getByText(
+      (_text, element) =>
+        element?.tagName === 'P' && element.textContent.startsWith(mismatchBefore),
+    );
+    expect(flag).toHaveTextContent(`${mismatchBefore} Ben ${mismatchAfter}`);
+    expect(flag.querySelector('bdi')?.textContent).toBe('Ben');
+    expect(
+      within(result).queryAllByText(
+        (_text, element) =>
+          element?.tagName === 'P' && element.textContent.startsWith(mismatchBefore),
+      ),
+    ).toHaveLength(1);
+    expect(await axeViolations()).toEqual([]);
+  });
+
   it('says when voting ran in relay time, and that everyone had voted after an early close', () => {
     const early = decided([4, 3, 2]);
     const closed = early.log.state();
@@ -362,6 +473,47 @@ describe('ResultView', () => {
       expect(result).not.toHaveTextContent(/part ways|split|fork/i);
       cleanup();
     }
+  });
+});
+
+describe('Thanks', () => {
+  it('ends with one full stop, even after a name that ends with one (#120)', () => {
+    const { container, rerender } = render(<Thanks names={['Ana E.']} />);
+    expect(container).toHaveTextContent(/^Thank you, Ana E\.$/);
+    rerender(<Thanks names={['Ben', 'Ana']} />);
+    expect(container).toHaveTextContent(/^Thank you, Ben and Ana\.$/);
+  });
+});
+
+describe('ResultView, a coalition motion in the group (#120)', () => {
+  /** `state` with the Proposal `id` opened from a coalition, as a member group's fold opens one. */
+  function asMotion(state: GroupState, id: string): GroupState {
+    const target = {
+      kind: 'motion',
+      coalition: 'coalition-1',
+      chain: [],
+      bar: state.rules.bars.ordinary,
+    } as const;
+    const proposals = state.proposals.map((p) => (p.id === id ? { ...p, target } : p));
+    return { ...state, proposals };
+  }
+
+  it('says the group’s pass goes to the coalition, never that the Document changed', () => {
+    const { log, proposalId } = decided([4, 4, 4]);
+    const { result } = show({ state: asMotion(log.state(), proposalId), proposalId });
+    const block = outcomeBlock(result);
+    expect(block).toHaveTextContent(messages.coalitions.motionPassed);
+    expect(block).not.toHaveTextContent(messages.result.passed);
+    expect(within(block).queryByText(/Thank you/)).toBeNull();
+  });
+
+  it('says the coalition counts a lapse as not passing, and offers no Propose again', () => {
+    const { log, proposalId } = lapsed();
+    const { result } = show({ state: asMotion(log.state(DEADLINE), proposalId), proposalId });
+    const block = outcomeBlock(result);
+    expect(block).toHaveTextContent(messages.coalitions.motionLapsed);
+    expect(block).not.toHaveTextContent(messages.result.lapsed);
+    expect(within(block).queryByRole('button', { name: 'Propose again' })).toBeNull();
   });
 });
 

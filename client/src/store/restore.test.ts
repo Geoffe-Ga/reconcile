@@ -41,6 +41,9 @@ function copy(lastSyncAt: number | null, overrides: Partial<BackedUpGroup> = {})
   };
 }
 
+/** How a restored copy reads until it hears from its group (#231): since the file's last relay minute. */
+const READ_ONLY = { archived: { reason: 'unconfirmed', since: 29_000_010 } } as const;
+
 /** A stored group with its bytes in the test's realm, so `toEqual` can compare it. */
 function comparable(group: Group | undefined) {
   if (group === undefined) return undefined;
@@ -76,13 +79,14 @@ async function deviceWithGroup(lastSyncAt: number) {
 }
 
 describe('restoreGroups', () => {
-  it('keeps a group new to the device exactly as the file has it, with no outbox or drafts, marked as saved', async () => {
+  it('keeps a group new to the device exactly as the file has it, with no outbox or drafts, marked as saved and read-only for now', async () => {
     const store = await openStore();
 
     await store.restoreGroups([copy(1_000, { missingHistory: true })]);
 
     expect(comparable(await store.getGroup(ana.groupId))).toEqual({
       ...comparable({ ...copy(1_000), outbox: [] }),
+      ...READ_ONLY,
       missingHistory: true,
       backup: 'saved',
     });
@@ -103,7 +107,7 @@ describe('restoreGroups', () => {
     await store.restoreGroups([copy(2_000)]);
 
     expect(comparable(await store.getGroup(ana.groupId))).toEqual(
-      comparable({ ...copy(2_000), outbox: [], backup: 'saved' }),
+      comparable({ ...copy(2_000), ...READ_ONLY, outbox: [], backup: 'saved' }),
     );
   });
 
@@ -183,7 +187,7 @@ describe('restoreGroups', () => {
 
     const kept = await store.getGroup(ana.groupId);
     expect(kept?.backup).toBeUndefined();
-    expect(comparable(kept)).toEqual(comparable({ ...copy(1_000), outbox: [] }));
+    expect(comparable(kept)).toEqual(comparable({ ...copy(1_000), ...READ_ONLY, outbox: [] }));
   });
 
   it.each([
@@ -257,7 +261,7 @@ describe('restoreGroups with personal Documents (#93)', () => {
     ]);
   });
 
-  it('keeps the file’s groups and Documents in one transaction over both stores', async () => {
+  it('keeps the file’s groups and Documents in one transaction over every store, the relay backup’s, the vault and the sent applications’ included (#95, #97, #265)', async () => {
     const store = await openStore();
     const transaction = vi.spyOn(FakeIDBDatabase.prototype, 'transaction');
 
@@ -265,7 +269,7 @@ describe('restoreGroups with personal Documents (#93)', () => {
     const calls = transaction.mock.calls.map(([names, mode]) => [names, mode]);
     transaction.mockRestore();
 
-    expect(calls).toEqual([[['groups', 'personal'], 'readwrite']]);
+    expect(calls).toEqual([[['groups', 'personal', 'device', 'vault', 'sent'], 'readwrite']]);
     expect((await store.listGroups()).map((group) => group.groupId)).toEqual([ana.groupId]);
     expect(await store.listPersonal()).toEqual([statement(FIRST, 5)]);
   });

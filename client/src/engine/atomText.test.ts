@@ -1,11 +1,12 @@
 /**
  * `normalizeAtomText` and the genesis split (#70): the golden vectors in
- * vectors/atom-text.json, then fast-check properties.
+ * vectors/atom-text.json, then fast-check properties. And `isHeadingOnly`
+ * (#103): which normalized Atoms are a section header and nothing more.
  */
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { genesisAtoms, normalizeAtomText } from './atomText';
+import { genesisAtoms, isHeadingOnly, normalizeAtomText } from './atomText';
 import vectorText from './vectors/atom-text.json?raw';
 
 interface NormalizeVector {
@@ -79,6 +80,21 @@ describe('normalizeAtomText', () => {
     expect(normalizeAtomText(' \n\t\n')).toBe('');
   });
 
+  it('ends a line only at LF, so a space or tab before U+2028 or U+2029 stays (#411)', () => {
+    fc.assert(
+      fc.property(
+        line,
+        fc.constantFrom(' ', '\t'),
+        fc.constantFrom('\u2028', '\u2029'),
+        line,
+        (before, gap, separator, after) => {
+          const out = normalizeAtomText(`${before}x${gap}${separator}${after}`);
+          expect(out).toContain(`x${gap}${separator}`);
+        },
+      ),
+    );
+  });
+
   it('is idempotent', () => {
     fc.assert(
       fc.property(anyText, (text) => {
@@ -137,6 +153,59 @@ describe('genesisAtoms', () => {
           expect(atom).not.toBe('');
           expect(normalizeAtomText(atom)).toBe(atom);
         }
+      }),
+    );
+  });
+});
+
+describe('isHeadingOnly (#103)', () => {
+  it.each([
+    ['# Values\n', true],
+    ['## Organization\n', true],
+    ['### Topic\n', true],
+    ['###### Six deep\n', true],
+    ['# Our *aims*, in full\n', true],
+    ['# Values\nWe care.\n', false],
+    ['#Values\n', false],
+    ['# \n', false],
+    ['#\n', false],
+    ['####### Seven deep\n', false],
+    ['# Values', false],
+    ['# Values\n\n', false],
+    [' # Values\n', false],
+    ['Values\n', false],
+    ['', false],
+  ])('reads %j as heading-only: %s', (text, expected) => {
+    expect(isHeadingOnly(text)).toBe(expected);
+  });
+
+  /** Whether a heading of `depth` over `words` is heading-only exactly when a word follows its `#`s. */
+  function headsOver(depth: number, words: string): void {
+    const text = normalizeAtomText(`${'#'.repeat(depth)} ${words}`);
+    expect(isHeadingOnly(text)).toBe(/\S/u.test(text.slice(depth + 1)));
+  }
+
+  it('is true for a heading of any level 1–6 over any one line with a word in it', () => {
+    const level = fc.integer({ min: 1, max: 6 });
+    // One line as the normalizer reads it, so the breaks are its own and not a list kept here (#411).
+    const oneLine = fc
+      .string({ unit: 'grapheme', minLength: 1, maxLength: 20 })
+      .filter((words) => words.trim() !== '' && /^[^\n]*\n$/u.test(normalizeAtomText(words)));
+    fc.assert(fc.property(level, oneLine, headsOver));
+  });
+
+  it('keeps the space after the #s when the words start with U+2028, which ends no line (#411)', () => {
+    // The property's counterexample at seed 2056568699: a heading of level 1 over U+2028 and "!".
+    expect(normalizeAtomText('# \u2028!')).toBe('# \u2028!\n');
+    headsOver(1, '\u2028!');
+    expect(isHeadingOnly(normalizeAtomText('# \u2028!'))).toBe(true);
+  });
+
+  it('is false whenever a second line follows the heading', () => {
+    fc.assert(
+      fc.property(fc.string({ unit: 'grapheme', minLength: 1, maxLength: 12 }), (rest) => {
+        fc.pre(rest.trim() !== '');
+        expect(isHeadingOnly(normalizeAtomText(`# Values\n${rest}`))).toBe(false);
       }),
     );
   });

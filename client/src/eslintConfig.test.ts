@@ -1,7 +1,9 @@
 /**
  * Regression tests for the rules eslint.config.js adds itself (#162): NO_CLOCK and
  * INTEGERS_ONLY in src/engine, the network globals outside src/net, the messages
- * rule in src/app and src/screens, and NO_RAW_HTML across src/ (#70). Each must fire on a bad snippet where it applies,
+ * rule in src/app and src/screens, NO_RAW_HTML across src/ (#70),
+ * `navigator.credentials` outside src/platform/webauthn.ts (#95), and HELD_SUBMIT in
+ * src/app and src/screens (#193). Each must fire on a bad snippet where it applies,
  * and stay quiet on a good snippet or where it doesn't apply.
  *
  * The snippets are linted in memory as if they were files at the paths given, with
@@ -276,5 +278,114 @@ describe('NO_RAW_HTML: nothing in src/ is ever parsed as HTML', () => {
       RAW,
       'no-restricted-syntax: Visible text comes from src/app/messages.ts.',
     ]);
+  });
+});
+
+describe('HELD_SUBMIT: no press starts on a disabled submit button (#193)', () => {
+  const HELD =
+    'no-restricted-syntax: A submit Button that is disabled while its form sends needs holdPresses(…) as onPointerDownCapture on it or on a parent (#193): React Aria clicks a button pressed while disabled itself, 80 ms on, and that click sends the form again once the button is enabled.';
+  const component = (jsx: string): string =>
+    [
+      "import { Button, Form } from 'react-aria-components';",
+      "import { holdPresses } from './holdPresses';",
+      'export function Fixture({ running }: { running: boolean }) {',
+      `  return <Form>${jsx}</Form>;`,
+      '}',
+    ].join('\n');
+  const SUBMIT = '<Button type="submit" isDisabled={running}>{null}</Button>';
+
+  describe.each(['src/app/Fixture.tsx', 'src/screens/Fixture.tsx'])('in %s', (filePath) => {
+    it('flags a disabled submit Button with nothing holding presses', async () => {
+      expect(await lint(component(`<div className="row">${SUBMIT}</div>`), filePath)).toEqual([
+        HELD,
+      ]);
+    });
+
+    it('flags one whose parent catches pointerdown with something else', async () => {
+      const row = `<div onPointerDownCapture={() => undefined}>${SUBMIT}</div>`;
+      expect(await lint(component(row), filePath)).toEqual([HELD]);
+    });
+
+    it('flags one beside a held row rather than in it', async () => {
+      const rows = `<div onPointerDownCapture={holdPresses(running)} /><div>${SUBMIT}</div>`;
+      expect(await lint(component(rows), filePath)).toEqual([HELD]);
+    });
+
+    it.each([
+      ['its row', `<div onPointerDownCapture={holdPresses(running)}>${SUBMIT}</div>`],
+      [
+        'a parent further up',
+        `<div onPointerDownCapture={holdPresses(running)}><p>${SUBMIT}</p></div>`,
+      ],
+      [
+        'the button itself',
+        '<Button type="submit" isDisabled={running} onPointerDownCapture={holdPresses(running)}>{null}</Button>',
+      ],
+    ])('allows one held by %s', async (_where, jsx) => {
+      expect(await lint(component(jsx), filePath)).toEqual([]);
+    });
+
+    it.each([
+      ['a submit Button that is never disabled', '<Button type="submit">{null}</Button>'],
+      [
+        'a disabled Button that only presses',
+        '<Button isDisabled={running} onPress={() => undefined}>{null}</Button>',
+      ],
+    ])('allows %s', async (_name, jsx) => {
+      expect(await lint(component(jsx), filePath)).toEqual([]);
+    });
+  });
+
+  it("doesn't apply to tests", async () => {
+    expect(await lint(component(SUBMIT), 'src/screens/Fixture.test.tsx')).toEqual([]);
+  });
+});
+
+describe('navigator.credentials: only src/platform/webauthn.ts reaches WebAuthn (#95)', () => {
+  const CREDENTIALS =
+    "no-restricted-properties: 'navigator.credentials' is restricted from being used. Only src/platform/webauthn.ts reaches WebAuthn (#95), so every passkey request can be audited in one place.";
+
+  it.each([
+    ['a call', 'export const ask = () => navigator.credentials.get({});'],
+    ['a read', 'export const calls: unknown = navigator.credentials;'],
+    ['a computed key', "export const calls: unknown = navigator['credentials'];"],
+    ['destructuring', 'export const { credentials } = navigator;'],
+  ])('flags %s', async (_name, code) => {
+    expect(await lint(code, 'src/app/fixture.ts')).toEqual([CREDENTIALS]);
+  });
+
+  it.each([
+    'src/app/Fixture.tsx',
+    'src/screens/Fixture.tsx',
+    'src/store/fixture.ts',
+    'src/platform/fixture.ts',
+    'src/platform/webauthn.test.ts',
+    'src/net/fixture.ts',
+    'e2e/fixture.spec.ts',
+    'e2e/support/connect.ts',
+  ])('applies in %s', async (filePath) => {
+    expect(await lint('export const calls: unknown = navigator.credentials;', filePath)).toEqual([
+      CREDENTIALS,
+    ]);
+  });
+
+  it('doesn’t apply in src/platform/webauthn.ts, which still may not reach the network', async () => {
+    const code = 'export const calls: unknown[] = [navigator.credentials, window.fetch];';
+    expect(await lint(code, 'src/platform/webauthn.ts')).toEqual([
+      "no-restricted-properties: 'window.fetch' is restricted from being used. Only src/net/ talks to the network (spec §2), so every request can be audited in one place.",
+    ]);
+  });
+
+  it('keeps the network rules beside it everywhere else', async () => {
+    const code = 'export const both: unknown[] = [navigator.credentials, globalThis.fetch];';
+    expect(await lint(code, 'src/app/fixture.ts')).toEqual([
+      CREDENTIALS,
+      "no-restricted-properties: 'globalThis.fetch' is restricted from being used. Only src/net/ talks to the network (spec §2), so every request can be audited in one place.",
+    ]);
+  });
+
+  it('allows another object’s credentials field', async () => {
+    const code = 'export const mode = (init: RequestInit): unknown => init.credentials;';
+    expect(await lint(code, 'src/app/fixture.ts')).toEqual([]);
   });
 });

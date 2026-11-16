@@ -1,11 +1,16 @@
 /**
  * What the end-to-end specs share: a fresh run of the real relay for each
- * test (`relay.ts`), a fixture that opens one browser profile per person
+ * test (`relay.ts`), on its worker's own port and files, a `baseURL` at its
+ * worker's own `vite preview`, a fixture that opens one browser profile per person
  * under the deploy CSP and fails the test on any CSP violation in any of
  * them, axe on the screen a person is looking at, a few locators, and
  * first run's steps (#76). Every profile's requests to Discord are answered
- * by the fixture itself and kept in `discord` (#119), so no test ever posts
- * to Discord.
+ * by the fixture itself, as a forum channel's webhook would answer them, and
+ * kept in `discord` (#119, #123), so no test ever posts to Discord. WebKit
+ * never lets `context.route` see a request from a page under the app's
+ * service worker, so the fixture fails a test on any request to Discord it
+ * didn't answer, and specs move a page with `visit`, which never reloads it
+ * into the worker's hands (#123).
  */
 import AxeBuilder from '@axe-core/playwright';
 import {
@@ -14,11 +19,18 @@ import {
   expect,
   type Locator,
   type Page,
+  type Request,
   type Route,
   test as base,
 } from '@playwright/test';
 
-import { type RunningRelay, startRelay } from './relay';
+import {
+  type RunningRelay,
+  serversOf,
+  startRelay,
+  type WorkerServers,
+  workerServers,
+} from './relay';
 
 export { expect };
 
@@ -49,8 +61,58 @@ export function isDiscord(url: URL): boolean {
   return /(^|\.)(discord|discordapp)\.com$/.test(url.hostname);
 }
 
-/** Answers a request to Discord as a webhook does, keeping it; a CORS preflight gets its own answer. */
-async function answerAsDiscord(route: Route, requests: DiscordRequest[]): Promise<void> {
+/** The server the fixture's webhook belongs to (#123). */
+export const DISCORD_GUILD = '1188000000000000001';
+
+/** The forum channel the fixture's webhook belongs to (#123). */
+export const DISCORD_FORUM = '1199000000000000777';
+
+/** The id of the `index`th thread the fixture opens, counting from 0 (#123). */
+export function discordThread(index: number): string {
+  return `13090000000000000${String(index + 10)}`;
+}
+
+/** What the fixture's Discord has opened: how many threads so far. */
+interface Forum {
+  threads: number;
+}
+
+/**
+ * Discord's answer to a request, as a forum channel's webhook gives it (#123):
+ * a GET of the webhook names its server and channel; a post with
+ * `thread_name` opens a new thread and, with `?wait=true`, answers its
+ * message, whose `channel_id` is the thread; any other post answers 204. A
+ * Join discussion link (`/channels/…`) opens a plain page.
+ */
+function discordAnswer(url: URL, method: string, body: unknown, forum: Forum) {
+  const cors = { 'access-control-allow-origin': '*' };
+  const json = (value: unknown) => ({
+    status: 200,
+    headers: { ...cors, 'content-type': 'application/json' },
+    body: JSON.stringify(value),
+  });
+  if (url.pathname.startsWith('/channels/')) {
+    return {
+      status: 200,
+      headers: { 'content-type': 'text/html' },
+      body: '<title>Discord</title>',
+    };
+  }
+  if (method === 'GET') {
+    return json({ id: '1199000000000000001', guild_id: DISCORD_GUILD, channel_id: DISCORD_FORUM });
+  }
+  const opens = typeof body === 'object' && body !== null && 'thread_name' in body;
+  const channel = opens ? discordThread(forum.threads++) : DISCORD_FORUM;
+  if (url.searchParams.get('wait') !== 'true') return { status: 204, headers: cors };
+  return json({ id: '1400000000000000001', type: 0, channel_id: channel });
+}
+
+/** Answers a request to Discord as a forum channel's webhook does, keeping it; a CORS preflight gets its own answer. */
+async function answerAsDiscord(
+  route: Route,
+  requests: DiscordRequest[],
+  forum: Forum,
+): Promise<void> {
   const request = route.request();
   const cors = { 'access-control-allow-origin': '*' };
   if (request.method() === 'OPTIONS') {
@@ -65,26 +127,58 @@ async function answerAsDiscord(route: Route, requests: DiscordRequest[]): Promis
     return;
   }
   const text = request.postData();
+  const body = text === null ? null : (JSON.parse(text) as unknown);
   requests.push({
     method: request.method(),
     url: request.url(),
     headers: await request.allHeaders(),
-    body: text === null ? null : (JSON.parse(text) as unknown),
+    body,
   });
-  await route.fulfill({ status: 204, headers: cors });
+  await route.fulfill(discordAnswer(new URL(request.url()), request.method(), body, forum));
 }
 
-/** Answers every request `context` makes to Discord itself, keeping each in `requests`. */
+/** What a context sent to Discord that the fixture didn't answer (#123). */
+export interface DiscordWatch {
+  /** Each request the browser sent to Discord that the fixture never answered, as `METHOD url`. */
+  unanswered(): string[];
+}
+
+/**
+ * Answers every request `context` makes to Discord itself, as a forum
+ * channel's webhook would, keeping each in `requests`. Profiles routed with
+ * one `forum` share its threads, as members of one group share its channel.
+ *
+ * The watch it returns names any request to Discord the browser sent that
+ * the route never saw, such as one from a page under the app's service
+ * worker in WebKit (#123). A CORS preflight is the browser's, not the app's,
+ * so it isn't counted.
+ */
 export async function routeDiscord(
   context: BrowserContext,
   requests: DiscordRequest[],
-): Promise<void> {
-  await context.route(isDiscord, (route) => answerAsDiscord(route, requests));
+  forum: Forum = { threads: 0 },
+): Promise<DiscordWatch> {
+  const sent: Request[] = [];
+  const answered = new Set<Request>();
+  context.on('request', (request) => {
+    if (request.method() !== 'OPTIONS' && isDiscord(new URL(request.url()))) sent.push(request);
+  });
+  await context.route(isDiscord, (route) => {
+    answered.add(route.request());
+    return answerAsDiscord(route, requests, forum);
+  });
+  return {
+    unanswered: () =>
+      sent
+        .filter((request) => !answered.has(request))
+        .map((request) => `${request.method()} ${request.url()}`),
+  };
 }
 
 /**
  * Opens a new profile for `name`; the fixture closes it after the test.
- * `discord` holds every request any profile sent to Discord, in order (#119).
+ * `discord` holds every request any profile sent to Discord, in order (#119),
+ * and the test fails on any request to Discord the fixture didn't answer (#123).
  */
 export interface OpenProfile {
   (name: string, options?: BrowserContextOptions): Promise<Person>;
@@ -110,14 +204,26 @@ function recordCspViolations(report: string): void {
 
 /**
  * Playwright's `test`, with the relay started before each test and stopped after
- * it, and `openProfile`: each profile it opens is checked for CSP violations.
+ * it, and `openProfile`: each profile it opens is checked for CSP violations
+ * and for requests to Discord that the fixture didn't answer. Each worker has
+ * servers of its own (playwright.config.ts starts them): its pages, requests
+ * and relay never reach another worker's.
  */
-export const test = base.extend<{ relay: RunningRelay; openProfile: OpenProfile }>({
-  // Every test gets the relay, started before it and stopped after it. It waits for
-  // the relay's health check through `request`.
+export const test = base.extend<
+  { relay: RunningRelay; openProfile: OpenProfile },
+  { servers: readonly WorkerServers[] }
+>({
+  // Every worker's servers, as scripts/e2e.sh chose them; a test uses its own worker's.
+  servers: [workerServers(), { scope: 'worker' }],
+  // Pages and `request` go to the worker's `vite preview`, which proxies /v1 to its relay.
+  baseURL: async ({ servers }, provide, testInfo) => {
+    await provide(`http://127.0.0.1:${serversOf(servers, testInfo.parallelIndex).web}`);
+  },
+  // Every test gets its worker's relay, started before it and stopped after it. It
+  // waits for the relay's health check through `request`.
   relay: [
-    async ({ request }, provide) => {
-      const relay = await startRelay(request);
+    async ({ request, servers }, provide, testInfo) => {
+      const relay = await startRelay(request, serversOf(servers, testInfo.parallelIndex).relay);
       try {
         await provide(relay);
       } finally {
@@ -129,10 +235,12 @@ export const test = base.extend<{ relay: RunningRelay; openProfile: OpenProfile 
   openProfile: async ({ browser }, provide) => {
     const profiles: { readonly person: Person; readonly violations: string[] }[] = [];
     const discord: DiscordRequest[] = [];
+    const forum: Forum = { threads: 0 };
+    const watches: DiscordWatch[] = [];
     const open = async (name: string, options: BrowserContextOptions = {}): Promise<Person> => {
       // The project's `use` options (baseURL, device) apply; the CSP always does.
       const context = await browser.newContext({ ...options, bypassCSP: false });
-      await routeDiscord(context, discord);
+      watches.push(await routeDiscord(context, discord, forum));
       const violations: string[] = [];
       await context.exposeFunction(REPORT_VIOLATION, (line: string) => {
         violations.push(line);
@@ -150,11 +258,23 @@ export const test = base.extend<{ relay: RunningRelay; openProfile: OpenProfile 
         violations.map((line) => `${person.name}: ${line}`),
       );
       expect(all, 'CSP violations').toEqual([]);
+      const unanswered = watches.flatMap((watch) => watch.unanswered());
+      expect(unanswered, 'requests to Discord that the fixture never answered').toEqual([]);
     } finally {
       await Promise.all(profiles.map(({ person }) => person.page.context().close()));
     }
   },
 });
+
+/**
+ * Shows `url` on `page`, navigating only when the page isn't there already
+ * (#123). WebKit reloads a page sent to its own URL, where Chromium stays
+ * put, and the reloaded page comes under the app's service worker, whose
+ * requests WebKit never lets `context.route` see.
+ */
+export async function visit(page: Page, url: string): Promise<void> {
+  if (page.url() !== url) await page.goto(url);
+}
 
 /** The screen's one `h1`. */
 export function heading(page: Page, name: string): Locator {
@@ -173,14 +293,20 @@ export async function expectAccessible(person: Person, screen: string): Promise<
 
 /**
  * Presses the React Aria radio `name`, inside `within` when given: React Aria
- * hides the native input under its label, so this presses the label.
+ * hides the native input under its label, so this presses the label. A ballot
+ * re-renders as the device syncs, and WebKit once dropped a press that landed
+ * then (#297's CI), so this presses again until the radio is checked. Whether a
+ * real voter's choice can be lost that way is #354.
  */
 export async function pick(page: Page, name: string, within?: Locator): Promise<void> {
   const scope = within ?? page;
   const radio = scope.getByRole('radio', { name });
   // `has` is matched inside each label, so it names the radio from the page, not the scope.
-  await scope.locator('label', { has: page.getByRole('radio', { name }) }).click();
-  await expect(radio).toBeChecked();
+  const label = scope.locator('label', { has: page.getByRole('radio', { name }) });
+  await expect(async () => {
+    if (!(await radio.isChecked())) await label.click();
+    await expect(radio).toBeChecked({ timeout: 2_000 });
+  }).toPass({ timeout: 15_000 });
 }
 
 /**
@@ -189,31 +315,66 @@ export async function pick(page: Page, name: string, within?: Locator): Promise<
  */
 export const GUIDE_KEY = 'reconcile.first-run-guide';
 
+/**
+ * The `localStorage` key of the passkey offer's answer (`src/platform/passkeyOffer.ts`,
+ * #95), spelled here for the same reason.
+ */
+export const PASSKEY_OFFER_KEY = 'reconcile.passkey-offer';
+
+/** The passkey offer's heading (#95). */
+export const PASSKEY_OFFER = 'Lock your keys with a passkey';
+
 /** What first run leaves for later in a profile. */
 export interface FirstRunOptions {
   /** True to meet the first-run guide (#91) after the profile's first create or join. */
   readonly guide?: boolean;
+  /** True to stop at the passkey offer (#95), which the profile otherwise answers Not now. */
+  readonly passkey?: boolean;
+}
+
+/** What first run showed a profile. */
+export interface FirstRun {
+  /** Whether the passkey offer (#95) followed the notice. */
+  readonly passkeyOffered: boolean;
 }
 
 /**
  * First run (#76): a new profile's pilot notice, checked by axe, then
- * accepted. Unless `guide` is true, the profile then counts the first-run
- * guide (#91) as seen, as its Skip leaves it, so a spec about something else
- * isn't stopped by the guide's dialog after its first create or join.
+ * accepted. Where the browser can lock keys with a passkey, the passkey
+ * offer follows (#95): unless `passkey` is true, it is checked by axe and
+ * answered Not now, so a spec about something else goes on to the app.
+ * Unless `guide` is true, the profile then counts the first-run guide (#91)
+ * as seen, as its Skip leaves it, so a spec about something else isn't
+ * stopped by the guide's dialog after its first create or join.
  */
-export async function acceptNotice(person: Person, options: FirstRunOptions = {}): Promise<void> {
-  // A plain visit starts on the landing page (ADR-0077); an invite link goes straight to the notice.
-  const notice = heading(person.page, 'Before you start');
-  const start = person.page.getByRole('button', { name: 'Start a Group' }).first();
+export async function acceptNotice(
+  person: Person,
+  options: FirstRunOptions = {},
+): Promise<FirstRun> {
+  const { page } = person;
+  // A plain visit starts on the landing page (ADR-0078); a link goes straight to the notice.
+  const notice = heading(page, 'Before you start');
+  const start = page.getByRole('button', { name: 'Start a Group' }).first();
   await expect(notice.or(start)).toBeVisible();
   if (await start.isVisible()) await start.click();
   await expect(notice).toBeVisible();
   await expectAccessible(person, 'Pilot notice');
-  await person.page.getByRole('button', { name: 'I understand' }).click();
-  if (options.guide === true) return;
-  await person.page.evaluate((key) => {
-    window.localStorage.setItem(key, '1');
-  }, GUIDE_KEY);
+  await page.getByRole('button', { name: 'I understand' }).click();
+  await expect(heading(page, 'Before you start')).toBeHidden();
+  // The offer renders in the same commit that takes the notice away, so this reads it once.
+  const offer = heading(page, PASSKEY_OFFER);
+  const passkeyOffered = await offer.isVisible();
+  if (passkeyOffered && options.passkey !== true) {
+    await expectAccessible(person, 'Passkey offer');
+    await page.getByRole('button', { name: 'Not now' }).click();
+    await expect(offer).toBeHidden();
+  }
+  if (options.guide !== true) {
+    await page.evaluate((key) => {
+      window.localStorage.setItem(key, '1');
+    }, GUIDE_KEY);
+  }
+  return { passkeyOffered };
 }
 
 /** The keys in the origin's `localStorage` on `page`, sorted. */
@@ -230,21 +391,34 @@ export interface NewGroup {
 }
 
 /**
- * From Start, founds `group`, waits for Group home (its genesis is back from
- * the relay), presses Copy invite link, and returns the link it made (#73).
+ * On Create a group, founds `group` and waits for Group home, which appears
+ * once its genesis is back from the relay.
  */
-export async function foundGroup(page: Page, group: NewGroup): Promise<string> {
-  await page.getByRole('link', { name: 'Create group' }).click();
+export async function createGroup(page: Page, group: NewGroup): Promise<void> {
   await page.getByRole('textbox', { name: 'Group name' }).fill(group.name);
   await page.getByRole('textbox', { name: 'Your name' }).fill(group.founder);
   await page.getByRole('textbox', { name: 'Document title' }).fill(group.title);
   await page.getByRole('textbox', { name: 'Document text' }).fill(group.atoms.join('\n\n'));
   await page.getByRole('button', { name: 'Create group' }).click();
   await expect(heading(page, group.name)).toBeVisible();
+}
+
+/** On Group home, presses Copy invite link and returns the link it made (#73). */
+export async function copyInvite(page: Page): Promise<string> {
   await page.getByRole('button', { name: 'Copy invite link' }).click();
   const link = page.getByRole('textbox', { name: 'Invite link' });
   await expect(link).toHaveValue(/#join\/[\w-]{43}$/);
   return link.inputValue();
+}
+
+/**
+ * From Start, founds `group`, waits for Group home (its genesis is back from
+ * the relay), presses Copy invite link, and returns the link it made (#73).
+ */
+export async function foundGroup(page: Page, group: NewGroup): Promise<string> {
+  await page.getByRole('link', { name: 'Create group' }).click();
+  await createGroup(page, group);
+  return copyInvite(page);
 }
 
 /** The number of records in every IndexedDB database the page's origin holds. */

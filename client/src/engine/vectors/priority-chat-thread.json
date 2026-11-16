@@ -1,0 +1,364 @@
+{
+  "kind": "fold",
+  "vectors": [
+    {
+      "name": "priority-chat-thread: a priority vote is numbered among the group's Proposals like any other, and keeps the chat bot's claim and the Discord thread its open claimant records; a second priority vote while it's open is ignored, so it takes no number, its claim and its thread are ignored too, and the next Proposal takes the next number",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29354840,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1761290400000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29354841,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761290460000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29354842,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1761290520000,
+            "body": {
+              "name": "Cal",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29354843,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1761290580000,
+            "body": {
+              "name": "Dee",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29354844,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761290640000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29354845,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761290700000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "rules",
+                "optIn": "chatBot",
+                "value": {
+                  "webhook": "https://discord.com/api/webhooks/1199000000000000001/rV7-first_token"
+                }
+              },
+              "title": "Turn the chat bot on",
+              "why": "Our group talks on Discord.",
+              "window": 14
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501200000,
+            "body": {
+              "proposal": "@7",
+              "scores": {
+                "@7": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501260000,
+            "body": {
+              "proposal": "@7",
+              "scores": {
+                "@7": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 10,
+          "received": 29375022,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762501320000,
+            "body": {
+              "proposal": "@7",
+              "scores": {
+                "@7": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 11,
+          "received": 29375023,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762501380000,
+            "body": {
+              "proposal": "@7",
+              "scores": {
+                "@7": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 12,
+          "received": 29375030,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501800000,
+            "body": {
+              "target": {
+                "kind": "priority"
+              },
+              "title": "What should we focus on?",
+              "why": "We can only do one thing well at a time.",
+              "options": ["Fix the website", "Plan the picnic"]
+            }
+          }
+        },
+        {
+          "seq": 13,
+          "received": 29375031,
+          "event": {
+            "v": 1,
+            "type": "chat-posted",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501860000,
+            "body": {
+              "proposal": "@12",
+              "moment": "open",
+              "nonce": "b-1"
+            }
+          }
+        },
+        {
+          "seq": 14,
+          "received": 29375032,
+          "event": {
+            "v": 1,
+            "type": "chat-thread",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501920000,
+            "body": {
+              "proposal": "@12",
+              "url": "https://discord.com/channels/1188000000000000001/130900000000000003"
+            }
+          }
+        },
+        {
+          "seq": 15,
+          "received": 29375033,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762501980000,
+            "body": {
+              "target": {
+                "kind": "priority"
+              },
+              "title": "What should we focus on?",
+              "why": "We can only do one thing well at a time.",
+              "options": ["New bylaws", "Rent strike"]
+            }
+          }
+        },
+        {
+          "seq": 16,
+          "received": 29375034,
+          "event": {
+            "v": 1,
+            "type": "chat-posted",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762502040000,
+            "body": {
+              "proposal": "@15",
+              "moment": "open",
+              "nonce": "c-1"
+            }
+          }
+        },
+        {
+          "seq": 17,
+          "received": 29375035,
+          "event": {
+            "v": 1,
+            "type": "chat-thread",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762502100000,
+            "body": {
+              "proposal": "@15",
+              "url": "https://discord.com/channels/1188000000000000001/130900000000000004"
+            }
+          }
+        },
+        {
+          "seq": 18,
+          "received": 29375036,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762502160000,
+            "body": {
+              "atom": "@1.0",
+              "title": "Later quiet hours",
+              "why": "It reads better.",
+              "text": "Quiet after midnight.\n"
+            }
+          }
+        }
+      ],
+      "relayNow": 29375040,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@7",
+            "number": 1
+          },
+          {
+            "id": "@12",
+            "number": 2,
+            "atom": "@12",
+            "target": {
+              "kind": "priority"
+            }
+          },
+          {
+            "id": "@18",
+            "number": 3
+          }
+        ],
+        "chatPosts": [
+          {
+            "by": "%ben",
+            "proposal": "@12",
+            "moment": "open"
+          }
+        ],
+        "chatThreads": [
+          {
+            "id": "@14",
+            "seq": 14,
+            "received": 29375032,
+            "by": "%ben",
+            "proposal": "@12",
+            "url": "https://discord.com/channels/1188000000000000001/130900000000000003"
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 15,
+            "id": "@15"
+          },
+          {
+            "seq": 16,
+            "id": "@16"
+          },
+          {
+            "seq": 17,
+            "id": "@17"
+          }
+        ]
+      }
+    }
+  ]
+}

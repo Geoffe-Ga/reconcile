@@ -135,7 +135,7 @@ All text tokens meet WCAG 2.2 AA (4.5:1) on every surface in both themes, and sc
 | display, heading-1/2 | Newsreader | page titles, Document titles, Atom headings |
 | document | Newsreader 19px / 1.6 | all Atom text, ballot versions, diffs |
 | heading-3, body, ui, caption | Public Sans | everything interactive or explanatory |
-| eyebrow | Public Sans caps, 0.08em tracking | section labels ("OPEN PROPOSAL", "ENTRENCHED") |
+| eyebrow | Public Sans caps, 0.08em tracking | section labels ("PROPOSAL 3 · OPEN", "ENTRENCHED") |
 | mono | JetBrains Mono | version hashes, ids, recovery phrase |
 
 Keep running text to 60–70 characters per line. Use `text-wrap: balance` on headings.
@@ -151,12 +151,12 @@ Keep running text to 60–70 characters per line. Use `text-wrap: balance` on he
 ## Shapes and depth
 
 - Radius: `sm` 6px for inputs and chips, `md` 10px for cards and ballots, `full` for buttons and score pills.
-- Depth comes from surface contrast (`canvas` → `surface` → `sunken`) and 1px `hairline` borders. One soft shadow at most, and only for floating layers (menus, dialogs).
+- Depth comes from surface contrast (`canvas` → `surface` → `sunken`) and 1px `hairline` borders. One soft shadow at most, and only for floating layers (menus, dialogs, the link bar).
 - A modal dialog sits on `surface` over a `scrim`, which darkens the page in both themes, and its shadow uses the same `scrim`.
 
 ## The painting
 
-One hand-painted forest, read top to bottom: sky, canopy, trunks, soil and roots, then the mycelial network. `painting/paint.py` makes it with simulated brushstrokes ([`painting/README.md`](painting/README.md)), in this palette plus sky, leaf, bark and soil colors of its own. It is the app's one piece of imagery ([ADR-0077](docs/adr/0077-landing-page-and-painted-edges.md)).
+One hand-painted forest, read top to bottom: sky, canopy, trunks, soil and roots, then the mycelial network. `painting/paint.py` makes it with simulated brushstrokes ([`painting/README.md`](painting/README.md)), in this palette plus sky, leaf, bark and soil colors of its own. It is the app's one piece of imagery ([ADR-0078](docs/adr/0078-landing-page-and-painted-edges.md)).
 
 - **Text never sits on the painting.** Words go on `surface` or `canvas`. The one exception is the landing page's title, which is very large.
 - **Nothing moves.**
@@ -168,11 +168,11 @@ One hand-painted forest, read top to bottom: sky, canopy, trunks, soil and roots
 A screen may show a few pixels of the painting around the window: `edge` is 6px on a phone and 10px from 700px up. Inside the edge the page is `canvas`, exactly as a plain screen. The edge is drawn over the page, so words scroll under it and never across it, and it takes no presses.
 
 - **Which piece** follows where the screen sits in the story:
-  - sky for arriving and setting out (the install guide, Start, Create group, Join)
-  - canopy for a group (Group home and its status pages)
+  - sky for arriving and setting out (the install guide, Start, Create group, Join, Follow, a front door, Bring a card, Discover)
+  - canopy for a group (Group home, its status pages, its Dispatches)
   - trunks for what holds a group up (Group rules)
-  - soil for what's yours alone (Personal)
-- **Plain screens.** Anything that needs care or deep focus shows no edge: reading a Document, writing or weighing a Proposal, the ballot, a personal Document, the pilot notice, linking a device, Settings.
+  - soil for what's out of sight (Personal, and a Coalition's home, where groups' roots meet)
+- **Plain screens.** Anything that needs care or deep focus shows no edge: reading a Document or its history, writing or weighing a Proposal or a Dispatch, the ballot, a personal Document, the pilot notice, anything to do with keys, recovery or linking a device, Settings.
 - The edge is color and nothing more. It carries no meaning a reader needs.
 
 ### The landing page
@@ -189,26 +189,64 @@ What a new visitor sees before first run: the whole painting, with each section'
 Build on **React Aria Components** (unstyled, accessible). Style everything from these tokens.
 
 - **Atom block:** Newsreader text with a left gutter for its badge.
-  - Badges: *Entrenched* has a `clay` outline and a lock glyph. *Eternal* has a double `ink` rule and the eyebrow "ETERNAL". #116 builds them.
-  - History opens in a side sheet. #104 builds it.
+  - Badges (#116) open the block, as an eyebrow, so the word says the class and color is never the only signal. *Entrenched* has a `clay` outline, a lock glyph and the eyebrow "ENTRENCHED", in `clay`. *Eternal* has a double `ink` rule above and below and the eyebrow "ETERNAL", in `ink`. An ordinary section has none.
+  - An eternal section offers no change, removal, move or protection. In their place, one caption line says it can't be changed; its History stays, as on every section.
+  - **History** (#104): each section's quiet History opens its history in a side sheet: a React Aria Modal on `surface` over the `scrim`, standing at the inline end with `lg` corners on its open edge and the one soft shadow, and the whole screen below 40rem. Its heading and Close stay at the top as it scrolls.
+    - Each pass, newest first: its Proposal's title (heading-3), the text it left in Newsreader (or "This removed the section." in body; a move or a class change sets its line, such as "Moved to the top" or "Made eternal", in body over the text), "Proposed by <name> · Decided <date>" (caption, `muted`), its why (body), one totals line (caption), then "See the full result →". A coalition motion lists each group with "Passed" or "Didn't pass" in place of totals, never a count from inside a group.
+    - It ends with the founding text, "Written by <name> · Founded <date>", or the Proposal that created the section. "Proposals that didn't pass (N)" is a disclosure under them: each title with its outcome and day.
+  - **Change log** (#104): a Document's passed changes, newest first, as `surface` cards under the eyebrow "Change log" and the Document's title: the Proposal's title (heading-3), what it did in body ("Changed ‘Quiet hours start…’", "Added a section", "Removed ‘…’", "Moved after ‘…’", "Made eternal"), and its day (ui, `muted`). Each change opens its section's history; the Document's beginning, its founding text or the Proposal that started it, is a plain card at the end. The Document view links to it under its title, as a forward link.
+- **Protection choice** (#116): a radio group of cards, as the Level picker's, each class's name over its one line. While Eternal is chosen, the line "This is permanent…" follows in `body`, set off by a `clay` rule at its start, never an alert color.
 - **Proposal card:** title (heading-3), justification (body), a countdown (ui, `muted`), and a "Join discussion" link to the group's linked chat.
 - **Ballot:**
   - Competing versions sit side by side on wide screens and stack on phones.
   - Each version shows a word diff of the Markdown source against the current text, in Newsreader with its line breaks kept: additions underlined on `primary-soft`, and deletions struck through on `negative-soft`, the `negative` tint. Each change is also marked "added" or "removed" in text for screen readers, so color is never the only signal.
   - Each version has a 0–4 segmented control of score pills.
   - Choosing 0 reveals a **required** reason field.
+  - A priority vote's options (#107) are cards like versions, each headed by the option as plain text in Newsreader, with its own pills and consent meter. Phones stack them; wide screens set two columns, then three.
 - **Level picker** (#90): the three involvement levels as a radio group of cards, Member to Co-Creator.
   - Each card shows the level's name (ui, semibold) over its one line (caption, `body`). A tap anywhere on the card picks it.
   - The chosen card takes a `primary` border on `primary-soft`, and its ring fills with a dot, so the choice never rests on color alone.
   - On People, Save your choice (secondary) appears only once the choice differs from the person's level.
-- **Consent meter:** two plain bars:
+- **Consent meter:** two plain bars, at the Proposal's own bar (3.0 and 5% for an entrenched one):
   - the average against the 2.0 line
   - the share of zeros against the 10% line
   - Each bar is labeled in words ("Passes", "Short by 0.3"). No gauge dials.
 - **Result:**
   - The outcome sentence comes first.
   - Totals come next.
-  - Individual ballots appear under a disclosure, with the expiry date shown ("Individual votes visible until 12 Dec"). #111 brings ballot expiry; until then, the disclosure shows no date.
+  - Individual ballots appear under a disclosure, with the expiry date shown under its toggle ("Individual scores and notes are visible until Sat 12 Dec. Screenshots taken before then can outlast this.", #111).
+  - Once they expire, a caption takes the disclosure's place ("Individual scores and notes were cleared on Sat 12 Dec."), and the totals stay.
+  - A priority vote's result (#107) names the focus, then lists the options that passed, best first, and those that didn't clear the floor, by their text alone. Its totals go under the disclosure with the ballots. Once the ballots expire, that disclosure, now "Totals", keeps the totals, with the cleared caption in the ballots' place.
+- **Dispatch card** (#112): a `surface` card with a `hairline` border, as every card.
+  - The title in heading-3, then "From <name> · <date>" (caption, `muted`). A Dispatch a Proposal carried reads "From the Proposal ‘<title>’", the title a link to it. When the line wraps, "· <date>" stays in one piece and takes the sender's last word down with it, so no line starts with "·" (#453).
+  - The text in body, as plain pre-wrapped text: line breaks and spaces show as typed, and Markdown and addresses stay text, never formatting or links.
+  - "Open <Document title> →" as a forward link when it points to a Document.
+  - On the Dispatches view, Send a Dispatch is the one primary action; on Group home, it's secondary, beside See all.
+  - A coalition's Dispatch (#124) comes from a passed motion, whose vote lives inside each member group, so "From the Proposal ‘<title>’" keeps its title as plain text there, and Open goes to the coalition's own Document.
+  - A Dispatch that rose from a member group (#126) reads "From <seat> · <date>" on the coalition's home, <seat> being the member group or coalition that passed it below, named as the coalition names it. It has no Open link: its Document stays in the group it started in.
+  - On Discover's feed (#429), one line opens the card, above its title: an eyebrow naming the group or coalition it's shown from, in `<bdi>`, as a link to that place's home. A dissolved group's adds " · Ended", in words.
+- **A reconcile card's link** (#114, #424; ADR-0077 §6): once the relay holds the card, the link in a read-only field, "Card link", with the warning on who can read it as its hint, then one line in body saying that whoever runs a chat app it goes through can read the link too, then Copy and **Share** (secondary) side by side. Copy is primary on "Your card is ready", and secondary on a formed coalition's row in Coalitions, where a card for another group is made. Share hands the device's share sheet the link alone, never a title or words that name a group; where there's no sheet, or it refuses, Share copies and says so, and closing the sheet says nothing.
+- **Following a coalition** (#124):
+  - **Copy a follow link** sits last on a participant's coalition home, under the eyebrow "Followers": the plain warning first, as body text, then the chat-app line in body, as on a card's link, then the button (secondary: the home has no one primary action) with **Share** (secondary) beside it (#424), each named for what it does, as a card's Copy and Share are (#456), then the link in a read-only field with how copying or sharing went, as Copy invite link does. Share sends the link on show at once, or makes one and sends it once it's ready, from the same tap; with no share sheet it copies as the button does.
+  - **Follow:** the eyebrow "Follow a coalition", the coalition's name as the heading, then a `surface` card: the eyebrow "Its member groups" over the names on one line, a `muted` "·" between each, then under a hairline "From its statement" over the excerpt in Newsreader. Every name is plain text in `<bdi>`. Then "Follow this coalition?" (heading-2), one line in `body` saying what following shows of you, which is nothing, Follow (the one primary action) and Not now (quiet).
+  - **A follower's coalition home:** the eyebrow "Following", the name, the member groups on one line as on Follow, then Dispatches, Documents and Decided, and Unfollow (secondary) at the end, which opens the same alert dialog as Leave. Nothing to propose or take part in.
+  - **Start's Following:** one card link per coalition, its name (heading-3) over its member groups (caption).
+- **Front door** (#121): the public page a group opens by Proposal.
+  - The eyebrow "Front door", the group's name as the heading, then a `surface` card: the eyebrow "From their Document" over the excerpt in Newsreader at document size, and, only when the group chose it, how many people are in it (ui, `body`). Never a member's name.
+  - "Ask to join" (heading-3), then two fields, the name to use and why, one line in `body` (ui) saying not to include anything the group shouldn't read, and Send, the page's one primary action. No contact field.
+  - Between the message and that line, for someone with personal Documents (#425): "Send some of your own Documents with this" (ui, `ink`), one line in `body` (ui) saying the group's members will read the ones checked and another group sent the same ones could recognize the words, then a checkbox per Document, its title in `<bdi>`, none checked. More than 3, or more than one request carries, is one `form-error` line under them, and Send sends nothing. Someone with no personal Documents sees nothing new.
+  - Under the excerpt, for a device with a group that may take a card (#426): "Propose reconciling with this group" (secondary), never beside a second primary. It opens Reconcile with another group's form under the eyebrow "Front door", headed "Propose reconciling": a Back-style button to the door, one lede naming the group in `<bdi>` and saying that both groups vote and the card waits 24 to 48 hours, then "Your group" as Bring a card's radio cards, the first picked, then the card's fields and Send the card (primary). Once sent, one status line says the card is at the group's front door, with the forward link to your group's Proposal. The tab's title stays "Front door".
+  - A closed door reads "This front door is closed." under the heading "Front door", with one quiet line and no form.
+  - **Applications** on group home: one `surface` card each, the name (heading-3) and the day it arrived (meta) on one line, the message as plain body text, "Invited by <name>" in caption, then Send an invite (secondary) and Dismiss (quiet).
+  - **Groups asking to reconcile** (#426), under the applications: heading-3, then one `surface` card per card left at the door, as an application's. The coalition's name (heading-3) and "Arrived <day>" (meta) on one line, then the card's preview as Bring a card shows it: "From <group>", the eyebrow "Their proposed statement", its title in Newsreader, and its sections as plain text. For someone who may propose: "Your name in the coalition", then Bring it to a vote (secondary) and Dismiss (quiet), which dismisses it for the whole group. A card whose day has run out reads "This card has expired." in body, with Dismiss only. No count, no badge, no notification.
+  - Documents sent with one (#425) sit under the message: the eyebrow "Documents they sent", then one disclosure each, its title in `<bdi>` as the toggle (ui, `primary`, with the ▸ marker), and its text in Newsreader at document size as plain pre-wrapped text in `<bdi>`: line breaks and spaces show as typed, and Markdown and addresses stay text, never formatting or links. Dismiss and Send an invite delete the copy, so the disclosures go with it.
+- **Coalition room** (#125): a list and a box, never a chat product.
+  - The eyebrow "Room", the coalition's name as the heading, then one line in `body` saying who can read it (only the coalition's member groups: not the relay, not its followers) and that each device deletes a message 30 days after the relay received it.
+  - Messages run oldest at the top to newest at the bottom, as hairline rows on the paper: the author's coalition name (ui, 650, `ink`) and the relay's time (caption, `muted`; the time alone today, the day and time before) on one line, then the text in body as plain pre-wrapped text inside `<bdi>`: line breaks and spaces show as typed, and Markdown and addresses stay text, never formatting or links. No avatars, reactions, counts or read receipts.
+  - A message the relay doesn't have yet sits last, under the writer's name, with its send status (caption, `muted`) under its text.
+  - At the bottom, the box ("Message", a few lines tall, taller on drag) and Send, the view's one primary action. Someone who hasn't taken part gets Take part (secondary) there instead, and anyone else one line in `body` saying who writes here.
+  - New messages are announced politely, only while the person is at the bottom.
+  - On the coalition's home, a card link "Open the room" in its own section, shown only on a device in a member group.
 - **Notification switches** (Settings, #99): the disclosure first, as plain body text, then one React Aria switch per group, "Notify me about <group>", all off to start.
   - Each switch is a card on `surface` with a `hairline` border, and a tap anywhere on it toggles it. The track sits at the row's end, at least a 44px target with the card.
   - Off: a `muted` ring with a `muted` thumb at the start. On: the track fills `primary` and the thumb, in `surface`, moves to the end, so the state never rests on color alone.
@@ -217,15 +255,47 @@ Build on **React Aria Components** (unstyled, accessible). Style everything from
   - It reveals a press-and-hold confirm. Releasing early cancels, and a polite live region announces the progress.
   - `negative` appears only on that final confirm.
   - No skulls, no red banners, no "stealth" language.
+- **Passkey offer** (#95, #389): the offer after the pilot notice, and Settings' Lock with a passkey. It never pressures and never hides Not now.
+  - What a passkey does (body), then the two taps: Make a passkey (primary; secondary in Settings, whose one primary action is Make a backup file) with Not now (quiet) on its line.
+  - **A way back first** (#389). With groups and no way back, "First, a way back to your groups" (heading-3) and one line in body take setup's place, then Save a backup's own form, whose Make a backup file is the one primary action, then "Choose recovery contacts instead →" as a forward link, then Not now. Once the file is saved, setup takes the form's place under one line saying so.
+  - On a device with no group yet, one line says the offer waits, with Continue (primary) and Not now (quiet).
+  - In Settings, one line in body points to the sections above. A device locked before #389 with no way back keeps its "locked" line, with a notice under it (`sunken` ground, `warning` rule) asking for a backup file or recovery contacts. It never offers to unlock or unseal.
 - **Linking code** (#96): the code a second device scans.
   - An inline SVG of the QR modules, `qr-dark` on `qr-light` in both themes, with a 4-module quiet zone, a `hairline` border and `md` corners. Never a `data:` image (the CSP refuses one) or a light-on-dark code, which many cameras can't read.
   - Beside it on wide screens, under it on phones, the same code as selectable `mono` text on `sunken`, which selects as a whole, and Copy the code (secondary).
   - The six-digit number both devices show sits in a `surface` card with a `hairline` border: the prompt (heading-3), then the digits in two groups of three, in JetBrains Mono at `display` size.
   - Match is the one primary action on the existing device. The new device shows the number with only Cancel.
+- **Recovery contacts** (#109; ADR-0008, ADR-0043): trust, never growth. Nothing counts, ranks or invites anyone.
+  - Settings shows what contacts are, then "<n> recovery contacts · <t> needed" (heading-3) over one line per contact: the name (ui, `ink`), then "in <group>" (caption, `muted`). A contact who has gone carries "No longer in a shared group" as caption words on a `sunken` chip, never a color alone. Below t, a notice with a `warning` rule asks the person to choose again. Choose (secondary) opens the picker.
+  - The picker (`#/recovery`) puts the issue's words on whom to pick in body text, then two counts as number fields with a step either side, "People to pick" (3–7, 5 to start) and "Needed to help you back in" (2–5, 3 to start), and one line saying what they mean. Each group is a card on `surface` with a `hairline` border: "People in <group>" (heading-3), then a checkbox per person. A live line counts the picks, and Save recovery contacts (primary) is ready once they match.
+  - A held share is one line, "You're holding a recovery share for <name> (<group>)": listed under "Shares you hold" in Settings, and once on that group's home on the backup card's `sunken` ground, with OK (quiet) to put it away. Never a modal.
+- **Recovering with contacts** (#118; ADR-0043 §2): the same calm as recovery contacts. Nothing counts down, flashes or uses fear words.
+  - The new device (`#/recover`) shows the code in a read-only field (as an invite link is shown), Share the code (primary), then both numbers in the linking number's card: what to do (heading-3), then "First number" (the check) and "Second number" (#398), each an eyebrow over its six digits in two groups of three, JetBrains Mono at `display` size, side by side where there's room and stacked on a phone, then why the second matters in caption. The wait follows in caption, then one live line ("Waiting for your contacts.", or "1 of 2 shares have arrived."), with a caption under it once a share came with a different second number, then Stop recovering (secondary) with what it does in caption.
+  - Once a backup opens (#398), "Are these your groups?" (heading-2) takes the code's place, so Yes is the view's one primary action: one line in body, then the names on a `surface` card with a `hairline` border, one per line (ui, `ink`) in `<bdi>`, then Yes, restore them (primary) beside No, they aren't mine (secondary), with Restoring… as a live status. After No, the code comes back under a notice (`sunken` ground, `warning` rule) saying nothing was restored and what to do next.
+  - Help someone recover (`#/help-recover`) lists each recovery the device helps with as one line (ui, `ink`), the name in `<bdi>`: "Holding <name>'s share until <date>. Open Reconcile after then to send it.", then ready, sent or cancelled in plain words. A sent share names the second number it went with, and while it can go again, Send it again with another number (quiet) opens the second number's field under the line, with Send again (secondary) beside Cancel (quiet) (#398). Its form takes the code (primary Continue), then "Which person?" as the level picker's radio cards, the call line in body, the two number fields, and Approve (primary) beside Back (secondary). A wrong number is one `form-error` line.
+  - The alert is a notice: `sunken` ground, a 3px `warning` rule, `sm` corners, the issue's words in ui, then Cancel this recovery (secondary) with a live status under it. It comes first on Start and first among group home's quiet cards, never a modal or a banner. Once cancelled, the rule turns `hairline` and the words say so, so the state never rests on color alone.
+  - After a recovery, the picker and Settings ask the person to choose again in a notice with a `warning` rule.
 - **Gift prompt** (ADR-0025):
   - an inline card on `ochre-soft` with plain context ("Reconcile is free to use and runs on reciprocity…")
   - a suggested amount, then *Gift* (primary) and *Not now* (quiet text button) on the same line
   - never modal, never repeated in the same session, never guilt-tripping
+- **Link bar** (#444; ADR-0077 §6): one pill at the top of every screen of the app once first run is through, forms and ballots included, where any Reconcile link opens. Never behind the install gate, the pilot notice or the unlock screen, and never on a shared page, which stands outside the app.
+  - A `search` landmark: a pill (`full` radius) on `surface` with a `hairline` border and the one soft shadow, centered, at most 42rem wide with a 16px gutter on phones, floating at the top of the viewport padded by `env(safe-area-inset-top)` to clear the notch. The band around it has no ground and takes no taps, so the page shows around the pill as it scrolls under it. The page starts below the pill, and its scroll padding keeps a focused control clear of it.
+  - **Tucked away:** a swipe up the pill (32px or more, more up than across) empties it, lets go of focus and slides the bar up out of view, and the page takes the whole height. A pull down past the page's top (64px), or a wheel or trackpad scrolling up past it, brings the bar back once the finger lets go; the page bounces home as it always does, under the bar. Cmd+L, Ctrl+L and `/` bring it back too, with the cursor in it, so no one needs a gesture to reach it. While tucked, the bar is inert. Reduced motion drops the slide.
+  - At least 44px tall: a magnifier glyph (`muted`) at its start, the field in body (16px, so iOS doesn't zoom it) with the placeholder "Search or paste a link", and at its end Clear once there is text, or Paste on a touch device while it's empty and focused, where the browser lets a tap read the clipboard. Focused, the pill takes the 3px `ochre` ring.
+  - Under it, a `surface` panel the pill's width, with a `hairline` border and the soft shadow, over the `scrim`. A link gets one row: what it is in ui ("An invite", "A reconcile card", "A coalition to follow", "A front door", "A shared Document"), then "Open →" in `primary`; the row the keyboard is on sits on `sunken`. A damaged or cut-off link gets one line saying so, and anything else "That isn't a Reconcile link.", both in `body`, never an alert color. A linking or recovery code gets one line saying where it goes and a quiet forward link to that screen; the field empties at once, and the code goes nowhere with the link.
+  - While the panel shows, the page and the tab bar under the `scrim` are inert; a tap on the scrim empties the bar.
+  - Pasting never opens anything: Enter or a tap on the row does, through the link's own page. Then the bar empties and lets go of focus. It keeps no history and suggests nothing.
+  - Cmd+L (Ctrl+L) puts the cursor in it with its text selected, from anywhere, and so does `/` outside a field. Escape empties it; a second Escape returns focus to where it was.
+  - **Search** (#445): plain words search what this device holds, in memory, as they're typed. Rows stand under eyebrows ("Groups", "Documents", "Proposals", "Dispatches", "Yours", "Go to"), five of a kind until "Show all <n>" (in `primary`) shows the rest in place. Each row is its title (ui, `ink`), one line of its text with the matched words marked by weight and underline, never by color alone, and where it's from (caption, `muted`), all plain text. Enter opens the first row; a section opens its Document scrolled to it. Nothing found says "Nothing on this device matches." and, in caption, "Search covers only what this device holds." A link always comes before a search. No recent searches, no suggestions, nothing trending.
+- **Tab bar** (#423; ADR-0077 §7): the app's three places, one tap apart: **Groups** (Start, still the opening screen), **Discover** and **Me** (Personal, with Settings a quiet forward link at its end).
+  - A `nav` named "Main" along the bottom of the viewport: `surface` with a `hairline` rule on its top edge, and padded below by `env(safe-area-inset-bottom)` so it clears the iPhone home indicator in the installed app. Three equal columns, held to the reading column on wide screens.
+  - The page scrolls in its own full-width region above the tab bar, as an installed app's does, so nothing ever sits under the tabs: a control at the bottom edge is never half covered. The link bar floats over the region's top, and its scroll padding keeps a focused control clear of the pill.
+  - Each tab is one link: a 24px line glyph (1.75px `currentColor` strokes, round ends) over its word in caption, at least 44px tall, `muted` at rest. Groups is two people, Discover a compass, Me one person.
+  - The current place says so three ways, never by color alone: `aria-current` ("page", or "true" on Settings, a page of Me's), its glyph and word in `primary` with the word at 650, and a 3px `primary` pill, 32px wide, on its top edge.
+  - Never a count, a badge or a dot. It shows only on Start, Discover, Personal and Settings: never behind first run, on a shared page or a link's own page, or on a screen whose one primary action is a form or a ballot.
+- **Discover** (#423, #429; ADR-0077 §6–§7): the eyebrow "Reconcile" and the heading "Discover", then the feed; or, while there's nothing to read, the empty state's one sentence as a lede and one line in body pointing to the link bar, where a card or link opens on every screen (#444).
+  - **The feed** (#429): every Dispatch the device holds, from the person's groups and the coalitions they're in or follow, newest first, one Dispatch card each, as on the Dispatches view, with the eyebrow over its title. A Dispatch that rose shows once, from the highest level it reached. Never a count, a "new" badge or a reaction. It scrolls in the page's own region, between the link bar and the tab bar.
 - **Empty states:** one sentence and one action. No illustrations of crowds or protest imagery.
 
 ## Voice

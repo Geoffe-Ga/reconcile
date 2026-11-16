@@ -7,7 +7,10 @@
  *
  * axe checks every screen they settle on, and any CSP violation in any page
  * fails the test. Nothing here moves time: everyone scores, so the vote
- * closes early.
+ * closes early. C joins by pasting the invite into the link bar on Personal
+ * (#444). Last, C opens Discover from the tab bar on a phone, where the page
+ * scrolls between the link bar and the tab bar and never under either, and
+ * axe checks it with the link bar open in both themes (#423, #444).
  */
 import { type Locator, type Page } from '@playwright/test';
 
@@ -38,6 +41,8 @@ const PEOPLE = [
   'Cal, invited by Ana, Co-Creator',
 ];
 const PROPOSAL = 'Later quiet hours on weekends';
+/** A phone's viewport, for Discover's last look (#423). */
+const PHONE = { width: 390, height: 844 };
 const NEW_TEXT = 'Quiet hours start at 10pm, and at 11pm on Fridays and Saturdays.';
 
 /** Joins from Join's form, at Join's preselected level unless `level` names another, then waits for Group home. */
@@ -64,7 +69,7 @@ async function expectGroupAndDocument(person: Person): Promise<void> {
   await expect(people).toHaveCount(PEOPLE.length);
   await expect(people).toContainText(PEOPLE);
   await expectAccessible(person, 'Group home');
-  await page.getByRole('link', { name: TITLE }).click();
+  await page.getByRole('link', { name: TITLE, exact: true }).click();
   await expect(heading(page, TITLE)).toBeVisible();
   await expect(page.getByRole('article').getByRole('paragraph')).toHaveText(ATOMS);
   await expectAccessible(person, 'Document view');
@@ -121,7 +126,7 @@ async function expectUpdate(person: Person): Promise<void> {
   await expect(
     page.getByRole('region', { name: 'Decided' }).getByRole('link', { name: PROPOSAL }),
   ).toContainText('Passed');
-  await page.getByRole('link', { name: TITLE }).click();
+  await page.getByRole('link', { name: TITLE, exact: true }).click();
   await expect(page.getByRole('article').getByRole('paragraph')).toHaveText([
     NEW_TEXT,
     SECOND_ATOM,
@@ -175,15 +180,26 @@ test('three members propose, vote and see the Update', async ({ openProfile }) =
     await acceptNotice(ben);
     await join(ben);
 
-    // C pastes it on Start, in the dark theme.
+    // C pastes it, with the words a chat app copies around it, into the link bar on Personal (#444).
     await cal.page.goto('/');
     await acceptNotice(cal);
     await expect(heading(cal.page, 'Your groups')).toBeVisible();
     await expectAccessible(cal, 'Start');
-    await cal.page.getByRole('textbox', { name: 'Invite link' }).fill(inviteLink);
-    await cal.page.getByRole('button', { name: 'Join with an invite link' }).click();
+    await cal.page
+      .getByRole('navigation', { name: 'Main' })
+      .getByRole('link', { name: 'Me' })
+      .click();
+    await expect(heading(cal.page, 'Personal')).toBeVisible();
+    await cal.page.keyboard.press('Control+l');
+    const bar = cal.page.getByRole('searchbox', { name: 'Search or paste a link' });
+    await expect(bar).toBeFocused();
+    await bar.fill(`Join us here: ${inviteLink}`);
+    await expect(cal.page.getByRole('option')).toHaveText(/^An invite/u);
+    await expect(heading(cal.page, 'Personal')).toBeVisible();
+    await cal.page.keyboard.press('Enter');
     // C will open the composer, which only the creating level holds.
     await join(cal, 'Co-Creator');
+    await expect(bar).toHaveValue('');
   });
 
   await test.step('all three see the Document and everyone in the group', async () => {
@@ -256,5 +272,69 @@ test('three members propose, vote and see the Update', async ({ openProfile }) =
 
   await test.step('the vote closes early, and all three show the new section', async () => {
     for (const person of [ana, ben, cal]) await expectUpdate(person);
+  });
+
+  await test.step('C opens Discover from the tab bar on a phone, and the link bar, in both themes', async () => {
+    const { page } = cal;
+    await page.setViewportSize(PHONE);
+    await page.goto('/#/');
+    await expect(heading(page, 'Your groups')).toBeVisible();
+    const tabs = page.getByRole('navigation', { name: 'Main' });
+    await tabs.getByRole('link', { name: 'Discover' }).click();
+    await expect(heading(page, 'Discover')).toBeVisible();
+    await expect(tabs.getByRole('link', { name: 'Discover' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    await expect(
+      page.getByText('To open a card or link, paste it into the bar at the top.'),
+    ).toBeVisible();
+    // The page scrolls in a region of its own from the top of the viewport to the tab bar, with the
+    // link bar floating over its top: it starts below the band, and its scroll padding keeps a
+    // focused control clear of the pill.
+    const region = await page.getByRole('main').evaluate((main) => {
+      const scroller = main.parentElement;
+      const box = scroller?.getBoundingClientRect();
+      return {
+        top: Math.round(box?.top ?? Number.NEGATIVE_INFINITY),
+        bottom: Math.round(box?.bottom ?? Number.POSITIVE_INFINITY),
+        sideways: (scroller?.scrollWidth ?? 0) > (scroller?.clientWidth ?? 0),
+      };
+    });
+    const padding = await page.locator('.app-page').evaluate((scroller) => {
+      const style = getComputedStyle(scroller);
+      return [style.paddingTop, style.scrollPaddingTop].map((px) =>
+        Math.round(Number.parseFloat(px)),
+      );
+    });
+    const band = await page.getByRole('search').evaluate((search) => {
+      const box = search.parentElement?.getBoundingClientRect();
+      return Math.round(box?.bottom ?? 0);
+    });
+    expect(region).toEqual({
+      top: 0,
+      bottom: Math.round((await tabs.boundingBox())?.y ?? 0),
+      sideways: false,
+    });
+    expect(padding).toEqual([band, band]);
+    for (const colorScheme of ['dark', 'light'] as const) {
+      await page.emulateMedia({ colorScheme });
+      await expectAccessible(cal, `Discover on a phone, ${colorScheme}`);
+    }
+    // With the link bar open on a link, the page under its scrim is inert, and axe passes.
+    await page.keyboard.press('/');
+    const bar = page.getByRole('searchbox', { name: 'Search or paste a link' });
+    await expect(bar).toBeFocused();
+    await bar.fill(inviteLink);
+    await expect(page.getByRole('option')).toHaveText(/^An invite/u);
+    for (const colorScheme of ['dark', 'light'] as const) {
+      await page.emulateMedia({ colorScheme });
+      await expectAccessible(cal, `the link bar open on a phone, ${colorScheme}`);
+    }
+    await page.keyboard.press('Escape');
+    await expect(bar).toHaveValue('');
+    await page.keyboard.press('Escape');
+    await expect(bar).not.toBeFocused();
+    await expect(heading(page, 'Discover')).toBeVisible();
   });
 });

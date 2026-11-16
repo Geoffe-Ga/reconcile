@@ -2,7 +2,7 @@
  * Small building blocks the screens share, on React Aria Components (ADR-0022)
  * and styled from DESIGN.md tokens in src/styles/app.css.
  */
-import { useEffect, useRef } from 'react';
+import { type ReactNode, useEffect, useId, useLayoutEffect, useRef } from 'react';
 import {
   FieldError,
   Input,
@@ -19,8 +19,8 @@ import { type Route, routeHref } from './router';
 
 /** Props for {@link PageHeader}. */
 export interface PageHeaderProps {
-  /** A short label above the title, set in caps. */
-  readonly eyebrow?: string;
+  /** A short label above the title, set in caps, which may hold a name in its own `<bdi>`. */
+  readonly eyebrow?: ReactNode;
   /** The screen's heading, which may be a group's own words. */
   readonly title: string;
   /** The browser tab's title. Never a group's words: browser history keeps it. */
@@ -30,6 +30,8 @@ export interface PageHeaderProps {
    * a heading below takes it instead, as Join's Document heading does (#91).
    */
   readonly takesFocus?: boolean;
+  /** A line that belongs with the title, under it, such as the Document a Proposal changes (#92). */
+  readonly children?: ReactNode;
 }
 
 /**
@@ -38,9 +40,16 @@ export interface PageHeaderProps {
  * It names the tab and, unless told otherwise, takes focus when it appears,
  * so a screen reader announces each new screen of this single-page app.
  */
-export function PageHeader({ eyebrow, title, pageTitle, takesFocus = true }: PageHeaderProps) {
+export function PageHeader({
+  eyebrow,
+  title,
+  pageTitle,
+  takesFocus = true,
+  children,
+}: PageHeaderProps) {
   const heading = useRef<HTMLHeadingElement>(null);
-  useEffect(() => {
+  // In the same commit as the page, so the tab's title never lags the screen it names.
+  useLayoutEffect(() => {
     document.title = messages.app.pageTitle(pageTitle);
   }, [pageTitle]);
   useEffect(() => {
@@ -52,7 +61,28 @@ export function PageHeader({ eyebrow, title, pageTitle, takesFocus = true }: Pag
       <h1 ref={heading} tabIndex={-1}>
         <bdi>{title}</bdi>
       </h1>
+      {children}
     </header>
+  );
+}
+
+/** Props for {@link Section}. */
+export interface SectionProps {
+  /** The section's heading, set as an eyebrow. */
+  readonly title: string;
+  readonly children: ReactNode;
+}
+
+/** A labelled section of a screen: a hairline above, its eyebrow heading beside it on wide screens. */
+export function Section({ title, children }: SectionProps) {
+  const heading = useId();
+  return (
+    <section className="section" aria-labelledby={heading}>
+      <h2 id={heading} className="eyebrow">
+        {title}
+      </h2>
+      {children}
+    </section>
   );
 }
 

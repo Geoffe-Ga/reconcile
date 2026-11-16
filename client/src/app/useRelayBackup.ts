@@ -6,10 +6,11 @@ import { relayBackupStatus, type RelayBackupStatus } from '../store/relayBackup'
 
 /**
  * Where the relay backup stands, kept current as the store changes, or null
- * until the store answers.
+ * until the store answers: retired, too, once a later choice of recovery
+ * contacts on another device retired its key (#272).
  */
 export function useRelayBackupStatus(
-  store: Pick<Store, 'getRelayBackup' | 'subscribe'>,
+  store: Pick<Store, 'getRelayBackup' | 'getRelayBackupRetiredAt' | 'subscribe'>,
 ): RelayBackupStatus | null {
   const [status, setStatus] = useState<RelayBackupStatus | null>(null);
   useEffect(() => {
@@ -18,10 +19,10 @@ export function useRelayBackupStatus(
     const load = (): void => {
       latest += 1;
       const ticket = latest;
-      store.getRelayBackup().then(
-        (state) => {
+      Promise.all([store.getRelayBackup(), store.getRelayBackupRetiredAt()]).then(
+        ([state, retiredAt]) => {
           // Only the newest read counts: an older one may answer last.
-          if (live && ticket === latest) setStatus(relayBackupStatus(state));
+          if (live && ticket === latest) setStatus(relayBackupStatus(state, retiredAt));
         },
         // A failed read keeps the last status shown; the next change reads again.
         () => undefined,

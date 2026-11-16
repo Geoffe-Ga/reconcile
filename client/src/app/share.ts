@@ -11,6 +11,14 @@
  * one share, and the app's address, `location.origin + '/'`. It never carries
  * Document text, a group name, a member's name, a link fragment or a secret,
  * and Web Share never gets a `title`, because some apps use it as a subject line.
+ * The exceptions are Share link (#105, `personalSharing.ts`), whose whole
+ * point is the link's fragment: it goes beside fixed words, never the
+ * Document's title or text; and a recovering device's code (#118), whose
+ * whole point is to reach the person's recovery contacts: it goes beside
+ * fixed words and the app's address, and the six digits read out on a call
+ * catch a code swapped on its way. A reconcile card's link and a follow link
+ * (#424, {@link shareLink}) go alone, with no words at all: the link names no
+ * group, and what it opens is the card or the coalition, for 2 days.
  */
 import { type ChatDetails, type ChatMoment, chatMessage } from './chatMessages';
 
@@ -34,6 +42,41 @@ export interface ShareTargets {
   readonly copyText: (text: string) => Promise<void>;
 }
 
+/**
+ * What a Share button beside a link needs (#424): the browser's Web Share, or
+ * undefined where it has none, when Share copies the link instead. A screen
+ * that passes none shows Copy alone.
+ */
+export type SharePort = Pick<ShareTargets, 'share'>;
+
+/** How sharing a link went: as {@link ShareOutcome}, or `cancelled` when the sheet was closed, which does nothing. */
+export type LinkShareOutcome = ShareOutcome | 'cancelled';
+
+/** How one Web Share went: shared, closed from the sheet, or refused, which a browser with none counts as. */
+type Attempt = 'shared' | 'cancelled' | 'refused';
+
+/** Whether `error` is the rejection Web Share gives when the person closes the sheet. */
+function isCancel(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'AbortError';
+}
+
+/** Hands `data` to Web Share, with no `title`, and says how it went. */
+async function tryShare(share: WebShare | undefined, data: ShareData): Promise<Attempt> {
+  if (share === undefined) return 'refused';
+  return share(data).then(
+    () => 'shared' as const,
+    (error: unknown) => (isCancel(error) ? 'cancelled' : 'refused'),
+  );
+}
+
+/** Copies `text`: `copied`, or `blocked` when the browser blocks it. */
+function copyOut(copyText: ShareTargets['copyText'], text: string): Promise<'copied' | 'blocked'> {
+  return copyText(text).then(
+    () => 'copied' as const,
+    () => 'blocked' as const,
+  );
+}
+
 /** What Tell your group shares at `moment`: its message, and the app's address with nothing after the `/`. */
 export function chatPayload(
   moment: ChatMoment,
@@ -53,17 +96,24 @@ export async function shareOrCopy(
   { text, url }: SharePayload,
   { share, copyText }: ShareTargets,
 ): Promise<ShareOutcome> {
-  if (share !== undefined) {
-    const shared = await share({ text, url }).then(
-      () => true,
-      () => false,
-    );
-    if (shared) return 'shared';
-  }
-  return copyText(`${text} ${url}`).then(
-    () => 'copied' as const,
-    () => 'blocked' as const,
-  );
+  const attempt = await tryShare(share, { text, url });
+  return attempt === 'shared' ? 'shared' : copyOut(copyText, `${text} ${url}`);
+}
+
+/**
+ * Shares a reconcile card's link or a follow link (#424; ADR-0077 §6): the
+ * link alone, with no `title` and no `text`, so nothing beside it names a
+ * group. Where the browser has no Web Share, or refuses (as it does without a
+ * tap to answer), it copies the link instead, as {@link shareOrCopy} does.
+ * Closing the sheet shares and copies nothing, as it saves nothing in
+ * {@link saveFile}, so the clipboard keeps what the person had there.
+ */
+export async function shareLink(
+  link: string,
+  { share, copyText }: ShareTargets,
+): Promise<LinkShareOutcome> {
+  const attempt = await tryShare(share, { url: link });
+  return attempt === 'refused' ? copyOut(copyText, link) : attempt;
 }
 
 /** The browser's `navigator.share`, bound to `navigator`, or undefined where there is none. */
@@ -99,8 +149,7 @@ export async function saveFile(file: File, targets: FileTargets): Promise<SaveOu
   if (share !== undefined && canShare?.({ files: [file] }) === true) {
     const outcome = await share({ files: [file] }).then(
       () => 'shared' as const,
-      (error: unknown) =>
-        error instanceof DOMException && error.name === 'AbortError' ? 'cancelled' : null,
+      (error: unknown) => (isCancel(error) ? 'cancelled' : null),
     );
     if (outcome !== null) return outcome;
   }

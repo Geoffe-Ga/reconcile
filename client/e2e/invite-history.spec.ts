@@ -14,10 +14,12 @@
  *
  * Reading before joining (#91): Cal reads the whole Document as it reads now
  * on the Join screen while IndexedDB holds nothing and the invite GET is the
- * only request, taps Not now, and comes back. Ana and Cal meet the first-run
- * guide after their first create and join, and its cards send nothing. A
- * second test opens an invite whose Document holds script, an image and
- * `javascript:` links, which render as inert text with no CSP violation.
+ * only request, taps Not now, and comes back through the link bar (#444),
+ * whose seed goes to Join in memory. Ana and Ben meet the first-run guide
+ * after their first create and join, before any vote, and its cards send
+ * nothing. A second test opens an invite whose Document holds script, an
+ * image and `javascript:` links, which render as inert text with no CSP
+ * violation.
  */
 import { DatabaseSync } from 'node:sqlite';
 
@@ -27,17 +29,21 @@ import {
   acceptNotice,
   expect,
   expectAccessible,
+  type FirstRun,
   type FirstRunOptions,
   GUIDE_KEY,
   heading,
   localKeys,
+  PASSKEY_OFFER_KEY,
   type Person,
   pick,
   storedRecords,
   test,
 } from './support/fixtures';
 import { type Canary, describeFinding, findIn, keyCanaries } from './support/scan';
-import { derive, onlyGroup } from './support/stored';
+import { postedEvents } from './support/recovery';
+import { SYNC_MS } from './support/steps';
+import { derive, groupMailboxes, onlyGroup, queuedRecords, storedLogs } from './support/stored';
 
 const GROUP = 'Riverside Tenants';
 const TITLE = 'House rules';
@@ -94,14 +100,22 @@ function seedOf(link: string): Buffer {
   return Buffer.from(new URL(link).hash.slice('#join/'.length), 'base64url');
 }
 
-/** Opens `link` in a new profile, through the pilot notice, and checks Join's preview. */
-async function openInvite(person: Person, link: string, options?: FirstRunOptions): Promise<void> {
+/**
+ * Opens `link` in a new profile, through the pilot notice (and the passkey
+ * offer, #95), and checks Join's preview. Returns what first run showed.
+ */
+async function openInvite(
+  person: Person,
+  link: string,
+  options?: FirstRunOptions,
+): Promise<FirstRun> {
   const { page } = person;
   await page.goto(link);
-  await acceptNotice(person, options);
+  const firstRun = await acceptNotice(person, options);
   await expect(heading(page, GROUP)).toBeVisible();
   await expect(page).toHaveURL(/#\/join$/);
   await expect(page.getByText('From Ana’s invite')).toBeVisible();
+  return firstRun;
 }
 
 /** Joins from the Join screen as `person.name` at Join's preselected level. */
@@ -110,12 +124,6 @@ async function joinHere(person: Person): Promise<void> {
   await page.getByRole('textbox', { name: 'Your name' }).fill(person.name);
   await page.getByRole('button', { name: 'Join group' }).click();
   await expect(page).toHaveURL(/#\/g\/[\w-]+$/);
-}
-
-/** Opens `link`, checks the preview, and joins as `person.name` at Join's preselected level. */
-async function joinFrom(person: Person, link: string): Promise<void> {
-  await openInvite(person, link);
-  await joinHere(person);
 }
 
 /** The relay requests `page` sends while `act` runs, as "METHOD /path". */
@@ -137,14 +145,24 @@ async function relayRequestsDuring(page: Page, act: () => Promise<void>): Promis
  * Walks the first-run guide on Group home (#91): each card in `titles` in
  * turn, its heading focused and axe checked, then Done. The guide sends
  * nothing: the only relay requests meanwhile are the sync loop's reads of the
- * group's own mailbox. Done leaves the guide's flag set on the device.
+ * group's own weekly mailboxes (#110). Done leaves the guide's flag set on
+ * the device.
+ *
+ * It measures from a device that owes the relay nothing: a drained outbox,
+ * and no Proposal in its log. Any member's device posts a closed Proposal's
+ * result on its own time (#111), and a newcomer's once landed inside a slow
+ * walk on CI, so a walk after a vote would race the sync loop.
  */
 async function walkGuide(person: Person, titles: readonly string[]): Promise<void> {
   const { page } = person;
   const dialog = page.getByRole('dialog');
   await expect(dialog).toBeVisible();
+  await expect.poll(() => queuedRecords(page), { timeout: SYNC_MS }).toBe(0);
+  const [held] = await storedLogs(page);
+  expect(postedEvents(held?.log ?? [], 'proposal'), 'no result can come due').toEqual([]);
   const { secret } = await onlyGroup(page);
-  const mailbox = derive(Uint8Array.from(secret), 'reconcile/v1/mailbox').toString('base64url');
+  // The group's weekly mailboxes (#110): a pass reads last week's and this week's.
+  const reads = groupMailboxes(Uint8Array.from(secret)).map((id) => `GET /v1/mailbox/${id}`);
   const sent = await relayRequestsDuring(page, async () => {
     for (const [i, title] of titles.entries()) {
       await expect(dialog.getByRole('heading', { name: title })).toBeFocused();
@@ -155,7 +173,7 @@ async function walkGuide(person: Person, titles: readonly string[]): Promise<voi
     }
     await expect(dialog).toHaveCount(0);
   });
-  expect(sent.filter((line) => line !== `GET /v1/mailbox/${mailbox}`)).toEqual([]);
+  expect(sent.filter((line) => !reads.includes(line))).toEqual([]);
   expect(await page.evaluate((key) => window.localStorage.getItem(key), GUIDE_KEY)).toBe('1');
 }
 
@@ -176,7 +194,7 @@ async function expectSameGroup(person: Person): Promise<void> {
   // Each row in order; Ana, the steward, also sees Suspend on the others' rows (#102).
   await expect(people).toHaveCount(PEOPLE.length);
   await expect(people).toContainText(PEOPLE);
-  await page.getByRole('link', { name: TITLE }).click();
+  await page.getByRole('link', { name: TITLE, exact: true }).click();
   await expect(page.getByRole('article').getByRole('paragraph')).toHaveText([
     NEW_TEXT,
     SECOND_ATOM,
@@ -194,7 +212,7 @@ test('a newcomer gets the whole history from the invite, even what the relay pur
   for (const { page } of [ana, ben, cal]) page.on('request', (request) => requests.push(request));
   const links: string[] = [];
 
-  await test.step('A creates a group, walks the first-run guide, and copies an invite link; B joins from it', async () => {
+  await test.step('A creates a group, walks the first-run guide, and copies an invite link; B joins from it and walks the guide', async () => {
     const { page } = ana;
     await page.goto('/#/create');
     await acceptNotice(ana, { guide: true });
@@ -211,12 +229,14 @@ test('a newcomer gets the whole history from the invite, even what the relay pur
     await expect(heading(page, GROUP)).toBeVisible();
     await expect(page.getByRole('dialog')).toHaveCount(0);
     links.push(await copyInvite(page));
-    await joinFrom(ben, links[0] ?? '');
+    await openInvite(ben, links[0] ?? '', { guide: true });
+    await joinHere(ben);
+    await walkGuide(ben, COLLABORATOR_CARDS);
   });
 
   await test.step('A proposes a change to the first section, and both vote it through', async () => {
     const { page } = ana;
-    await page.getByRole('link', { name: TITLE }).click();
+    await page.getByRole('link', { name: TITLE, exact: true }).click();
     await page.getByRole('button', { name: 'Propose a change to section 1' }).click();
     await page.getByRole('textbox', { name: 'Title' }).fill(PROPOSAL);
     await page.getByRole('textbox', { name: 'Why' }).fill('Weekend evenings run later.');
@@ -241,26 +261,29 @@ test('a newcomer gets the whole history from the invite, even what the relay pur
 
   const group = await onlyGroup(ana.page);
   const secret = Uint8Array.from(group.secret);
-  const mailbox = derive(secret, 'reconcile/v1/mailbox').toString('base64url');
+  // Its weekly mailboxes (#110), whichever weeks this run's records fell in.
+  const mailboxes = groupMailboxes(secret);
+  const inGroup = 'mailbox IN (?, ?, ?)';
 
   await test.step('the test deletes the group’s oldest relay rows, genesis and the Proposal included', () => {
     const db = new DatabaseSync(relay.db, { timeout: 10_000 });
     try {
       const rows = db
-        .prepare('SELECT seq FROM blobs WHERE mailbox = ? ORDER BY seq')
-        .all(mailbox)
+        .prepare(`SELECT seq FROM blobs WHERE ${inGroup} ORDER BY seq`)
+        .all(...mailboxes)
         .map((row) => Number(row.seq));
       // Genesis, Ben's join, the Proposal, then the two ballots.
       expect(rows).toHaveLength(5);
       const proposal = rows[2] ?? 0;
-      db.prepare('DELETE FROM blobs WHERE mailbox = ? AND seq <= ?').run(mailbox, proposal);
-      const left = db.prepare('SELECT COUNT(*) AS n FROM blobs WHERE mailbox = ?').get(mailbox);
+      db.prepare(`DELETE FROM blobs WHERE ${inGroup} AND seq <= ?`).run(...mailboxes, proposal);
+      const left = db.prepare(`SELECT COUNT(*) AS n FROM blobs WHERE ${inGroup}`).get(...mailboxes);
       expect(Number(left?.n)).toBe(2);
     } finally {
       db.close();
     }
   });
 
+  const firstRunKeys: string[] = [];
   await test.step('C reads the whole current Document before any key exists, and taps Not now', async () => {
     await ana.page.goto('/');
     await ana.page.getByRole('link', { name: GROUP }).click();
@@ -271,13 +294,17 @@ test('a newcomer gets the whole history from the invite, even what the relay pur
     const inviteGet = [`GET /v1/mailbox/${inviteMailbox}`];
 
     const reading = await relayRequestsDuring(page, async () => {
-      await openInvite(cal, link, { guide: true });
+      const { passkeyOffered } = await openInvite(cal, link);
+      // First run's own device flags, sorted: the guide's, set as its Skip leaves it (Ben walks
+      // it, before any vote), the passkey offer's answer where it showed (#95), and the notice's.
+      const passkey = passkeyOffered ? [PASSKEY_OFFER_KEY] : [];
+      firstRunKeys.push(GUIDE_KEY, ...passkey, NOTICE_KEY);
       const document = page.getByRole('article');
       await expect(document.getByRole('paragraph')).toHaveText([NEW_TEXT, SECOND_ATOM]);
       await expect(page.getByRole('heading', { level: 2, name: TITLE })).toBeFocused();
       await expect(page.getByRole('heading', { level: 2, name: QUESTION })).toBeVisible();
       expect(await storedRecords(page)).toBe(0);
-      expect(await localKeys(page)).toEqual([NOTICE_KEY]);
+      expect(await localKeys(page)).toEqual(firstRunKeys);
       await expectAccessible(cal, 'Join, with the whole Document');
       await page.getByRole('button', { name: 'Not now' }).click();
       await expect(heading(page, 'Your groups')).toBeVisible();
@@ -285,20 +312,25 @@ test('a newcomer gets the whole history from the invite, even what the relay pur
     // Reading the Document and Not now sent nothing beyond the invite GET, and wrote nothing.
     expect(reading).toEqual(inviteGet);
     expect(await storedRecords(page)).toBe(0);
-    expect(await localKeys(page)).toEqual([NOTICE_KEY]);
+    expect(await localKeys(page)).toEqual(firstRunKeys);
   });
 
-  await test.step('C opens the link again, joins, walks the guide, and sees what A and B see', async () => {
+  await test.step('C pastes the link into the link bar on Start, joins, and sees what A and B see', async () => {
     const { page } = cal;
-    await page.goto(links[1] ?? '');
+    // Through the link bar (#444), the seed goes to Join in memory, never into the address bar.
+    const bar = page.getByRole('searchbox', { name: 'Search or paste a link' });
+    await bar.fill(links[1] ?? '');
+    await expect(page.getByRole('option')).toHaveText(/^An invite/u);
+    await bar.press('Enter');
     await expect(heading(page, GROUP)).toBeVisible();
+    await expect(page).toHaveURL(/#\/join$/u);
+    await expect(bar).toHaveValue('');
     await expect(page.getByRole('article').getByRole('paragraph')).toHaveText([
       NEW_TEXT,
       SECOND_ATOM,
     ]);
     expect(await storedRecords(page)).toBe(0);
     await joinHere(cal);
-    await walkGuide(cal, COLLABORATOR_CARDS);
     for (const person of [cal, ana, ben]) await expectSameGroup(person);
   });
 
@@ -309,7 +341,8 @@ test('a newcomer gets the whole history from the invite, even what the relay pur
     for (const link of links) {
       const seed = seedOf(link);
       const inviteMailbox = derive(seed, 'reconcile/v1/invite-mailbox');
-      for (const other of [groupId, Buffer.from(mailbox, 'base64url'), inviteMailbox]) {
+      const weekly = mailboxes.map((id) => Buffer.from(id, 'base64url'));
+      for (const other of [groupId, ...weekly, inviteMailbox]) {
         expect(seed.equals(other)).toBe(false);
       }
     }

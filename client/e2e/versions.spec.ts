@@ -55,10 +55,12 @@ async function vote(person: Person, pills: readonly string[]): Promise<void> {
   await expect(sendStatus(page)).toHaveText('Sent');
 }
 
-/** True when nothing on the page scrolls sideways. */
+/** True when nothing on the page scrolls sideways: the document, nor the region it scrolls in under the link bar (#444). */
 async function fitsWidth(page: Page): Promise<boolean> {
-  return page.evaluate(
-    () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+  return page.evaluate(() =>
+    [document.documentElement, document.querySelector('.app-page')].every(
+      (box) => box === null || box.scrollWidth <= box.clientWidth,
+    ),
   );
 }
 
@@ -73,7 +75,7 @@ async function expectBensVersion(person: Person): Promise<void> {
   ]);
   await expectAccessible(person, 'Result');
   await page.getByRole('link', { name: GROUP }).click();
-  await page.getByRole('link', { name: TITLE }).click();
+  await page.getByRole('link', { name: TITLE, exact: true }).click();
   await expect(page.getByRole('article').getByRole('paragraph')).toHaveText([
     BEN_TEXT,
     SECOND_ATOM,
@@ -117,7 +119,7 @@ test('B adds a version to A’s Proposal, both score both, and the better one pa
   await test.step('A proposes on the first section and scores it', async () => {
     const { page } = ana;
     await expect(page.getByRole('region', { name: 'People', exact: true })).toContainText('Ben');
-    await page.getByRole('link', { name: TITLE }).click();
+    await page.getByRole('link', { name: TITLE, exact: true }).click();
     await page.getByRole('button', { name: 'Propose a change to section 1' }).click();
     await page.getByRole('textbox', { name: 'Title' }).fill(PROPOSAL);
     await page.getByRole('textbox', { name: 'Why' }).fill('Weekday evenings run later now.');
@@ -130,7 +132,7 @@ test('B adds a version to A’s Proposal, both score both, and the better one pa
 
   await test.step('B adds a version from the Document view', async () => {
     const { page } = ben;
-    await page.getByRole('link', { name: TITLE }).click();
+    await page.getByRole('link', { name: TITLE, exact: true }).click();
     await page.getByRole('button', { name: 'Add your version to section 1' }).click();
     await expect(heading(page, 'Add your version')).toBeVisible();
     const text = page.getByRole('textbox', { name: 'Your version' });

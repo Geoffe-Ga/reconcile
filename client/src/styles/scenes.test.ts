@@ -1,5 +1,5 @@
 /**
- * Painted edges (DESIGN.md, ADR-0077): which screens show the painting around
+ * Painted edges (DESIGN.md, ADR-0078): which screens show the painting around
  * their edges, and which stay plain so nothing pulls at a reader's attention.
  * This reads the screens' own source, so a new screen has to take a side.
  */
@@ -23,30 +23,49 @@ const PAINTED: Readonly<Record<string, string>> = {
   Start: 'sky',
   CreateGroup: 'sky',
   Join: 'sky',
+  Follow: 'sky',
+  FrontDoor: 'sky',
+  BringCard: 'sky',
+  Discover: 'sky',
   // A group, standing: its canopy, and the trunks that hold its rules.
   GroupHome: 'canopy',
   GroupStatus: 'canopy',
+  Dispatches: 'canopy',
   GroupRules: 'trunks',
-  // What's yours alone, out of sight.
+  // What's out of sight: what's yours alone, and the roots groups share.
   Personal: 'soil',
+  CoalitionHome: 'soil',
 };
 
 /**
- * The screens that stay plain: reading a Document, writing or weighing a
- * Proposal, the pilot notice, linking a device, and Settings, where care
- * matters more than color.
+ * The screens that stay plain: reading a Document or its history, writing or
+ * weighing a Proposal or a Dispatch, the pilot notice, anything to do with
+ * keys, recovery or linking a device, and Settings. Care matters more than
+ * color there.
  */
 const PLAIN = [
+  'ChangeLog',
   'Composer',
   'DissolveComposer',
   'DocumentView',
+  'HelpRecover',
   'LinkNewDevice',
   'LinkThisDevice',
   'OptInComposer',
+  'PasskeyOffer',
   'PersonalDocument',
   'PilotNotice',
+  'PriorityComposer',
+  'ReconcileCard',
+  'RecoverStart',
+  'RecoveryContacts',
+  'RemovalComposer',
+  'SectionComposer',
+  'SendDispatch',
   'Settings',
+  'SharedPage',
   'StewardComposer',
+  'UnlockScreen',
 ];
 
 /** Each screen file that renders the page shell, by name, with its source. */

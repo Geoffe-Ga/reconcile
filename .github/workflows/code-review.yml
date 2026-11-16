@@ -32,6 +32,8 @@ jobs:
     # human push to a bot PR (or a dispatch) still gets a real review.
     if: github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
+    # About twice the slowest successful review (6.5 min), so a hung one stops.
+    timeout-minutes: 15
     permissions:
       contents: read
       pull-requests: write
@@ -51,7 +53,9 @@ jobs:
           # was fired from. A closed/conflicted PR has no merge ref and fails
           # loudly — no review beats a review of the wrong code.
           ref: refs/pull/${{ env.PR_NUMBER }}/merge
-          fetch-depth: 1
+          # Depth 2 brings the merge ref's first parent (the base), so a large
+          # diff can be read one file at a time with `git diff HEAD^1 HEAD`.
+          fetch-depth: 2
 
       - name: Run Claude Code Review
         id: claude-review
@@ -73,6 +77,18 @@ jobs:
               gh pr diff ${{ env.PR_NUMBER }} -R ${{ github.repository }}
               gh pr view ${{ env.PR_NUMBER }} -R ${{ github.repository }}
 
+            LARGE DIFFS. If the whole diff is too long to read at once, list
+            the changed files and read each file's diff on its own:
+
+              gh pr diff ${{ env.PR_NUMBER }} -R ${{ github.repository }} --name-only
+              git diff HEAD^1 HEAD -- <path>
+
+            (HEAD is the PR merged into its base; HEAD^1 is the base.) You can
+            also Read any file in the checkout. Writing files, shell
+            redirection (`>`), pipes into other tools, and `csplit` are denied:
+            don't try them. Never return a placeholder; if you cannot read the
+            change, say so in the review and choose COMMENTS.
+
             Review the change against the repository's CLAUDE.md. Reconcile
             is a democratic document-governance and coalition platform; treat
             any change that exposes membership, affiliation, voting records, or
@@ -82,7 +98,8 @@ jobs:
             Do NOT post a comment yourself. Return ONLY the structured result:
 
             - "review_markdown": the full review as GitHub markdown (omit the
-              verdict; it is a separate field):
+              verdict; it is a separate field), with each section under a
+              `## ` heading:
 
               Brief overview (2-3 sentences)
               What's done well?
@@ -113,7 +130,7 @@ jobs:
           claude_args: >-
             --model sonnet
             --json-schema '{"type":"object","additionalProperties":false,"required":["verdict","verdict_rationale","review_markdown","reviewed_pr_number"],"properties":{"verdict":{"type":"string","enum":["CHANGES_REQUESTED","COMMENTS","LGTM"]},"verdict_rationale":{"type":"string"},"review_markdown":{"type":"string"},"reviewed_pr_number":{"type":"integer"}}}'
-            --allowed-tools "Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
+            --allowed-tools "Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(git diff:*)"
 
       - name: Post review
         env:
@@ -147,6 +164,15 @@ jobs:
           fi
           verdict=$(jq -r '.verdict' <<<"$STRUCTURED")
           rationale=$(jq -r '.verdict_rationale // ""' <<<"$STRUCTURED")
+          # A placeholder (e.g. "test") once passed every check above and was
+          # posted as a mergeable LGTM (#197). Demand the shape of a review: a
+          # real rationale and at least two `## ` sections of real length.
+          markdown=$(jq -r '.review_markdown // ""' <<<"$STRUCTURED")
+          sections=$(grep -c '^## ' <<<"$markdown" || true)
+          if [ "${#rationale}" -lt 20 ] || [ "${#markdown}" -lt 200 ] || [ "$sections" -lt 2 ]; then
+            echo "::error::The reviewer's output is not a review (rationale ${#rationale} chars, review ${#markdown} chars, ${sections} sections). This is a reviewer error, not a defect in this PR — re-run the review."
+            exit 1
+          fi
           printf '<!-- reconcile-review pr=%s -->\n\n' "$PR_NUMBER" > review.md
           jq -r '.review_markdown' <<<"$STRUCTURED" >> review.md
           printf '\n\n## Verdict: %s\n' "$verdict" >> review.md

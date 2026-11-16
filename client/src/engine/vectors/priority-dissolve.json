@@ -1,0 +1,339 @@
+{
+  "kind": "fold",
+  "vectors": [
+    {
+      "name": "priority-dissolve: a priority vote still open when the group dissolves never closes, so the focus stays the one an earlier priority vote set, even once relay time passes its deadline; a ballot on it and a new priority vote after the dissolve are ignored",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29375000,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1762500000000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29375001,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500060000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29375002,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500120000,
+            "body": {
+              "name": "Cal",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "priority"
+              },
+              "title": "What should we focus on?",
+              "why": "We can only do one thing well at a time.",
+              "options": ["Fix the website", "Plan the picnic"]
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500660000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4.0": 4,
+                "@4.1": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375012,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500720000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4.0": 4,
+                "@4.1": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375013,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500780000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4.0": 3,
+                "@4.1": 2
+              }
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501200000,
+            "body": {
+              "target": {
+                "kind": "dissolve",
+                "wipe": false
+              },
+              "title": "Dissolve our group",
+              "why": "We have all moved out."
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501260000,
+            "body": {
+              "proposal": "@8",
+              "scores": {
+                "@8": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 10,
+          "received": 29375022,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501320000,
+            "body": {
+              "proposal": "@8",
+              "scores": {
+                "@8": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 11,
+          "received": 29375023,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762501380000,
+            "body": {
+              "proposal": "@8",
+              "scores": {
+                "@8": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 12,
+          "received": 29375024,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501440000,
+            "body": {
+              "target": {
+                "kind": "priority"
+              },
+              "title": "What should we focus on?",
+              "why": "We can only do one thing well at a time.",
+              "options": ["Plan the picnic", "New bylaws"]
+            }
+          }
+        },
+        {
+          "seq": 13,
+          "received": 29375025,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501500000,
+            "body": {
+              "proposal": "@12",
+              "scores": {
+                "@12.0": 4,
+                "@12.1": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 14,
+          "received": 29375026,
+          "event": {
+            "v": 1,
+            "type": "dissolve",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501560000,
+            "body": {
+              "proposal": "@8"
+            }
+          }
+        },
+        {
+          "seq": 15,
+          "received": 29375027,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501620000,
+            "body": {
+              "proposal": "@12",
+              "scores": {
+                "@12.0": 4,
+                "@12.1": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 16,
+          "received": 29375028,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762501680000,
+            "body": {
+              "target": {
+                "kind": "priority"
+              },
+              "title": "What should we focus on?",
+              "why": "We can only do one thing well at a time.",
+              "options": ["Rent strike", "New bylaws"]
+            }
+          }
+        }
+      ],
+      "relayNow": 29385204,
+      "expect": {
+        "dissolved": {
+          "received": 29375026,
+          "wipe": false
+        },
+        "at": 29375026,
+        "focus": {
+          "proposal": "@4",
+          "option": "@4.0",
+          "text": "Fix the website"
+        },
+        "proposals": [
+          {
+            "id": "@4",
+            "final": true,
+            "closedAt": 29375013,
+            "outcome": {
+              "kind": "pass",
+              "version": "@4.0"
+            }
+          },
+          {
+            "id": "@8",
+            "final": true,
+            "outcome": {
+              "kind": "pass"
+            }
+          },
+          {
+            "id": "@12",
+            "final": false,
+            "closedAt": null
+          }
+        ],
+        "ignored": [
+          {
+            "seq": 15,
+            "id": "@15"
+          },
+          {
+            "seq": 16,
+            "id": "@16"
+          }
+        ]
+      },
+      "unchangedWithout": [15, 16]
+    }
+  ]
+}

@@ -1,10 +1,12 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
+import { COUNTED, DOOR, doorOf, ROTATED } from '../test/door';
 import { authorOf } from '../test/keys';
 import { groupLog } from '../test/votes';
 import { LEVELS } from './capabilities';
 import {
+  doorIn,
   effectiveOptIn,
   effectiveOptIns,
   isOff,
@@ -135,20 +137,81 @@ describe('isOptInValue: each opt-in’s validator', () => {
     expect(isOptInValue('chatBot', parsed)).toBe(false);
   });
 
-  it('takes the front door open (true) or closed (false), and nothing else', () => {
-    expect(isOptInValue('frontDoor', true)).toBe(true);
+  it('takes the front door closed (false) or open with its two secrets and a count choice (#121)', () => {
     expect(isOptInValue('frontDoor', false)).toBe(true);
-    for (const value of [null, 'true', 1, 0, {}, { open: true }]) {
+    expect(isOptInValue('frontDoor', DOOR)).toBe(true);
+    expect(isOptInValue('frontDoor', COUNTED)).toBe(true);
+    for (const value of [null, true, 'true', 1, 0, {}, { open: true }, [DOOR], undefined]) {
       expect(isOptInValue('frontDoor', value)).toBe(false);
     }
   });
+
+  it.each([
+    ['no sign', { box: DOOR.box, showCount: false }],
+    ['no box', { sign: DOOR.sign, showCount: false }],
+    ['no showCount', { sign: DOOR.sign, box: DOOR.box }],
+    ['a showCount that is not true or false', { ...DOOR, showCount: 1 }],
+    ['a sign of 31 bytes', { ...DOOR, sign: DOOR.sign.slice(0, 42) }],
+    ['a box of 33 bytes', { ...DOOR, box: `${DOOR.box}A` }],
+    ['a sign that is not text', { ...DOOR, sign: 7 }],
+    ['a box with a character base64url lacks', { ...DOOR, box: `${DOOR.box.slice(0, 42)}+` }],
+    // 'R' leaves a spare bit set in the last character, so these 32 bytes have a second spelling.
+    ['a sign spelled with spare bits set', { ...DOOR, sign: `${DOOR.sign.slice(0, 42)}R` }],
+    ['an extra field', { ...DOOR, open: true }],
+  ])('refuses a front door with %s', (_name, value) => {
+    expect(isOptInValue('frontDoor', value)).toBe(false);
+  });
+
+  it('refuses a front door whose only extra field is __proto__, as JSON.parse writes it', () => {
+    const parsed: unknown = JSON.parse(
+      `{"sign":"${DOOR.sign}","box":"${DOOR.box}","showCount":false,"__proto__":{}}`,
+    );
+    expect(isOptInValue('frontDoor', parsed)).toBe(false);
+  });
+
+  it('takes any 32 bytes as either secret, as every 32 bytes are a key of each kind', () => {
+    fc.assert(
+      fc.property(fc.uint8Array({ minLength: 32, maxLength: 32 }), fc.boolean(), (bytes, count) => {
+        const value = { sign: base64urlOf(bytes), box: base64urlOf(bytes), showCount: count };
+        expect(isOptInValue('frontDoor', value)).toBe(true);
+      }),
+    );
+  });
 });
 
-describe('isWider: only off to on widens (ADR-0040, ADR-0075 §5)', () => {
+/** Unpadded base64url, written out here so the property doesn't lean on the code it checks. */
+function base64urlOf(bytes: Uint8Array): string {
+  return btoa(String.fromCharCode(...bytes))
+    .replaceAll('+', '-')
+    .replaceAll('/', '_')
+    .replace(/=+$/, '');
+}
+
+describe('isWider: only what outsiders can see or reach widens (ADR-0040, ADR-0075 §5)', () => {
   it('reads the issue’s examples', () => {
     expect(isWider('chatBot', null, bot(W1))).toBe(true);
     expect(isWider('chatBot', bot(W1), null)).toBe(false);
+    expect(isWider('frontDoor', false, DOOR)).toBe(true);
+  });
+
+  it('widens the front door from closed to open, and from hiding the count to showing it (#121)', () => {
+    expect(isWider('frontDoor', false, COUNTED)).toBe(true);
+    expect(isWider('frontDoor', DOOR, COUNTED)).toBe(true);
+    expect(isWider('frontDoor', DOOR, { ...ROTATED, showCount: true })).toBe(true);
+  });
+
+  it('keeps rotating the door’s keys, and turning its count off, ordinary (#121)', () => {
+    expect(isWider('frontDoor', DOOR, ROTATED)).toBe(false);
+    expect(isWider('frontDoor', COUNTED, { ...ROTATED, showCount: true })).toBe(false);
+    expect(isWider('frontDoor', COUNTED, DOOR)).toBe(false);
+    expect(isWider('frontDoor', COUNTED, ROTATED)).toBe(false);
+    expect(isWider('frontDoor', COUNTED, false)).toBe(false);
+  });
+
+  it('reads a front door no validator accepts as showing everything, so it can only ever widen', () => {
     expect(isWider('frontDoor', false, true)).toBe(true);
+    expect(isWider('frontDoor', DOOR, { ...DOOR, showCount: 'no' })).toBe(true);
+    expect(isWider('frontDoor', DOOR, {})).toBe(true);
   });
 
   it('keeps replacing one webhook with another ordinary', () => {
@@ -156,10 +219,27 @@ describe('isWider: only off to on widens (ADR-0040, ADR-0075 §5)', () => {
   });
 
   it('never widens by closing, or by staying where it is', () => {
-    expect(isWider('frontDoor', true, false)).toBe(false);
+    expect(isWider('frontDoor', DOOR, false)).toBe(false);
     expect(isWider('frontDoor', false, false)).toBe(false);
-    expect(isWider('frontDoor', true, true)).toBe(false);
+    expect(isWider('frontDoor', DOOR, DOOR)).toBe(false);
+    expect(isWider('frontDoor', COUNTED, COUNTED)).toBe(false);
     expect(isWider('chatBot', null, null)).toBe(false);
+  });
+
+  it('widens exactly when the open-and-count pair grows, whatever the keys (fast-check)', () => {
+    const door = fc.oneof(
+      fc.constant<false>(false),
+      fc
+        .record({ sign: fc.integer({ min: 0, max: 255 }), box: fc.integer({ min: 0, max: 255 }) })
+        .chain(({ sign, box }) => fc.boolean().map((count) => doorOf(sign, box, count))),
+    );
+    const rank = (value: false | { readonly showCount: boolean }) =>
+      value === false ? 0 : value.showCount ? 2 : 1;
+    fc.assert(
+      fc.property(door, door, (from, to) => {
+        expect(isWider('frontDoor', from, to)).toBe(rank(to) > rank(from));
+      }),
+    );
   });
 
   it('calls a value off only when it is the off value, so a half-typed webhook is still on', () => {
@@ -167,6 +247,7 @@ describe('isWider: only off to on widens (ADR-0040, ADR-0075 §5)', () => {
     expect(isOff('chatBot', bot(W1))).toBe(false);
     expect(isOff('chatBot', bot(''))).toBe(false);
     expect(isOff('frontDoor', false)).toBe(true);
+    expect(isOff('frontDoor', DOOR)).toBe(false);
     expect(isOff('frontDoor', true)).toBe(false);
     expect(isOff('frontDoor', 0)).toBe(false);
     expect(isWider('chatBot', null, bot(''))).toBe(true);
@@ -177,8 +258,14 @@ describe('isWider: only off to on widens (ADR-0040, ADR-0075 §5)', () => {
     expect(sameValue('chatBot', bot(W1), bot(W2))).toBe(false);
     expect(sameValue('chatBot', null, bot(W1))).toBe(false);
     expect(sameValue('chatBot', null, null)).toBe(true);
-    expect(sameValue('frontDoor', true, true)).toBe(true);
-    expect(sameValue('frontDoor', true, false)).toBe(false);
+    expect(sameValue('frontDoor', DOOR, { ...DOOR })).toBe(true);
+    expect(sameValue('frontDoor', false, false)).toBe(true);
+    expect(sameValue('frontDoor', DOOR, false)).toBe(false);
+    expect(sameValue('frontDoor', false, DOOR)).toBe(false);
+    expect(sameValue('frontDoor', DOOR, COUNTED)).toBe(false);
+    expect(sameValue('frontDoor', DOOR, ROTATED)).toBe(false);
+    expect(sameValue('frontDoor', DOOR, { ...DOOR, sign: ROTATED.sign })).toBe(false);
+    expect(sameValue('frontDoor', DOOR, { ...DOOR, box: ROTATED.box })).toBe(false);
   });
 });
 
@@ -190,11 +277,11 @@ describe('rulesChange and withChange', () => {
       value: bot(W1),
       from: null,
     });
-    expect(rulesChange({ ...OFF, frontDoor: true }, 'frontDoor', false)).toEqual({
+    expect(rulesChange({ ...OFF, frontDoor: DOOR }, 'frontDoor', false)).toEqual({
       kind: 'rules',
       optIn: 'frontDoor',
       value: false,
-      from: true,
+      from: DOOR,
     });
   });
 
@@ -202,14 +289,23 @@ describe('rulesChange and withChange', () => {
     expect(rulesChange(OFF, 'signalBot', true)).toBeNull();
     expect(rulesChange(OFF, 'chatBot', bot('http://discord.com/api/webhooks/1/abc'))).toBeNull();
     expect(rulesChange(OFF, 'frontDoor', 'open')).toBeNull();
+    expect(rulesChange(OFF, 'frontDoor', true)).toBeNull();
   });
 
   it('sets only the opt-in the change names', () => {
     const on = rulesChange(OFF, 'chatBot', bot(W1));
-    const open = rulesChange(OFF, 'frontDoor', true);
+    const open = rulesChange(OFF, 'frontDoor', DOOR);
     if (on === null || open === null) throw new Error('Expected two changes.');
     expect(withChange(OFF, on)).toEqual({ chatBot: bot(W1), frontDoor: false });
-    expect(withChange(OFF, open)).toEqual({ chatBot: null, frontDoor: true });
+    expect(withChange(OFF, open)).toEqual({ chatBot: null, frontDoor: DOOR });
+  });
+
+  it('finds the door a change carries, with its secrets, and none in a close or a bot change (#288)', () => {
+    expect(doorIn(rulesChange(OFF, 'frontDoor', DOOR))).toBe(DOOR);
+    expect(doorIn(rulesChange({ ...OFF, frontDoor: DOOR }, 'frontDoor', ROTATED))).toBe(ROTATED);
+    expect(doorIn(rulesChange({ ...OFF, frontDoor: DOOR }, 'frontDoor', false))).toBeNull();
+    expect(doorIn(rulesChange(OFF, 'chatBot', bot(W1)))).toBeNull();
+    expect(doorIn(null)).toBeNull();
   });
 });
 
@@ -227,13 +323,13 @@ describe('rules Proposals in a folded group', () => {
     expect(openRulesProposal(later, 'chatBot')?.author).toBe(ANA);
     expect(openRulesProposal(later, 'frontDoor')).toBeUndefined();
     expect(mayProposeRules(later, ANA, { optIn: 'chatBot', value: bot(W2) })).toBe(false);
-    expect(mayProposeRules(later, ANA, { optIn: 'frontDoor', value: true })).toBe(true);
+    expect(mayProposeRules(later, ANA, { optIn: 'frontDoor', value: DOOR })).toBe(true);
   });
 
   it('refuses a Proposal from someone who can’t propose, or for an unknown opt-in', () => {
     const log = groupLog({ members: ['Ben'], levels: { Ben: VOTING } });
     const state = log.state();
-    expect(mayProposeRules(state, authorOf('ben'), { optIn: 'frontDoor', value: true })).toBe(
+    expect(mayProposeRules(state, authorOf('ben'), { optIn: 'frontDoor', value: DOOR })).toBe(
       false,
     );
     expect(mayProposeRules(state, ANA, { optIn: 'signalBot', value: true })).toBe(false);
@@ -241,11 +337,11 @@ describe('rules Proposals in a folded group', () => {
 
   it('holds each opt-in at its standing value while no steward has narrowed it', () => {
     const log = groupLog({ members: ['Ben', 'Cal'] });
-    const proposal = log.rules('Ana', 'frontDoor', true);
+    const proposal = log.rules('Ana', 'frontDoor', DOOR);
     for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, proposal, 4);
     const state = log.state();
-    expect(state.rules.optIns.frontDoor).toBe(true);
-    expect(effectiveOptIn(state, 'frontDoor')).toBe(true);
-    expect(effectiveOptIns(state)).toEqual({ chatBot: null, frontDoor: true });
+    expect(state.rules.optIns.frontDoor).toEqual(DOOR);
+    expect(effectiveOptIn(state, 'frontDoor')).toEqual(DOOR);
+    expect(effectiveOptIns(state)).toEqual({ chatBot: null, frontDoor: DOOR });
   });
 });

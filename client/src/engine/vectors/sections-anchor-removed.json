@@ -1,0 +1,303 @@
+{
+  "kind": "fold",
+  "vectors": [
+    {
+      "name": "sections-anchor-removed: the Atoms are [A, B, C]; P1 adds D after B and P2 removes B; P2 closes early, before P1 reaches its deadline, so the Document ends as [A, C, D]",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29354840,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1761290400000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [{ "title": "House rules", "atoms": ["A\n", "B\n", "C\n"] }]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29354841,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761290460000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29354842,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1761290520000,
+            "body": {
+              "name": "Cal"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29354843,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1761290580000,
+            "body": {
+              "name": "Dee"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29354844,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761290640000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29354845,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761290700000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "add",
+                "document": "@1",
+                "after": "@1.1"
+              },
+              "title": "Add D",
+              "why": "We need D.",
+              "text": "D\n"
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500660000,
+            "body": {
+              "atom": "@1.1",
+              "title": "Remove B",
+              "why": "B is out of date.",
+              "text": ""
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501200000,
+            "body": {
+              "proposal": "@7",
+              "scores": {
+                "@7": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 10,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501260000,
+            "body": {
+              "proposal": "@7",
+              "scores": {
+                "@7": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 11,
+          "received": 29375022,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762501320000,
+            "body": {
+              "proposal": "@7",
+              "scores": {
+                "@7": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 12,
+          "received": 29375030,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501800000,
+            "body": {
+              "proposal": "@8",
+              "scores": {
+                "@8": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 13,
+          "received": 29375031,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501860000,
+            "body": {
+              "proposal": "@8",
+              "scores": {
+                "@8": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 14,
+          "received": 29375032,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762501920000,
+            "body": {
+              "proposal": "@8",
+              "scores": {
+                "@8": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 15,
+          "received": 29375033,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762501980000,
+            "body": {
+              "proposal": "@8",
+              "scores": {
+                "@8": 4
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29385090,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@7",
+            "atom": "@7",
+            "target": {
+              "kind": "add",
+              "after": "@1.1"
+            },
+            "closedAt": null,
+            "final": true,
+            "outcome": {
+              "kind": "pass",
+              "version": "@7"
+            }
+          },
+          {
+            "id": "@8",
+            "atom": "@1.1",
+            "target": {
+              "kind": "edit"
+            },
+            "closedAt": 29375033,
+            "final": true,
+            "outcome": {
+              "kind": "pass",
+              "version": "@8"
+            }
+          }
+        ],
+        "atoms": [
+          {
+            "id": "@1.0",
+            "documentId": "@1",
+            "text": "A\n"
+          },
+          {
+            "id": "@1.2",
+            "documentId": "@1",
+            "text": "C\n"
+          },
+          {
+            "id": "@7",
+            "documentId": "@1",
+            "text": "D\n"
+          }
+        ]
+      }
+    }
+  ]
+}

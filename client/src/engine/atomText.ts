@@ -15,8 +15,13 @@ const SURROGATES = /[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDFFF]/g;
 /** The Unicode replacement character, which stands in for a lone surrogate. */
 const REPLACEMENT = '�';
 
-/** Spaces (U+0020) and tabs (U+0009) at the end of a line. Never `\s`, which also takes NBSP. */
-const TRAILING_SPACES = /[ \t]+$/gm;
+/**
+ * Spaces (U+0020) and tabs (U+0009) at the end of a line: before an LF, or at
+ * the very end. Never `\s`, which also takes NBSP, and never the `m` flag,
+ * whose `$` also ends a line at U+2028 and U+2029. Neither ends a line in
+ * CommonMark, in `splitAtoms` or in {@link isHeadingOnly} (#411).
+ */
+const TRAILING_SPACES = /[ \t]+(?=\n|$)/g;
 
 /** Every line feed at the very end. */
 const FINAL_NEWLINES = /\n+$/;
@@ -32,7 +37,8 @@ function wellFormed(text: string): string {
  * 1. each lone surrogate becomes U+FFFD;
  * 2. CRLF, then any lone CR, becomes LF;
  * 3. NFC;
- * 4. trailing U+0020 and U+0009 leave each line (a trailing NBSP stays);
+ * 4. trailing U+0020 and U+0009 leave each line, which only an LF ends (a
+ *    trailing NBSP stays, and so does a space before U+2028 or U+2029);
  * 5. the text ends in exactly one LF.
  *
  * Blank text becomes `""`, which a removal Proposal carries (#75). The result
@@ -45,6 +51,28 @@ export function normalizeAtomText(text: string): string {
     .replace(TRAILING_SPACES, '')
     .replace(FINAL_NEWLINES, '');
   return body === '' ? '' : `${body}\n`;
+}
+
+/**
+ * A header's level as Add a section here offers it (#103): 1 for a section
+ * header, `# …`, and 2 for a subsection header, `## …`.
+ */
+export type HeadingLevel = 1 | 2;
+
+/**
+ * One ATX heading of level 1–6 with a word in it, on one line that ends the
+ * text (ADR-0023): CommonMark needs the space after the `#`s.
+ */
+const HEADING_ONLY = /^#{1,6} [^\n]*\S[^\n]*\n$/u;
+
+/**
+ * True when normalized Atom text is a section header and nothing more (#103):
+ * one line, `# Values\n` or `## Organization\n`, as Add a section here's
+ * header choices build it. The fold treats a header as any other Atom; the
+ * screens read this to show it as a header and to say what an add does.
+ */
+export function isHeadingOnly(text: string): boolean {
+  return HEADING_ONLY.test(text);
 }
 
 /**

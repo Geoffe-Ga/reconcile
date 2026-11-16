@@ -50,6 +50,23 @@ describe('useRelayBackupStatus', () => {
     });
   });
 
+  it('reads retired once a later choice on another device retired the key (#272)', async () => {
+    const held = await store();
+    await held.setRelayBackupKey(KEY);
+    const { result } = renderHook(() => useRelayBackupStatus(held));
+    await waitFor(() => {
+      expect(result.current).toEqual({ kind: 'waiting' });
+    });
+
+    await act(async () => {
+      await held.retireRelayBackup(KEY, 5);
+    });
+
+    await waitFor(() => {
+      expect(result.current).toEqual({ kind: 'retired', at: 5 });
+    });
+  });
+
   it('keeps the last status when a read fails, and only the newest read counts', async () => {
     const listeners = new Set<(id: string) => void>();
     const answers: ((state: RelayBackupState | undefined) => void)[] = [];
@@ -62,6 +79,7 @@ describe('useRelayBackupStatus', () => {
             else answers.push(resolve);
           }),
       ),
+      getRelayBackupRetiredAt: () => Promise.resolve(undefined),
       subscribe: (listener: (id: string) => void) => {
         listeners.add(listener);
         return () => listeners.delete(listener);

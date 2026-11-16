@@ -5,7 +5,14 @@
  * credential, so nothing here returns more of it than its last 4 characters.
  */
 import type { GroupState } from '../engine/fold';
-import { effectiveOptIn, isNarrowed, isOff, type OptIn, type RulesChange } from '../engine/optIns';
+import {
+  effectiveOptIn,
+  isFrontDoor,
+  isNarrowed,
+  isOff,
+  type OptIn,
+  type RulesChange,
+} from '../engine/optIns';
 import { messages } from './messages';
 
 /** How many of a webhook's characters a screen may show. */
@@ -25,17 +32,27 @@ export function directionOf(change: RulesChange): Direction {
   return isOff(change.optIn, change.from) ? 'on' : 'replace';
 }
 
-/** A table of words with one entry per direction for the bot, and on and off for the door. */
-interface Worded {
-  readonly chatBot: Readonly<Record<Direction, string>>;
-  readonly frontDoor: { readonly on: string; readonly off: string };
+/** A table of words with one entry per direction for each opt-in. */
+type Worded = Readonly<Record<OptIn, Readonly<Record<Direction, string>>>>;
+
+/** The entry of `table` for `change`. */
+function wordsFor(table: Worded, change: RulesChange): string {
+  return table[change.optIn][directionOf(change)];
 }
 
-/** The entry of `table` for `change`. The front door only opens or closes. */
-function wordsFor(table: Worded, change: RulesChange): string {
-  const direction = directionOf(change);
-  if (change.optIn === 'chatBot') return table.chatBot[direction];
-  return direction === 'on' ? table.frontDoor.on : table.frontDoor.off;
+/**
+ * What else a front door change does (#121), each as its own sentence: a new
+ * link, when its keys change on a door that stays open, and the count, when
+ * it starts or stops showing.
+ */
+function doorChanges(change: RulesChange): string[] {
+  if (change.optIn !== 'frontDoor' || !isFrontDoor(change.value)) return [];
+  const { doorCount } = messages.optIns;
+  const from = isFrontDoor(change.from) ? change.from : null;
+  const moves = from !== null && from.sign !== change.value.sign ? [doorCount.moves] : [];
+  const shown = from?.showCount ?? false;
+  if (change.value.showCount === shown) return moves;
+  return [...moves, change.value.showCount ? doorCount.shows : doorCount.hides];
 }
 
 /** What a rules ballot decides, in words (#117). */
@@ -51,15 +68,21 @@ export interface RulesView {
   readonly tail: string | null;
 }
 
-/** The words for a rules change: its heading, what passing does, its pass, and the webhook's last 4. */
-export function rulesView(change: RulesChange): RulesView {
+/**
+ * The words for a rules change: its heading, what passing does, its pass, and
+ * the webhook's last 4. A front door Proposal `exposed` when a member left
+ * while it was open (#288) says that passing it opens no door, and its pass
+ * that the door stays closed.
+ */
+export function rulesView(change: RulesChange, exposed = false): RulesView {
   const { motions, lines, passed } = messages.optIns;
   const webhook = change.optIn === 'chatBot' ? (change.value?.webhook ?? null) : null;
+  const left = exposed ? [messages.optIns.exposed.line] : [];
   return {
     optIn: change.optIn,
     title: wordsFor(motions, change),
-    line: wordsFor(lines, change),
-    passed: wordsFor(passed, change),
+    line: [wordsFor(lines, change), ...doorChanges(change), ...left].join(' '),
+    passed: exposed ? messages.optIns.exposed.passed : wordsFor(passed, change),
     tail: webhook === null ? null : webhookTail(webhook),
   };
 }

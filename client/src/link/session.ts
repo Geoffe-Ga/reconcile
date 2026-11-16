@@ -12,11 +12,17 @@
  *    nobody can pick their key after seeing A's.
  * 4. **B** takes the first `E_A` in relay order and stops unless its hash is
  *    the code's commitment, so nobody else can stand in for A.
- * 5. Both show the six-digit number. Only A can confirm: on Match it posts
- *    the bundle (`bundle.ts`) under K; on Don't match, or when it closes, it
- *    drops every secret and sends nothing under K. B checks the bundle and
- *    keeps its groups and personal Documents (`importSnapshot`, as from a
- *    link), and the relay backup key (#97) if it has none.
+ * 5. Both show the six-digit number. Only A can confirm: on Match it checks
+ *    that this session holds the unlocked keys (`Store.requireUnlocked`,
+ *    #95), then posts the bundle (`bundle.ts`) under K; on Don't match, or
+ *    when it closes, it drops every secret and sends nothing under K. B
+ *    checks the bundle and keeps its groups and personal Documents
+ *    (`importSnapshot`, as from a link), and the relay backup key (#97) if it
+ *    has none, through the store's one key-writing path, so a B whose keys
+ *    are locked with a passkey seals them in its vault. A group entry that
+ *    doesn't check out is left out, and B says how many (#336), as a restore
+ *    does. Neither side carries a Document's share by link (#105): it stays
+ *    on A alone.
  *
  * Every blob is sealed and padded, and every PUT uses `ttl_days=1`. Each
  * handshake message is a 1-byte tag (who posted it) and a 32-byte key. Each
@@ -42,7 +48,7 @@ import {
 import type { Seal } from '../crypto/seal';
 import type { Relay, RelayRecord } from '../net/relay';
 import type { Store } from '../store/db';
-import { importSnapshot, takeSnapshot } from '../store/snapshot';
+import { importSnapshot, type Restored, takeSnapshot } from '../store/snapshot';
 import { openBundle, sealBundle } from './bundle';
 
 /** How long the relay keeps every blob in a link: 1 day, rounded up to the end of the next UTC day. */
@@ -65,12 +71,19 @@ export interface LinkServices {
   readonly relay: Relay;
   readonly seal: Seal;
   /**
-   * A's groups, personal Documents and relay backup key (#97) go out of it;
-   * B's come into it, the key kept only if B has none.
+   * A's groups, personal Documents and relay backup key (#97) go out of it,
+   * once it says this session holds the unlocked keys (#95); B's come into
+   * it, the key kept only if B has none, sealed in B's vault if B has one.
    */
   readonly store: Pick<
     Store,
-    'listGroups' | 'listPersonal' | 'getRelayBackup' | 'restoreGroups' | 'adoptRelayBackupKey'
+    | 'listGroups'
+    | 'listCoalitions'
+    | 'listPersonal'
+    | 'getRelayBackup'
+    | 'requireUnlocked'
+    | 'restoreGroups'
+    | 'adoptRelayBackupKey'
   >;
   /** The device clock in milliseconds, for the 10 minutes. */
   readonly now: () => number;
@@ -96,6 +109,8 @@ export interface LinkOffer {
    *
    * @throws {Error} before there is a number, once closed, or when a PUT
    *   fails, which closes the link too.
+   * @throws {VaultLocked} when this session hasn't unlocked the device's
+   *   keys (#95); it sends nothing, and closes the link.
    */
   readonly confirm: () => Promise<'sent' | 'expired'>;
   /** Don't match, or the screen closed: zeroes every secret, and sends nothing more. */
@@ -106,7 +121,12 @@ export interface LinkOffer {
 export type JoinStep =
   | { readonly kind: 'waiting' }
   | { readonly kind: 'compare'; readonly number: string }
-  | { readonly kind: 'linked'; readonly groups: number }
+  | {
+      readonly kind: 'linked';
+      readonly groups: number;
+      readonly skipped: number;
+      readonly skippedDocuments: number;
+    }
   | { readonly kind: 'mismatch' | 'damaged' | 'expired' | 'closed' };
 
 /** The new device's side of a link. It has no way to confirm: only the existing device can. */
@@ -237,7 +257,10 @@ export function offerLink(services: LinkServices, keys: LinkKeys = newLinkKeys()
   });
 
   const send = async (secrets: LinkSecrets): Promise<void> => {
-    const { plaintext } = await takeSnapshot(services.store);
+    // Like Save a backup, nothing hands keys on before this session holds them unlocked (#95).
+    await services.store.requireUnlocked();
+    // A share by link stays on this device alone (#105): the bundle leaves every one out.
+    const { plaintext } = await takeSnapshot(services.store, 'link');
     try {
       if (ended !== null) throw new LinkClosed();
       for (const blob of sealBundle(services.seal, secrets.bundle, plaintext)) {
@@ -368,15 +391,21 @@ export async function joinLink(
   };
 }
 
-/** Keeps the bundle's groups, as from a link, and says how many groups the device now has. */
+/**
+ * Keeps the bundle's groups, as from a link, and says how many groups the
+ * device now has, and how many of the bundle's group entries (#336) and
+ * personal Documents (#351) it left out because they didn't check out.
+ */
 async function keep(store: LinkServices['store'], plaintext: Uint8Array): Promise<Ended<JoinStep>> {
+  let left: Pick<Restored, 'skipped' | 'skippedDocuments'>;
   try {
-    await importSnapshot(store, plaintext, 'link');
+    left = await importSnapshot(store, plaintext, 'link');
   } catch (error) {
     if (error instanceof BackupUnreadable) return { kind: 'damaged' };
     throw error;
   } finally {
     plaintext.fill(0);
   }
-  return { kind: 'linked', groups: (await store.listGroups()).length };
+  const { skipped, skippedDocuments } = left;
+  return { kind: 'linked', groups: (await store.listGroups()).length, skipped, skippedDocuments };
 }

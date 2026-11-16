@@ -7,8 +7,12 @@ import { base64url } from '../engine/event';
 import type { PlatformEnv } from '../platform/installGate';
 import type { NoticeRecord } from '../platform/notice';
 import type { Persistence } from '../platform/persist';
+import type { PasskeyOfferRecord } from '../platform/passkeyOffer';
 import type { InviteLookup } from './actions';
 import { FirstRunGate, type OpenedApp } from './FirstRunGate';
+import { messages } from './messages';
+import type { DeviceLock, Passkey, Protection } from './passkey';
+import type { RecoveryPath } from './recoveryPath';
 
 const ORIGIN = 'https://reconcile.example';
 
@@ -60,6 +64,30 @@ interface Options {
   readonly hash?: string;
   readonly persistence?: Persistence;
   readonly notice?: NoticeRecord;
+  /** Whether the device's keys are locked with a passkey at launch (#95). */
+  readonly locked?: boolean;
+  /** What unlocking resolves to, each time. */
+  readonly unlocks?: boolean;
+  /** Whether this browser can offer a passkey (#95). */
+  readonly passkeyAvailable?: boolean;
+  /** Whether this device answered the passkey offer. */
+  readonly offerAnswered?: boolean;
+  /** The groups' way back, which the offer reads first (#389); a backup file unless named. */
+  readonly path?: RecoveryPath;
+  /** What Restore on the unlock screen does. */
+  readonly restore?: DeviceLock['restore'];
+}
+
+/** An offer record in memory, recording each answer in `events`. */
+function memoryOffer(answered: boolean, events: string[]): PasskeyOfferRecord {
+  let current = answered;
+  return {
+    answered: () => current,
+    answer: () => {
+      events.push('answer');
+      current = true;
+    },
+  };
 }
 
 function setup(options: Options = {}) {
@@ -73,6 +101,27 @@ function setup(options: Options = {}) {
   const lookup = vi.fn<(seed: Uint8Array) => Promise<InviteLookup>>(() =>
     Promise.resolve({ kind: 'missing' }),
   );
+  const unlock = vi.fn(() => Promise.resolve(options.unlocks ?? true));
+  const lock: DeviceLock = {
+    lockedAtLaunch: options.locked ?? false,
+    unlock,
+    restore:
+      options.restore ??
+      vi.fn(() => Promise.resolve({ groups: 2, skipped: 0, skippedDocuments: 0, older: false })),
+  };
+  const passkey: Passkey = {
+    available: options.passkeyAvailable ?? false,
+    isProtected: () => Promise.resolve(false),
+    recoveryPath: () => Promise.resolve(options.path ?? 'backup'),
+    create: () => Promise.resolve(Uint8Array.of(1)),
+    protect: () => Promise.resolve<Protection>('protected'),
+  };
+  const backup = {
+    onMake: () => Promise.reject(new Error('unused')),
+    onSave: () => Promise.resolve('downloaded' as const),
+  };
+  const onErase = vi.fn(() => Promise.resolve());
+  const passkeyOffer = memoryOffer(options.offerAnswered ?? false, events);
   const opened: OpenedApp[] = [];
   const app = vi.fn((open: OpenedApp) => {
     opened.push(open);
@@ -90,11 +139,26 @@ function setup(options: Options = {}) {
       origin={ORIGIN}
       copyText={() => Promise.resolve()}
       lookup={lookup}
+      readDoor={() => Promise.resolve({ kind: 'closed' })}
+      lock={lock}
+      passkey={passkey}
+      backup={backup}
+      passkeyOffer={passkeyOffer}
+      onErase={onErase}
     >
       {app}
     </FirstRunGate>,
   );
-  return { user: userEvent.setup(), events, requestPersistence, lookup, app, opened };
+  return {
+    user: userEvent.setup(),
+    events,
+    requestPersistence,
+    lookup,
+    app,
+    opened,
+    unlock,
+    onErase,
+  };
 }
 
 const appHeading = () => screen.queryByRole('heading', { level: 1, name: 'The app' });
@@ -157,6 +221,7 @@ describe('FirstRunGate on a plain visit in a browser tab', () => {
     ['an invite link', { hash: `#join/${invitePayload(newInvite())}` }],
     ['the installed app', { platform: IPHONE_INSTALLED }],
     ['a device that accepted the notice', { accepted: true }],
+    ['a device whose keys are locked', { locked: true }],
   ])('is skipped for %s', (_name, options) => {
     setup(options);
     expect(landingHeading()).not.toBeInTheDocument();
@@ -290,5 +355,264 @@ describe('FirstRunGate where keys may be made', () => {
     await startFromLanding(user);
     await user.click(screen.getByRole('button', { name: 'I understand' }));
     expect(appHeading()).toBeVisible();
+  });
+});
+
+describe('FirstRunGate with a front door’s link (#121)', () => {
+  const door = `#door/${'A'.repeat(42)}E`;
+
+  it('keeps the link in the address bar under the notice, so the app opens at the door', async () => {
+    const { user, opened } = setup({ hash: door });
+    expect(screen.getByRole('button', { name: 'I understand' })).toBeVisible();
+    expect(window.location.hash).toBe(door);
+    await user.click(screen.getByRole('button', { name: 'I understand' }));
+    expect(appHeading()).toBeVisible();
+    expect(window.location.hash).toBe(door);
+    expect(opened.at(-1)?.heldSeed).toBeNull();
+  });
+
+  it('shows an iPhone outside the installed app the door in the guide, leaving its link in place', async () => {
+    setup({ platform: IPHONE_TAB, hash: door });
+    expect(await screen.findByText('This front door is closed.')).toBeVisible();
+    expect(window.location.hash).toBe(door);
+    expect(appHeading()).toBeNull();
+  });
+});
+
+/**
+ * A reconcile card's and a follow link's own forms (#114, #124), each holding
+ * a seed as an invite does: what an iPhone in Safari lost at the install gate (#280).
+ */
+const SEED_LINKS = [
+  {
+    kind: 'card',
+    prefix: '#reconcile/',
+    held: '#/card',
+    copy: 'Copy card link',
+    label: 'Your card link',
+    damaged: 'This card has expired or is damaged. Ask the group that sent it for a new one.',
+  },
+  {
+    kind: 'follow',
+    prefix: '#follow/',
+    held: '#/follow',
+    copy: 'Copy follow link',
+    label: 'Your follow link',
+    damaged:
+      'This follow link has expired or is damaged. Ask someone in the coalition for a new one.',
+  },
+] as const;
+
+describe.each(SEED_LINKS)('FirstRunGate with a $kind link (#280)', (link) => {
+  it('holds it in memory under the install guide, out of the address bar, to copy into the installed app', () => {
+    const seed = newInvite();
+    const { lookup, app } = setup({
+      platform: IPHONE_TAB,
+      hash: `${link.prefix}${invitePayload(seed)}`,
+    });
+    expect(guideHeading()).toBeVisible();
+    expect(window.location.pathname).toBe('/');
+    expect(window.location.hash).toBe('');
+    const field = screen.getByRole('textbox', { name: link.label });
+    expect(field).toHaveValue(`${ORIGIN}/${link.prefix}${invitePayload(seed)}`);
+    expect(screen.getByRole('button', { name: link.copy })).toBeVisible();
+    expect(screen.queryByRole('textbox', { name: 'Reconcile’s address' })).toBeNull();
+    // It's no invite: nothing opens an invite's envelope for it.
+    expect(lookup).not.toHaveBeenCalled();
+    expect(app).not.toHaveBeenCalled();
+  });
+
+  it('reads one that opens in this window while the guide shows', async () => {
+    const seed = newInvite();
+    setup({ platform: IPHONE_TAB });
+    act(() => {
+      window.location.hash = `${link.prefix}${invitePayload(seed)}`;
+    });
+    expect(await screen.findByRole('textbox', { name: link.label })).toHaveValue(
+      `${ORIGIN}/${link.prefix}${invitePayload(seed)}`,
+    );
+    expect(window.location.hash).toBe('');
+  });
+
+  it('takes a damaged one out of the address bar too, and says so in its own words', () => {
+    setup({ platform: IPHONE_TAB, hash: `${link.prefix}damaged` });
+    expect(window.location.hash).toBe('');
+    expect(screen.getByText(link.damaged)).toBeVisible();
+    expect(screen.queryByRole('button', { name: link.copy })).toBeNull();
+  });
+
+  it('holds it through the notice, out of the address bar, and hands it to the app at its page', async () => {
+    const seed = newInvite();
+    const { user, opened } = setup({ hash: `${link.prefix}${invitePayload(seed)}` });
+    expect(noticeHeading()).toBeVisible();
+    expect(window.location.hash).toBe(link.held);
+    await user.click(screen.getByRole('button', { name: 'I understand' }));
+    expect(appHeading()).toBeVisible();
+    expect(window.location.hash).toBe(link.held);
+    expect(opened.at(-1)?.heldSeed).toEqual(seed);
+  });
+
+  it('leaves it to the app once nothing stood in the way at launch', () => {
+    const hash = `${link.prefix}${invitePayload(newInvite())}`;
+    const { opened } = setup({ accepted: true, hash });
+    expect(appHeading()).toBeVisible();
+    expect(window.location.hash).toBe(hash);
+    expect(opened[0]?.heldSeed).toBeNull();
+  });
+});
+
+const offerHeading = () =>
+  screen.queryByRole('heading', { level: 1, name: messages.passkey.title });
+/** The offer, once it has read the groups' way back (#389). */
+const offered = () => screen.findByRole('heading', { level: 1, name: messages.passkey.title });
+const unlockHeading = () =>
+  screen.queryByRole('heading', { level: 1, name: messages.unlock.title });
+
+describe('FirstRunGate and the passkey offer (#95)', () => {
+  it('offers a passkey once, right after the notice, where one can lock the keys', async () => {
+    const { user, events, app } = setup({ passkeyAvailable: true });
+
+    await startFromLanding(user);
+    await user.click(screen.getByRole('button', { name: 'I understand' }));
+
+    expect(await offered()).toBeVisible();
+    expect(app).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: messages.passkey.notNow }));
+    expect(appHeading()).toBeVisible();
+    expect(events.filter((event) => event !== 'persist')).toEqual(['accept', 'answer']);
+  });
+
+  it('offers it at the next launch to a device that accepted the notice before passkeys came', async () => {
+    setup({ accepted: true, passkeyAvailable: true });
+
+    expect(await offered()).toBeVisible();
+    expect(appHeading()).not.toBeInTheDocument();
+  });
+
+  it('shows the offer at once on a device with no group yet, and Continue answers nothing (#389)', async () => {
+    const { user, events } = setup({ passkeyAvailable: true, path: 'empty' });
+
+    await startFromLanding(user);
+    await user.click(screen.getByRole('button', { name: 'I understand' }));
+    // In the same commit as the notice goes, as e2e's first run reads it.
+    expect(offerHeading()).toBeVisible();
+    await user.click(await screen.findByRole('button', { name: messages.passkey.continue }));
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'The app' })).toBeVisible();
+    expect(events).not.toContain('answer');
+  });
+
+  it('asks for a way back first, and opens recovery contacts without an answer (#389)', async () => {
+    const { user, events } = setup({ accepted: true, passkeyAvailable: true, path: 'none' });
+
+    expect(await offered()).toBeVisible();
+    expect(screen.getByText(messages.passkey.gate)).toBeVisible();
+    await user.click(screen.getByRole('link', { name: messages.passkey.gateContacts }));
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'The app' })).toBeVisible();
+    expect(window.location.hash).toBe('#/recovery');
+    expect(events).not.toContain('answer');
+  });
+
+  it('doesn’t offer it again once answered', () => {
+    setup({ accepted: true, passkeyAvailable: true, offerAnswered: true });
+
+    expect(offerHeading()).not.toBeInTheDocument();
+    expect(appHeading()).toBeVisible();
+  });
+
+  it('doesn’t offer it where a passkey can’t lock the keys', async () => {
+    const { user, events } = setup({ passkeyAvailable: false });
+
+    await startFromLanding(user);
+    await user.click(screen.getByRole('button', { name: 'I understand' }));
+
+    expect(offerHeading()).not.toBeInTheDocument();
+    expect(appHeading()).toBeVisible();
+    expect(events).not.toContain('answer');
+  });
+
+  it('holds an invite through the notice and the offer, and hands it to the app', async () => {
+    const invite = newInvite();
+    const { user, opened } = setup({
+      passkeyAvailable: true,
+      hash: `#join/${invitePayload(invite)}`,
+    });
+
+    await user.click(screen.getByRole('button', { name: 'I understand' }));
+    expect(window.location.hash).toBe('#/join');
+    await offered();
+    await user.click(screen.getByRole('button', { name: messages.passkey.notNow }));
+
+    expect(opened.at(-1)?.heldSeed).toEqual(invite);
+  });
+});
+
+describe('FirstRunGate on a device whose keys are locked (#95)', () => {
+  it('shows the unlock screen before the app, and opens the app once the passkey unlocks', async () => {
+    const { user, app, unlock } = setup({ accepted: true, locked: true, passkeyAvailable: true });
+
+    expect(unlockHeading()).toBeVisible();
+    expect(offerHeading()).not.toBeInTheDocument();
+    expect(app).not.toHaveBeenCalled();
+    expect(unlock).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: messages.unlock.unlock }));
+
+    expect(unlock).toHaveBeenCalledTimes(1);
+    expect(await screen.findByRole('heading', { level: 1, name: 'The app' })).toBeVisible();
+    expect(offerHeading()).not.toBeInTheDocument();
+  });
+
+  it('stays on the unlock screen while the passkey doesn’t unlock', async () => {
+    const { user, app } = setup({ accepted: true, locked: true, unlocks: false });
+
+    await user.click(screen.getByRole('button', { name: messages.unlock.unlock }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(messages.unlock.failed);
+    expect(unlockHeading()).toBeVisible();
+    expect(app).not.toHaveBeenCalled();
+  });
+
+  it('opens the app once a backup file is restored in place of the locked keys', async () => {
+    const restore = vi.fn(() =>
+      Promise.resolve({ groups: 2, skipped: 0, skippedDocuments: 0, older: false }),
+    );
+    const { user, app } = setup({ accepted: true, locked: true, unlocks: false, restore });
+    await user.click(screen.getByRole('button', { name: messages.unlock.unlock }));
+    const section = await screen.findByRole('region', { name: messages.unlock.restoreHeading });
+    const file = new File([Uint8Array.of(1, 2, 3)], 'reconcile-backup.bin');
+    const chooser = section.querySelector('input[type="file"]');
+    if (!(chooser instanceof HTMLInputElement)) throw new Error('Expected a file input.');
+
+    await user.upload(chooser, file);
+    await user.type(screen.getByLabelText('Its passphrase'), 'a long walk to the river');
+    await user.click(screen.getByRole('button', { name: 'Restore' }));
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'The app' })).toBeVisible();
+    expect(restore).toHaveBeenCalledWith(Uint8Array.of(1, 2, 3), 'a long walk to the river');
+    expect(app).toHaveBeenCalled();
+  });
+
+  it('shows the notice first when the device hasn’t accepted it, then the unlock screen', async () => {
+    const { user } = setup({ locked: true });
+
+    expect(noticeHeading()).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'I understand' }));
+    expect(unlockHeading()).toBeVisible();
+  });
+
+  it('holds an invite opened while locked, and hands it to the app after unlocking', async () => {
+    const invite = newInvite();
+    const { user, opened } = setup({
+      accepted: true,
+      locked: true,
+      hash: `#join/${invitePayload(invite)}`,
+    });
+
+    expect(window.location.hash).toBe('#/join');
+    await user.click(screen.getByRole('button', { name: messages.unlock.unlock }));
+    await screen.findByRole('heading', { level: 1, name: 'The app' });
+
+    expect(opened.at(-1)?.heldSeed).toEqual(invite);
   });
 });

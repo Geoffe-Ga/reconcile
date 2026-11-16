@@ -5,10 +5,18 @@
  * lower case, so `authorOf('ana')` names Ana.
  */
 import { type Capability, type Level, LEVEL_CAPABILITIES, LEVELS } from '../engine/capabilities';
-import type { EventDraft, Score } from '../engine/event';
-import { fold, type GroupState, type LogRecord } from '../engine/fold';
+import type {
+  CarriedDispatch,
+  Ceiling,
+  DispatchBody,
+  EventDraft,
+  FoundingDocument,
+  ResultBody,
+  Score,
+} from '../engine/event';
+import { fold, type GroupState, keyHolders, type LogRecord } from '../engine/fold';
 import { DAY_MINUTES, DEFAULT_RULES, defaultWindowMinutes } from '../engine/rules';
-import { authorOf, signedAs } from './keys';
+import { authorOf, signedAs, testKx } from './keys';
 
 /** The level a member joins at unless a test names one: the creating level. */
 const [, , CREATING] = LEVELS;
@@ -30,8 +38,14 @@ export interface ProposalEntry {
   readonly text?: string;
   readonly link?: string;
   readonly atom?: number;
+  /** The Atom a change names by its id (#92), in place of the first Document's `atom`. */
+  readonly atomId?: string;
+  /** An add's Document (#92): the group's first, its genesis id, when left out. */
+  readonly document?: string;
   /** The voting window in days; the class default when left out. */
   readonly window?: number;
+  /** The Dispatch it sends if it passes (#112); none when left out. */
+  readonly dispatch?: CarriedDispatch;
 }
 
 /** A group's log under construction, one relay record at a time. */
@@ -46,19 +60,56 @@ export interface LogBuilder {
   level(name: string, level: string): void;
   /** Adds `name`'s leave. */
   leave(name: string): void;
-  /** Adds a Proposal by `name`, returning its id. */
+  /**
+   * Adds `name`'s key change into the next epoch (#98), returning its id,
+   * wrapped to each current member with an encryption key (none unless the
+   * group starts with `kx`), in bytes the fold never opens; later records are
+   * read from that epoch's mailboxes.
+   */
+  rotate(name: string): string;
+  /**
+   * Adds `name`'s `unwrap-failed` or `key-taken` naming the key change
+   * `rotation` (#224), read from `epoch`'s mailbox.
+   */
+  keyCheck(
+    name: string,
+    type: 'unwrap-failed' | 'key-taken',
+    rotation: string,
+    epoch: number,
+  ): string;
+  /** Adds a Proposal by `name`, returning its id. Text `""` proposes removing the Atom. */
   propose(name: string, entry?: ProposalEntry): string;
+  /**
+   * Adds `name`'s Proposal of a new section after Atom `after`, or first for
+   * null (#75), in the entry's `document`, or else the group's first (#92).
+   */
+  addSection(name: string, after: string | null, entry?: ProposalEntry): string;
+  /** Adds `name`'s Proposal of a new Document titled `title` (#92), its entry's text its first sections. */
+  newDocument(name: string, title: string, entry?: ProposalEntry): string;
+  /** Adds `name`'s Proposal moving the Atom `atom` right after `after`, or first for null (#103). */
+  move(name: string, atom: string, after: string | null, entry?: ProposalEntry): string;
+  /** Adds `name`'s Proposal giving the Atom `atom` the class `to` (#116), returning its id. */
+  protect(name: string, atom: string, to: string, entry?: ProposalEntry): string;
+  /** Adds a priority vote by `name` over `options` (#107), returning its id; option i's id is `${id}.${i}`. */
+  ask(
+    name: string,
+    options: readonly string[],
+    entry?: Omit<ProposalEntry, 'text' | 'atom'>,
+  ): string;
   /** Adds `name`'s ballot on `proposal`, scoring its text. */
   vote(name: string, proposal: string, score: Score, note?: string): void;
   /** Adds a version of `proposal` by `name`, returning its id. */
   version(name: string, proposal: string, text: string): string;
-  /** Adds `name`'s ballot on `proposal`, scoring each version it names. */
+  /** Adds `name`'s ballot on `proposal`, scoring each version it names, with an optional salt. */
   ballot(
     name: string,
     proposal: string,
     scores: Readonly<Record<string, Score>>,
     note?: string,
+    salt?: string,
   ): void;
+  /** Adds `name`'s result for a decided Proposal (#111), returning its id. */
+  result(name: string, body: ResultBody): string;
   /** Adds `name`'s steward Proposal for `seat`: electing `nominee` by name, or a recall for null. */
   steward(name: string, seat: number, nominee: string | null, entry?: ProposalEntry): string;
   /** Adds `name`'s suspension of the person named `who`, with an optional reason. */
@@ -75,10 +126,29 @@ export interface LogBuilder {
   vouch(name: string, who: string): string;
   /** Adds `name`'s chat bot claim of `moment` on `proposal` (#119), returning its id. */
   chatPosted(name: string, proposal: string, moment: string, nonce?: string): string;
+  /** Adds `name`'s Proposal to remove the person named `who` (#115), returning its id. */
+  proposeRemoval(name: string, who: string, entry?: ProposalEntry): string;
+  /** Adds `name`'s response on the removal `proposal` (#115), returning its id. */
+  respond(name: string, proposal: string, text: string): string;
+  /** Adds `name`'s `remove`, naming the removal `proposal` whose pass is final (#115). */
+  remove(name: string, proposal: string): string;
+  /** Adds `name`'s record of an invite sent to the front door's `application` (#121), returning its id. */
+  doorInvited(name: string, application: string): string;
+  /** `name` closes the card `card` from the front door (#426): brought to a vote or dismissed. */
+  doorCardClosed(name: string, card: string): string;
+  /** Adds `name`'s record of `proposal`'s Discord thread at `url` (#123), returning its id. */
+  chatThread(name: string, proposal: string, url: string): string;
+  /** Adds `name`'s Dispatch (#112), returning its id. */
+  dispatch(name: string, body: DispatchBody): string;
+  /** Adds `name`'s Dispatch put to the group's vote with `ceiling` (#126), titled as the Dispatch. */
+  rising(name: string, ceiling: Ceiling, body: CarriedDispatch, doc?: string): string;
   /** The records so far, in relay order. */
   readonly records: readonly LogRecord[];
-  /** The folded state, with the relay's `now` (default: the current minute). */
-  state(relayNow?: number): GroupState;
+  /**
+   * The folded state, with the relay's `now` (default: the current minute) and
+   * the Proposals whose ballots the device has cleared (#111).
+   */
+  state(relayNow?: number, cleared?: readonly string[]): GroupState;
 }
 
 /**
@@ -95,7 +165,11 @@ export interface GroupStart {
   /** Each member's level at join, by name; a member not named joins as a Co-Creator. */
   readonly levels?: Readonly<Record<string, Level>>;
   readonly atoms?: readonly string[];
+  /** The Documents genesis founds (#92); one, House rules with `atoms`, when left out. */
+  readonly documents?: readonly FoundingDocument[];
   readonly chat?: string;
+  /** Whether the founder and everyone who joins carry an encryption key (#98); nobody does when left out. */
+  readonly kx?: boolean;
 }
 
 /** Starts a log with a genesis by `founder` (default Ana), then a join for each other member. */
@@ -107,30 +181,46 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
     group: '',
     minute: START_MINUTE - SETTLED_MINUTES,
     records,
+    epoch: 0,
   };
-  const add = (name: string, draft: EventDraft): string => {
+  const add = (name: string, draft: EventDraft, from = builder.epoch): string => {
     const { record, id } = signedAs(name.toLowerCase(), draft);
-    records.push({ seq: records.length + 1, received: builder.minute, bytes: record });
+    const epoch = from === 0 ? {} : { epoch: from };
+    records.push({ seq: records.length + 1, received: builder.minute, bytes: record, ...epoch });
     return id;
   };
+  /** `name`'s encryption key, when the group starts with `kx`. */
+  const kxOf = (name: string) => (start.kx === true ? { kx: testKx(name.toLowerCase()).kx } : {});
   const body = {
     name: 'Riverside Tenants',
     founder,
-    title: 'House rules',
-    atoms,
+    documents: start.documents ?? [{ title: 'House rules', atoms }],
     ...(chat === undefined ? {} : { chat }),
+    ...kxOf(founder),
   };
   builder.group = add(founder, { type: 'genesis', group: '', ts: 0, body });
   const { group } = builder;
   const log: LogBuilder = Object.assign(builder, {
     join(name: string, level: Level = CREATING) {
-      add(name, { type: 'join', group, ts: 0, body: { name, level } });
+      add(name, { type: 'join', group, ts: 0, body: { name, level, ...kxOf(name) } });
     },
     level(name: string, level: string) {
       add(name, { type: 'level', group, ts: 0, body: { level } });
     },
     leave(name: string) {
       add(name, { type: 'leave', group, ts: 0, body: {} });
+    },
+    rotate(name: string) {
+      const epoch = builder.epoch + 1;
+      const commit = 'rotation-commit-of-this-test-logAAAAAAAAAAA';
+      const holders = keyHolders(fold(records, builder.minute));
+      const wraps = Object.fromEntries(holders.map((m) => [m.author, 'AA']));
+      const id = add(name, { type: 'key-rotate', group, ts: 0, body: { epoch, commit, wraps } });
+      builder.epoch = epoch;
+      return id;
+    },
+    keyCheck(name: string, type: 'unwrap-failed' | 'key-taken', rotation: string, epoch: number) {
+      return add(name, { type, group, ts: 0, body: { rotation } }, epoch);
     },
     propose(name: string, entry: ProposalEntry = {}) {
       const {
@@ -139,14 +229,85 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
         text = 'Quiet after 11pm.',
       } = entry;
       const proposal = {
-        atom: `${group}.${String(entry.atom ?? 0)}`,
+        atom: entry.atomId ?? `${group}.${String(entry.atom ?? 0)}`,
         title,
         why,
         text,
         ...(entry.link === undefined ? {} : { link: entry.link }),
         ...(entry.window === undefined ? {} : { window: entry.window }),
+        ...(entry.dispatch === undefined ? {} : { dispatch: entry.dispatch }),
       };
       return add(name, { type: 'proposal', group, ts: 0, body: proposal });
+    },
+    addSection(name: string, after: string | null, entry: ProposalEntry = {}) {
+      const {
+        title = 'Guests',
+        why = 'Guests come often.',
+        text = 'Guests leave by 11pm.\n',
+      } = entry;
+      const proposal = {
+        target: { kind: 'add', document: entry.document ?? group, after } as const,
+        title,
+        why,
+        text,
+        ...(entry.link === undefined ? {} : { link: entry.link }),
+        ...(entry.dispatch === undefined ? {} : { dispatch: entry.dispatch }),
+      };
+      return add(name, { type: 'proposal', group, ts: 0, body: proposal });
+    },
+    newDocument(name: string, documentTitle: string, entry: ProposalEntry = {}) {
+      const {
+        title = 'Start a budget',
+        why = 'We spend together.',
+        text = '# Budget\n\nWe share costs.\n',
+      } = entry;
+      const proposal = {
+        target: { kind: 'new-document', title: documentTitle } as const,
+        title,
+        why,
+        text,
+        ...(entry.link === undefined ? {} : { link: entry.link }),
+        ...(entry.window === undefined ? {} : { window: entry.window }),
+        ...(entry.dispatch === undefined ? {} : { dispatch: entry.dispatch }),
+      };
+      return add(name, { type: 'proposal', group, ts: 0, body: proposal });
+    },
+    move(name: string, atom: string, after: string | null, entry: ProposalEntry = {}) {
+      const { title = 'Move a section', why = 'It reads better there.' } = entry;
+      const proposal = {
+        target: { kind: 'move', atom, after } as const,
+        title,
+        why,
+        ...(entry.link === undefined ? {} : { link: entry.link }),
+        ...(entry.window === undefined ? {} : { window: entry.window }),
+        ...(entry.dispatch === undefined ? {} : { dispatch: entry.dispatch }),
+      };
+      return add(name, { type: 'proposal', group, ts: 0, body: proposal });
+    },
+    protect(name: string, atom: string, to: string, entry: ProposalEntry = {}) {
+      const { title = 'Protect a section', why = 'It holds us together.' } = entry;
+      const proposal = {
+        target: { kind: 'class', atom, to } as const,
+        title,
+        why,
+        ...(entry.link === undefined ? {} : { link: entry.link }),
+        ...(entry.window === undefined ? {} : { window: entry.window }),
+        ...(entry.dispatch === undefined ? {} : { dispatch: entry.dispatch }),
+      };
+      return add(name, { type: 'proposal', group, ts: 0, body: proposal });
+    },
+    ask(name: string, options: readonly string[], entry: ProposalEntry = {}) {
+      const { title = 'What should we focus on?', why = 'One thing at a time.' } = entry;
+      const body = {
+        target: { kind: 'priority' } as const,
+        title,
+        why,
+        options,
+        ...(entry.link === undefined ? {} : { link: entry.link }),
+        ...(entry.window === undefined ? {} : { window: entry.window }),
+        ...(entry.dispatch === undefined ? {} : { dispatch: entry.dispatch }),
+      };
+      return add(name, { type: 'proposal', group, ts: 0, body });
     },
     vote(name: string, proposal: string, score: Score, note?: string) {
       log.ballot(name, proposal, { [proposal]: score }, note);
@@ -154,9 +315,23 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
     version(name: string, proposal: string, text: string) {
       return add(name, { type: 'version', group, ts: 0, body: { proposal, text } });
     },
-    ballot(name: string, proposal: string, scores: Readonly<Record<string, Score>>, note?: string) {
-      const vote = { proposal, scores, ...(note === undefined ? {} : { note }) };
+    ballot(
+      name: string,
+      proposal: string,
+      scores: Readonly<Record<string, Score>>,
+      note?: string,
+      salt?: string,
+    ) {
+      const vote = {
+        proposal,
+        scores,
+        ...(note === undefined ? {} : { note }),
+        ...(salt === undefined ? {} : { salt }),
+      };
       add(name, { type: 'vote', group, ts: 0, body: vote });
+    },
+    result(name: string, body: ResultBody) {
+      return add(name, { type: 'result', group, ts: 0, body });
     },
     steward(name: string, seat: number, nominee: string | null, entry: ProposalEntry = {}) {
       const member = nominee === null ? null : authorOf(nominee.toLowerCase());
@@ -206,8 +381,42 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
       const body = { proposal, moment, ...(nonce === undefined ? {} : { nonce }) };
       return add(name, { type: 'chat-posted', group, ts: 0, body });
     },
-    state(relayNow?: number) {
-      return fold(records, relayNow ?? builder.minute);
+    proposeRemoval(name: string, who: string, entry: ProposalEntry = {}) {
+      const { title = `Remove ${who}`, why = 'They keep breaking the house rules.' } = entry;
+      const target = { kind: 'remove' as const, member: authorOf(who.toLowerCase()) };
+      const carried = entry.dispatch === undefined ? {} : { dispatch: entry.dispatch };
+      return add(name, {
+        type: 'proposal',
+        group,
+        ts: 0,
+        body: { target, title, why, ...carried },
+      });
+    },
+    respond(name: string, proposal: string, text: string) {
+      return add(name, { type: 'removal-response', group, ts: 0, body: { proposal, text } });
+    },
+    remove(name: string, proposal: string) {
+      return add(name, { type: 'remove', group, ts: 0, body: { proposal } });
+    },
+    doorInvited(name: string, application: string) {
+      return add(name, { type: 'door-invited', group, ts: 0, body: { application } });
+    },
+    doorCardClosed(name: string, card: string) {
+      return add(name, { type: 'door-card-closed', group, ts: 0, body: { card } });
+    },
+    chatThread(name: string, proposal: string, url: string) {
+      return add(name, { type: 'chat-thread', group, ts: 0, body: { proposal, url } });
+    },
+    dispatch(name: string, body: DispatchBody) {
+      return add(name, { type: 'dispatch', group, ts: 0, body });
+    },
+    rising(name: string, ceiling: Ceiling, dispatch: CarriedDispatch, doc?: string) {
+      const target = { kind: 'dispatch' as const, ceiling, ...(doc === undefined ? {} : { doc }) };
+      const body = { target, title: dispatch.title, why: '', dispatch };
+      return add(name, { type: 'proposal', group, ts: 0, body });
+    },
+    state(relayNow?: number, cleared: readonly string[] = []) {
+      return fold(records, relayNow ?? builder.minute, [], cleared);
     },
   });
   for (const member of members) log.join(member, start.levels?.[member]);

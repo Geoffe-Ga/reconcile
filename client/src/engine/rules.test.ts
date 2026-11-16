@@ -1,9 +1,22 @@
 import { describe, expect, it } from 'vitest';
 
-import type { ProposalBody, RulesProposalBody } from './event';
+import { COUNTED, DOOR, ROTATED } from '../test/door';
+import type {
+  AddProposalBody,
+  ClassProposalBody,
+  MoveProposalBody,
+  ProposalBody,
+  RemovalProposalBody,
+  RulesProposalBody,
+} from './event';
 import { OFF } from './optIns';
 import {
+  ATOM_CLASSES,
+  type AtomClass,
   chosenWindow,
+  classChangeIsValid,
+  classChoices,
+  classOfSection,
   DAY_MINUTES,
   DEFAULT_RULES,
   defaultWindowMinutes,
@@ -50,7 +63,37 @@ function rules(optIn: string, value: unknown): RulesProposalBody {
 
 /** A group whose standing opt-ins are `optIns`. */
 function standing(optIns: Partial<typeof OFF>) {
-  return { rules: { ...DEFAULT_RULES, optIns: { ...OFF, ...optIns } } };
+  return { rules: { ...DEFAULT_RULES, optIns: { ...OFF, ...optIns } }, atoms: [] };
+}
+
+/** A group whose sections `g.0`, `g.1` and `g.2` are ordinary, entrenched and eternal (#116). */
+const CLASSED = {
+  rules: DEFAULT_RULES,
+  atoms: [
+    { id: 'g.0', class: 'ordinary' },
+    { id: 'g.1', class: 'entrenched' },
+    { id: 'g.2', class: 'eternal' },
+  ],
+} as const;
+
+/** A Proposal giving section `atom` the class `to` (#116). */
+function classChange(atom: string, to: string): ClassProposalBody {
+  return { target: { kind: 'class', atom, to }, title: 'T', why: 'W' };
+}
+
+/** An edit of section `atom`, whose `""` would remove it. */
+function edit(atom: string, text = 'New\n'): ProposalBody {
+  return { atom, title: 'T', why: 'W', text };
+}
+
+/** A move of section `atom` after `after` (#103). */
+function move(atom: string, after: string | null): MoveProposalBody {
+  return { target: { kind: 'move', atom, after }, title: 'T', why: 'W' };
+}
+
+/** An add after section `after` (#75). */
+function add(after: string | null): AddProposalBody {
+  return { target: { kind: 'add', document: 'g', after }, title: 'T', why: 'W', text: 'New\n' };
 }
 
 describe('DEFAULT_RULES: the founding rules (ADR-0067 Fellowship, ADR-0074, ADR-0015)', () => {
@@ -59,10 +102,12 @@ describe('DEFAULT_RULES: the founding rules (ADR-0067 Fellowship, ADR-0074, ADR-
       bars: {
         ordinary: { avgAtLeast: 2, zerosUnderPercent: 10 },
         entrenched: { avgAtLeast: 3, zerosUnderPercent: 5 },
+        removal: { avgAtLeast: 3, zerosUnderPercent: 5, zerosAllowed: 1 },
       },
       windows: {
         ordinary: { min: 3, max: 14, default: 7 },
         entrenched: { min: 14, max: 28, default: 14 },
+        removal: { min: 14, max: 14, default: 14 },
       },
       quorum: { min: 3, percent: 30 },
       vouches: 2,
@@ -82,6 +127,21 @@ describe('DEFAULT_RULES: the founding rules (ADR-0067 Fellowship, ADR-0074, ADR-
     for (const [path, value] of numericLeaves()) {
       expect(Number.isSafeInteger(value), path.join('.')).toBe(true);
     }
+  });
+
+  it('runs a removal for the entrenched default and no other length (ADR-0075 §3, #115)', () => {
+    const { removal, entrenched } = DEFAULT_RULES.windows;
+    expect(removal).toEqual({
+      min: entrenched.default,
+      max: entrenched.default,
+      default: entrenched.default,
+    });
+  });
+
+  it('gives removal the entrenched average and share of zeros, and forgives one 0 (ADR-0075 §3)', () => {
+    const { removal, entrenched } = DEFAULT_RULES.bars;
+    expect(removal).toEqual({ ...entrenched, zerosAllowed: 1 });
+    expect(entrenched).not.toHaveProperty('zerosAllowed');
   });
 
   it('keeps every class’s default window within its own bounds', () => {
@@ -165,7 +225,7 @@ describe('foundingRules: the rules a genesis founds its group with', () => {
   });
 
   it('refuses a genesis that opens an opt-in: only a passed Proposal opens one (ADR-0040)', () => {
-    expect(foundingRules({ optIns: { frontDoor: true } })).toBeNull();
+    expect(foundingRules({ optIns: { frontDoor: DOOR } })).toBeNull();
     expect(foundingRules({ optIns: { chatBot: { webhook: W1 } } })).toBeNull();
     expect(foundingRules({ optIns: { chatBot: false } })).toBeNull();
     expect(foundingRules({ optIns: { chatBot: null, frontDoor: false } })).toEqual(DEFAULT_RULES);
@@ -174,7 +234,22 @@ describe('foundingRules: the rules a genesis founds its group with', () => {
   it('leaves out fields it doesn’t know, so a later rule a newer device writes founds the group here', () => {
     const rules = { ...asJson(), optIns: { ...OFF, bot: false }, extra: 'x' };
     expect(foundingRules(rules)).toEqual(DEFAULT_RULES);
+    expect(foundingRules({ bars: { later: { avgAtLeast: 3 } } })).toEqual(DEFAULT_RULES);
+  });
+
+  it('takes removal’s bar and window from a genesis that has none, as one from before #115 has', () => {
+    const before = asJson();
+    const bars = before.bars as Record<string, unknown>;
+    const windows = before.windows as Record<string, unknown>;
+    delete bars.removal;
+    delete windows.removal;
+    expect(foundingRules(before)).toEqual(DEFAULT_RULES);
     expect(foundingRules({ bars: { removal: { avgAtLeast: 3 } } })).toEqual(DEFAULT_RULES);
+  });
+
+  it('refuses a genesis that takes away removal’s forgiven 0, or forgives two', () => {
+    expect(foundingRules({ bars: { removal: { zerosAllowed: 0 } } })).toBeNull();
+    expect(foundingRules({ bars: { removal: { zerosAllowed: 2 } } })).toBeNull();
   });
 
   it('reads only a field’s own value, never one an object inherits', () => {
@@ -185,47 +260,167 @@ describe('foundingRules: the rules a genesis founds its group with', () => {
 
 describe('targetClass: how hard a change is', () => {
   it('makes an edit ordinary, and a steward election too', () => {
-    expect(targetClass({ rules: DEFAULT_RULES }, EDIT)).toBe('ordinary');
+    expect(targetClass({ rules: DEFAULT_RULES, atoms: [] }, EDIT)).toBe('ordinary');
     const steward = {
       target: { kind: 'steward', seat: 1, member: null } as const,
       title: 't',
       why: 'w',
     };
-    expect(targetClass({ rules: DEFAULT_RULES }, steward)).toBe('ordinary');
+    expect(targetClass({ rules: DEFAULT_RULES, atoms: [] }, steward)).toBe('ordinary');
   });
 
   it('makes dissolving the group entrenched, wipe or not (ADR-0051, #108)', () => {
     for (const wipe of [false, true]) {
       const dissolve = { target: { kind: 'dissolve', wipe } as const, title: 't', why: 'w' };
-      expect(targetClass({ rules: DEFAULT_RULES }, dissolve)).toBe('entrenched');
+      expect(targetClass({ rules: DEFAULT_RULES, atoms: [] }, dissolve)).toBe('entrenched');
     }
+  });
+
+  it('makes a Dispatch put to a vote ordinary, whatever its ceiling, and a promotion record too (#126)', () => {
+    const dispatch = { title: 'Rally', text: 'Saturday at ten.' };
+    for (const ceiling of [1, 2, 'coalitions'] as const) {
+      const body = {
+        target: { kind: 'dispatch', ceiling } as const,
+        title: 't',
+        why: 'w',
+        dispatch,
+      };
+      expect(targetClass({ rules: DEFAULT_RULES, atoms: [] }, body)).toBe('ordinary');
+    }
+    const target = {
+      kind: 'promote',
+      dispatch: { id: 'd', ...dispatch },
+      ceiling: 'coalitions',
+      level: 1,
+      from: 'k',
+    } as const;
+    expect(
+      targetClass({ rules: DEFAULT_RULES, atoms: [] }, { target, title: 'Rally', why: '' }),
+    ).toBe('ordinary');
   });
 
   it('makes turning an opt-in on entrenched (ADR-0040)', () => {
     expect(targetClass(standing({}), rules('chatBot', { webhook: W1 }))).toBe('entrenched');
-    expect(targetClass(standing({}), rules('frontDoor', true))).toBe('entrenched');
+    expect(targetClass(standing({}), rules('frontDoor', DOOR))).toBe('entrenched');
   });
 
   it('makes turning an opt-in off, or replacing one webhook with another, ordinary (ADR-0075 §5)', () => {
-    const on = standing({ chatBot: { webhook: W1 }, frontDoor: true });
+    const on = standing({ chatBot: { webhook: W1 }, frontDoor: DOOR });
     expect(targetClass(on, rules('chatBot', null))).toBe('ordinary');
     expect(targetClass(on, rules('frontDoor', false))).toBe('ordinary');
     expect(targetClass(on, rules('chatBot', { webhook: W2 }))).toBe('ordinary');
   });
 
   it('reads the standing value when the Proposal opens, never one the proposer wrote', () => {
-    const forged = { ...rules('frontDoor', true), from: true, class: 'ordinary' };
+    const forged = { ...rules('frontDoor', DOOR), from: DOOR, class: 'ordinary' };
     expect(targetClass(standing({}), forged)).toBe('entrenched');
-    expect(targetClass(standing({ frontDoor: true }), rules('frontDoor', true))).toBe('ordinary');
+    expect(targetClass(standing({ frontDoor: DOOR }), rules('frontDoor', ROTATED))).toBe(
+      'ordinary',
+    );
+    expect(targetClass(standing({ frontDoor: DOOR }), rules('frontDoor', COUNTED))).toBe(
+      'entrenched',
+    );
+    expect(targetClass(standing({ frontDoor: COUNTED }), rules('frontDoor', DOOR))).toBe(
+      'ordinary',
+    );
   });
 
   it('makes a rules target for an opt-in it doesn’t know ordinary, which the fold ignores anyway', () => {
     expect(targetClass(standing({}), rules('signalBot', true))).toBe('ordinary');
   });
 
+  it('makes every class Proposal entrenched, whatever the section and whatever class it asks for (ADR-0015, #116)', () => {
+    for (const atom of ['g.0', 'g.1', 'g.2', 'nowhere']) {
+      for (const to of [...ATOM_CLASSES, 'sacred']) {
+        expect(targetClass(CLASSED, classChange(atom, to))).toBe('entrenched');
+      }
+    }
+  });
+
+  it('makes a change, a removal or a move of an entrenched section entrenched (#116)', () => {
+    expect(targetClass(CLASSED, edit('g.1'))).toBe('entrenched');
+    expect(targetClass(CLASSED, edit('g.1', ''))).toBe('entrenched');
+    expect(targetClass(CLASSED, move('g.1', null))).toBe('entrenched');
+    expect(targetClass(CLASSED, move('g.1', 'g.2'))).toBe('entrenched');
+  });
+
+  it('keeps a change, a removal or a move of an ordinary section ordinary (#116)', () => {
+    expect(targetClass(CLASSED, edit('g.0'))).toBe('ordinary');
+    expect(targetClass(CLASSED, edit('g.0', ''))).toBe('ordinary');
+    expect(targetClass(CLASSED, move('g.0', 'g.1'))).toBe('ordinary');
+  });
+
+  it('keeps a move anchored on a protected section, or an add after one, ordinary (#116)', () => {
+    expect(targetClass(CLASSED, move('g.0', 'g.1'))).toBe('ordinary');
+    expect(targetClass(CLASSED, move('g.0', 'g.2'))).toBe('ordinary');
+    expect(targetClass(CLASSED, add('g.1'))).toBe('ordinary');
+    expect(targetClass(CLASSED, add('g.2'))).toBe('ordinary');
+    expect(targetClass(CLASSED, add(null))).toBe('ordinary');
+  });
+
+  it('leaves an eternal section’s change ordinary, which the fold ignores anyway (#116)', () => {
+    expect(targetClass(CLASSED, edit('g.2'))).toBe('ordinary');
+    expect(targetClass(CLASSED, move('g.2', null))).toBe('ordinary');
+  });
+
+  it('reads a section’s class from the state, never from a class the proposer wrote (#116)', () => {
+    const forged = { ...edit('g.0'), class: 'entrenched' };
+    expect(targetClass(CLASSED, forged)).toBe('ordinary');
+    const unprotected = { ...CLASSED, atoms: [{ id: 'g.1', class: 'ordinary' }] } as const;
+    expect(targetClass(unprotected, edit('g.1'))).toBe('ordinary');
+    expect(targetClass(CLASSED, edit('nowhere'))).toBe('ordinary');
+  });
+
+  it('makes removing a member removal, whatever class or window the proposer wrote (#115)', () => {
+    const removal: RemovalProposalBody = {
+      target: { kind: 'remove', member: 'kim' },
+      title: 't',
+      why: 'w',
+    };
+    expect(targetClass(CLASSED, removal)).toBe('removal');
+    const forged = { ...removal, class: 'ordinary', window: 3 };
+    expect(targetClass(CLASSED, forged)).toBe('removal');
+  });
+
   it('never reads a class, bar or deadline the proposer wrote', () => {
     const forged = { ...EDIT, class: 'entrenched', bar: DEFAULT_RULES.bars.entrenched };
-    expect(targetClass({ rules: DEFAULT_RULES }, forged)).toBe('ordinary');
+    expect(targetClass({ rules: DEFAULT_RULES, atoms: [] }, forged)).toBe('ordinary');
+  });
+});
+
+describe('section classes (#116; ADR-0015 §2–3)', () => {
+  it('lists the three classes, the weakest first', () => {
+    expect(ATOM_CLASSES).toEqual(['ordinary', 'entrenched', 'eternal']);
+  });
+
+  it('offers an ordinary section entrenched or eternal, an entrenched one eternal or ordinary, and an eternal one nothing', () => {
+    expect(classChoices('ordinary')).toEqual(['entrenched', 'eternal']);
+    expect(classChoices('entrenched')).toEqual(['eternal', 'ordinary']);
+    expect(classChoices('eternal')).toEqual([]);
+  });
+
+  it.each<[AtomClass, string, boolean]>([
+    ['ordinary', 'entrenched', true],
+    ['ordinary', 'eternal', true],
+    ['entrenched', 'eternal', true],
+    ['entrenched', 'ordinary', true],
+    ['ordinary', 'ordinary', false],
+    ['entrenched', 'entrenched', false],
+    ['eternal', 'eternal', false],
+    ['eternal', 'ordinary', false],
+    ['eternal', 'entrenched', false],
+    ['ordinary', 'sacred', false],
+    ['entrenched', 'Eternal', false],
+    ['ordinary', '', false],
+  ])('takes a section from %s to %s: %s', (from, to, valid) => {
+    expect(classChangeIsValid(from, to)).toBe(valid);
+  });
+
+  it('reads a section’s class, and ordinary for a section it doesn’t hold', () => {
+    expect(classOfSection(CLASSED, 'g.0')).toBe('ordinary');
+    expect(classOfSection(CLASSED, 'g.1')).toBe('entrenched');
+    expect(classOfSection(CLASSED, 'g.2')).toBe('eternal');
+    expect(classOfSection(CLASSED, 'nowhere')).toBe('ordinary');
   });
 });
 
@@ -234,9 +429,10 @@ describe('windows in relay minutes', () => {
     expect(DAY_MINUTES).toBe(1_440);
   });
 
-  it('gives each class’s default window: 7 days ordinary, 14 entrenched', () => {
+  it('gives each class’s default window: 7 days ordinary, 14 entrenched, and 14 for a removal', () => {
     expect(defaultWindowMinutes(DEFAULT_RULES, 'ordinary')).toBe(10_080);
     expect(defaultWindowMinutes(DEFAULT_RULES, 'entrenched')).toBe(20_160);
+    expect(defaultWindowMinutes(DEFAULT_RULES, 'removal')).toBe(20_160);
   });
 });
 

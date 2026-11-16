@@ -5,8 +5,12 @@ name: Docs graph build
 # docs-graph.json and docs-graph-meta.json on the same rolling
 # `knowledge-graph` release. ./scripts/graph/restore.sh fetches both graphs.
 #
-#   push to main touching docs/  -> fresh build; only changed docs reach the LLM
-#   manual dispatch              -> the same, or a full re-send (full_rebuild)
+#   nightly schedule  -> fresh build of main; only changed docs reach the LLM
+#   manual dispatch   -> the same, or a full re-send (full_rebuild)
+#
+# No push trigger: a merge to main starts no docs build (the founder's choice on
+# 2026-11-14). The nightly run picks up the day's merges, and a dispatch builds
+# at once. tests/test_workflows.py holds it.
 #
 # Separate from graph-build.yml on purpose: `graphify merge-graphs` would
 # re-prefix every code node id, and that workflow's nightly forced rebuild skips
@@ -23,15 +27,13 @@ name: Docs graph build
 # read-only; only the publish job, which runs nothing but gh, can write.
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "docs/**"
-      - ".graphifyignore"
-      - "scripts/graph/build-docs.sh"
-      - "scripts/graph/requirements.txt"
-      - "scripts/graph/requirements.lock"
-      - ".github/workflows/graph-docs.yml"
+  # 15:23 UTC (07:23 Pacific). In the week before this, no merge landed between
+  # 14:00 and 16:00 UTC, so a code-graph push rarely shares the concurrency
+  # group with it. That's an hour after ci.yml's 14:17 nightly and well clear
+  # of graph-build.yml's 04:40 run. Not :00 or :30, where GitHub delays and,
+  # under load, drops scheduled runs.
+  schedule:
+    - cron: "23 15 * * *"
   workflow_dispatch:
     inputs:
       full_rebuild:
@@ -44,8 +46,8 @@ permissions:
 
 # Shares graph-build.yml's group so the two never upload to the release at once.
 # GitHub keeps one pending run per group, so a newer code-graph run can replace
-# a pending docs run. Every docs build covers all of docs/, so the next docs
-# push or a manual dispatch catches up.
+# a pending docs run. Every docs build covers all of docs/, so the next nightly
+# run or a manual dispatch catches up.
 concurrency:
   group: graph-build
   cancel-in-progress: false
@@ -54,7 +56,11 @@ jobs:
   build:
     name: Build docs graph
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # A routine run re-sends only changed docs, but docs/spec/phase-1-spec.md
+    # changes in most merges and is re-sent whole: about 8 min now, up from 1 min
+    # three days ago. 30 is twice that with room for its growth. A full rebuild
+    # skips the cache, so a timed-out one would start over: it keeps 45.
+    timeout-minutes: ${{ inputs.full_rebuild && 45 || 30 }}
     env:
       OUT_DIR: graphify-out
       CACHE_DIR: graphify-out/docs-build/cache/semantic
@@ -184,7 +190,7 @@ jobs:
     name: Publish docs graph
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5  # slowest successful run: 0.2 min
     permissions:
       contents: write
     env:

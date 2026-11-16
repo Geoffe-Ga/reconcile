@@ -9,12 +9,20 @@ import { act, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { deriveMailboxId } from '../crypto/groupKeys';
 import type { TestDevice } from '../test/appServices';
 import { TEST_ORIGIN, testDevice } from '../test/appServices';
 import { createFakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
-import { go, members, type MountedApp, mountApp, proposeFrom } from '../test/members';
+import { mailboxAt } from '../store/mailbox';
+import {
+  APP_USER,
+  go,
+  members,
+  type MountedApp,
+  mountApp,
+  proposeFrom,
+  score,
+} from '../test/members';
 import type { AppServices } from './services';
 import { chatMessage } from './chatMessages';
 import type { WebShare } from './share';
@@ -50,7 +58,7 @@ async function sync(device: TestDevice | undefined): Promise<void> {
 
 describe('Group home brings people back', () => {
   it('lists a new Proposal under Needs your vote for the others, and not once they’ve voted', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup(APP_USER);
     const { groupId, devices } = await group(['Ana', 'Ben']);
     const [ana, ben] = devices;
     go(`#/g/${groupId}/doc`);
@@ -63,8 +71,7 @@ describe('Group home brings people back', () => {
     const b = mount(ben?.services, 'b');
     const needs = await within(b).findByRole('region', { name: 'Needs your vote' });
     await user.click(within(needs).getByRole('link', { name: /Quiet hours/ }));
-    await user.click(await within(b).findByRole('radio', { name: '3 · Supportive' }));
-    await user.click(within(b).getByRole('button', { name: 'Send your vote' }));
+    await score(within(b), user, '3 · Supportive');
     await within(b).findByText('Sent');
 
     go(`#/g/${groupId}`);
@@ -180,7 +187,7 @@ describe('Leave this group', () => {
       await within(b).findByText('You aren’t in any groups on this device yet.'),
     ).toBeVisible();
     const secret = (await ana?.services.store.getGroup(groupId))?.secret ?? new Uint8Array();
-    expect(fake.blobs(deriveMailboxId(secret))).toHaveLength(3);
+    expect(fake.blobs(mailboxAt({ secret }, fake.minute))).toHaveLength(3);
 
     // Ana's device sees Ben gone from People.
     await sync(ana);

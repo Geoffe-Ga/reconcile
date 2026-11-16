@@ -9,11 +9,19 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { epochCommit } from '../crypto/epoch';
-import { deriveMailboxId, deriveSealKey } from '../crypto/groupKeys';
-import { BACKUP_SEAL_INFO, backupIdFor, openRelayBackup } from '../crypto/relayBackup';
+import { deriveSealKey } from '../crypto/groupKeys';
+import {
+  BACKUP_SEAL_INFO,
+  backupIdFor,
+  newScrubBlob,
+  openRelayBackup,
+  sealRelayBackup,
+} from '../crypto/relayBackup';
 import { sha256 } from '../crypto/hash';
 import { hkdf32 } from '../crypto/hkdf';
 import { xchachaSeal } from '../crypto/seal';
+import { deriveShareMailboxId } from '../crypto/share';
+import { newSigningKeys } from '../crypto/sign';
 import type { SignedEvent } from '../engine/event';
 import { fold } from '../engine/fold';
 import { createRelay } from '../net/relay';
@@ -24,10 +32,13 @@ import { freshIndexedDBPerTest } from '../test/idb';
 import { signedAs, testKeys } from '../test/keys';
 import { groupLog } from '../test/votes';
 import { findCanaries, keyCanaries, textCanary } from '../test/scan';
-import { type Group, openStore, type Store } from './db';
+import { keepSharesAlive } from '../share/shareLink';
+import { scanDb } from '../test/scanDb';
+import { type Group, openStore, type Store, VaultLocked } from './db';
 import { hasDuty } from './epochs';
 import { eventIdOf } from './eventId';
-import { newPersonalId, type PersonalDocument } from './personal';
+import { mailboxAt } from './mailbox';
+import { newPersonalId, type PersonalDocument, type ShareState } from './personal';
 import {
   fetchRelayBackup,
   refreshRelayBackup,
@@ -50,6 +61,8 @@ const CANARY = {
 };
 const TS = 1_762_650_000_000;
 const DAY = 1440;
+/** A split id (#272): 16 bytes in unpadded base64url, as `newSplitId` makes one. */
+const SPLIT = 'c3BsaXQtb2YtYS10ZXN0LQ';
 /** Noon UTC on a day, in relay minutes. */
 const NOON = 20_400 * DAY + 720;
 const opened: Sync[] = [];
@@ -98,7 +111,11 @@ function genesisOf(name: string): SignedEvent {
     type: 'genesis',
     group: '',
     ts: TS,
-    body: { name, founder: CANARY.founder, title: 'House rules', atoms: [CANARY.atom] },
+    body: {
+      name,
+      founder: CANARY.founder,
+      documents: [{ title: 'House rules', atoms: [CANARY.atom] }],
+    },
   });
 }
 
@@ -118,21 +135,17 @@ function secretFor(name: string): Uint8Array {
 }
 
 /**
- * Ana founds `name` on `device`, known there as `myName`, and syncs, so the
- * relay has returned its genesis.
+ * Ana founds `name` on `device`, known there by the canary founder's name, and
+ * syncs, so the relay has returned its genesis.
  */
-async function found(
-  device: Device,
-  name = CANARY.group,
-  myName = CANARY.founder,
-): Promise<SignedEvent> {
+async function found(device: Device, name = CANARY.group): Promise<SignedEvent> {
   const genesis = genesisOf(name);
   const { secretKey, author } = testKeys('ana');
   await device.store.addGroup({
     groupId: genesis.id,
     secret: secretFor(name),
     signingKey: secretKey,
-    me: { author, name: myName },
+    me: { author, name: CANARY.founder },
   });
   await device.store.enqueue(genesis.id, genesis.record);
   expect(await device.sync.syncOnce()).toBe(true);
@@ -226,13 +239,13 @@ describe('what the relay holds', () => {
     ]);
   });
 
-  it('seals the device’s own snapshot without its key, so it carries whatever the snapshot does', async () => {
+  it('seals the device’s own snapshot without its key or the split it was cut into (#272), so it carries whatever the snapshot does', async () => {
     const fake = createFakeRelay({ minute: NOON });
     const device = await openDevice(fake, 'ana');
     await found(device);
     await device.store.savePersonal(statement());
 
-    await startRelayBackup(device.services);
+    await startRelayBackup(device.services, { split: SPLIT });
 
     const key = await keyOf(device.store);
     const sealed = openRelayBackup(key, fake.backup(backupIdFor(key)) ?? new Uint8Array());
@@ -240,8 +253,9 @@ describe('what the relay holds', () => {
       string,
       unknown
     >;
-    const { backupKey, ...withoutKey } = snapshot;
+    const { backupKey, backupSplit, ...withoutKey } = snapshot;
     expect(backupKey).toBe(base64url(key));
+    expect(backupSplit).toBe(SPLIT);
     expect(JSON.parse(text(sealed ?? new Uint8Array()))).toEqual(withoutKey);
   });
 
@@ -250,7 +264,7 @@ describe('what the relay holds', () => {
     const device = await openDevice(fake, 'ana');
     const founding = await found(device);
     const endpoint = 'https://fcm.googleapis.com/fcm/send/canary-endpoint';
-    const mailbox = deriveMailboxId(secretFor(CANARY.group));
+    const mailbox = mailboxAt({ secret: secretFor(CANARY.group) }, NOON);
     await device.store.setPush(founding.id, {
       endpoint,
       mailboxes: [mailbox],
@@ -282,7 +296,7 @@ describe('what the relay holds', () => {
     await startRelayBackup(device.services);
 
     const [id] = uploads(fake);
-    const mailbox = deriveMailboxId(secretFor(CANARY.group));
+    const mailbox = mailboxAt({ secret: secretFor(CANARY.group) }, NOON);
     expect(id).toBe(backupIdFor(await keyOf(device.store)));
     expect(id).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(id).not.toBe(mailbox);
@@ -409,17 +423,17 @@ describe('the schedule', () => {
     ).not.toBeNull();
   });
 
-  it('keeps the last good backup when the groups grow past 16 MiB, and says so', async () => {
+  it('keeps the last good backup when what it keeps grows past 16 MiB, and says so', async () => {
     const fake = createFakeRelay({ minute: NOON });
     const device = await openDevice(fake, 'ana');
     await found(device);
     await startRelayBackup(device.services);
     const key = await keyOf(device.store);
     const good = fake.backup(backupIdFor(key));
-    // A second group whose device-only name is 17 MB takes the snapshot past 16 MiB. Only
-    // the size matters here, and a name gets there without folding megabytes of log;
-    // crypto/relayBackup.test.ts refuses the real 16 MiB plus one byte.
-    await found(device, 'Second Street Garden', 'n'.repeat(17_000_000));
+    // A 17 MB personal Document takes the snapshot past 16 MiB. Only the size matters here,
+    // and crypto/relayBackup.test.ts refuses the real 16 MiB plus one byte. Kept in a group,
+    // the 17 MB would be copied out of IndexedDB on every read a sync pass makes of it (#260).
+    await device.store.savePersonal({ ...statement(), text: 'n'.repeat(17_000_000) });
     fake.minute += DAY;
 
     expect(await device.sync.syncOnce()).toBe(true);
@@ -427,6 +441,67 @@ describe('the schedule', () => {
     expect(uploads(fake)).toHaveLength(1);
     expect(fake.backup(backupIdFor(key))).toEqual(good);
     expect(relayBackupStatus(await device.store.getRelayBackup())).toEqual({ kind: 'too-large' });
+  });
+});
+
+describe('on a device whose keys are locked with a passkey (#95)', () => {
+  const LOCK = { credentialId: Uint8Array.of(7), prfSalt: new Uint8Array(32).fill(3) };
+  const VAULT_KEY = new Uint8Array(32).fill(9);
+
+  /** Everything the store `name` holds, raw, as text and bytes, for a before-and-after check. */
+  async function raw(name: string): Promise<unknown> {
+    const { text: words, bytes } = await scanDb(name);
+    return { words, bytes: bytes.map((held) => Array.from(held)) };
+  }
+
+  /** `device`'s keys locked with a passkey, then the app closed and opened again: locked. */
+  async function lockAndReopen(fake: FakeRelay, device: Device, name: string): Promise<Device> {
+    await device.store.sealKeys(LOCK, VAULT_KEY);
+    device.sync.stop();
+    device.store.close();
+    return openDevice(fake, name);
+  }
+
+  it('uploads nothing, makes no key and reads none while locked, then refreshes once unlocked', async () => {
+    const fake = createFakeRelay({ minute: NOON });
+    const device = await openDevice(fake, 'ana');
+    const founding = await found(device);
+    await startRelayBackup(device.services);
+    await change(device, founding, 'One');
+    const key = await keyOf(device.store);
+    fake.minute += DAY;
+    const locked = await lockAndReopen(fake, device, 'ana');
+    const before = await raw('ana');
+
+    expect(await locked.sync.syncOnce()).toBe(false);
+    await expect(refreshRelayBackup(locked.services)).rejects.toThrow(VaultLocked);
+    await expect(startRelayBackup(locked.services)).rejects.toThrow(VaultLocked);
+    await expect(startRelayBackup(locked.services, { newKey: true })).rejects.toThrow(VaultLocked);
+
+    expect(uploads(fake)).toEqual([backupIdFor(key)]);
+    expect(await raw('ana')).toEqual(before);
+    expect(await locked.store.unlock(VAULT_KEY)).toBe(true);
+    expect(await locked.sync.syncOnce()).toBe(true);
+    expect(uploads(fake)).toEqual([backupIdFor(key), backupIdFor(key)]);
+    expect(relayBackupStatus(await locked.store.getRelayBackup())).toEqual({
+      kind: 'saved',
+      at: TS,
+    });
+  });
+
+  it('uploads nothing while locked even with no group to fail the pass, not even on start', async () => {
+    const fake = createFakeRelay({ minute: NOON });
+    const device = await openDevice(fake, 'empty');
+    await device.store.setRelayBackupKey(new Uint8Array(32).fill(0xb1));
+    const locked = await lockAndReopen(fake, device, 'empty');
+    const before = await raw('empty');
+
+    expect(await locked.sync.syncOnce()).toBe(true);
+    await expect(startRelayBackup(locked.services)).rejects.toThrow(VaultLocked);
+    await expect(startRelayBackup(locked.services, { newKey: true })).rejects.toThrow(VaultLocked);
+
+    expect(uploads(fake)).toEqual([]);
+    expect(await raw('empty')).toEqual(before);
   });
 });
 
@@ -492,6 +567,51 @@ describe('a key change and the relay copy (#97, #98)', () => {
     expect((await device.store.getRelayBackup())?.checkedDay).toBeNull();
   });
 
+  it('lets a share by link (#105) post at launch while the key change is due, moving no group and uploading nothing until it lands', async () => {
+    const fake = createFakeRelay({ minute: NOON });
+    const device = await openDevice(fake, 'ana');
+    const { groupId, seq } = await afterBenLeft(device);
+    await startRelayBackup(device.services);
+    const shared = statement();
+    await device.store.savePersonal(shared);
+    const share = { ...shareState(5), n: 0, postedAt: null, pending: true };
+    await device.store.updateShare(shared.id, () => share);
+    const before = await groupOn(device.store, groupId);
+    const services = {
+      store: device.store,
+      relay: createRelay({ fetch: fake.fetch }),
+      seal: xchachaSeal,
+      now: () => TS,
+    };
+
+    // As main.tsx runs it: beside the sync loop, not in a pass, so no freeze holds it.
+    expect(await keepSharesAlive(services)).toEqual([[shared.id, 'posted']]);
+    await refreshRelayBackup(device.services);
+
+    const puts = fake.requests.filter((request) => request.method === 'PUT');
+    expect(puts.map((request) => request.url.split('?')[0])).toEqual([
+      `/v1/mailbox/${deriveShareMailboxId(share.seed)}`,
+    ]);
+    const after = await groupOn(device.store, groupId);
+    expect(plain(after)).toEqual(plain(before));
+    expect((await device.store.getPersonal(shared.id))?.share).toMatchObject({
+      n: 1,
+      pending: false,
+    });
+
+    await keyChangeLands(device, groupId, seq, secretFor('after the key change'));
+    await refreshRelayBackup(device.services);
+
+    const key = await keyOf(device.store);
+    expect(uploads(fake)).toEqual([backupIdFor(key)]);
+    const copy = JSON.parse(
+      text(openRelayBackup(key, fake.backup(backupIdFor(key)) ?? utf8('')) ?? utf8('{}')),
+    ) as {
+      personal: { share?: { n: number; pending: boolean } }[];
+    };
+    expect(copy.personal.map((document) => document.share?.n)).toEqual([1]);
+  });
+
   it('uploads once the key change lands, and a restore from it comes back at the new epoch with every key', async () => {
     const fake = createFakeRelay({ minute: NOON });
     const device = await openDevice(fake, 'ana');
@@ -514,7 +634,11 @@ describe('a key change and the relay copy (#97, #98)', () => {
     const plaintext = (await fetchRelayBackup(createRelay({ fetch: fake.fetch }), key)) ?? utf8('');
     expect((JSON.parse(text(plaintext)) as { format: number }).format).toBe(2);
     const fresh = await openStore('fresh');
-    expect(await importSnapshot(fresh, plaintext)).toBe(1);
+    expect(await importSnapshot(fresh, plaintext)).toEqual({
+      groups: 1,
+      skipped: 0,
+      skippedDocuments: 0,
+    });
     const [held, original] = [await groupOn(fresh, groupId), await groupOn(device.store, groupId)];
     expect(held.epoch).toBe(1);
     expect(local(held.secret)).toEqual(local(next));
@@ -526,9 +650,160 @@ describe('a key change and the relay copy (#97, #98)', () => {
   });
 });
 
+/** A share by link (#105) of a statement: its own seed and keys, posted once. */
+function shareState(fill: number): ShareState {
+  const keys = newSigningKeys();
+  return {
+    seed: new Uint8Array(32).fill(fill),
+    secretKey: keys.secretKey,
+    publicKey: keys.publicKey,
+    n: 1,
+    postedAt: NOON,
+    pending: false,
+  };
+}
+
+/** `value` with every byte array spelled as a plain list, so arrays IndexedDB cloned compare equal. */
+function plain(value: unknown): unknown {
+  return JSON.parse(
+    JSON.stringify(value, (_key, item: unknown) =>
+      Object.prototype.toString.call(item) === '[object Uint8Array]'
+        ? Array.from(item as Uint8Array)
+        : item,
+    ),
+  ) as unknown;
+}
+
+describe('a share by link in the relay copy (#97, #105)', () => {
+  it('carries a shared Document’s share as the snapshot does, sealed, and a restore keeps the same link, paused (#328)', async () => {
+    const fake = createFakeRelay({ minute: NOON });
+    const device = await openDevice(fake, 'ana');
+    await found(device);
+    const shared = statement();
+    const share = shareState(7);
+    await device.store.savePersonal(shared);
+    await device.store.updateShare(shared.id, () => share);
+
+    await startRelayBackup(device.services);
+
+    const key = await keyOf(device.store);
+    const blob = fake.backup(backupIdFor(key)) ?? new Uint8Array();
+    const secrets = [
+      ...keyCanaries('share seed', share.seed),
+      ...keyCanaries('share secret key', share.secretKey),
+    ];
+    expect(findCanaries(blob, secrets)).toEqual([]);
+    // The drift guard: the relay's copy is the device's own snapshot, share and all, less its key.
+    const sealed = text(openRelayBackup(key, blob) ?? new Uint8Array());
+    const snapshot = JSON.parse(text(encodeSnapshot(await deviceSnapshot(device.store)))) as Record<
+      string,
+      unknown
+    >;
+    const { backupKey, ...withoutKey } = snapshot;
+    expect(backupKey).toBe(base64url(key));
+    expect(JSON.parse(sealed)).toEqual(withoutKey);
+    expect(findCanaries(utf8(sealed), secrets)).not.toEqual([]);
+
+    const plaintext = await fetchRelayBackup(createRelay({ fetch: fake.fetch }), key);
+    const fresh = await openStore('fresh');
+    await importSnapshot(fresh, plaintext ?? new Uint8Array());
+    expect(plain(await fresh.getPersonal(shared.id))).toEqual(
+      plain({ ...shared, share: { ...share, paused: true } }),
+    );
+  });
+
+  it('keeps the restoring device’s live share when the relay copy’s later copy holds none (`restoredCopy`)', async () => {
+    const fake = createFakeRelay({ minute: NOON });
+    const other = await openDevice(fake, 'other');
+    await found(other);
+    const older = statement();
+    const later = { ...older, text: 'Edited on the other device.', updatedAt: TS + 1 };
+    await other.store.savePersonal(later);
+    await startRelayBackup(other.services);
+    const plaintext = await fetchRelayBackup(
+      createRelay({ fetch: fake.fetch }),
+      await keyOf(other.store),
+    );
+    const device = await openStore('ana');
+    const share = shareState(9);
+    await device.savePersonal(older);
+    await device.updateShare(older.id, () => share);
+
+    await importSnapshot(device, plaintext ?? new Uint8Array());
+
+    expect(plain(await device.getPersonal(older.id))).toEqual(
+      plain({ ...later, share: { ...share, pending: true } }),
+    );
+  });
+});
+
+describe('a key a later choice on another device retired (#272)', () => {
+  it('stops at the next refresh that finds its id overwritten: it uploads nothing and forgets the key', async () => {
+    const fake = createFakeRelay({ minute: NOON });
+    const device = await openDevice(fake, 'ana');
+    await found(device);
+    await startRelayBackup(device.services, { split: SPLIT });
+    const key = await keyOf(device.store);
+    const id = backupIdFor(key);
+    // Another device of the person's chose contacts again, and overwrote this id.
+    await createRelay({ fetch: fake.fetch }).putBackup(id, newScrubBlob());
+    const before = uploads(fake).length;
+
+    fake.minute += DAY;
+    expect(await device.sync.syncOnce()).toBe(true);
+
+    expect(uploads(fake)).toHaveLength(before);
+    expect(await device.store.getRelayBackup()).toBeUndefined();
+    expect(await device.store.getRelayBackupRetiredAt()).toBe(TS);
+    expect(openRelayBackup(key, fake.backup(id) ?? new Uint8Array())).toBeNull();
+    // Nothing is scheduled any more: later days upload nothing under any id.
+    fake.minute += DAY;
+    expect(await device.sync.syncOnce()).toBe(true);
+    expect(uploads(fake)).toHaveLength(before);
+  });
+
+  it('stops when the start of a backup with the key it holds finds the id overwritten', async () => {
+    const fake = createFakeRelay({ minute: NOON });
+    const device = await openDevice(fake, 'ana');
+    await found(device);
+    await startRelayBackup(device.services);
+    const id = backupIdFor(await keyOf(device.store));
+    await createRelay({ fetch: fake.fetch }).putBackup(id, newScrubBlob());
+    const before = uploads(fake).length;
+
+    await startRelayBackup(device.services);
+
+    expect(uploads(fake)).toHaveLength(before);
+    expect(await device.store.getRelayBackup()).toBeUndefined();
+  });
+
+  it('still uploads over a backup that doesn’t open, or no backup at all: only random bytes mean retired', async () => {
+    const fake = createFakeRelay({ minute: NOON });
+    const device = await openDevice(fake, 'ana');
+    const founding = await found(device);
+    await startRelayBackup(device.services);
+    const key = await keyOf(device.store);
+    // A framed blob of another key, as anyone else holding an id could write, isn't a retirement.
+    const other = sealRelayBackup(new Uint8Array(32).fill(3), utf8('{}'));
+    await createRelay({ fetch: fake.fetch }).putBackup(backupIdFor(key), other);
+    await change(device, founding, 'One');
+
+    fake.minute += DAY;
+    expect(await device.sync.syncOnce()).toBe(true);
+
+    expect(local((await device.store.getRelayBackup())?.key ?? new Uint8Array())).toEqual(key);
+    expect(openRelayBackup(key, fake.backup(backupIdFor(key)) ?? new Uint8Array())).not.toBeNull();
+  });
+});
+
 describe('relayBackupStatus', () => {
   const key = new Uint8Array(32);
   const state = { key, digest: null, checkedDay: null, uploadedAt: null, tooLarge: false };
+
+  it('reads retired once a later choice elsewhere retired the key, until a key comes again (#272)', () => {
+    expect(relayBackupStatus(undefined, 5)).toEqual({ kind: 'retired', at: 5 });
+    expect(relayBackupStatus(state, 5)).toEqual({ kind: 'waiting' });
+  });
 
   it('reads off with no key, waiting before an upload, saved after one, and too large first', () => {
     expect(relayBackupStatus(undefined)).toEqual({ kind: 'off' });
@@ -555,9 +830,43 @@ describe('fetchRelayBackup', () => {
     const fresh = await openStore('fresh');
     const restored = await importSnapshot(fresh, plaintext ?? new Uint8Array());
 
-    expect(restored).toBe(2);
+    expect(restored).toEqual({ groups: 2, skipped: 0, skippedDocuments: 0 });
     expect(await folds(fresh)).toEqual(await folds(device.store));
     expect(await fresh.getRelayBackup()).toBeUndefined();
+  });
+
+  it('carries a Dispatch only sealed, and a restore from it brings the Dispatch back (#112)', async () => {
+    const fake = createFakeRelay({ minute: NOON });
+    const device = await openDevice(fake, 'ana');
+    const founding = await found(device);
+    const title = 'Canary Dispatch: garden day';
+    const words = 'Canary Dispatch text: bring gloves.';
+    const dispatch = signedAs('ana', {
+      type: 'dispatch',
+      group: founding.id,
+      ts: TS,
+      body: { title, text: words, doc: founding.id },
+    });
+    await device.store.enqueue(founding.id, dispatch.record);
+    expect(await device.sync.syncOnce()).toBe(true);
+    await startRelayBackup(device.services);
+    const key = await keyOf(device.store);
+    const blob = fake.backup(backupIdFor(key)) ?? new Uint8Array();
+    const canaries = [textCanary('Dispatch title', title), textCanary('Dispatch text', words)];
+
+    expect(findCanaries(blob, canaries)).toEqual([]);
+    const plaintext = openRelayBackup(key, blob) ?? new Uint8Array();
+    expect(findCanaries(plaintext, canaries).length).toBeGreaterThan(0);
+    const fresh = await openStore('fresh');
+    await importSnapshot(
+      fresh,
+      (await fetchRelayBackup(createRelay({ fetch: fake.fetch }), key)) ?? new Uint8Array(),
+    );
+    const restored = await fresh.getGroup(founding.id);
+    const state = fold(restored?.log ?? [], restored?.relayNow ?? null);
+    expect(state.dispatches.map((d) => [d.id, d.title, d.text, d.doc])).toEqual([
+      [dispatch.id, title, words, founding.id],
+    ]);
   });
 
   it('reads null for a backup the relay doesn’t hold, a changed byte, or a blob of another key', async () => {

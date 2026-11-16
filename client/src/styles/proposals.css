@@ -19,12 +19,14 @@
 }
 
 /* The dot is drawn here and hidden from screen readers. */
-.countdown > time::before {
+.countdown > time::before,
+.countdown > .decided-cleared::before {
   content: '·' / '';
   margin-inline: var(--space-2);
 }
 
-.countdown time {
+.countdown time,
+.decided-cleared {
   white-space: nowrap;
 }
 
@@ -214,8 +216,51 @@
   font: var(--type-ui);
 }
 
-.result-ran time {
+.result-ran time,
+.result-expiry time {
   white-space: nowrap;
+}
+
+/* A priority vote's result (#107): the focus in Newsreader, then the options
+ * that passed, best first, and those that didn't, by their text alone. */
+.result-focus {
+  color: var(--ink);
+  font: var(--type-heading-2);
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+
+.result-ranking {
+  display: grid;
+  gap: var(--space-2);
+  padding-block-start: var(--space-4);
+  border-top: 1px solid var(--hairline);
+}
+
+.result-ranking .result-list {
+  gap: var(--space-2);
+}
+
+.result-option {
+  color: var(--ink);
+  font: var(--type-document);
+  overflow-wrap: anywhere;
+}
+
+/* Inside the disclosure, the totals come before the ballots. */
+.result-details {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.result-details > .result-totals {
+  padding-block-start: 0;
+  border-top: 0;
+}
+
+/* The totals keep their own spacing; the ballots under them sit on rules. */
+.result-details > .result-totals .result-list {
+  gap: var(--space-3);
 }
 
 .result-note {
@@ -348,11 +393,26 @@
   overflow-wrap: anywhere;
 }
 
+/* What a version does, before its change: "Removes this section", or where an add goes (#75). */
+.version-does {
+  color: var(--ink);
+  font: var(--type-ui);
+  overflow-wrap: anywhere;
+}
+
 /* The card is the surface for its diff or text, so they drop their own box. */
 .version > :is(.word-diff, .atom-card) {
   padding: 0;
   border: 0;
   background: none;
+}
+
+/* A move's section (#103) keeps its sunken box inside the card: it is the text that moves, as it
+ * reads now, not the card's own words, so a header there never reads as the card's heading. */
+.version > .atom-card-current {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--sunken);
 }
 
 /* The pills sit at the foot of each card, so side by side they line up. */
@@ -380,8 +440,39 @@
 }
 
 .shell-wide > :not(.vote),
-.shell-wide :is(.vote, .ballot) > :not(.ballot, .versions) {
+.shell-wide :is(.vote, .ballot) > :not(.ballot, .versions, .options) {
   max-width: var(--reading);
+}
+
+/* A priority vote's options (#107) ------------------------------------------
+ * Each option is a card like a version's: its text as plain words in
+ * Newsreader, then its pills and meter. Phones stack the cards; wide screens
+ * set two columns from 40rem and three from 60rem, where a pill's label still
+ * fits on one line. */
+
+.options {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.option-text {
+  color: var(--ink);
+  font: var(--type-document);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+
+@media (min-width: 40rem) {
+  .options {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 60rem) {
+  .options:not(.options-2, .options-4) {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 /* "A new version was added": a highlight, not a warning. */
@@ -392,6 +483,12 @@
   background: var(--sunken);
   color: var(--body);
   font: var(--type-ui);
+}
+
+/* A score this device carries from another group (#126): who sees it, the notice, then Change and Don't cast. */
+.carry-notice {
+  display: grid;
+  gap: var(--space-3);
 }
 
 .ballot {

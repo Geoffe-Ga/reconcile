@@ -1,12 +1,15 @@
 /**
  * The tally (docs/spec/phase-1-spec.md §5): each version against the bar its
- * Proposal's class sets, the consent floor for an ordinary change (ADR-0002)
- * or the entrenched bar (ADR-0015 §2).
+ * Proposal's class sets, the consent floor for an ordinary change (ADR-0002),
+ * the entrenched bar (ADR-0015 §2), or removal's, which forgives one 0
+ * (ADR-0075 §3, #115).
  *
  * Integers only: no floats, division or rounding, so every device reaches the
  * same outcome from the same ballots. {@link tallyDetail} also gives each
  * version's numbers and pass flags, which the consent meter and the result
- * read, so the screens never hold a threshold of their own (#74).
+ * read, so the screens never hold a threshold of their own (#74). {@link rank}
+ * orders the passing versions, which a priority vote shows as its ranking
+ * (#107), and the winner is always the first of them.
  */
 import { type Bar, DEFAULT_RULES } from './rules';
 
@@ -59,10 +62,14 @@ export interface VersionTally extends VersionTotals {
   readonly passes: boolean;
 }
 
-/** The bar a tally used, each version's numbers and flags in ballot order, and the outcome. */
+/**
+ * The bar a tally used, each version's numbers and flags in ballot order, the
+ * passing versions best first, and the outcome, whose winner is the first of them.
+ */
 export interface TallyDetail {
   readonly bar: Bar;
   readonly versions: readonly VersionTally[];
+  readonly ranking: readonly VersionTally[];
   readonly outcome: TallyOutcome;
 }
 
@@ -81,8 +88,19 @@ function quorumOf(eligible: number): number {
 }
 
 /**
+ * True when `zeros` among `scorers` don't block at `bar`: under
+ * `zerosUnderPercent`% of them (100·zeros < pct·n), or no more than the bar's
+ * `zerosAllowed`, when it names one (removal's, ADR-0075 §3). Never before
+ * anyone has scored.
+ */
+function zerosPass(zeros: number, scorers: number, bar: Bar): boolean {
+  const allowed = bar.zerosAllowed !== undefined && zeros <= bar.zerosAllowed;
+  return scorers > 0 && (allowed || 100 * zeros < bar.zerosUnderPercent * scorers);
+}
+
+/**
  * A version's numbers and flags: at least `avgAtLeast` on average
- * (sum ≥ avg·n), and under `zerosUnderPercent`% zeros (100·zeros < pct·n).
+ * (sum ≥ avg·n), and zeros that don't block ({@link zerosPass}).
  */
 function measure(version: TallyVersion, quorum: number, bar: Bar): VersionTally {
   let sum = 0;
@@ -94,31 +112,36 @@ function measure(version: TallyVersion, quorum: number, bar: Bar): VersionTally 
   const scorers = version.scores.length;
   const atQuorum = scorers >= quorum;
   const averageMet = scorers > 0 && sum >= bar.avgAtLeast * scorers;
-  const zerosMet = scorers > 0 && 100 * zeros < bar.zerosUnderPercent * scorers;
+  const zerosMet = zerosPass(zeros, scorers, bar);
   const passes = atQuorum && averageMet && zerosMet;
   return { id: version.id, scorers, sum, zeros, quorum, atQuorum, averageMet, zerosMet, passes };
 }
 
 /**
- * True when `a` is strictly better than `b`: a higher average (sumA·nB > sumB·nA),
- * or an equal average with fewer zeros (a count, as ADR-0002 words it).
+ * Negative when `a` ranks before `b` (ADR-0004): a higher average
+ * (sumA·nB > sumB·nA), or an equal average with fewer zeros (a count, as
+ * ADR-0002 words it). Zero for a full tie, which a stable sort leaves in
+ * ballot order, so the earlier version stays first.
  */
-function beats(a: VersionTally, b: VersionTally): boolean {
-  const left = a.sum * b.scorers;
-  const right = b.sum * a.scorers;
-  return left > right || (left === right && a.zeros < b.zeros);
+function order(a: VersionTally, b: VersionTally): number {
+  const byAverage = b.sum * a.scorers - a.sum * b.scorers;
+  return byAverage === 0 ? a.zeros - b.zeros : byAverage;
 }
 
-/** The outcome at `bar`: a lapse with no version at quorum, else the best passing version, else a fail. */
-function outcomeOf(versions: readonly VersionTally[], bar: Bar): TallyOutcome {
+/** The passing versions, best first. `sort` is stable, so a full tie keeps ballot order. */
+function ranked(versions: readonly VersionTally[]): VersionTally[] {
+  return versions.filter((version) => version.passes).sort(order);
+}
+
+/** The outcome at `bar`: a lapse with no version at quorum, else the first ranked version, else a fail. */
+function outcomeOf(
+  versions: readonly VersionTally[],
+  ranking: readonly VersionTally[],
+  bar: Bar,
+): TallyOutcome {
   if (!versions.some((version) => version.atQuorum)) return { kind: 'lapse', bar };
-  // Versions are visited in ballot order and only a strictly better one takes over,
-  // so a full tie stays with the earlier version.
-  let winner: VersionTally | null = null;
-  for (const version of versions) {
-    if (version.passes && (winner === null || beats(version, winner))) winner = version;
-  }
-  return winner === null ? { kind: 'fail', bar } : { kind: 'pass', version: winner.id, bar };
+  const [winner] = ranking;
+  return winner === undefined ? { kind: 'fail', bar } : { kind: 'pass', version: winner.id, bar };
 }
 
 /** Tallies one Proposal's ballots at its bar, version by version, with the outcome. */
@@ -126,10 +149,21 @@ export function tallyDetail(input: TallyInput): TallyDetail {
   const { bar } = input;
   const quorum = quorumOf(input.eligible);
   const versions = input.versions.map((version) => measure(version, quorum, bar));
-  return { bar, versions, outcome: outcomeOf(versions, bar) };
+  const ranking = ranked(versions);
+  return { bar, versions, ranking, outcome: outcomeOf(versions, ranking, bar) };
 }
 
 /** Tallies one Proposal's ballots, at its bar, into a pass, a fail or a lapse. */
 export function tally(input: TallyInput): TallyOutcome {
   return tallyDetail(input).outcome;
+}
+
+/**
+ * The versions that pass, at quorum and at the bar, best first: a higher
+ * average, then fewer zeros, then the earlier version (ADR-0004). A priority
+ * vote ranks its options this way (#107), and {@link tally}'s winner is always
+ * the first, so the two can't disagree.
+ */
+export function rank(input: TallyInput): readonly VersionTally[] {
+  return tallyDetail(input).ranking;
 }

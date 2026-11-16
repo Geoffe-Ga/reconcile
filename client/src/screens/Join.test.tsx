@@ -51,6 +51,8 @@ const FOUND: FoundGroup = {
   secret: newGroupSecret(),
   epoch: 0,
   token: { by: 'a'.repeat(43), sig: 'b'.repeat(86) },
+  cleared: [],
+  coalitions: [],
   page: { records: testGroup().records, cursor: 1, relayNow: 29_000_100, instance: 'relay' },
 };
 
@@ -113,7 +115,9 @@ describe('Join', () => {
       'This name is only shown in this group. It doesn’t have to be your real name.',
     );
     expect(
-      screen.getByText('People in this group will see the name you choose and how you vote.'),
+      screen.getByText(
+        'People in this group will see the name you choose and how you vote, until 30 days after each decision.',
+      ),
     ).toBeVisible();
     expect(await axeViolations()).toEqual([]);
   });
@@ -142,7 +146,7 @@ describe('Join', () => {
     const name = await screen.findByRole('textbox', { name: 'Your name' });
     const picker = screen.getByRole('radiogroup', { name: 'Your involvement' });
     const visibility = screen.getByText(
-      'People in this group will see the name you choose and how you vote.',
+      'People in this group will see the name you choose and how you vote, until 30 days after each decision.',
     );
     expect(name.compareDocumentPosition(picker) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(
@@ -548,8 +552,9 @@ describe('Not now, in the app (#91)', () => {
       groupName: 'Riverside Tenants',
       yourName: 'Ana',
       chat: null,
-      title: 'House rules',
-      text: 'Quiet hours start at ten.\n\nBins go out on Tuesday.',
+      documents: [
+        { title: 'House rules', text: 'Quiet hours start at ten.\n\nBins go out on Tuesday.' },
+      ],
     });
     if (created.outcome !== 'created') throw new Error('Expected a group.');
     await ana.services.sync.syncOnce();
@@ -561,11 +566,11 @@ describe('Not now, in the app (#91)', () => {
     keysMade.mockClear();
     const spies = spyOnWrites();
 
-    // Pasted on Start, the seed travels to Join in memory, held by the app.
+    // Pasted into the link bar (#444), the seed travels to Join in memory, held by the app.
     render(<App services={ben.services} />);
-    await user.click(await screen.findByRole('textbox', { name: 'Invite link' }));
+    await user.click(await screen.findByRole('searchbox', { name: 'Search or paste a link' }));
     await user.paste(link);
-    await user.click(screen.getByRole('button', { name: 'Join with an invite link' }));
+    await user.keyboard('{Enter}');
 
     expect(await screen.findByRole('heading', { level: 2, name: 'House rules' })).toHaveFocus();
     expect(screen.getByText('Bins go out on Tuesday.')).toBeVisible();

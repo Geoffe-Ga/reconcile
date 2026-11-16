@@ -49,6 +49,7 @@ function group(overrides: Partial<AdmissionState> = {}): AdmissionState {
     dissolved: null,
     stewards: [],
     suspensions: [],
+    removals: [],
     at: JOINED + 1_440,
     ...overrides,
   };

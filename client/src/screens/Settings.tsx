@@ -1,16 +1,22 @@
-import { type ReactNode, useId, useState } from 'react';
-import { Button, Link, SwitchButton, SwitchField } from 'react-aria-components';
+import { useId, useState } from 'react';
+import { Link, SwitchButton, SwitchField } from 'react-aria-components';
 
 import type { BackupToSave } from '../app/backup';
-import { HoldToConfirm } from '../app/HoldToConfirm';
+import { EraseCard } from '../app/EraseCard';
+import { HeldShares } from '../app/HeldShares';
+import { holdPresses } from '../app/holdPresses';
 import { messages } from '../app/messages';
-import { RestoreBackup } from '../app/RestoreBackup';
+import type { Protection } from '../app/passkey';
+import { PasskeySetup } from '../app/PasskeySetup';
+import { hasRecoveryPath, type RecoveryPath } from '../app/recoveryPath';
+import { RestoreBackup, type RestoreBackupProps } from '../app/RestoreBackup';
 import { routeHref } from '../app/router';
 import { SaveBackup } from '../app/SaveBackup';
 import type { SaveOutcome } from '../app/share';
 import { formatDay } from '../app/time';
-import { BackLink, PageHeader } from '../app/ui';
+import { BackLink, PageHeader, Section } from '../app/ui';
 import type { PushAvailability, TurnOnOutcome } from '../store/push';
+import type { HeldShare, RecoveryStatus } from '../store/recovery';
 import type { RelayBackupStatus } from '../store/relayBackup';
 
 /** A group as its push switch shows it: its name, and whether push is on for it. */
@@ -32,6 +38,38 @@ export interface NotifyProps {
   readonly onTurnOff: (groupId: string) => Promise<void>;
 }
 
+/** What Settings › Recovery contacts shows (#109). */
+export interface RecoveryProps {
+  /** Where the person's contacts stand, or null before they've chosen any on this device. */
+  readonly status: RecoveryStatus | null;
+  /** The shares this device holds for others. */
+  readonly held: readonly HeldShare[];
+  /** Whether anyone in the person's groups can hold a share, so the picker has someone to offer. */
+  readonly canChoose: boolean;
+  /** Whether this device came back through its contacts and has chosen none since (#118). */
+  readonly recovered?: boolean;
+  /**
+   * Whether this device holds the backup key of a choice made on another of
+   * the person's devices, whose list stays there (#272).
+   */
+  readonly elsewhere?: boolean;
+}
+
+/**
+ * Settings' passkey section (#95): the keys are locked with a passkey, a
+ * passkey can be set up, or this device can't protect them with one; and the
+ * groups' way back if the passkey ever stops unlocking them (#389).
+ */
+export interface SettingsPasskey {
+  readonly state: 'locked' | 'offered' | 'unavailable';
+  /** The groups' way back: setup shows only with one, and a lock without one asks for one. */
+  readonly path: RecoveryPath;
+  /** Tap 1: makes the passkey. */
+  readonly onCreate: () => Promise<Uint8Array>;
+  /** Tap 2: locks the keys with it when it can. */
+  readonly onProtect: (credentialId: Uint8Array) => Promise<Protection>;
+}
+
 /** Props for {@link Settings}. */
 export interface SettingsProps {
   /** Push, one switch per group (#99). */
@@ -42,24 +80,20 @@ export interface SettingsProps {
   readonly onMake: (passphrase: string) => Promise<BackupToSave>;
   /** Saves the file through the share sheet or a download. */
   readonly onSave: (backup: BackupToSave) => Promise<SaveOutcome>;
-  /** Restores a backup file's bytes under its passphrase; resolves to how many groups came back. */
-  readonly onRestore: (bytes: Uint8Array, passphrase: string) => Promise<number>;
+  /**
+   * Restores a backup file's bytes under its passphrase; resolves to how many
+   * groups came back, how many group entries (#336) and personal Documents
+   * (#351) were left out, and whether the file is an older one (#225).
+   */
+  readonly onRestore: RestoreBackupProps['onRestore'];
   /** Erases all of Reconcile's data on this device and reloads; rejects when it couldn't. */
   readonly onErase: () => Promise<void>;
+  /** The passkey section (#95). */
+  readonly passkey: SettingsPasskey;
   /** Where the relay backup stands (#97); nothing shows while the device keeps none. */
   readonly relayBackup: RelayBackupStatus;
-}
-
-function Section({ title, children }: { readonly title: string; readonly children: ReactNode }) {
-  const heading = useId();
-  return (
-    <section className="section" aria-labelledby={heading}>
-      <h2 id={heading} className="eyebrow">
-        {title}
-      </h2>
-      {children}
-    </section>
-  );
+  /** Recovery contacts, and the shares this device holds (#109). */
+  readonly recovery: RecoveryProps;
 }
 
 /** The relay backup's words for `status`, or null while the device keeps none. */
@@ -74,6 +108,8 @@ function relayBackupWords(status: RelayBackupStatus): string | null {
       return relayBackup.tooLarge;
     case 'waiting':
       return relayBackup.waiting;
+    case 'retired':
+      return relayBackup.retired;
   }
 }
 
@@ -88,6 +124,93 @@ function RelayBackupLine({ status }: { readonly status: RelayBackupStatus }) {
     <p className="relay-backup" role="status">
       {words}
     </p>
+  );
+}
+
+/** "<n> recovery contacts · <t> needed", then each contact by name and group, and any who've gone. */
+function ContactList({ status }: { readonly status: RecoveryStatus }) {
+  const { recovery } = messages;
+  return (
+    <div className="stack recovery-status">
+      <p className="recovery-count">{recovery.status(status.n, status.t)}</p>
+      <ul className="recovery-contacts">
+        {status.contacts.map((contact) => (
+          <li key={`${contact.groupId} ${contact.member}`}>
+            <bdi className="recovery-name">{contact.name}</bdi>{' '}
+            <span className="caption">
+              {recovery.inGroupOf} <bdi>{contact.groupName}</bdi>
+            </span>
+            {contact.shared ? null : (
+              <>
+                {' '}
+                <span className="recovery-gone">{recovery.gone}</span>
+              </>
+            )}
+          </li>
+        ))}
+      </ul>
+      {status.chooseAgain ? <p className="notice">{recovery.belowThreshold(status.t)}</p> : null}
+    </div>
+  );
+}
+
+/**
+ * Where the person's contacts stand on this device: their list, or that a
+ * later choice on another device replaced it (#272); with no list here, that
+ * they were chosen on another device, whose key this one holds (#272), or
+ * that none were chosen.
+ */
+function ChosenContacts(props: {
+  readonly status: RecoveryStatus | null;
+  readonly elsewhere: boolean;
+}) {
+  const { recovery } = messages;
+  const { status, elsewhere } = props;
+  if (status === null) return <p>{elsewhere ? recovery.elsewhere : recovery.none}</p>;
+  if (status.superseded) return <p className="notice">{recovery.superseded}</p>;
+  return <ContactList status={status} />;
+}
+
+/**
+ * Recovery contacts (#109; ADR-0043 §1, ADR-0008): what they are, in
+ * trust's words; after a recovery with contacts, a notice to choose again
+ * (#118); where the person's stand, or that they've chosen none; the way to
+ * choose, or choose again; and the shares this device holds for others,
+ * with Help someone recover (#118). Quiet, like every protective feature
+ * here (ADR-0018).
+ */
+function RecoverySection({ recovery: props }: { readonly recovery: RecoveryProps }) {
+  const { recovery } = messages;
+  const { status, held, canChoose } = props;
+  const heading = useId();
+  const recovered = status === null && props.recovered === true;
+  const chosen = status !== null || props.elsewhere === true;
+  return (
+    <div className="stack">
+      <p className="lede">{recovery.lede}</p>
+      {recovered ? <p className="notice recovery-again">{recovery.recovered}</p> : null}
+      <ChosenContacts status={status} elsewhere={props.elsewhere === true} />
+      {canChoose ? (
+        <div>
+          <Link className="button button-secondary" href={routeHref({ name: 'recovery' })}>
+            {chosen ? recovery.chooseAgain : recovery.choose}
+          </Link>
+        </div>
+      ) : null}
+      {held.length === 0 ? null : (
+        <section className="stack" aria-labelledby={heading}>
+          <h3 id={heading} className="heading-3">
+            {recovery.holdingHeading}
+          </h3>
+          <HeldShares held={held} />
+          <div>
+            <Link className="button button-secondary" href={routeHref({ name: 'helpRecover' })}>
+              {recovery.help}
+            </Link>
+          </div>
+        </section>
+      )}
+    </div>
   );
 }
 
@@ -139,7 +262,7 @@ function NotifySection({ notify }: { readonly notify: NotifyProps }) {
           {notify.groups.length === 0 ? <p className="notify-note">{push.none}</p> : null}
           <ul className="notify-list">
             {notify.groups.map((group) => (
-              <li key={group.groupId}>
+              <li key={group.groupId} onPointerDownCapture={holdPresses(busy.has(group.groupId))}>
                 <SwitchField
                   isSelected={group.on}
                   isDisabled={busy.has(group.groupId)}
@@ -167,58 +290,65 @@ function NotifySection({ notify }: { readonly notify: NotifyProps }) {
 }
 
 /**
- * The Erase card (DESIGN.md): "Erase Reconcile from this device", in the same
- * calm style as any setting, which reveals what Erase does and the
- * press-and-hold confirm, with Cancel.
+ * Keys locked with a passkey (#95): one line saying so. Where the groups have
+ * no way back (#389), as on a device locked before that rule, they stay
+ * locked, and a notice asks for a backup file or recovery contacts above.
  */
-function EraseCard({ onErase }: Pick<SettingsProps, 'onErase'>) {
-  const [open, setOpen] = useState(false);
-  const panel = useId();
-  const { erase } = messages;
+function LockedPasskey({ path }: { readonly path: RecoveryPath }) {
+  const words = messages.passkey;
   return (
-    <div className="card erase-card">
-      <div>
-        <Button
-          className="button button-secondary"
-          aria-expanded={open}
-          {...(open ? { 'aria-controls': panel } : {})}
-          onPress={() => {
-            setOpen((now) => !now);
-          }}
-        >
-          {erase.open}
-        </Button>
-      </div>
-      {open ? (
-        <div id={panel} className="stack erase-panel">
-          <p>{erase.body}</p>
-          <HoldToConfirm
-            label={erase.hold}
-            released={erase.released}
-            busy={erase.erasing}
-            failed={erase.failed}
-            onConfirm={onErase}
-          />
-          <div>
-            <Button
-              className="button button-quiet"
-              onPress={() => {
-                setOpen(false);
-              }}
-            >
-              {erase.cancel}
-            </Button>
-          </div>
-        </div>
-      ) : null}
+    <div className="stack">
+      <p className="lede">{words.locked}</p>
+      {hasRecoveryPath(path) || path === 'empty' ? null : (
+        <p className="notice passkey-no-way-back">{words.lockedNoWayBack}</p>
+      )}
     </div>
   );
 }
 
 /**
- * Settings (`#/settings`; spec §8.12, #78, #96, #99): Notifications, one
- * switch per group, then Save a backup, with the relay backup's line once the
- * device keeps one (#97), Restore a backup, Link a new device, and Erase
+ * Lock with a passkey (#95): what it does and the two-tap setup, or one line
+ * saying the keys are locked, or that this device can't protect them. The
+ * passkey can't be turned off yet (deferred past the MVP). Setup shows only
+ * once the groups have a way back (#389); before that, one line sends the
+ * person to Save a backup and Recovery contacts above. Save a backup sits on
+ * this same screen, so the no-PRF line links nowhere, and its one primary
+ * action is Make a backup file, so this button is secondary.
+ */
+function PasskeySection({ passkey }: { readonly passkey: SettingsPasskey }) {
+  const words = messages.passkey;
+  if (passkey.state === 'locked') return <LockedPasskey path={passkey.path} />;
+  if (passkey.state === 'unavailable') return <p className="lede">{words.noPrf}</p>;
+  if (!hasRecoveryPath(passkey.path)) {
+    return (
+      <div className="stack">
+        <p className="lede">{words.lede}</p>
+        <p className="lede">
+          {passkey.path === 'empty' ? words.settingsEmpty : words.settingsGate}
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div className="stack">
+      <p className="lede">{words.lede}</p>
+      <p className="lede">{words.twice}</p>
+      <p className="lede">{words.privacy}</p>
+      <PasskeySetup
+        onCreate={passkey.onCreate}
+        onProtect={passkey.onProtect}
+        linkBackup={false}
+        secondary
+      />
+    </div>
+  );
+}
+
+/**
+ * Settings (`#/settings`; spec §8.12, #78, #95, #96, #99, #109):
+ * Notifications, one switch per group, then Save a backup, with the relay
+ * backup's line once the device keeps one (#97), Recovery contacts (#109),
+ * Restore a backup, Link a new device, Lock with a passkey, and Erase
  * Reconcile from this device behind a 3-second press and hold.
  * Protective features live here, not promoted elsewhere (ADR-0018), apart
  * from group home's quiet backup card.
@@ -240,6 +370,9 @@ export function Settings(props: SettingsProps) {
             <SaveBackup hasGroups={props.hasGroups} onMake={props.onMake} onSave={props.onSave} />
           </div>
         </Section>
+        <Section title={settings.recoveryHeading}>
+          <RecoverySection recovery={props.recovery} />
+        </Section>
         <Section title={settings.restoreHeading}>
           <div className="stack">
             <p className="lede">{restore.lede}</p>
@@ -259,6 +392,9 @@ export function Settings(props: SettingsProps) {
               <p className="caption">{link.none}</p>
             )}
           </div>
+        </Section>
+        <Section title={settings.passkeyHeading}>
+          <PasskeySection passkey={props.passkey} />
         </Section>
         <Section title={settings.eraseHeading}>
           <EraseCard onErase={props.onErase} />

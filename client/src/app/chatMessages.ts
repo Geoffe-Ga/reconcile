@@ -85,9 +85,17 @@ export function openMoment(
   return addedVersion && proposal.author !== me ? 'version' : 'open';
 }
 
-/** The title Include the title may add, or null for a steward Proposal, whose title names a member. */
+/** The targets whose titles say what changes in a Document, never who (#75, #92, #103, #116). */
+const DOCUMENT_KINDS: readonly string[] = ['edit', 'add', 'new-document', 'move', 'class'];
+
+/**
+ * The title Include the title may add: a change to a Document's, an add's
+ * (#75), a new Document's (#92), a move's (#103) and a class Proposal's
+ * (#116) included, or null for any other target, such as a steward
+ * Proposal, whose title names a member.
+ */
 export function shareableTitle(proposal: ChatSource): string | null {
-  return proposal.target.kind === 'edit' ? proposal.title : null;
+  return DOCUMENT_KINDS.includes(proposal.target.kind) ? proposal.title : null;
 }
 
 /** What a share of `proposal` says: its deadline, and its title only when `includeTitle`. */
@@ -99,14 +107,28 @@ export function chatDetails(proposal: ChatSource, includeTitle: boolean): ChatDe
 }
 
 /**
- * What the chat bot posts (#119; spec §9, "Shares carry no content"): for
- * each moment, its message with no title, then the app's address on a line of
- * its own. It is made from the moment and the deadline alone, so no title,
- * name or other word of the group can reach Discord. `origin` is the app's
- * (`location.origin`); `timeZone` dates the deadline, the device's own unless
- * a test names one.
+ * What the chat bot posts (#119, #123; spec §9, "Shares carry no content"):
+ * for each moment, its message with no title, then the app's address on a
+ * line of its own. Inside a Proposal's Discord thread, the result reads as
+ * the argument concluded. It is made from the moment, the deadline and
+ * whether it goes into the thread alone, so no title, name or other word of
+ * the group can reach Discord. `origin` is the app's (`location.origin`);
+ * `timeZone` dates the deadline, the device's own unless a test names one.
  */
 export function botNotice(origin: string, timeZone?: string): Notice {
-  return (moment: BotMoment, deadline: number) =>
-    `${chatMessage(moment, { deadline }, timeZone)}\n${origin}/`;
+  return (moment: BotMoment, deadline: number, inThread: boolean) => {
+    const line =
+      inThread && moment === 'result'
+        ? messages.chat.concluded
+        : chatMessage(moment, { deadline }, timeZone);
+    return `${line}\n${origin}/`;
+  };
+}
+
+/**
+ * The name of a Proposal's Discord thread (#123; ADR-0039 step 1): its
+ * number alone, 'Proposal 3 in Reconcile', since no title may reach Discord.
+ */
+export function botThreadName(number: number): string {
+  return messages.chat.threadName(number);
 }

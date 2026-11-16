@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { pairingChannelOf, parseLinkCode } from '../crypto/link';
 import { offerLink } from '../link/session';
+import { openStore } from '../store/db';
 import { testDevice, type TestDevice } from '../test/appServices';
 import { createFakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
@@ -54,6 +55,32 @@ describe('linking through the app', () => {
     expect(parseLinkCode(code)).not.toBeNull();
     await app.findByText('Waiting for your new device…');
     expect(fake.requests.slice(before).every((request) => request.method === 'GET')).toBe(true);
+  });
+
+  it('makes no code on a device whose keys another tab has just locked with a passkey (#95)', async () => {
+    const fake = createFakeRelay();
+    const made = await members(fake, ['Ana']);
+    opened.push(...made.devices);
+    const [ana] = made.devices;
+    if (ana === undefined) throw new Error('Expected Ana.');
+    // Another tab locks the keys; this tab's store never unlocked the vault.
+    const otherTab = await openStore('ana');
+    await otherTab.sealKeys(
+      { credentialId: Uint8Array.of(1), prfSalt: new Uint8Array(32).fill(2) },
+      new Uint8Array(32).fill(3),
+    );
+    otherTab.close();
+    go('#/link-new');
+    const before = fake.requests.length;
+
+    const app = mount(ana, 'a');
+
+    expect(await app.findByRole('alert')).toHaveTextContent(
+      'Your keys on this device are locked with your passkey.',
+    );
+    expect(app.queryByRole('img', { name: 'Linking code' })).not.toBeInTheDocument();
+    expect(app.queryByText(/^RL1\./)).not.toBeInTheDocument();
+    expect(fake.requests.slice(before)).toEqual([]);
   });
 
   it('opens Link to my other device from Start, whose pasted code posts only this device’s key', async () => {

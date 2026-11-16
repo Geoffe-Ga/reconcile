@@ -1,0 +1,391 @@
+{
+  "kind": "fold",
+  "vectors": [
+    {
+      "name": "door-card-closed-first: the first door-card-closed per card holds whoever of those who may propose sends it, with no front door open; a second for the same card, one from a Collaborator, and one naming no SHA-256 are ignored",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29354840,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1761290400000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29354841,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761290460000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29354842,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1761290520000,
+            "body": {
+              "name": "Cal",
+              "level": "collaborator"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "door-card-closed",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500840000,
+            "body": {
+              "card": {
+                "$base64url": [
+                  193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193,
+                  193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193
+                ]
+              }
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "door-card-closed",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500900000,
+            "body": {
+              "card": {
+                "$base64url": [
+                  193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193,
+                  193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193
+                ]
+              }
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375012,
+          "event": {
+            "v": 1,
+            "type": "door-card-closed",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500960000,
+            "body": {
+              "card": {
+                "$base64url": [
+                  194, 194, 194, 194, 194, 194, 194, 194, 194, 194, 194, 194, 194, 194, 194, 194,
+                  194, 194, 194, 194, 194, 194, 194, 194, 194, 194, 194, 194, 194, 194, 194, 194
+                ]
+              }
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375013,
+          "event": {
+            "v": 1,
+            "type": "door-card-closed",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501020000,
+            "body": {
+              "card": {
+                "$base64url": [
+                  194, 194, 194, 194, 194, 194, 194, 194, 194, 194, 194, 194, 194, 194, 194, 194,
+                  194, 194, 194, 194, 194, 194, 194, 194, 194, 194, 194, 194, 194, 194, 194, 194
+                ]
+              }
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375014,
+          "event": {
+            "v": 1,
+            "type": "door-card-closed",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501080000,
+            "body": {
+              "card": "not-a-card"
+            }
+          }
+        }
+      ],
+      "relayNow": 29375015,
+      "expect": {
+        "doorCardsClosed": [
+          {
+            "id": "@4",
+            "seq": 4,
+            "received": 29375010,
+            "by": "%ben",
+            "card": {
+              "$base64url": [
+                193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193,
+                193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193
+              ]
+            }
+          },
+          {
+            "id": "@7",
+            "seq": 7,
+            "received": 29375013,
+            "by": "%ana",
+            "card": {
+              "$base64url": [
+                194, 194, 194, 194, 194, 194, 194, 194, 194, 194, 194, 194, 194, 194, 194, 194, 194,
+                194, 194, 194, 194, 194, 194, 194, 194, 194, 194, 194, 194, 194, 194, 194
+              ]
+            }
+          }
+        ]
+      },
+      "unchangedWithout": [5, 6, 8]
+    },
+    {
+      "name": "door-card-closed-door: with the front door open, a Co-Creator closes a card and another sends an invite, each kept apart: the card is not an invite, and the invite closes no card",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29354840,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1761290400000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29354841,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761290460000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29354842,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1761290520000,
+            "body": {
+              "name": "Cal",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "rules",
+                "optIn": "frontDoor",
+                "value": {
+                  "sign": {
+                    "$base64url": [
+                      17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
+                      17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17
+                    ]
+                  },
+                  "box": {
+                    "$base64url": [
+                      34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34,
+                      34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34
+                    ]
+                  },
+                  "showCount": false
+                }
+              },
+              "title": "Open a front door",
+              "why": "Our group talked it over in the chat."
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500660000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375012,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500720000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375013,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500780000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375014,
+          "event": {
+            "v": 1,
+            "type": "door-card-closed",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762501080000,
+            "body": {
+              "card": {
+                "$base64url": [
+                  193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193,
+                  193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193
+                ]
+              }
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29375015,
+          "event": {
+            "v": 1,
+            "type": "door-invited",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500660000,
+            "body": {
+              "application": {
+                "$base64url": [
+                  161, 161, 161, 161, 161, 161, 161, 161, 161, 161, 161, 161, 161, 161, 161, 161,
+                  161, 161, 161, 161, 161, 161, 161, 161, 161, 161, 161, 161, 161, 161, 161, 161
+                ]
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29375016,
+      "expect": {
+        "doorCardsClosed": [
+          {
+            "id": "@8",
+            "seq": 8,
+            "received": 29375014,
+            "by": "%cal",
+            "card": {
+              "$base64url": [
+                193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193,
+                193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193, 193
+              ]
+            }
+          }
+        ],
+        "doorInvites": [
+          {
+            "id": "@9",
+            "seq": 9,
+            "received": 29375015,
+            "by": "%ben",
+            "application": {
+              "$base64url": [
+                161, 161, 161, 161, 161, 161, 161, 161, 161, 161, 161, 161, 161, 161, 161, 161, 161,
+                161, 161, 161, 161, 161, 161, 161, 161, 161, 161, 161, 161, 161, 161, 161
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

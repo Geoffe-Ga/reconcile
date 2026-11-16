@@ -1,5 +1,5 @@
 /**
- * The landing page (ADR-0077): what a new visitor sees before first run.
+ * The landing page (ADR-0078): what a new visitor sees before first run.
  *
  * On a phone and on a desktop, a plain visit opens on it. It passes axe, loads
  * its painting from the app's own origin under the deploy CSP, stores nothing,

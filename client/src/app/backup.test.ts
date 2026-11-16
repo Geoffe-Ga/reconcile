@@ -5,6 +5,7 @@ import { testDevice, type TestDevice } from '../test/appServices';
 import { createFakeRelay } from '../test/fakeRelay';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { members } from '../test/members';
+import { VaultLocked } from '../store/db';
 import { makeBackup, passphraseProblem, restoreBackup, saveBackup } from './backup';
 import type { FileTargets } from './share';
 
@@ -83,6 +84,22 @@ describe('makeBackup and saveBackup', () => {
   });
 });
 
+describe('makeBackup on a locked device (#95)', () => {
+  it('checks the session holds the unlocked keys before it reads any group', async () => {
+    const { ana } = await group();
+    const listGroups = vi.spyOn(ana.services.store, 'listGroups');
+    const store = {
+      ...ana.services.store,
+      listGroups,
+      requireUnlocked: () => Promise.reject(new VaultLocked()),
+    };
+
+    await expect(makeBackup({ ...ana.services, store }, PASSPHRASE)).rejects.toThrow(VaultLocked);
+
+    expect(listGroups).not.toHaveBeenCalled();
+  });
+});
+
 describe('restoreBackup', () => {
   it('brings the groups back on another device, which then syncs at once', async () => {
     const { fake, ana, groupId } = await group();
@@ -92,7 +109,12 @@ describe('restoreBackup', () => {
     opened.push(second);
     const syncOnce = vi.spyOn(second.services.sync, 'syncOnce');
 
-    expect(await restoreBackup(second.services, bytes, PASSPHRASE)).toBe(1);
+    expect(await restoreBackup(second.services, bytes, PASSPHRASE)).toEqual({
+      groups: 1,
+      skipped: 0,
+      skippedDocuments: 0,
+      older: false,
+    });
 
     expect((await second.services.store.getGroup(groupId))?.me).toEqual(
       (await ana.services.store.getGroup(groupId))?.me,

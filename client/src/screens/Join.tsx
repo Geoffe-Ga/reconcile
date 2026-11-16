@@ -18,6 +18,7 @@ import { messages } from '../app/messages';
 import { replaceRoute, routeHref } from '../app/router';
 import { BackLink, Field, PageHeader } from '../app/ui';
 import { DEFAULT_JOIN_LEVEL, type Level } from '../engine/capabilities';
+import { DEFAULT_RULES } from '../engine/rules';
 import { InvitePreview } from './InvitePreview';
 
 /** Props for {@link Join}. */
@@ -100,7 +101,10 @@ interface JoinFormProps {
  * Entries that hold no genesis show the expired-or-damaged line instead.
  */
 function JoinForm({ group, onJoin, onNotNow }: JoinFormProps) {
-  const atoms = useMemo(() => foldInvite(group.page), [group.page]);
+  const atoms = useMemo(
+    () => foldInvite({ ...group.page, cleared: group.cleared }),
+    [group.page, group.cleared],
+  );
   if (atoms === null) return <BadLink />;
   return (
     <main className="shell" data-scene="sky">
@@ -156,7 +160,7 @@ function JoinFields({ group, onJoin, onNotNow }: JoinFormProps) {
           validate={checkName}
         />
         <LevelPicker value={level} onChange={setLevel} />
-        <p className="lede">{messages.join.visibility}</p>
+        <p className="lede">{messages.join.visibility(DEFAULT_RULES.ballotExpiryDays)}</p>
         {failed ? (
           <p role="alert" className="form-error">
             {messages.join.failed}

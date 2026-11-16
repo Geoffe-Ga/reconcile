@@ -35,6 +35,27 @@ describe('wakeFor: which of this device’s events wake the group’s phones (#9
     expect(wakeFor(log.state(), event)).toBe(true);
   });
 
+  it('wakes for a Dispatch, with or without a Document (#112)', () => {
+    const { log } = openProposal();
+    const sent = (body: { title: string; text: string; doc?: string }) =>
+      eventOf('Ana', { type: 'dispatch', group: log.group, ts: 0, body });
+
+    expect(wakeFor(log.state(), sent({ title: 'Meet Sunday', text: 'At 10.' }))).toBe(true);
+    expect(wakeFor(log.state(), sent({ title: 'Read it', text: '', doc: log.group }))).toBe(true);
+  });
+
+  it('wakes for a recovery alert, so the person’s phones hear of it at once (#118)', () => {
+    const { log } = openProposal();
+    const event = eventOf('Ben', {
+      type: 'recovery-alert',
+      group: log.group,
+      ts: 0,
+      body: { box: 'c2VhbGVkLXRvLWFuYQ' },
+    });
+
+    expect(wakeFor(log.state(), event)).toBe(true);
+  });
+
   it('wakes for the ballot after which this device’s fold closes the Proposal early', () => {
     const { log, proposal, vote } = openProposal();
     log.vote('Ben', proposal, 3);
@@ -109,14 +130,13 @@ describe('wakeFor: which of this device’s events wake the group’s phones (#9
     expect(wakeFor(state, by('Cal'))).toBe(true);
   });
 
-  it('doesn’t wake for a join, a genesis, a level, a version, a leave or anything else', () => {
+  it('doesn’t wake for a join, a genesis, a level, a version, a leave, a share, a cancel or anything else', () => {
     const { log, proposal } = openProposal();
     const { group } = log;
     const genesis = {
       name: 'Riverside Tenants',
       founder: 'Cal',
-      title: 'House rules',
-      atoms: ['Quiet.'],
+      documents: [{ title: 'House rules', atoms: ['Quiet.'] }],
     };
     const others: EventDraft[] = [
       { type: 'genesis', group: '', ts: 0, body: genesis },
@@ -125,6 +145,8 @@ describe('wakeFor: which of this device’s events wake the group’s phones (#9
       { type: 'version', group, ts: 0, body: { proposal, text: 'Quiet at nine.' } },
       { type: 'leave', group, ts: 0, body: {} },
       { type: 'chat-posted', group, ts: 0, body: { proposal, moment: 'open', nonce: 'n' } },
+      { type: 'recovery-share', group, ts: 0, body: { box: 'c2hhcmU' } },
+      { type: 'recovery-cancel', group, ts: 0, body: { alert: 'YWxlcnQtdGFnLTE2Ynl0ZQ' } },
     ];
     for (const draft of others) {
       expect(wakeFor(log.state(), eventOf('Ben', draft))).toBe(false);

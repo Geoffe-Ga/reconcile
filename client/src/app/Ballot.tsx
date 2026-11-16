@@ -13,13 +13,27 @@ import {
 import type { Score } from '../engine/event';
 import { NOTE_MAX } from '../engine/fold';
 import { nfcLength } from '../engine/text';
+import { copiedNote } from '../store/carry';
 import { holdPresses } from './holdPresses';
 import { messages } from './messages';
+import { ChoiceList } from './Options';
 import { SendStatus } from './SendStatus';
 import { Field } from './ui';
 import { useSaving } from './useSaving';
-import { VersionList } from './Versions';
 import type { VersionView } from './versionViews';
+
+/**
+ * Whether a version is the one card of a ballot that decides something other
+ * than a section's text (a steward, an opt-in, dissolving, a member's
+ * removal, a coalition, or a section's place or protection, #102, #117, #108,
+ * #115, #114, #103, #116), whose pills read "Your score".
+ */
+function decidesOne(version: VersionView): boolean {
+  const { steward, rules, dissolve, removal, decision, move, protect } = version;
+  return [steward, rules, dissolve, removal, decision, move, protect].some(
+    (field) => field !== undefined,
+  );
+}
 
 /** A score for each version, by version id. */
 export type Scores = Readonly<Record<string, Score>>;
@@ -46,20 +60,41 @@ export interface BallotProps {
   readonly onVote: (scores: Scores, note: string) => Promise<void>;
   /** What goes under each version's pills, such as its consent meter. */
   readonly below?: (version: VersionView) => ReactNode;
+  /**
+   * `versions` shows each version with its change (the default); `options`
+   * shows a priority vote's options as plain text (#107).
+   */
+  readonly layout?: 'versions' | 'options';
   /** Why a disabled ballot can't change, in place of "Voting has closed", such as a suspension (#102). */
   readonly disabledNote?: ReactNode;
+  /**
+   * Notes this person wrote on the same Dispatch in their other groups
+   * (#126): the note may not repeat one, so the two can't be matched.
+   */
+  readonly refusedNotes?: readonly string[];
 }
 
 const SCORES: readonly Score[] = [0, 1, 2, 3, 4];
+
+/** No notes refused: every ballot that isn't on a Dispatch rising from another group. */
+const NONE_REFUSED: readonly string[] = [];
 
 function toScore(value: string | null): Score | null {
   return SCORES.find((score) => String(score) === value) ?? null;
 }
 
-/** The note counts code points after NFC, as the fold does (spec §4), not UTF-16 units. */
-function noteProblem(note: string, needsReason: boolean): string | null {
+/**
+ * The note counts code points after NFC, as the fold does (spec §4), not
+ * UTF-16 units, and may not repeat a note in `refused` (#126).
+ */
+function noteProblem(
+  note: string,
+  needsReason: boolean,
+  refused: readonly string[],
+): string | null {
   const trimmed = note.trim();
   if (nfcLength(trimmed) > NOTE_MAX) return messages.ballot.noteTooLong(NOTE_MAX);
+  if (copiedNote(trimmed, refused)) return messages.ballot.copiedNote;
   return needsReason && trimmed === '' ? messages.ballot.noteMissing : null;
 }
 
@@ -88,6 +123,8 @@ function ScorePill({ score }: { readonly score: Score }) {
 
 interface ScoreGroupProps {
   readonly version: VersionView;
+  /** The group's label: "Score for version N", or "Score for <option>". */
+  readonly label: ReactNode;
   readonly score: Score | undefined;
   /** The id of the line that says who sees the scores. */
   readonly hint: string;
@@ -96,7 +133,7 @@ interface ScoreGroupProps {
 }
 
 /** One version's five pills, in a React Aria RadioGroup labelled "Score for version N". */
-function ScoreGroup({ version, score, hint, isDisabled, onChange }: ScoreGroupProps) {
+function ScoreGroup({ version, label, score, hint, isDisabled, onChange }: ScoreGroupProps) {
   return (
     <RadioGroup
       className="score-group"
@@ -110,13 +147,7 @@ function ScoreGroup({ version, score, hint, isDisabled, onChange }: ScoreGroupPr
       isDisabled={isDisabled}
       aria-describedby={hint}
     >
-      <Label className="field-label">
-        {version.steward === undefined &&
-        version.rules === undefined &&
-        version.dissolve === undefined
-          ? messages.ballot.scoreFor(version.number)
-          : messages.stewards.score}
-      </Label>
+      <Label className="field-label">{label}</Label>
       <div className="score-pills">
         {SCORES.map((option) => (
           <ScorePill key={option} score={option} />
@@ -149,10 +180,12 @@ interface BallotNoteProps {
   readonly ask: NoteAsk;
   readonly isDisabled: boolean;
   readonly onChange: (note: string) => void;
+  /** Notes it may not repeat (#126). */
+  readonly refused: readonly string[];
 }
 
 /** The ballot's one note, or nothing on a closed ballot that has none. */
-function BallotNote({ note, ask, isDisabled, onChange }: BallotNoteProps) {
+function BallotNote({ note, ask, isDisabled, onChange, refused }: BallotNoteProps) {
   if (isDisabled && note.trim() === '') return null;
   const forZero = ask === 'reason';
   return (
@@ -167,9 +200,35 @@ function BallotNote({ note, ask, isDisabled, onChange }: BallotNoteProps) {
       onChange={onChange}
       isRequired={forZero}
       isDisabled={isDisabled}
-      validate={(text) => noteProblem(text, forZero)}
+      validate={(text) => noteProblem(text, forZero, refused)}
     />
   );
+}
+
+/**
+ * "Score for version N", a steward, rules, dissolve, member removal, coalition
+ * or move ballot's own label (#102, #117, #108, #115, #114, #103), or for a
+ * priority option, "Score for <option>" with the option in `<bdi>` (#107).
+ */
+function scoreLabel(version: VersionView, layout: BallotProps['layout']): ReactNode {
+  if (layout === 'options') {
+    return (
+      <>
+        {messages.ballot.scoreForOption} <bdi>{version.text}</bdi>
+      </>
+    );
+  }
+  return decidesOne(version) ? messages.stewards.score : messages.ballot.scoreFor(version.number);
+}
+
+/**
+ * What the ballot says above its versions: why it can't change once closed,
+ * or that a version was added since this voter's ballot.
+ */
+function BallotNotices({ props, missing }: { props: BallotProps; missing: boolean }) {
+  const { isDisabled, hasVoted } = props;
+  if (isDisabled) return props.disabledNote ?? <p className="caption">{messages.ballot.closed}</p>;
+  return hasVoted && missing ? <p className="ballot-notice">{messages.ballot.newVersion}</p> : null;
 }
 
 /**
@@ -180,7 +239,8 @@ function BallotNote({ note, ask, isDisabled, onChange }: BallotNoteProps) {
  * asks "What would make this a 3 for you?" when a score is 1 and none is 0.
  * Every version needs a score. Sending again before the close replaces the
  * earlier ballot in full, so a voter whose latest ballot misses a version
- * added since is asked to score it, with their earlier scores kept.
+ * added since is asked to score it, with their earlier scores kept. A
+ * priority vote's ballot shows its options instead, each with its own pills.
  */
 export function Ballot(props: BallotProps) {
   const { versions, current, initialScores, hasVoted, isDisabled, pending, reachable } = props;
@@ -194,27 +254,24 @@ export function Ballot(props: BallotProps) {
   const complete = Object.keys(scores).length === versions.length;
   const missing = versions.some((version) => !Object.hasOwn(initialScores, version.id));
 
+  const refused = props.refusedNotes ?? NONE_REFUSED;
   const submit = (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (complete && noteProblem(note, forZero) === null) void vote(scores, note);
+    if (complete && noteProblem(note, forZero, refused) === null) void vote(scores, note);
   };
 
   return (
     <Form className="ballot" onSubmit={submit}>
-      {isDisabled
-        ? (props.disabledNote ?? <p className="caption">{messages.ballot.closed}</p>)
-        : null}
-      {hasVoted && missing && !isDisabled ? (
-        <p className="ballot-notice">{messages.ballot.newVersion}</p>
-      ) : null}
+      <BallotNotices props={props} missing={missing} />
       <p id={hint} className="field-hint">
         {messages.ballot.visibility}
       </p>
-      <VersionList versions={versions} current={current}>
+      <ChoiceList versions={versions} current={current} layout={props.layout ?? 'versions'}>
         {(version) => (
           <>
             <ScoreGroup
               version={version}
+              label={scoreLabel(version, props.layout)}
               score={scores[version.id]}
               hint={hint}
               isDisabled={isDisabled}
@@ -225,8 +282,14 @@ export function Ballot(props: BallotProps) {
             {props.below?.(version)}
           </>
         )}
-      </VersionList>
-      <BallotNote note={note} ask={ask} isDisabled={isDisabled} onChange={setNote} />
+      </ChoiceList>
+      <BallotNote
+        note={note}
+        ask={ask}
+        isDisabled={isDisabled}
+        onChange={setNote}
+        refused={refused}
+      />
       {outcome === 'failed' ? (
         <p role="alert" className="form-error">
           {messages.ballot.failed}

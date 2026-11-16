@@ -7,13 +7,14 @@
  * it hands the file to the share sheet or downloads it (`share.ts`), and only
  * once it's saved are its groups marked, so group home stops suggesting a
  * backup for them. Restoring checks the whole file before it writes anything,
+ * leaving out any group entry that doesn't check out and saying so (#336),
  * then syncs at once, so the restored groups catch up with the relay. The file
  * carries the device's relay backup key (#97), and a device restored from it
  * keeps the key if it has none, so its first complete sync pass refreshes the
  * relay backup.
  */
 import type { Store } from '../store/db';
-import { exportGroups, importGroups } from '../store/snapshot';
+import { exportGroups, importGroups, type RestoredFile } from '../store/snapshot';
 import type { Sync } from '../store/sync';
 import { backupFile, type FileTargets, type SaveOutcome, saveFile } from './share';
 import { messages } from './messages';
@@ -36,14 +37,24 @@ export function passphraseProblem(passphrase: string): string | null {
   return characters < MIN_PASSPHRASE_CHARS ? messages.backup.passphraseShort : null;
 }
 
-/** Seals every group a backup keeps under `passphrase`, as a file named for today on this device. */
+/**
+ * Seals every group a backup keeps under `passphrase`, as a file named for
+ * today on this device. It first checks this session holds the unlocked keys
+ * (#95), as everything that hands keys on does.
+ *
+ * @throws {VaultLocked} when the device's keys are locked with a passkey this session hasn't used.
+ */
 export async function makeBackup(
   services: {
-    readonly store: Pick<Store, 'listGroups' | 'listPersonal' | 'getRelayBackup'>;
+    readonly store: Pick<
+      Store,
+      'listGroups' | 'listCoalitions' | 'listPersonal' | 'getRelayBackup' | 'requireUnlocked'
+    >;
     readonly now: () => number;
   },
   passphrase: string,
 ): Promise<BackupToSave> {
+  await services.store.requireUnlocked();
   const { file, groupIds } = await exportGroups(services.store, passphrase);
   return { file: backupFile(file, new Date(services.now())), groupIds };
 }
@@ -60,7 +71,9 @@ export async function saveBackup(
 
 /**
  * Restores the backup in `bytes` under `passphrase`, then syncs. Returns how
- * many groups it held.
+ * many groups it brought back, how many group entries (#336) and personal
+ * Documents (#351) it left out, and whether it is an older file, which holds
+ * no encryption key (#225).
  *
  * @throws {BackupUnreadable} when it doesn't open or doesn't check out; nothing is written then.
  */
@@ -71,7 +84,7 @@ export async function restoreBackup(
   },
   bytes: Uint8Array,
   passphrase: string,
-): Promise<number> {
+): Promise<RestoredFile> {
   const restored = await importGroups(services.store, bytes, passphrase);
   void services.sync.syncOnce();
   return restored;

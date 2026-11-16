@@ -1,5 +1,5 @@
 /**
- * The landing page (ADR-0077): what a new visitor sees before first run.
+ * The landing page (ADR-0078): what a new visitor sees before first run.
  *
  * One scene read top to bottom over a painted background: sky, canopy, trunks,
  * soil and roots, then the mycelial network. Each feature is explained through

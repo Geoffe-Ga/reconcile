@@ -1,0 +1,263 @@
+/*
+ * The link bar (#444; DESIGN.md "Link bar", ADR-0077 §6): a pill on
+ * `surface` with the one soft shadow, centered at the top of the viewport,
+ * clear of the notch, floating over the page, which shows around it. The
+ * band itself has no ground and takes no taps: only the pill does. While the
+ * bar has focus and text, a panel hangs under the pill over a scrim that
+ * covers the rest. Tucked away, the band slides up out of view, its shadow
+ * too.
+ */
+.link-bar-band {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 3;
+  padding-top: max(var(--space-3), env(safe-area-inset-top, 0px));
+  padding-bottom: var(--space-2);
+  padding-left: max(var(--space-4), env(safe-area-inset-left, 0px));
+  padding-right: max(var(--space-4), env(safe-area-inset-right, 0px));
+  pointer-events: none;
+  transition: transform 200ms ease;
+}
+
+.link-bar-band[data-tucked='true'] {
+  transform: translateY(calc(-100% - 48px));
+}
+
+/* While a finger swipes it, the band follows the finger with no lag. */
+.link-bar-band[data-lifting='true'] {
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .link-bar-band {
+    transition: none;
+  }
+}
+
+.link-bar {
+  position: relative;
+  max-width: 42rem;
+  margin: 0 auto;
+  pointer-events: auto;
+}
+
+/* The pill and the panel stand over the scrim; the scrim covers the page under the band too. */
+.link-bar-pill,
+.link-bar-panel {
+  position: relative;
+  z-index: 1;
+}
+
+.link-bar-pill {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: calc(var(--touch) + 4px);
+  padding: 1px 1px 1px var(--space-4);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-full);
+  background: var(--surface);
+  box-shadow: 0 12px 32px var(--scrim);
+  /* A vertical drag on the pill is a swipe, never a scroll or a zoom. */
+  touch-action: none;
+}
+
+.link-bar-pill:focus-within {
+  outline: 3px solid var(--ochre);
+  outline-offset: 2px;
+}
+
+.link-bar-glyph {
+  flex: none;
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.link-bar-field {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  min-width: 0;
+}
+
+/* Body size, 16px, so iOS doesn't zoom the page when it takes focus. */
+.link-bar-input {
+  flex: 1;
+  min-width: 0;
+  min-height: var(--touch);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: var(--type-body);
+  appearance: none;
+}
+
+.link-bar-input:focus {
+  outline: none;
+}
+
+.link-bar-input::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+
+.link-bar-input::-webkit-search-cancel-button,
+.link-bar-input::-webkit-search-decoration {
+  appearance: none;
+}
+
+/* Clear and Paste: quiet words at the pill's end, a full touch target each. */
+.link-bar-button {
+  flex: none;
+  min-width: var(--touch);
+  min-height: var(--touch);
+  padding: 0 var(--space-4);
+  border: 0;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--primary);
+  font: var(--type-ui);
+  cursor: pointer;
+}
+
+.link-bar-button[data-hovered] {
+  background: var(--sunken);
+}
+
+.link-bar-button[data-focus-visible] {
+  outline: 3px solid var(--ochre);
+  outline-offset: -3px;
+}
+
+.link-bar-panel {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  left: 0;
+  right: 0;
+  padding: var(--space-1);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: 0 12px 32px var(--scrim);
+}
+
+.link-bar-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.link-bar-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: var(--touch);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  font: var(--type-ui);
+  cursor: pointer;
+}
+
+/* The row the keyboard is on, or the pointer over, sits on `sunken`. */
+.link-bar-row[data-focused],
+.link-bar-row[data-hovered] {
+  background: var(--sunken);
+}
+
+.link-bar-row[data-focus-visible] {
+  outline: 3px solid var(--ochre);
+  outline-offset: -3px;
+}
+
+.link-bar-open {
+  color: var(--primary);
+}
+
+.link-bar-line {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  color: var(--body);
+  font: var(--type-body);
+}
+
+/* A code's pointer: its line, then a plain link to the screen that takes the code. */
+.link-bar-pointer {
+  margin: 0;
+  padding: 0 var(--space-3) var(--space-1);
+}
+
+.link-bar-scrim {
+  position: fixed;
+  inset: 0;
+  background: var(--scrim);
+}
+
+/* Search results (#445): under eyebrows, each row its title, one line of its text, and where it's from. */
+.link-bar-panel {
+  max-height: calc(100dvh - 7rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.search-shelf + .search-shelf {
+  margin-top: var(--space-2);
+}
+
+.search-eyebrow {
+  display: block;
+  padding: var(--space-2) var(--space-3) var(--space-1);
+}
+
+.search-row {
+  display: grid;
+  align-items: start;
+  justify-content: stretch;
+  gap: 2px;
+  padding-block: var(--space-2);
+}
+
+.search-row > * {
+  min-width: 0;
+}
+
+.search-title {
+  color: var(--ink);
+  font: var(--type-ui);
+}
+
+/* One line, its matched words marked by weight and underline, never by color alone. */
+.search-snippet {
+  overflow: hidden;
+  color: var(--body);
+  font: var(--type-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-snippet strong {
+  font-weight: 650;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.search-from {
+  color: var(--muted);
+  font: var(--type-caption);
+}
+
+.search-more {
+  color: var(--primary);
+}
+
+.link-bar-scope {
+  padding-top: 0;
+  color: var(--muted);
+  font: var(--type-caption);
+}

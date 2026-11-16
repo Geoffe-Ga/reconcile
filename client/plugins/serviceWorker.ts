@@ -12,7 +12,7 @@
  *   is anything under `/v1`: the relay isn't part of the build.
  * - The landing page's painting (`public/painting/`) isn't on it either. Only
  *   a new visitor, who is online, ever sees it, and it's a few megabytes that
- *   an installed app would otherwise download and keep for nothing (ADR-0077).
+ *   an installed app would otherwise download and keep for nothing (ADR-0078).
  * - Its version hashes every URL and file, so `/sw.js` changes, and the
  *   browser installs the new version in the background, whenever any file
  *   does.

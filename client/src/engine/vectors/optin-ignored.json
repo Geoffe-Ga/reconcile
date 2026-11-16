@@ -16,8 +16,12 @@
             "body": {
               "name": "Riverside Tenants",
               "founder": "Ana",
-              "title": "House rules",
-              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ]
             }
           }
         },
@@ -273,8 +277,12 @@
             "body": {
               "name": "Riverside Tenants",
               "founder": "Ana",
-              "title": "House rules",
-              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ]
             }
           }
         },
@@ -395,8 +403,12 @@
             "body": {
               "name": "Riverside Tenants",
               "founder": "Ana",
-              "title": "House rules",
-              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ]
             }
           }
         },
@@ -617,8 +629,12 @@
             "body": {
               "name": "Riverside Tenants",
               "founder": "Ana",
-              "title": "House rules",
-              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ]
             }
           }
         },
@@ -752,7 +768,21 @@
               "target": {
                 "kind": "rules",
                 "optIn": "frontDoor",
-                "value": true
+                "value": {
+                  "sign": {
+                    "$base64url": [
+                      17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
+                      17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17
+                    ]
+                  },
+                  "box": {
+                    "$base64url": [
+                      34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34,
+                      34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34
+                    ]
+                  },
+                  "showCount": false
+                }
               },
               "title": "Open a front door",
               "why": "Our group talked it over in the chat."
@@ -904,8 +934,12 @@
             "body": {
               "name": "Riverside Tenants",
               "founder": "Ana",
-              "title": "House rules",
-              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ]
             }
           }
         },
@@ -967,7 +1001,21 @@
               "target": {
                 "kind": "rules",
                 "optIn": "frontDoor",
-                "value": true
+                "value": {
+                  "sign": {
+                    "$base64url": [
+                      17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
+                      17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17
+                    ]
+                  },
+                  "box": {
+                    "$base64url": [
+                      34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34,
+                      34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34
+                    ]
+                  },
+                  "showCount": false
+                }
               },
               "title": "Open a front door",
               "why": "Our group talked it over in the chat."
@@ -987,7 +1035,21 @@
               "target": {
                 "kind": "rules",
                 "optIn": "frontDoor",
-                "value": true
+                "value": {
+                  "sign": {
+                    "$base64url": [
+                      17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
+                      17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17
+                    ]
+                  },
+                  "box": {
+                    "$base64url": [
+                      34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34,
+                      34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34
+                    ]
+                  },
+                  "showCount": false
+                }
               },
               "title": "Open a front door",
               "why": "Our group talked it over in the chat."
@@ -1074,11 +1136,29 @@
             "body": {
               "name": "Riverside Tenants",
               "founder": "Ana",
-              "title": "House rules",
-              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"],
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ],
               "rules": {
                 "optIns": {
-                  "frontDoor": true
+                  "frontDoor": {
+                    "sign": {
+                      "$base64url": [
+                        17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
+                        17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17
+                      ]
+                    },
+                    "box": {
+                      "$base64url": [
+                        34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34,
+                        34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34
+                      ]
+                    },
+                    "showCount": false
+                  }
                 }
               }
             }
@@ -1096,8 +1176,12 @@
             "body": {
               "name": "Riverside Tenants",
               "founder": "Ben",
-              "title": "House rules",
-              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"],
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ],
               "rules": {
                 "optIns": {
                   "chatBot": {
@@ -1121,8 +1205,12 @@
             "body": {
               "name": "Riverside Tenants",
               "founder": "Ana",
-              "title": "House rules",
-              "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"],
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ],
               "rules": {
                 "optIns": {
                   "chatBot": null,

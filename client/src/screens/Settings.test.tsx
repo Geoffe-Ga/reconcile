@@ -2,7 +2,9 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
+import { messages } from '../app/messages';
 import { axeViolations } from '../test/axe';
+import { held, pastPressFallback } from '../test/press';
 import { Settings, type SettingsProps } from './Settings';
 
 function setup(props: Partial<SettingsProps> = {}) {
@@ -16,9 +18,18 @@ function setup(props: Partial<SettingsProps> = {}) {
     hasGroups: true,
     onMake: vi.fn(() => Promise.reject(new Error('unused'))),
     onSave: vi.fn(() => Promise.resolve('downloaded' as const)),
-    onRestore: vi.fn(() => Promise.resolve(1)),
+    onRestore: vi.fn(() =>
+      Promise.resolve({ groups: 1, skipped: 0, skippedDocuments: 0, older: false }),
+    ),
     onErase: vi.fn(() => new Promise<void>(() => undefined)),
+    passkey: {
+      state: 'offered',
+      path: 'backup',
+      onCreate: vi.fn(() => Promise.resolve(Uint8Array.of(1))),
+      onProtect: vi.fn(() => Promise.resolve('protected' as const)),
+    },
     relayBackup: { kind: 'off' },
+    recovery: { status: null, held: [], canChoose: true },
     ...props,
   };
   render(<Settings {...all} />);
@@ -46,6 +57,107 @@ describe('Settings', () => {
     expect(await axeViolations()).toEqual([]);
   });
 
+  it('offers a passkey, saying the phone asks twice, and keeps the result in place of the offer', async () => {
+    const { user } = setup();
+    const section = screen.getByRole('region', { name: 'Lock with a passkey' });
+    const regions = screen
+      .getAllByRole('region')
+      .map((region) => region.getAttribute('aria-labelledby'));
+    const names = regions.map((id) => document.getElementById(id ?? '')?.textContent);
+    expect(names).toEqual([
+      'Notifications',
+      'Back up your groups',
+      'Recovery contacts',
+      'Restore a backup',
+      'Link a new device',
+      'Lock with a passkey',
+      'Erase this device',
+    ]);
+    for (const line of [messages.passkey.lede, messages.passkey.twice, messages.passkey.privacy]) {
+      expect(within(section).getByText(line)).toBeVisible();
+    }
+    expect(await axeViolations()).toEqual([]);
+
+    const make = within(section).getByRole('button', { name: 'Make a passkey' });
+    // Settings' one primary action is Make a backup file (DESIGN.md).
+    expect(make).toHaveClass('button-secondary');
+    await user.click(make);
+    await user.click(await within(section).findByRole('button', { name: 'Confirm your passkey' }));
+
+    expect(await within(section).findByText(messages.passkey.locked)).toBeVisible();
+    expect(within(section).queryByRole('link')).not.toBeInTheDocument();
+  });
+
+  it('says the keys are locked with a passkey, offering nothing to turn it off', async () => {
+    setup({
+      passkey: { state: 'locked', path: 'contacts', onCreate: vi.fn(), onProtect: vi.fn() },
+    });
+    const section = screen.getByRole('region', { name: 'Lock with a passkey' });
+
+    expect(section).toHaveTextContent(messages.passkey.locked);
+    expect(section).not.toHaveTextContent(messages.passkey.lockedNoWayBack);
+    expect(within(section).queryByRole('button')).not.toBeInTheDocument();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('keeps keys locked before #389 locked, and asks for a way back where they have none (#389)', async () => {
+    setup({ passkey: { state: 'locked', path: 'none', onCreate: vi.fn(), onProtect: vi.fn() } });
+    const section = screen.getByRole('region', { name: 'Lock with a passkey' });
+
+    expect(within(section).getByText(messages.passkey.locked)).toBeVisible();
+    const notice = within(section).getByText(messages.passkey.lockedNoWayBack);
+    expect(notice).toHaveClass('notice');
+    // Nothing unlocks or unseals here: the person saves a file or chooses contacts above.
+    expect(within(section).queryByRole('button')).not.toBeInTheDocument();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('asks for a way back before a passkey, sending the person to the sections above (#389)', async () => {
+    setup({
+      passkey: { state: 'offered', path: 'none', onCreate: vi.fn(), onProtect: vi.fn() },
+    });
+    const section = screen.getByRole('region', { name: 'Lock with a passkey' });
+
+    expect(within(section).getByText(messages.passkey.lede)).toBeVisible();
+    expect(within(section).getByText(messages.passkey.settingsGate)).toBeVisible();
+    expect(within(section).queryByRole('button')).not.toBeInTheDocument();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('says a passkey waits for a group, on a device with none (#389)', () => {
+    setup({
+      hasGroups: false,
+      passkey: { state: 'offered', path: 'empty', onCreate: vi.fn(), onProtect: vi.fn() },
+    });
+    const section = screen.getByRole('region', { name: 'Lock with a passkey' });
+
+    expect(within(section).getByText(messages.passkey.settingsEmpty)).toBeVisible();
+    expect(within(section).queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  it('offers the passkey once recovery contacts are a way back (#389)', () => {
+    setup({
+      passkey: { state: 'offered', path: 'contacts', onCreate: vi.fn(), onProtect: vi.fn() },
+    });
+    const section = screen.getByRole('region', { name: 'Lock with a passkey' });
+
+    expect(within(section).getByRole('button', { name: 'Make a passkey' })).toBeVisible();
+    expect(within(section).queryByText(messages.passkey.settingsGate)).not.toBeInTheDocument();
+  });
+
+  it('says plainly where a passkey can’t protect the keys, offering no setup', async () => {
+    setup({
+      passkey: { state: 'unavailable', path: 'none', onCreate: vi.fn(), onProtect: vi.fn() },
+    });
+    const section = screen.getByRole('region', { name: 'Lock with a passkey' });
+
+    expect(section).toHaveTextContent(
+      'This device’s passkey can’t protect your keys, so they stay on this device as before.',
+    );
+    expect(within(section).queryByRole('button')).not.toBeInTheDocument();
+    expect(await axeViolations()).toEqual([]);
+  });
+
   it('offers Link a new device under its heading, which opens the linking screen (#96)', async () => {
     setup();
 
@@ -57,15 +169,148 @@ describe('Settings', () => {
       'href',
       '#/link-new',
     );
-    // Linking comes after the backup and before Erase, with Notifications (#99) first.
+    // Linking comes after the backup and before the passkey (#95) and Erase, with Notifications (#99) first.
     const headings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
     expect(headings).toEqual([
       'Notifications',
       'Back up your groups',
+      'Recovery contacts',
       'Restore a backup',
       'Link a new device',
+      'Lock with a passkey',
       'Erase this device',
     ]);
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('offers to choose recovery contacts, in trust’s words, before any are chosen (#109)', async () => {
+    setup();
+
+    const section = screen.getByRole('region', { name: 'Recovery contacts' });
+    expect(section).toHaveTextContent(
+      'If you lose every device, people you trust can help you get back into your groups. Each holds a share of a key, and no one share opens anything on its own.',
+    );
+    expect(section).toHaveTextContent('You haven’t chosen anyone yet.');
+    expect(within(section).getByRole('link', { name: 'Choose recovery contacts' })).toHaveAttribute(
+      'href',
+      '#/recovery',
+    );
+    expect(within(section).queryByRole('list')).toBeNull();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('offers no picker while no one in the person’s groups can hold a share (#109)', () => {
+    setup({ recovery: { status: null, held: [], canChoose: false } });
+
+    const section = screen.getByRole('region', { name: 'Recovery contacts' });
+    expect(within(section).queryByRole('link')).toBeNull();
+  });
+
+  const STATUS = {
+    t: 2,
+    n: 3,
+    chooseAgain: false,
+    superseded: false,
+    contacts: [
+      { groupId: 'g1', member: 'ben', name: 'Ben', groupName: 'Riverside Tenants', shared: true },
+      { groupId: 'g1', member: 'cal', name: 'Cal', groupName: 'Riverside Tenants', shared: false },
+      { groupId: 'g2', member: 'fay', name: 'Fay', groupName: 'Allotment', shared: true },
+    ],
+  };
+
+  it('shows "<n> recovery contacts · <t> needed", each contact with their group, and Choose again (#109)', async () => {
+    setup({ recovery: { status: STATUS, held: [], canChoose: true } });
+
+    const section = screen.getByRole('region', { name: 'Recovery contacts' });
+    expect(section).toHaveTextContent('3 recovery contacts · 2 needed');
+    const contacts = within(section)
+      .getAllByRole('listitem')
+      .map((item) => item.textContent);
+    expect(contacts).toEqual([
+      'Ben in Riverside Tenants',
+      'Cal in Riverside Tenants No longer in a shared group',
+      'Fay in Allotment',
+    ]);
+    expect(within(section).getByText('Cal').tagName).toBe('BDI');
+    expect(section).not.toHaveTextContent('Fewer than');
+    expect(within(section).getByRole('link', { name: 'Choose again' })).toHaveAttribute(
+      'href',
+      '#/recovery',
+    );
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('asks the person to choose again once fewer than t contacts share a group (#109)', () => {
+    setup({ recovery: { status: { ...STATUS, chooseAgain: true }, held: [], canChoose: true } });
+
+    const section = screen.getByRole('region', { name: 'Recovery contacts' });
+    expect(section).toHaveTextContent(
+      'Fewer than 2 of your recovery contacts still share a group with you. Choose again so they can help you back in.',
+    );
+  });
+
+  it('says a later choice on another device replaced these contacts, in place of their list (#272)', async () => {
+    setup({
+      recovery: {
+        status: { ...STATUS, chooseAgain: true, superseded: true },
+        held: [],
+        canChoose: true,
+      },
+    });
+
+    const section = screen.getByRole('region', { name: 'Recovery contacts' });
+    expect(section).toHaveTextContent(
+      'You chose recovery contacts again on another of your devices. The people you chose here no longer hold a working share.',
+    );
+    expect(within(section).queryByText('Ben')).not.toBeInTheDocument();
+    expect(section).not.toHaveTextContent('Fewer than');
+    expect(within(section).getByRole('link', { name: 'Choose again' })).toBeVisible();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('says the contacts were chosen on another device when this one holds their key but not the list (#272)', async () => {
+    setup({ recovery: { status: null, held: [], canChoose: true, elsewhere: true } });
+
+    const section = screen.getByRole('region', { name: 'Recovery contacts' });
+    expect(section).toHaveTextContent(
+      'You chose recovery contacts on another of your devices. Who they are stays on that device. Choosing again here replaces them.',
+    );
+    expect(section).not.toHaveTextContent('You haven’t chosen anyone yet.');
+    expect(within(section).getByRole('link', { name: 'Choose again' })).toBeVisible();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('lists the shares this device holds for others, and nothing more about them (#109)', async () => {
+    const held = [
+      { id: 's1', groupId: 'g1', groupName: 'Riverside Tenants', author: 'ana', name: 'Ana' },
+    ];
+    setup({ recovery: { status: null, held, canChoose: true } });
+
+    const section = screen.getByRole('region', { name: 'Recovery contacts' });
+    expect(
+      within(section).getByRole('heading', { level: 3, name: 'Shares you hold' }),
+    ).toBeVisible();
+    expect(within(section).getByRole('listitem')).toHaveTextContent(
+      'You’re holding a recovery share for Ana (Riverside Tenants)',
+    );
+    // A contact can help the person back in from here (#118).
+    expect(within(section).getByRole('link', { name: 'Help someone recover' })).toHaveAttribute(
+      'href',
+      '#/help-recover',
+    );
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('offers Help someone recover only to a device that holds a share (#118)', () => {
+    setup({ recovery: { status: null, held: [], canChoose: true } });
+    const section = screen.getByRole('region', { name: 'Recovery contacts' });
+    expect(within(section).queryByRole('link', { name: 'Help someone recover' })).toBeNull();
+  });
+
+  it('asks a device recovered with contacts to choose again, as a notice (#118)', async () => {
+    setup({ recovery: { status: null, held: [], canChoose: true, recovered: true } });
+    const section = screen.getByRole('region', { name: 'Recovery contacts' });
+    expect(within(section).getByText(/You’re back in/)).toHaveClass('notice');
     expect(await axeViolations()).toEqual([]);
   });
 
@@ -130,6 +375,10 @@ describe('Settings’ relay backup line (#97)', () => {
     [
       { kind: 'waiting' } as const,
       'Your groups will be backed up to the relay the next time Reconcile syncs.',
+    ],
+    [
+      { kind: 'retired', at: AT } as const,
+      'You chose recovery contacts again on another of your devices, so this one stopped backing up to the relay. Link it again from that device to back it up.',
     ],
   ])('says where the relay backup stands: %o', async (relayBackup, words) => {
     setup({ relayBackup });
@@ -196,5 +445,24 @@ describe('Settings › Notifications (#99)', () => {
     await waitFor(() => {
       expect(toggle).toBeEnabled();
     });
+  });
+
+  it('turns off once when the switch is tapped again while it turns off (#193)', async () => {
+    const turning = held<undefined>();
+    const pending = notify({ onTurnOff: vi.fn(() => turning.promise) });
+    const { user } = setup({ notify: pending });
+    const toggle = screen.getByRole('switch', { name: 'Notify me about Riverside Tenants' });
+
+    await user.click(toggle);
+    expect(toggle).toBeDisabled();
+    await user.click(toggle);
+    turning.resolve(undefined);
+    await waitFor(() => {
+      expect(toggle).toBeEnabled();
+    });
+    await pastPressFallback();
+
+    expect(pending.onTurnOff).toHaveBeenCalledTimes(1);
+    expect(pending.onTurnOn).not.toHaveBeenCalled();
   });
 });
