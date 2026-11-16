@@ -5,8 +5,20 @@
  *
  * Neither gesture is the only way: Cmd+L, Ctrl+L and `/` bring a tucked bar
  * back and put the cursor in it, so no one needs a finger to reach it.
+ *
+ * Everything that moves here moves on the compositor, so it keeps up with the
+ * finger: the bar follows a swipe by a transform written straight to it, with
+ * no render, and when the bar's room changes the page keeps its place by its
+ * scroll, or, at its top, slides its words by a transform ({@link useSteadyPage}).
  */
-import { type PointerEvent, type RefObject, useEffect, useRef, useState } from 'react';
+import {
+  type PointerEvent,
+  type RefObject,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+} from 'react';
 
 /** How far up, in px, a finger moves the pill before letting go tucks the bar away. */
 export const SWIPE_AWAY = 32;
@@ -38,8 +50,6 @@ export function liftOf(dy: number): number {
 
 /** What {@link useSwipeAway} hands the element a swipe starts on. */
 export interface SwipeAway {
-  /** How far up, in px, the bar follows the finger: 0 at rest. */
-  readonly lift: number;
   readonly onPointerDown: (event: PointerEvent) => void;
   readonly onPointerMove: (event: PointerEvent) => void;
   readonly onPointerUp: (event: PointerEvent) => void;
@@ -56,14 +66,15 @@ interface Start {
 /**
  * A swipe up by a finger or pen on the element that takes these handlers
  * calls `onAway` once it lets go; a tap, a mouse or a short move does
- * nothing. The bar follows the finger up as it goes.
+ * nothing. `follow` hears how far up, in px, the bar follows the finger as
+ * it goes, and 0 when it rests again: it moves the bar itself, so a finger's
+ * move never waits on a render.
  */
-export function useSwipeAway(onAway: () => void): SwipeAway {
+export function useSwipeAway(onAway: () => void, follow: (lift: number) => void): SwipeAway {
   const start = useRef<Start | null>(null);
-  const [lift, setLift] = useState(0);
   const reset = (): void => {
     start.current = null;
-    setLift(0);
+    follow(0);
   };
   const moved = (event: PointerEvent): { dx: number; dy: number } | null => {
     const from = start.current;
@@ -71,14 +82,13 @@ export function useSwipeAway(onAway: () => void): SwipeAway {
     return { dx: event.clientX - from.x, dy: event.clientY - from.y };
   };
   return {
-    lift,
     onPointerDown: (event) => {
       if (event.pointerType === 'mouse') return;
       start.current = { id: event.pointerId, x: event.clientX, y: event.clientY };
     },
     onPointerMove: (event) => {
       const move = moved(event);
-      if (move !== null && Math.abs(move.dy) > SLOP) setLift(liftOf(move.dy));
+      if (move !== null && Math.abs(move.dy) > SLOP) follow(liftOf(move.dy));
     },
     onPointerUp: (event) => {
       const move = moved(event);
@@ -166,4 +176,92 @@ export function usePullBack(
       element.removeEventListener('wheel', onWheel);
     };
   }, [page, active, onBack]);
+}
+
+/** Where the page stood just before the bar's room changed: its top padding and its scroll, in px. */
+export interface Stance {
+  readonly room: number;
+  readonly scrollTop: number;
+}
+
+/**
+ * Where the page scrolls once the bar's room changes from `before.room` to
+ * `room`. Scrolled down, it scrolls by the room that changed, so its words
+ * stay where they are and only the bar moves. At its top, or bouncing past
+ * it, it stays at the top and its words move with the room.
+ */
+export function settle(before: Stance, room: number): number {
+  if (before.scrollTop <= 0) return 0;
+  return Math.max(0, before.scrollTop - (before.room - room));
+}
+
+/** How long the words slide, in ms: the bar's own slide (`linkbar.css`), so the two move as one. */
+const SLIDE_MS = 200;
+
+/**
+ * What slides when the page's words move: each of the page's children, but
+ * inside a painted shell its children, since a transform on the shell would
+ * carry its edge, which is fixed to the window, along with it.
+ */
+function movers(page: HTMLElement): Element[] {
+  return [...page.children].flatMap((child) =>
+    child.matches('.shell[data-scene]') ? [...child.children] : [child],
+  );
+}
+
+/** Whether the browser can slide the words, and the person hasn't asked for less motion. */
+function canSlide(page: HTMLElement): boolean {
+  if (typeof page.animate !== 'function') return false;
+  if (typeof window.matchMedia !== 'function') return true;
+  return !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+/** The page's top padding, in px: the room it leaves for the bar. */
+function roomOf(page: HTMLElement): number {
+  return Number.parseFloat(getComputedStyle(page).paddingTop) || 0;
+}
+
+/** Where the page stands now, or null while there's no page. */
+function stanceOf(page: RefObject<HTMLElement | null>): Stance | null {
+  const element = page.current;
+  return element === null ? null : { room: roomOf(element), scrollTop: element.scrollTop };
+}
+
+/**
+ * Holds `page`'s words where they stood at `stance`, now that its room has
+ * changed: by its scroll ({@link settle}), and for whatever the scroll can't
+ * take up, by sliding them from there, on the compositor.
+ */
+function holdSteady(page: HTMLElement, stance: Stance): void {
+  const room = roomOf(page);
+  // Writing the scroll at the top would stop a bounce in its tracks, so it's left alone there.
+  if (stance.scrollTop > 0) page.scrollTop = settle(stance, room);
+  const shift = room - page.scrollTop - (stance.room - Math.max(0, stance.scrollTop));
+  if (shift === 0 || !canSlide(page)) return;
+  const from = { transform: `translateY(${String(-shift)}px)` };
+  for (const mover of movers(page)) {
+    mover.animate([from, { transform: 'none' }], { duration: SLIDE_MS, easing: 'ease' });
+  }
+}
+
+/**
+ * Keeps `page` steady while the bar tucks away or comes back. The room it
+ * leaves for the bar changes at once, which costs one layout rather than
+ * one each frame, and in the same frame the page scrolls by what changed
+ * ({@link settle}); whatever the scroll can't take up, at the top, the words
+ * slide from where they were, by a transform alone.
+ *
+ * Call what it returns just before `tucked` changes, so it knows where the
+ * page stood.
+ */
+export function useSteadyPage(page: RefObject<HTMLElement | null>, tucked: boolean): () => void {
+  const before = useRef<Stance | null>(null);
+  useLayoutEffect(() => {
+    const stance = before.current;
+    before.current = null;
+    if (stance !== null && page.current !== null) holdSteady(page.current, stance);
+  }, [page, tucked]);
+  return useCallback(() => {
+    before.current = stanceOf(page);
+  }, [page]);
 }

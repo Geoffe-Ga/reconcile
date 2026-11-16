@@ -180,6 +180,28 @@ describe('App', () => {
     );
   });
 
+  it('opens the landing page again at #/about, outside the frame, from the mark at the bar’s start', async () => {
+    const { services } = await device(createFakeRelay(), 'ana');
+    render(<App services={services} />);
+    const mark = await screen.findByRole('link', { name: 'About Reconcile' });
+    expect(mark).toHaveAttribute('href', '#/about');
+
+    at('#/about');
+    fireEvent(window, new HashChangeEvent('hashchange'));
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Reconcile' })).toBeVisible();
+    // As a friend sees it from the bare address: no link bar and no tab bar.
+    expect(screen.queryByRole('search')).toBeNull();
+    expect(screen.queryByRole('navigation', { name: 'Main' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Back to your groups' })).toHaveAttribute('href', '#/');
+    expect(await axeViolations()).toEqual([]);
+
+    const [start] = screen.getAllByRole('button', { name: 'Start a Group' });
+    if (start === undefined) throw new Error('no Start a Group');
+    await userEvent.setup().click(start);
+    expect(window.location.hash).toBe('#/create');
+  });
+
   it('tucks the link bar away on a swipe up, and brings it back on a pull down past the page’s top', async () => {
     const { services } = await device(createFakeRelay(), 'ana');
     const { container } = render(<App services={services} />);

@@ -26,7 +26,8 @@ const PAINTED: Readonly<Record<string, string>> = {
   Follow: 'sky',
   FrontDoor: 'sky',
   BringCard: 'sky',
-  Discover: 'sky',
+  // Looking out over everything: the treetops, where the crowns meet the sky.
+  Discover: 'treetops',
   // A group, standing: its canopy, and the trunks that hold its rules.
   GroupHome: 'canopy',
   GroupStatus: 'canopy',
@@ -101,9 +102,20 @@ describe('painted edges', () => {
 
   it('draws the edge as a ring over the page that takes no presses, by day and by night', () => {
     expect(appCss).toContain('linear-gradient(#000 0 0) content-box exclude');
-    expect(appCss).toContain('padding: var(--edge);\n  pointer-events: none;');
+    expect(appCss).toContain(
+      'padding: calc(var(--edge-reach) + var(--edge));\n  pointer-events: none;',
+    );
     expect(appCss).toMatch(
       /prefers-color-scheme: dark\) \{\n {2}\.shell\[data-scene\] \{\n {4}--edge-tint/,
+    );
+  });
+
+  it('rounds the ring’s inner corners and keeps the window’s own square', () => {
+    // The ring reaches past the window, so its outer corners round off out of sight; the
+    // window's hole, cut at the content box, keeps what's left of the radius: `lg`.
+    expect(appCss).toContain('inset: calc(-1 * var(--edge-reach));');
+    expect(appCss).toContain(
+      'border-radius: calc(var(--edge-reach) + var(--edge) + var(--radius-lg));',
     );
   });
 });

@@ -35,7 +35,7 @@ The page sits over one tall painting, made by `painting/paint.py` and cut into a
 ### 3. Some screens show the painting at their edges
 
 - A screen that names a scene (`data-scene` on its page shell) shows **a few pixels of the painting around the window**: 6px on a phone, 10px on wider windows. Inside the edge the page is plain paper, as before. The edge is a ring drawn over the page, so words scroll under it and never across it.
-- **Painted:** the install guide, Start, Create group, Join, Follow, a front door, Bring a card and Discover (sky); Group home, its status pages and its Dispatches (canopy); Group rules (trunks); Personal and a Coalition's home (soil).
+- **Painted:** the install guide, Start, Create group, Join, Follow, a front door and Bring a card (sky); Discover (treetops, where the canopy meets the sky: amended 2026-11-16); Group home, its status pages and its Dispatches (canopy); Group rules (trunks); Personal and a Coalition's home (soil).
 - **Plain:** reading a Document or its history, writing or weighing a Proposal or a Dispatch (the composers, the Proposal page and its ballot), a personal Document or shared page, the pilot notice, anything to do with keys, recovery or linking a device, and Settings. These need care or deep focus, and a colored edge would pull at it.
 - The edge pieces are small (`client/public/edges/`, four images) and are kept on the device, so the app looks the same offline.
 - Nothing moves. Night dims the same pieces; nothing is repainted.

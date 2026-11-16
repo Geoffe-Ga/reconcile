@@ -48,6 +48,8 @@ export const messages = {
   },
   /** The link bar (#444; ADR-0077 §6): the pill at the top of every screen that opens any Reconcile link. */
   linkBar: {
+    /** The Reconcile mark's name, at the bar's start: it opens the landing page (`#/about`). */
+    about: 'About Reconcile',
     /** The field's name, and its placeholder. */
     label: 'Search or paste a link',
     clear: 'Clear',
@@ -2419,6 +2421,8 @@ export const messages = {
   // It explains each feature through a case study, at about a 7th-grade
   // reading level, and writes Group with a capital as the founder's intro does.
   landing: {
+    /** Over the landing page when it's opened again from inside the app (`#/about`): the way home. */
+    back: 'Back to your groups',
     nav: {
       label: 'On this page',
       dispatch: 'Dispatch',

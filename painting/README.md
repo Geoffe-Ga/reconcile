@@ -7,7 +7,7 @@ roots, and the mycelial network that joins them. The app uses it in two places
 - **Behind the landing page** (`client/src/screens/Landing.tsx`), whole, cut into a piece per
   section: `client/public/painting/wide/` for windows 1200px and up, `client/public/painting/tall/`
   for phones and narrow windows.
-- **At the edges of some screens**, a few pixels wide: `client/public/edges/`, four small pieces
+- **At the edges of some screens**, a few pixels wide: `client/public/edges/`, five small pieces
   cut from the tall painting.
 
 `paint.py` makes all of it. Nothing in it is a photograph or a model's output.

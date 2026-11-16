@@ -55,7 +55,7 @@ import type { GuideRecord } from '../platform/guide';
 import type { Persistence } from '../platform/persist';
 import { Start, type StartFollowing, type StartRequest } from '../screens/Start';
 import { aimAt } from './aimedSection';
-import { usePullBack } from './barGestures';
+import { usePullBack, useSteadyPage } from './barGestures';
 import { LinkBar } from './LinkBar';
 import type { SearchRecord } from './search';
 import { loadSearchRecords } from './searchLoad';
@@ -148,6 +148,7 @@ import {
   navigate,
   replaceRoute,
   type Route,
+  routeHref,
   useRoute,
 } from './router';
 import type { AppServices } from './services';
@@ -164,6 +165,7 @@ import { chooseContacts } from '../store/recovery';
 import { approveRecovery, holdViews, resendRelease } from '../recovery/holder';
 import { recoverSession, startRecovery, stopRecovery } from '../recovery/request';
 import { HelpRecover } from '../screens/HelpRecover';
+import { Landing } from '../screens/Landing';
 import { RecoverStart } from '../screens/RecoverStart';
 import { messages } from './messages';
 import { RecoveryAlert } from './RecoveryAlert';
@@ -1673,14 +1675,76 @@ function goToResult(record: SearchRecord): void {
   navigate(record.route);
 }
 
+/** Props for {@link Frame}. */
+interface FrameProps {
+  readonly route: Route;
+  readonly holdSeed: (seed: Uint8Array | null) => void;
+  readonly loadRecords: () => Promise<readonly SearchRecord[]>;
+  /** The current screen: made by {@link App}, so the bar tucking away never renders it again. */
+  readonly children: ReactNode;
+}
+
+/**
+ * The app's frame: the link bar floating at the top (#444), over the page's
+ * own scroll region, which shows around it and keeps a focused control clear
+ * of it, and, on the four pages that are its places, the tab bar at the
+ * bottom (#423). A swipe up the pill tucks the bar away and a pull down past
+ * the page's top brings it back, with the page held steady
+ * (`useSteadyPage`). The bar's state lives here, apart from the screen, so
+ * the bar moving renders only the frame.
+ */
+function Frame({ route, holdSeed, loadRecords, children }: FrameProps) {
+  // While the link bar's panel shows, the page and the tab bar under its scrim are inert (#444).
+  const [barOpen, setBarOpen] = useState(false);
+  // A swipe up tucks the link bar away; a pull down past the page's top brings it back.
+  const [tucked, setTucked] = useState(false);
+  const page = useRef<HTMLDivElement>(null);
+  const brace = useSteadyPage(page, tucked);
+  const tuck = useCallback(() => {
+    brace();
+    setTucked(true);
+  }, [brace]);
+  const untuck = useCallback(() => {
+    brace();
+    setTucked(false);
+  }, [brace]);
+  usePullBack(page, tucked, untuck);
+  const openLink = useCallback(
+    (link: OpenableLink) => {
+      openPasted(link, holdSeed);
+    },
+    [holdSeed],
+  );
+  return (
+    <div className="app-frame" data-tucked={tucked}>
+      <LinkBar
+        onOpen={openLink}
+        onPanelChange={setBarOpen}
+        loadRecords={loadRecords}
+        onGo={goToResult}
+        tucked={tucked}
+        onTuck={tuck}
+        onUntuck={untuck}
+      />
+      <div ref={page} className="app-page" inert={barOpen}>
+        {children}
+      </div>
+      <TabBar route={route} inert={barOpen} />
+    </div>
+  );
+}
+
+/** Create group, from the landing page's Start a Group once it's opened again from the app. */
+function startFromAbout(): void {
+  navigate({ name: 'create' });
+}
+
 /**
  * The current route's screen, with the store and sync loop provided to
- * `useGroup`, in the app's frame: the link bar floating at the top (#444),
- * over the page's own scroll region, which shows around it and keeps a
- * focused control clear of it, and, on the four pages that are its places,
- * the tab bar at the bottom (#423). A swipe up the pill tucks the bar away
- * and a pull down past the page's top brings it back. A shared page stands
- * outside the app, with neither (#105).
+ * `useGroup`, in the app's {@link Frame}. A shared page stands outside the
+ * app, with neither bar (#105), and so does the landing page opened again
+ * from the mark at the bar's start (`#/about`, ADR-0078): as a friend sees it
+ * from the bare address, with only a way home added.
  */
 export function App({ services, initialSeed = null, persistence = null }: AppProps) {
   const route = useRoute();
@@ -1691,23 +1755,11 @@ export function App({ services, initialSeed = null, persistence = null }: AppPro
     () => ({ store: services.store, sync: services.sync }),
     [services.store, services.sync],
   );
-  // While the link bar's panel shows, the page and the tab bar under its scrim are inert (#444).
-  const [barOpen, setBarOpen] = useState(false);
-  // A swipe up tucks the link bar away; a pull down past the page's top brings it back.
-  const [tucked, setTucked] = useState(false);
-  const tuck = useCallback(() => {
-    setTucked(true);
-  }, []);
-  const untuck = useCallback(() => {
-    setTucked(false);
-  }, []);
-  const page = useRef<HTMLDivElement>(null);
-  usePullBack(page, tucked, untuck);
-  const openLink = useCallback((link: OpenableLink) => {
-    openPasted(link, holdSeed);
-  }, []);
   // Search reads what this device holds, afresh each time the bar takes focus (#445).
   const loadRecords = useCallback(() => loadSearchRecords(services.store), [services.store]);
+  if (route.name === 'about') {
+    return <Landing onStart={startFromAbout} home={routeHref({ name: 'start' })} />;
+  }
   const screen = (
     <Screen
       route={route}
@@ -1723,21 +1775,9 @@ export function App({ services, initialSeed = null, persistence = null }: AppPro
       {route.name === 'shared' ? (
         screen
       ) : (
-        <div className="app-frame" data-tucked={tucked}>
-          <LinkBar
-            onOpen={openLink}
-            onPanelChange={setBarOpen}
-            loadRecords={loadRecords}
-            onGo={goToResult}
-            tucked={tucked}
-            onTuck={tuck}
-            onUntuck={untuck}
-          />
-          <div ref={page} className="app-page" inert={barOpen}>
-            {screen}
-          </div>
-          <TabBar route={route} inert={barOpen} />
-        </div>
+        <Frame route={route} holdSeed={holdSeed} loadRecords={loadRecords}>
+          {screen}
+        </Frame>
       )}
     </GroupServicesContext>
   );

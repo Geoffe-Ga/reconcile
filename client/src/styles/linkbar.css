@@ -5,9 +5,12 @@
  * band itself has no ground and takes no taps: only the pill does. While the
  * bar has focus and text, a panel hangs under the pill over a scrim that
  * covers the rest. Tucked away, the band slides up out of view, its shadow
- * too.
+ * too. The Reconcile mark stands at the pill's left, the pill's height.
  */
 .link-bar-band {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-2);
   position: absolute;
   top: 0;
   left: 0;
@@ -19,6 +22,8 @@
   padding-right: max(var(--space-4), env(safe-area-inset-right, 0px));
   pointer-events: none;
   transition: transform 200ms ease;
+  /* Its own layer, so its slide and a finger's swipe are the compositor's alone. */
+  will-change: transform;
 }
 
 .link-bar-band[data-tucked='true'] {
@@ -38,9 +43,33 @@
 
 .link-bar {
   position: relative;
-  max-width: 42rem;
-  margin: 0 auto;
+  flex: 0 1 42rem;
+  min-width: 0;
   pointer-events: auto;
+}
+
+/* The Reconcile mark: the app icon's two linked rings on forest, round, as tall as the pill. */
+.link-bar-mark {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: calc(var(--touch) + 4px);
+  height: calc(var(--touch) + 4px);
+  border-radius: var(--radius-full);
+  background: var(--primary);
+  box-shadow: 0 12px 32px var(--scrim);
+  pointer-events: auto;
+}
+
+.link-bar-mark svg {
+  fill: none;
+  stroke: var(--on-primary);
+  stroke-width: 2;
+}
+
+.link-bar-mark[data-focus-visible] {
+  outline: 3px solid var(--ochre);
+  outline-offset: 2px;
 }
 
 /* The pill and the panel stand over the scrim; the scrim covers the page under the band too. */

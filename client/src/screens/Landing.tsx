@@ -11,7 +11,7 @@
  * its look is `src/styles/landing.css`.
  */
 import { type ReactNode, useId } from 'react';
-import { Button } from 'react-aria-components';
+import { Button, Link } from 'react-aria-components';
 
 import { messages } from '../app/messages';
 
@@ -19,8 +19,13 @@ const text = messages.landing;
 
 /** Props for {@link Landing}. */
 export interface LandingProps {
-  /** Moves on to first run: the install guide or the pilot notice. */
+  /** Moves on: to first run (the install guide or the pilot notice), or, opened again from the app, to Create group. */
   readonly onStart: () => void;
+  /**
+   * Where the way home goes, when the page is opened again from inside the app
+   * (`#/about`); without one, as a new visitor sees it, there's no way home.
+   */
+  readonly home?: string;
 }
 
 /** A line marked as something shared, or something that divides. */
@@ -201,7 +206,7 @@ function jumpTo(heading: HTMLElement | null): void {
 }
 
 /** The landing page. */
-export function Landing({ onStart }: LandingProps) {
+export function Landing({ onStart, home }: LandingProps) {
   const id = useId();
   const ids = {
     dispatch: `${id}dispatch`,
@@ -219,6 +224,11 @@ export function Landing({ onStart }: LandingProps) {
       <header className="lp-sky">
         <div className="lp-wrap">
           <nav className="lp-topbar" aria-label={text.nav.label}>
+            {home === undefined ? null : (
+              <Link className="lp-pill lp-home" href={home}>
+                <span aria-hidden="true">{messages.app.back}</span> {text.back}
+              </Link>
+            )}
             <Button className="lp-pill" onPress={jump(ids.dispatch)}>
               {text.nav.dispatch}
             </Button>
