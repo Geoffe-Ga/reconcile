@@ -41,7 +41,7 @@ const checkName = (value: string) => (value.trim() === '' ? messages.join.nameMi
 
 function Loading() {
   return (
-    <main className="shell" aria-busy="true">
+    <main className="shell" data-scene="sky" aria-busy="true">
       <PageHeader title={messages.join.loading} pageTitle={messages.join.pageTitle} />
     </main>
   );
@@ -50,7 +50,7 @@ function Loading() {
 /** A link that's damaged, expired or empty. It never repeats the link back. */
 function BadLink() {
   return (
-    <main className="shell">
+    <main className="shell" data-scene="sky">
       <BackLink to={{ name: 'start' }} label={messages.app.yourGroups} />
       <PageHeader title={messages.join.badLinkTitle} pageTitle={messages.join.pageTitle} />
       <p className="lede">{messages.join.badLink}</p>
@@ -60,7 +60,7 @@ function BadLink() {
 
 function Offline({ onRetry }: { readonly onRetry: () => void }) {
   return (
-    <main className="shell">
+    <main className="shell" data-scene="sky">
       <BackLink to={{ name: 'start' }} label={messages.app.yourGroups} />
       <PageHeader title={messages.join.offlineTitle} pageTitle={messages.join.pageTitle} />
       <div className="stack">
@@ -75,7 +75,7 @@ function Offline({ onRetry }: { readonly onRetry: () => void }) {
 
 function AlreadyJoined({ groupId }: { readonly groupId: string }) {
   return (
-    <main className="shell">
+    <main className="shell" data-scene="sky">
       <PageHeader title={messages.join.memberTitle} pageTitle={messages.join.pageTitle} />
       <div className="stack">
         <p className="lede">{messages.join.alreadyJoined}</p>
@@ -107,7 +107,7 @@ function JoinForm({ group, onJoin, onNotNow }: JoinFormProps) {
   );
   if (atoms === null) return <BadLink />;
   return (
-    <main className="shell">
+    <main className="shell" data-scene="sky">
       <PageHeader
         eyebrow={messages.join.eyebrow}
         title={group.preview.groupName}

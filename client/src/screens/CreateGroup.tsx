@@ -220,7 +220,7 @@ export function CreateGroup({ onCreate }: CreateGroupProps) {
 
   const { create: words } = messages;
   return (
-    <main className="shell">
+    <main className="shell" data-scene="sky">
       <BackLink to={{ name: 'start' }} label={messages.app.yourGroups} />
       <PageHeader eyebrow={words.eyebrow} title={words.title} pageTitle={words.pageTitle} />
       <p className="lede">{words.lede}</p>

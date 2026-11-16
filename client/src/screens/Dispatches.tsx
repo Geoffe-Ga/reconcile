@@ -77,7 +77,7 @@ export function Dispatches(props: DispatchesProps) {
   const groupId = state.group ?? '';
   const { dispatches } = messages;
   return (
-    <main className="shell">
+    <main className="shell" data-scene="canopy">
       <BackLink to={{ name: 'group', groupId }} label={state.name} />
       <PageHeader title={dispatches.title} pageTitle={dispatches.pageTitle} />
       <p className="lede">{dispatches.lede}</p>

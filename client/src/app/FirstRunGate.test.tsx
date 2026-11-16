@@ -165,10 +165,73 @@ const appHeading = () => screen.queryByRole('heading', { level: 1, name: 'The ap
 const guideHeading = () =>
   screen.queryByRole('heading', { level: 1, name: 'Add Reconcile to your Home Screen' });
 const noticeHeading = () => screen.queryByRole('heading', { level: 1, name: 'Before you start' });
+const landingHeading = () => screen.queryByRole('heading', { level: 1, name: 'Reconcile' });
+
+/** Presses the landing page's Start a Group, as a new visitor does to move on. */
+async function startFromLanding(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+  const [start] = screen.getAllByRole('button', { name: 'Start a Group' });
+  if (start === undefined) throw new Error('The landing page has no Start a Group button.');
+  await user.click(start);
+}
+
+describe('FirstRunGate on a plain visit in a browser tab', () => {
+  it.each([
+    ['an iPhone in Safari', IPHONE_TAB],
+    ['a desktop browser', DESKTOP],
+  ])('shows %s the landing page first, and records nothing', (_name, platform) => {
+    const { events, requestPersistence, app } = setup({ platform });
+    expect(landingHeading()).toBeVisible();
+    expect(guideHeading()).not.toBeInTheDocument();
+    expect(noticeHeading()).not.toBeInTheDocument();
+    expect(app).not.toHaveBeenCalled();
+    expect(requestPersistence).not.toHaveBeenCalled();
+    expect(events).toEqual([]);
+    expect(window.localStorage.length).toBe(0);
+  });
+
+  it('moves on from Start a Group to the install guide on an iPhone, at the top of the page', async () => {
+    const { user } = setup({ platform: IPHONE_TAB });
+    document.documentElement.scrollTop = 900;
+    await startFromLanding(user);
+    expect(guideHeading()).toBeVisible();
+    expect(landingHeading()).not.toBeInTheDocument();
+    expect(document.documentElement.scrollTop).toBe(0);
+  });
+
+  it('moves on from Start a Group to the pilot notice where keys may be made', async () => {
+    const { user } = setup();
+    await startFromLanding(user);
+    expect(noticeHeading()).toBeVisible();
+    expect(landingHeading()).not.toBeInTheDocument();
+  });
+
+  it('gives way to an invite link that opens in this window', async () => {
+    const invite = newInvite();
+    setup();
+    act(() => {
+      window.location.hash = `#join/${invitePayload(invite)}`;
+    });
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Before you start' }),
+    ).toBeVisible();
+    expect(landingHeading()).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['an invite link', { hash: `#join/${invitePayload(newInvite())}` }],
+    ['the installed app', { platform: IPHONE_INSTALLED }],
+    ['a device that accepted the notice', { accepted: true }],
+    ['a device whose keys are locked', { locked: true }],
+  ])('is skipped for %s', (_name, options) => {
+    setup(options);
+    expect(landingHeading()).not.toBeInTheDocument();
+  });
+});
 
 describe('FirstRunGate on an iPhone or iPad outside the installed app', () => {
-  it('shows only the install guide: no notice, no app, nothing recorded', () => {
-    const { events, requestPersistence, app } = setup({ platform: IPHONE_TAB });
+  it('shows only the install guide: no notice, no app, nothing recorded', async () => {
+    const { user, events, requestPersistence, app } = setup({ platform: IPHONE_TAB });
+    await startFromLanding(user);
     expect(guideHeading()).toBeVisible();
     expect(noticeHeading()).not.toBeInTheDocument();
     expect(app).not.toHaveBeenCalled();
@@ -194,7 +257,8 @@ describe('FirstRunGate on an iPhone or iPad outside the installed app', () => {
 
   it('reads an invite link that opens in this window while the guide shows', async () => {
     const invite = newInvite();
-    const { lookup } = setup({ platform: IPHONE_TAB });
+    const { user, lookup } = setup({ platform: IPHONE_TAB });
+    await startFromLanding(user);
     expect(screen.getByRole('textbox', { name: 'Reconcile’s address' })).toBeVisible();
     act(() => {
       window.location.hash = `#join/${invitePayload(invite)}`;
@@ -223,9 +287,10 @@ describe('FirstRunGate on an iPhone or iPad outside the installed app', () => {
 describe('FirstRunGate where keys may be made', () => {
   it.each([
     ['an installed iPhone', IPHONE_INSTALLED],
-    ['a desktop browser', DESKTOP],
-  ])('shows %s the pilot notice first, and nothing else', (_name, platform) => {
-    const { app, requestPersistence } = setup({ platform });
+    ['a desktop browser, past the landing page', DESKTOP],
+  ])('shows %s the pilot notice first, and nothing else', async (_name, platform) => {
+    const { user, app, requestPersistence } = setup({ platform });
+    if (platform === DESKTOP) await startFromLanding(user);
     expect(noticeHeading()).toBeVisible();
     expect(guideHeading()).not.toBeInTheDocument();
     expect(app).not.toHaveBeenCalled();
@@ -234,6 +299,7 @@ describe('FirstRunGate where keys may be made', () => {
 
   it('records the acceptance, then asks to keep the data, then opens the app', async () => {
     const { user, events, opened } = setup({ persistence: 'denied' });
+    await startFromLanding(user);
     await user.click(screen.getByRole('button', { name: 'I understand' }));
     expect(appHeading()).toBeVisible();
     await waitFor(() => {
@@ -257,6 +323,7 @@ describe('FirstRunGate where keys may be made', () => {
   it('holds an invite link that opens in this window while the notice shows', async () => {
     const invite = newInvite();
     const { user, opened } = setup();
+    await startFromLanding(user);
     act(() => {
       window.location.hash = `#join/${invitePayload(invite)}`;
     });
@@ -285,6 +352,7 @@ describe('FirstRunGate where keys may be made', () => {
   it('opens for this session when the browser won’t keep the acceptance', async () => {
     const blocked: NoticeRecord = { accepted: () => false, accept: () => undefined };
     const { user } = setup({ notice: blocked });
+    await startFromLanding(user);
     await user.click(screen.getByRole('button', { name: 'I understand' }));
     expect(appHeading()).toBeVisible();
   });
@@ -404,6 +472,7 @@ describe('FirstRunGate and the passkey offer (#95)', () => {
   it('offers a passkey once, right after the notice, where one can lock the keys', async () => {
     const { user, events, app } = setup({ passkeyAvailable: true });
 
+    await startFromLanding(user);
     await user.click(screen.getByRole('button', { name: 'I understand' }));
 
     expect(await offered()).toBeVisible();
@@ -423,6 +492,7 @@ describe('FirstRunGate and the passkey offer (#95)', () => {
   it('shows the offer at once on a device with no group yet, and Continue answers nothing (#389)', async () => {
     const { user, events } = setup({ passkeyAvailable: true, path: 'empty' });
 
+    await startFromLanding(user);
     await user.click(screen.getByRole('button', { name: 'I understand' }));
     // In the same commit as the notice goes, as e2e's first run reads it.
     expect(offerHeading()).toBeVisible();
@@ -454,6 +524,7 @@ describe('FirstRunGate and the passkey offer (#95)', () => {
   it('doesn’t offer it where a passkey can’t lock the keys', async () => {
     const { user, events } = setup({ passkeyAvailable: false });
 
+    await startFromLanding(user);
     await user.click(screen.getByRole('button', { name: 'I understand' }));
 
     expect(offerHeading()).not.toBeInTheDocument();

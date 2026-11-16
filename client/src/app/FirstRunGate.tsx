@@ -1,6 +1,10 @@
 /**
  * First run (spec §8.1, #76): what stands between a new device and its keys.
  *
+ * 0. **The landing page** (ADR-0078). A plain visit in a browser tab, on a
+ *    device that hasn't accepted the notice, starts on the landing page. It
+ *    stores nothing, and its Start a Group button moves on to the steps below.
+ *    An invite link, the installed app and a returning device all skip it.
  * 1. **The install gate** (ADR-0029). An iPhone or iPad outside the installed
  *    app sees only the install guide, in every browser. Nothing there creates
  *    keys or stores anything.
@@ -29,11 +33,12 @@
 import { type ReactNode, useEffect, useState } from 'react';
 
 import type { DoorView } from '../door/page';
-import { canCreateKeys, type PlatformEnv } from '../platform/installGate';
+import { canCreateKeys, isInstalled, type PlatformEnv } from '../platform/installGate';
 import type { NoticeRecord } from '../platform/notice';
 import type { PasskeyOfferRecord } from '../platform/passkeyOffer';
 import type { Persistence } from '../platform/persist';
 import { type Arrival, InstallGuide } from '../screens/InstallGuide';
+import { Landing } from '../screens/Landing';
 import { PasskeyOffer } from '../screens/PasskeyOffer';
 import { PilotNotice } from '../screens/PilotNotice';
 import { UnlockScreen } from '../screens/UnlockScreen';
@@ -228,7 +233,33 @@ function useSteps(props: FirstRunGateProps, open: boolean) {
   };
 }
 
-/** Shows the install guide, the pilot notice, the unlock screen or the passkey offer, then the app. */
+/**
+ * Whether the landing page shows (ADR-0078): on a plain visit in a browser
+ * tab, until its Start a Group is pressed. That is kept only in memory,
+ * because the landing page stores nothing, so each new visit starts on it
+ * again.
+ */
+function useWelcome(
+  { notice, platform, lock }: FirstRunGateProps,
+  arrival: Arrival,
+): { readonly showing: boolean; readonly start: () => void } {
+  // A plain visit in a browser tab, on a device that hadn't accepted the notice at launch
+  // and holds no locked keys: a device with keys isn't new, whatever its notice says.
+  const [newHere] = useState(() => !notice.accepted() && !lock.lockedAtLaunch);
+  const visiting = newHere && !isInstalled(platform) && arrival.kind === 'plain';
+  const [welcomed, setWelcomed] = useState(false);
+  const start = () => {
+    // The next screen opens at its top, wherever on the page Start a Group was pressed.
+    document.documentElement.scrollTop = 0;
+    setWelcomed(true);
+  };
+  return { showing: visiting && !welcomed, start };
+}
+
+/**
+ * Shows a new visitor the landing page, then the install guide, the pilot
+ * notice, the unlock screen or the passkey offer, then the app.
+ */
 export function FirstRunGate(props: FirstRunGateProps) {
   const { platform, requestPersistence, origin, copyText, lookup, readDoor, children } = props;
   const open = canCreateKeys(platform);
@@ -237,6 +268,8 @@ export function FirstRunGate(props: FirstRunGateProps) {
   // Once nothing stood in the way at launch, Join reads any link itself, as it always has.
   const { arrival, visit } = useHeldArrival(step !== 'app', open);
   const persistence = usePersistence(open && steps.accepted, requestPersistence);
+  const welcome = useWelcome(props, arrival);
+  if (welcome.showing) return <Landing onStart={welcome.start} />;
 
   switch (step) {
     case 'install':

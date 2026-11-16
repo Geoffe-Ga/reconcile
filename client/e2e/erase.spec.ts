@@ -83,7 +83,8 @@ test('erasing a seeded profile leaves first run, no groups and no records, and c
   await test.step('first run comes back, then Start with no groups and no records', async () => {
     expect(reloaded).toBe(true);
     const afterReload = requests.length;
-    await expect(heading(page, 'Before you start')).toBeVisible();
+    // The device is new again, so its plain visit starts on the landing page (ADR-0078).
+    await expect(page.getByRole('heading', { level: 1, name: 'Reconcile' })).toBeVisible();
     await acceptNotice(ana);
     await expect(heading(page, 'Your groups')).toBeVisible();
     await expect(page.getByText('You aren’t in any groups on this device yet.')).toBeVisible();

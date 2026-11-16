@@ -45,7 +45,7 @@ function Plain(props: {
   readonly children?: ReactNode;
 }) {
   return (
-    <main className="shell">
+    <main className="shell" data-scene="sky">
       <BackLink to={{ name: 'start' }} label={messages.app.yourGroups} />
       <PageHeader title={props.title} pageTitle={follow.pageTitle} />
       <div className="stack">
@@ -158,7 +158,7 @@ function FollowFields({ found, onFollow, onNotNow }: FollowFormProps) {
 /** The opened link: the coalition's name, its preview, then whether to follow. */
 function FollowForm(props: FollowFormProps) {
   return (
-    <main className="shell">
+    <main className="shell" data-scene="sky">
       <BackLink to={{ name: 'start' }} label={messages.app.yourGroups} />
       <PageHeader
         eyebrow={follow.eyebrow}
@@ -199,7 +199,7 @@ function Step({
   switch (phase.kind) {
     case 'loading':
       return (
-        <main className="shell" aria-busy="true">
+        <main className="shell" data-scene="sky" aria-busy="true">
           <PageHeader title={follow.loading} pageTitle={follow.pageTitle} />
         </main>
       );

@@ -1235,7 +1235,7 @@ export function GroupHome(props: GroupHomeProps) {
   const news = <HomeDispatches state={state} me={me} readOnly={readOnly} />;
   const leads = !removed && !can(state, me, 'vote');
   return (
-    <main className="shell">
+    <main className="shell" data-scene="canopy">
       <BackLink to={{ name: 'start' }} label={messages.app.yourGroups} />
       <HomeTop props={props} removed={removed} readOnly={readOnly} />
       <div className="sections">

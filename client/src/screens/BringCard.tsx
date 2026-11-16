@@ -38,7 +38,7 @@ const checkName = (value: string) => (value.trim() === '' ? bring.yourNameMissin
 /** A plain page: the way back, a title, and one line. */
 function Plain({ title, line }: { readonly title: string; readonly line: string }) {
   return (
-    <main className="shell">
+    <main className="shell" data-scene="sky">
       <BackLink to={{ name: 'start' }} label={messages.app.yourGroups} />
       <PageHeader title={title} pageTitle={bring.pageTitle} />
       <p className="lede">{line}</p>
@@ -48,7 +48,7 @@ function Plain({ title, line }: { readonly title: string; readonly line: string 
 
 function Offline({ onRetry }: { readonly onRetry: () => void }) {
   return (
-    <main className="shell">
+    <main className="shell" data-scene="sky">
       <BackLink to={{ name: 'start' }} label={messages.app.yourGroups} />
       <PageHeader title={bring.offlineTitle} pageTitle={bring.pageTitle} />
       <div className="stack">
@@ -237,7 +237,7 @@ function BringFields({ found, onBring, onNotNow }: BringFormProps) {
 /** The opened card, then what to bring it to. */
 function BringForm({ found, onBring, onNotNow }: BringFormProps) {
   return (
-    <main className="shell">
+    <main className="shell" data-scene="sky">
       <BackLink to={{ name: 'start' }} label={messages.app.yourGroups} />
       <PageHeader eyebrow={bring.eyebrow} title={found.card.name} pageTitle={bring.pageTitle} />
       {found.mode === 'admit' ? <p className="lede">{bring.admitLede}</p> : null}
@@ -297,7 +297,7 @@ export function BringCard({ payload, heldSeed, lookup, onBring, onNotNow }: Brin
   switch (phase.kind) {
     case 'loading':
       return (
-        <main className="shell" aria-busy="true">
+        <main className="shell" data-scene="sky" aria-busy="true">
           <PageHeader title={bring.loading} pageTitle={bring.pageTitle} />
         </main>
       );

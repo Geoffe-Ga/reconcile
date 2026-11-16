@@ -73,7 +73,7 @@ function Feed({ feed }: { readonly feed: readonly FeedItem[] }) {
 export function Discover({ feed }: DiscoverProps) {
   const words = messages.discover;
   return (
-    <main className="shell">
+    <main className="shell" data-scene="sky">
       <PageHeader eyebrow={messages.app.name} title={words.title} pageTitle={words.pageTitle} />
       {feed.length === 0 ? (
         <>

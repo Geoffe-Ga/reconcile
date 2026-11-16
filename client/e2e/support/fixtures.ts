@@ -352,7 +352,12 @@ export async function acceptNotice(
   options: FirstRunOptions = {},
 ): Promise<FirstRun> {
   const { page } = person;
-  await expect(heading(page, 'Before you start')).toBeVisible();
+  // A plain visit starts on the landing page (ADR-0078); a link goes straight to the notice.
+  const notice = heading(page, 'Before you start');
+  const start = page.getByRole('button', { name: 'Start a Group' }).first();
+  await expect(notice.or(start)).toBeVisible();
+  if (await start.isVisible()) await start.click();
+  await expect(notice).toBeVisible();
   await expectAccessible(person, 'Pilot notice');
   await page.getByRole('button', { name: 'I understand' }).click();
   await expect(heading(page, 'Before you start')).toBeHidden();

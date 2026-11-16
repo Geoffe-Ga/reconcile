@@ -1,0 +1,665 @@
+/*
+ * The landing page (ADR-0078, src/screens/Landing.tsx), over a hand-painted
+ * background. Colors and type come from tokens.css (DESIGN.md). The
+ * background is one tall painting made by ../../../painting/paint.py and cut
+ * into a piece per section (public/painting/).
+ *
+ * Layout: one scene read top to bottom. Each section is as tall as its piece
+ * of the painting (aspect-ratio), so the pieces meet edge to edge and read as
+ * one picture. Text sits on paper cards over it. Phones and narrow windows get
+ * the tall painting; wide windows get the wide one. If a section's text needs
+ * more room than its piece allows, the section grows and the painting crops
+ * at the sides.
+ *
+ * Every class starts with `lp-`, so nothing here touches the app's own styles
+ * and nothing in app.css reaches in.
+ */
+
+.lp {
+  /* What shows while a piece of the painting loads: its own main color. */
+  --sky: #9cc6dc;
+  --leaf: #245c3c;
+  --mist: #cfdcae;
+  --soil: #5a3f2e;
+  --deep: #261c16;
+
+  /* The painting is multiplied by this. White leaves it as painted; night cools and dims it,
+     less so underground, where the network gives its own light. */
+  --tint: #ffffff;
+  --tint-earth: #ffffff;
+  --sky-text: #1d1c19;
+  --on-deep: #d6d0c2;
+
+  --gutter: clamp(16px, 4vw, 32px);
+
+  color: var(--body);
+  font: 400 17px/1.55 var(--font-sans);
+}
+
+@media (prefers-color-scheme: dark) {
+  .lp {
+    --sky: #2c3f66;
+    --leaf: #122c22;
+    --mist: #4a5a52;
+    --soil: #2a1d16;
+    --deep: #120d0a;
+    --tint: #5f6a96;
+    --tint-earth: #a9a3ad;
+    --sky-text: #f1ece0;
+  }
+}
+
+/* ---------- Base ---------- */
+
+.lp dl,
+.lp dd {
+  margin: 0;
+}
+
+/* `:where` keeps this reset weaker than any class below, so a list can set its own. */
+:where(.lp) ol,
+:where(.lp) ul {
+  padding: 0;
+  list-style: none;
+}
+
+.lp h1,
+.lp h2 {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  color: var(--ink);
+  text-wrap: balance;
+  letter-spacing: -0.01em;
+}
+
+.lp h1 {
+  font-size: clamp(64px, 15vw, 148px);
+  line-height: 0.95;
+  letter-spacing: -0.03em;
+}
+
+.lp h2 {
+  font-size: clamp(28px, 4vw, 40px);
+  line-height: 1.1;
+}
+
+/* A heading takes focus when a top link jumps to it; it isn't a control. */
+.lp h2:focus {
+  outline: none;
+}
+
+.lp h3 {
+  font: 650 18px/1.3 var(--font-sans);
+  color: var(--ink);
+}
+
+.lp button {
+  border: 0;
+  cursor: pointer;
+}
+
+.lp :focus-visible {
+  outline: 3px solid var(--ochre);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+.lp-wrap {
+  max-width: 72rem;
+  margin-inline: auto;
+  padding-left: max(var(--gutter), env(safe-area-inset-left, 0px));
+  padding-right: max(var(--gutter), env(safe-area-inset-right, 0px));
+}
+
+.lp-prose {
+  display: grid;
+  gap: 16px;
+  max-width: 42rem;
+}
+
+.lp-eyebrow {
+  font: 700 12px/1.2 var(--font-sans);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--primary);
+}
+
+.lp-caption {
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.lp-wordmark {
+  font: 500 24px/1 var(--font-serif);
+  letter-spacing: -0.01em;
+}
+
+.lp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 24px;
+}
+
+.lp-button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 48px;
+  padding: 0 28px;
+  border-radius: 9999px;
+  background: var(--primary);
+  color: var(--on-primary);
+  font: 600 16px/1.2 var(--font-sans);
+  text-decoration: none;
+  touch-action: pan-x pan-y pinch-zoom;
+}
+
+.lp-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0;
+  background: none;
+  color: inherit;
+  font: 500 15px/1.4 var(--font-sans);
+  touch-action: pan-x pan-y pinch-zoom;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+}
+
+/* A card of paper laid over the painting. */
+.lp-win {
+  padding: clamp(20px, 3.5vw, 36px);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--body);
+  box-shadow: 0 10px 30px var(--scrim);
+}
+
+/* ---------- The painting ---------- */
+
+.lp-sky,
+.lp-canopy,
+.lp-understory,
+.lp-soil,
+.lp-deep {
+  /* The tint is a flat layer multiplied over the picture; it isn't a gradient. */
+  background-image: linear-gradient(var(--tint), var(--tint)), var(--piece);
+  background-blend-mode: multiply, normal;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+/* Tall painting: each piece's height in widths matches `TALL.heights` in paint.py. */
+.lp-sky {
+  --piece: url('/painting/tall/sky.webp');
+  aspect-ratio: 100 / 330;
+  background-color: var(--sky);
+  background-position: center bottom;
+}
+.lp-canopy {
+  --piece: url('/painting/tall/canopy.webp');
+  aspect-ratio: 100 / 700;
+  background-color: var(--leaf);
+}
+.lp-understory {
+  --piece: url('/painting/tall/trunks.webp');
+  aspect-ratio: 100 / 470;
+  background-color: var(--mist);
+}
+.lp-soil {
+  --tint: var(--tint-earth);
+  --piece: url('/painting/tall/soil.webp');
+  aspect-ratio: 100 / 270;
+  background-color: var(--soil);
+}
+.lp-deep {
+  --tint: var(--tint-earth);
+  --piece: url('/painting/tall/deep.webp');
+  aspect-ratio: 100 / 440;
+  background-color: var(--deep);
+}
+
+/* Wide painting: `WIDE.heights` in paint.py. */
+@media (min-width: 1200px) {
+  .lp-sky {
+    --piece: url('/painting/wide/sky.webp');
+    aspect-ratio: 100 / 90;
+  }
+  .lp-canopy {
+    --piece: url('/painting/wide/canopy.webp');
+    aspect-ratio: 100 / 160;
+  }
+  .lp-understory {
+    --piece: url('/painting/wide/trunks.webp');
+    aspect-ratio: 100 / 114;
+  }
+  .lp-soil {
+    --piece: url('/painting/wide/soil.webp');
+    aspect-ratio: 100 / 70;
+  }
+  .lp-deep {
+    --piece: url('/painting/wide/deep.webp');
+    aspect-ratio: 100 / 130;
+  }
+}
+
+/* ---------- Sky ---------- */
+
+.lp-sky {
+  /* Keep the words clear of the treetops at the bottom of this piece. */
+  padding-bottom: 48vw;
+  color: var(--sky-text);
+}
+
+.lp-topbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-block: 12px;
+}
+
+/* The top links get paper under them too, for the same reason as the intro. */
+.lp-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: 9999px;
+  background: var(--surface);
+  color: var(--ink);
+  font: 500 15px/1.4 var(--font-sans);
+  touch-action: pan-x pan-y pinch-zoom;
+}
+
+/* Four links fit one row on a phone only if they're a little smaller. */
+@media (max-width: 430px) {
+  .lp-topbar {
+    gap: 6px;
+  }
+
+  .lp-pill {
+    padding: 0 10px;
+    font-size: 14px;
+  }
+}
+
+.lp-hero {
+  display: grid;
+  gap: 20px;
+  max-width: 44rem;
+  padding-top: clamp(24px, 5vw, 64px);
+}
+
+/* The word, defined the way a dictionary would. */
+.lp-define {
+  max-width: 32rem;
+  font: 400 clamp(22px, 2.8vw, 30px) / 1.3 var(--font-serif);
+  text-wrap: balance;
+}
+
+.lp-hero h1 {
+  color: var(--sky-text);
+}
+
+/* The words under the title sit on paper, like every other block of text:
+   small type straight on the brushwork is hard to read. Only the title, which
+   is very large, sits on the sky itself. */
+.lp-intro {
+  display: grid;
+  gap: 16px;
+  max-width: 38rem;
+}
+
+.lp-lede {
+  max-width: 34rem;
+  font: 400 clamp(19px, 2.2vw, 22px) / 1.5 var(--font-serif);
+}
+
+/* The intro's points: the same type as the sentence above them, one idea a line. */
+.lp-points {
+  display: grid;
+  gap: 8px;
+  padding-left: 1.1em;
+  list-style: disc;
+}
+
+.lp-points li {
+  padding-left: 0.2em;
+}
+
+.lp-hero .lp-actions {
+  padding-top: 4px;
+}
+
+/* ---------- Canopy ---------- */
+
+.lp-canopy {
+  padding-block: 8vw 12vw;
+}
+
+/* Room to see the boughs cross between the two groups of cards. */
+.lp-second {
+  padding-top: 34vw;
+}
+
+.lp-steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13.5rem, 1fr));
+  gap: 20px;
+  padding-top: 20px;
+  counter-reset: step;
+}
+
+.lp-steps li {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-width: 0;
+  padding: 20px 24px 24px;
+  counter-increment: step;
+}
+
+.lp-steps li::before {
+  content: counter(step);
+  font: 500 40px/1 var(--font-serif);
+  color: var(--ochre-ink);
+}
+
+/* ---------- Case studies ---------- */
+
+/* Beside a section's name: what kind of thing follows. */
+.lp-kind {
+  margin-left: 8px;
+  padding-left: 8px;
+  border-left: 1px solid var(--hairline);
+  color: var(--muted);
+}
+
+/* Where a step in a Dispatch's journey happens. */
+.lp-where {
+  font: 700 12px/1.2 var(--font-sans);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* How a vote came out. The words carry it; the color and the mark only back them up. */
+.lp-verdict {
+  justify-self: start;
+  margin-top: 4px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font: 600 14px/1.3 var(--font-sans);
+}
+.lp-verdict::before {
+  margin-right: 6px;
+  font-weight: 700;
+}
+.lp-verdict.lp-yes {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+.lp-verdict.lp-yes::before {
+  content: '\2713';
+}
+.lp-verdict.lp-stop {
+  background: var(--ochre-soft);
+  color: var(--ochre-ink);
+}
+.lp-verdict.lp-stop::before {
+  content: '\25A0';
+}
+
+/* Two things side by side: two Groups, two stories, a risk and its answer. */
+.lp-pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 12px;
+}
+.lp-pair > div {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+  padding: 16px;
+  border-radius: 6px;
+  background: var(--sunken);
+}
+.lp-pair p {
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+/* A list where each line is marked: something shared, or something that divides. */
+.lp-tally {
+  display: grid;
+  gap: 10px;
+}
+.lp-tally li {
+  position: relative;
+  padding-left: 30px;
+}
+.lp-tally li::before {
+  position: absolute;
+  left: 0;
+  top: 1px;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 9999px;
+  font: 700 12px/1 var(--font-sans);
+}
+.lp-tally b {
+  color: var(--ink);
+}
+.lp-tally .lp-shared::before {
+  content: '\2713';
+  background: var(--primary);
+  color: var(--on-primary);
+}
+.lp-tally .lp-apart::before {
+  content: '\2715';
+  background: var(--negative);
+  color: var(--surface);
+}
+
+/* What happens next, in order. */
+.lp-then {
+  display: grid;
+  gap: 10px;
+  counter-reset: then;
+}
+.lp-then li {
+  position: relative;
+  padding-left: 30px;
+  counter-increment: then;
+}
+.lp-then li::before {
+  content: counter(then);
+  position: absolute;
+  left: 0;
+  top: 1px;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 9999px;
+  background: var(--sunken);
+  color: var(--ink);
+  font: 700 12px/1 var(--font-sans);
+}
+
+/* The kinds of thing a Document can be. */
+.lp-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.lp-chips li {
+  padding: 4px 12px;
+  border-radius: 6px;
+  background: var(--sunken);
+  color: var(--ink);
+  font: 500 14px/1.4 var(--font-sans);
+}
+
+.lp-pullquote {
+  max-width: 34rem;
+  margin-top: 20px;
+  font: italic 400 clamp(21px, 2.6vw, 27px) / 1.3 var(--font-serif);
+  color: var(--ink);
+  text-wrap: balance;
+}
+
+/* ---------- Understory: trunks ---------- */
+
+.lp-understory {
+  /* Below the canopy's underside, above the forest floor. */
+  padding-block: 42vw 56vw;
+}
+
+.lp-notice {
+  display: grid;
+  gap: 16px;
+  max-width: 42rem;
+  margin-inline: auto;
+}
+
+.lp-scale {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-block: 8px;
+}
+
+.lp-scale li {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 14px 0 12px;
+  border-radius: 9999px;
+  color: var(--surface);
+  font: 500 14px/1.2 var(--font-sans);
+}
+.lp-scale b {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.lp-scale .lp-s0 {
+  background: var(--score-0);
+}
+.lp-scale .lp-s1 {
+  background: var(--score-1);
+}
+.lp-scale .lp-s2 {
+  background: var(--score-2);
+}
+.lp-scale .lp-s3 {
+  background: var(--score-3);
+}
+.lp-scale .lp-s4 {
+  background: var(--score-4);
+}
+
+.lp-levels {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 16px 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--hairline);
+}
+
+.lp-levels div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.lp-levels dt {
+  font: 650 15px/1.4 var(--font-sans);
+  color: var(--ink);
+}
+
+.lp-levels dd {
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+/* ---------- Underground ---------- */
+
+.lp-soil {
+  padding-block: 30vw 24vw;
+}
+
+.lp-soil .lp-win,
+.lp-deep .lp-win {
+  margin-inline: auto;
+}
+
+.lp-plain {
+  display: grid;
+  gap: 16px;
+  padding-top: 8px;
+}
+
+.lp-plain li {
+  display: grid;
+  gap: 4px;
+  padding-top: 16px;
+  border-top: 1px solid var(--hairline);
+}
+
+.lp-deep {
+  /* The network fills the top of this piece; the cards come after it. */
+  padding-top: 108vw;
+}
+
+.lp-bedrock {
+  padding-top: 24px;
+}
+
+.lp-bedrock .lp-actions {
+  padding-top: 8px;
+}
+
+.lp-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px 24px;
+  padding-block: 32px;
+  color: var(--on-deep);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+@media (min-width: 1200px) {
+  .lp-sky {
+    padding-bottom: 16vw;
+  }
+  .lp-canopy {
+    padding-block: 6vw 10vw;
+  }
+  .lp-second {
+    padding-top: 22vw;
+  }
+  .lp-understory {
+    padding-block: 15vw 26vw;
+  }
+  .lp-soil {
+    padding-block: 9vw 8vw;
+  }
+  .lp-deep {
+    padding-top: 50vw;
+  }
+}

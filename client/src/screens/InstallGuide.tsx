@@ -313,7 +313,7 @@ export function InstallGuide(props: InstallGuideProps) {
   const phase = useInviteLookup(arrival, lookup);
   const steps = [...messages.install.steps, lastStep(arrival, phase)];
   return (
-    <main className="shell">
+    <main className="shell" data-scene="sky">
       <PageHeader title={messages.install.title} pageTitle={messages.install.pageTitle} />
       <p className="lede">{messages.install.otherApp}</p>
       <ol className="steps">

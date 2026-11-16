@@ -268,7 +268,7 @@ function GroupsLine({ view }: { readonly view: CoalitionHomeView }) {
 function FollowerHome(props: CoalitionHomeProps) {
   const { view, state, onUnfollow } = props;
   return (
-    <main className="shell">
+    <main className="shell" data-scene="soil">
       <BackLink to={{ name: 'start' }} label={messages.app.yourGroups} />
       <PageHeader
         eyebrow={coalitions.followingEyebrow}
@@ -313,7 +313,7 @@ export function CoalitionHome(props: CoalitionHomeProps) {
   const { view, state, now, back, onTakePart } = props;
   if (view.follower) return <FollowerHome {...props} />;
   return (
-    <main className="shell">
+    <main className="shell" data-scene="soil">
       {back === null ? (
         <BackLink to={{ name: 'start' }} label={messages.app.yourGroups} />
       ) : (

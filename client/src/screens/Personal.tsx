@@ -119,7 +119,7 @@ function DocumentList({
 export function Personal({ documents, newId, relayNow, relayBackup }: PersonalProps) {
   const { personal } = messages;
   return (
-    <main className="shell">
+    <main className="shell" data-scene="soil">
       <BackLink to={{ name: 'start' }} label={messages.app.yourGroups} />
       <PageHeader title={personal.title} pageTitle={personal.pageTitle} />
       <p className="lede">{personal.lede}</p>

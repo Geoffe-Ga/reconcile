@@ -4,7 +4,7 @@ import { BackLink, PageHeader } from '../app/ui';
 /** Shown for `#/g/{groupId}` when this device isn't in that group. */
 export function GroupMissing() {
   return (
-    <main className="shell">
+    <main className="shell" data-scene="canopy">
       <BackLink to={{ name: 'start' }} label={messages.app.yourGroups} />
       <PageHeader title={messages.home.missingTitle} pageTitle={messages.home.pageTitle} />
       <p className="lede">{messages.home.missing}</p>
@@ -28,7 +28,7 @@ export function GroupArchived({
 }) {
   const { readOnlyTitle, readOnly } = removed ? messages.removal : messages.archive;
   return (
-    <main className="shell">
+    <main className="shell" data-scene="canopy">
       <BackLink to={{ name: 'group', groupId }} label={name} />
       <PageHeader title={readOnlyTitle} pageTitle={messages.home.pageTitle} />
       <p className="lede">{readOnly}</p>
@@ -48,7 +48,7 @@ export function GroupUnconfirmed({
   readonly name: string;
 }) {
   return (
-    <main className="shell">
+    <main className="shell" data-scene="canopy">
       <BackLink to={{ name: 'group', groupId }} label={name} />
       <PageHeader title={messages.unconfirmed.readOnlyTitle} pageTitle={messages.home.pageTitle} />
       <p className="lede">{messages.unconfirmed.readOnly}</p>
@@ -62,7 +62,7 @@ export function GroupUnconfirmed({
  */
 export function GroupSettingUp() {
   return (
-    <main className="shell">
+    <main className="shell" data-scene="canopy">
       <BackLink to={{ name: 'start' }} label={messages.app.yourGroups} />
       <PageHeader title={messages.home.settingUpTitle} pageTitle={messages.home.pageTitle} />
       <p className="lede">{messages.home.settingUp}</p>

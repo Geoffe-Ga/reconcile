@@ -101,6 +101,13 @@ function renderRoot(ben: TestDevice, platform: PlatformEnv = DESKTOP) {
 }
 
 /** Join's preview: the group’s name as the heading, and its Document’s title. */
+/** A plain first visit starts on the landing page (ADR-0078): press its Start a Group. */
+async function passLanding(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+  const [start] = screen.getAllByRole('button', { name: messages.landing.start });
+  if (start === undefined) throw new Error('The landing page has no Start a Group button.');
+  await user.click(start);
+}
+
 async function joinPreview(): Promise<string[]> {
   const heading = await screen.findByRole('heading', { level: 1, name: 'Riverside Tenants' });
   const main = screen.getByRole('main');
@@ -151,6 +158,7 @@ describe('Root', () => {
 
     const paster = await device(fake, 'paster');
     const { user } = renderRoot(paster);
+    await passLanding(user);
     await user.click(screen.getByRole('button', { name: 'I understand' }));
     await user.click(await screen.findByRole('searchbox', { name: messages.linkBar.label }));
     await user.paste(`  ${link}  `);
@@ -163,6 +171,7 @@ describe('Root', () => {
   it('says a damaged invite link is damaged in the link bar, with none of it on the page (#444)', async () => {
     const ben = await device(createFakeRelay(), 'ben');
     const { user } = renderRoot(ben);
+    await passLanding(user);
     await user.click(screen.getByRole('button', { name: 'I understand' }));
     const field = await screen.findByRole('searchbox', { name: messages.linkBar.label });
     const before = window.location.hash;
@@ -201,6 +210,7 @@ describe('Root', () => {
   it('says on Start when the browser may clear the app’s data', async () => {
     const ben = await device(createFakeRelay(), 'ben');
     const { user } = renderRoot(ben);
+    await passLanding(user);
     await user.click(screen.getByRole('button', { name: 'I understand' }));
     expect(await screen.findByText(messages.start.mayClear)).toBeVisible();
   });
@@ -291,7 +301,8 @@ describe('Root', () => {
       window.dispatchEvent(new PopStateEvent('popstate'));
     });
 
-    expect(screen.getByRole('heading', { level: 1, name: messages.notice.title })).toBeVisible();
+    // A plain visit on a new device: first run starts on the landing page (ADR-0078).
+    expect(screen.getByRole('heading', { level: 1, name: messages.landing.title })).toBeVisible();
   });
 });
 

@@ -260,7 +260,7 @@ export function Start(props: StartProps) {
   const { persistence = null, onRestore, alert } = props;
 
   return (
-    <main className="shell">
+    <main className="shell" data-scene="sky">
       <PageHeader
         eyebrow={messages.app.name}
         title={messages.start.title}

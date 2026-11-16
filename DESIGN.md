@@ -108,6 +108,7 @@ Don't reproduce any of those brands' marks, typefaces, or layouts.
 - **Forest (`primary`) is the only action color.** Every other color is information.
 - Documents are set in **Newsreader** at reading size, with generous measure (60–70 characters) and leading. The UI is set in **Public Sans**. Hashes and keys use **JetBrains Mono**.
 - Flat surfaces and hairline rules. No gradients, glassmorphism, or drop-shadow stacks.
+- One painting, used sparingly: behind the landing page, and as a few pixels at the edges of some screens. Never behind text.
 - Quiet confidence: no streaks, like counts, confetti, or engagement bait.
 
 ## Fonts and privacy
@@ -152,6 +153,36 @@ Keep running text to 60–70 characters per line. Use `text-wrap: balance` on he
 - Radius: `sm` 6px for inputs and chips, `md` 10px for cards and ballots, `full` for buttons and score pills.
 - Depth comes from surface contrast (`canvas` → `surface` → `sunken`) and 1px `hairline` borders. One soft shadow at most, and only for floating layers (menus, dialogs, the link bar).
 - A modal dialog sits on `surface` over a `scrim`, which darkens the page in both themes, and its shadow uses the same `scrim`.
+
+## The painting
+
+One hand-painted forest, read top to bottom: sky, canopy, trunks, soil and roots, then the mycelial network. `painting/paint.py` makes it with simulated brushstrokes ([`painting/README.md`](painting/README.md)), in this palette plus sky, leaf, bark and soil colors of its own. It is the app's one piece of imagery ([ADR-0078](docs/adr/0078-landing-page-and-painted-edges.md)).
+
+- **Text never sits on the painting.** Words go on `surface` or `canvas`. The one exception is the landing page's title, which is very large.
+- **Nothing moves.**
+- **Night dims it.** The same pieces are multiplied down to a cool, dim version. Nothing is repainted.
+- **It is served from the app's own origin**, like every font and icon.
+
+### Painted edges
+
+A screen may show a few pixels of the painting around the window: `edge` is 6px on a phone and 10px from 700px up. Inside the edge the page is `canvas`, exactly as a plain screen. The edge is drawn over the page, so words scroll under it and never across it, and it takes no presses.
+
+- **Which piece** follows where the screen sits in the story:
+  - sky for arriving and setting out (the install guide, Start, Create group, Join, Follow, a front door, Bring a card, Discover)
+  - canopy for a group (Group home, its status pages, its Dispatches)
+  - trunks for what holds a group up (Group rules)
+  - soil for what's out of sight (Personal, and a Coalition's home, where groups' roots meet)
+- **Plain screens.** Anything that needs care or deep focus shows no edge: reading a Document or its history, writing or weighing a Proposal or a Dispatch, the ballot, a personal Document, the pilot notice, anything to do with keys, recovery or linking a device, Settings.
+- The edge is color and nothing more. It carries no meaning a reader needs.
+
+### The landing page
+
+What a new visitor sees before first run: the whole painting, with each section's words on `surface` cards over it.
+
+- Each feature is explained through a case study, cut into pieces a reader takes in at a glance: numbered steps that say how each vote came out, two things side by side on `sunken`, lines marked as shared or dividing, and tags.
+- A mark or a color never carries the meaning alone. "Yes. Shared, and passed up." says it; the tick only backs it up.
+- The copy aims at about a 7th-grade reading level: short sentences, common words, one idea each.
+- Forest is still the one action color, and Start a Group is the one action.
 
 ## Components (Reconcile-specific)
 
@@ -287,4 +318,5 @@ Plain, warm, and direct. Use "your group", not "the community". Write in the act
 - Don't add engagement metrics: no likes, streaks, view counts, or leaderboards.
 - Don't make safety features loud, or suggest the app is for illegal activity.
 - Don't load fonts, icons, or images from third-party hosts in the app.
+- Don't put the painting behind text, or at the edge of a screen that needs deep focus.
 - Don't show a part-ways action on vote results (ADR-0015, ADR-0068).

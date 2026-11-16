@@ -171,7 +171,7 @@ export function GroupRules(props: GroupRulesProps) {
   const { state, me } = props;
   const { optIns } = messages;
   return (
-    <main className="shell">
+    <main className="shell" data-scene="trunks">
       <BackLink to={{ name: 'group', groupId: state.group ?? '' }} label={state.name} />
       <PageHeader eyebrow={optIns.eyebrow} title={optIns.title} pageTitle={optIns.pageTitle} />
       <p className="lede">{optIns.lede}</p>

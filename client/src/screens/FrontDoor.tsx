@@ -105,7 +105,7 @@ function Notice(props: {
   const { title, line, hint, onRetry } = props;
   const header = title === undefined ? { title: door.pageTitle } : { eyebrow: door.eyebrow, title };
   return (
-    <main className="shell">
+    <main className="shell" data-scene="sky">
       <PageHeader {...header} pageTitle={door.pageTitle} />
       <div className="stack">
         <p className="lede">{line}</p>
@@ -328,7 +328,7 @@ function Open(props: OpenProps) {
     );
   }
   return (
-    <main className="shell">
+    <main className="shell" data-scene="sky">
       <PageHeader eyebrow={door.eyebrow} title={page.name} pageTitle={door.pageTitle} />
       <DoorExcerpt page={page} />
       {cardGroups.length === 0 ? null : (
@@ -404,7 +404,7 @@ export function FrontDoor(props: FrontDoorProps) {
   switch (phase.kind) {
     case 'loading':
       return (
-        <main className="shell" aria-busy="true">
+        <main className="shell" data-scene="sky" aria-busy="true">
           <PageHeader eyebrow={door.eyebrow} title={door.loading} pageTitle={door.pageTitle} />
         </main>
       );
