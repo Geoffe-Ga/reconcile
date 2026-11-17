@@ -40,6 +40,7 @@ A front-door application can carry **a copy of personal Documents the applicant 
 - **No likeness between groups is ever stored or published.** The relay holds no graph of who resembles whom.
 - Each surfaced entry says why in words ("You both write about …"). A Newest view stays one tap away.
 - The scoring and the width of the band are tunable, and a spike picks the first values against sample writing.
+- **Amended by [ADR-0079](0079-bedfellows-algorithm.md) (2026-11-17):** claims are matched by a small on-device model and checked for stance, the reason quotes the shared claim, the mix widens on a slow clock, and the device keeps a sealed 30-day history of what it showed.
 
 ### 5. Front doors take reconcile cards
 
