@@ -62,7 +62,7 @@ Reconcile can easily turn into a **database of people, their ideologies, and the
 
 **MVP scope comes first:** [ADR-0074](docs/adr/0074-mvp-scope-revised.md) sets each feature's depth, Phase 2 coalitions included, [ADR-0075](docs/adr/0075-safeguards-for-the-revised-mvp.md) adds its safeguards, and [ADR-0073](docs/adr/0073-mvp-scope.md) defers the rest until pilot feedback asks for it. Build to that depth, neither a shell nor the full spec, and don't add edge-case handling a small group can sort out by talking.
 
-**Decisions:** all recorded in ADRs 0001–0079 (0064–0071 came from the four-lenses review, 0076 covers repo tooling, 0077 covers Discover, 0078 the landing page and painted edges, and 0079 vote links, [docs/spec/four-lenses-review.md](docs/spec/four-lenses-review.md)). [docs/spec/decision-roadmap.md](docs/spec/decision-roadmap.md) is complete, and lists what's deliberately deferred with a trigger:
+**Decisions:** all recorded in ADRs 0001–0079 and 0081 (0064–0071 came from the four-lenses review, 0076 covers repo tooling, 0077 covers Discover, 0078 the landing page and painted edges, 0079 vote links, and 0081 listed doors, the public shelf and moderation by exception ([spec](docs/spec/listed-doors.md)), [docs/spec/four-lenses-review.md](docs/spec/four-lenses-review.md)). [docs/spec/decision-roadmap.md](docs/spec/decision-roadmap.md) is complete, and lists what's deliberately deferred with a trigger:
 - the eternal core's wording ([ADR-0035](docs/adr/0035-reconcile-group-minimal-eternal-core.md)), before Phase 2
 - the fiscal sponsor ([ADR-0062](docs/adr/0062-entity-and-sponsor-timing.md)), after the pilot
 - the outside security review ([ADR-0058](docs/adr/0058-security-review-on-demand.md)), on demand

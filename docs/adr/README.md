@@ -83,6 +83,7 @@ Settled decisions about how Reconcile works. Before designing anything, check he
 | [0077](0077-discover.md) | Discover: a public shelf of single Dispatches, each published by its own vote; Ask to join through open front doors; personal Documents sealed into an application; an on-device strange-bedfellows view; doors take reconcile cards; a bottom tab bar | Accepted; shelf publishing waits on 0035's wording and a spike |
 | [0078](0078-landing-page-and-painted-edges.md) | The landing page is the first step of first run, storing nothing; some screens show a few pixels of the painting at their edges, and focus screens stay plain | Accepted |
 | [0079](0079-vote-links.md) | A vote link carries a token keyed by the group's secret, not ids, so it opens one Proposal only on the group's devices and never ties groups in a coalition together; Tell your group, the Discord bot and Copy link carry it | Accepted |
+| [0081](0081-listed-doors-and-exception-moderation.md) | A group is seen from outside only through a listed front door; listing accepts the covenant and puts the group in a public registry; only listed groups publish to the shelf; moderation is by exception over public bytes, with holds that lapse; who votes on appeals stays open ([spec](../spec/listed-doors.md)) | Accepted (2026-11-17, the founder) |
 
 **Status column:** "amended by 00NN" means a later ADR changed part of the decision, and the ADR's own file says what changed. A date means the ADR was amended in place, with no ADR of its own. Each one-liner describes the decision as amended.
 
