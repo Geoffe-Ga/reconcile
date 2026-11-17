@@ -42,7 +42,7 @@ Settled decisions about how Reconcile works. Before designing anything, check he
 | [0036](0036-coalition-each-group-passes.md) | Coalition motions pass group by group; only signed results cross group lines | Accepted |
 | [0037](0037-holonic-promotion.md) | Each level decides; the author sets a ceiling, at most the coalitions (0071); votes travel with the Dispatch on the voter's own device | Accepted; amended by 0065, 0070, 0071 |
 | [0038](0038-optional-discovery.md) | Discovery is optional; groups can open a front door that never lists people, and that closes when a membership ends (#288) | Accepted; amended 2026-11-12 (#288), and by 0077 |
-| [0039](0039-integrations-per-group-opt-in.md) | Bot reach and sight are a per-group ladder, nudge-only by default | Accepted |
+| [0039](0039-integrations-per-group-opt-in.md) | Bot reach and sight are a per-group ladder, nudge-only by default; a nudge carries a vote link that only the group can open (0079) | Accepted; amended by 0079 |
 | [0040](0040-group-opt-ins-are-governed.md) | Every group-level opt-in is decided by Proposal; widening is entrenched, narrowing is easy | Accepted |
 | [0041](0041-digitalocean-relay-hosting.md) | The pilot relay runs on a DigitalOcean VM; we terminate TLS, logs off. The MVP runs it as a systemd service, not a container, until it needs another host | Accepted; amended 2026-11-09 |
 | [0042](0042-broad-device-support.md) | iOS 16.4+, Android 10+, current desktop browsers; plain warnings on older devices | Accepted |
@@ -82,6 +82,7 @@ Settled decisions about how Reconcile works. Before designing anything, check he
 | [0076](0076-merge-recap-to-discord.md) | Merge recaps send only metadata, PR titles included, to a private Discord channel; the bot token runs merged code | Accepted (tooling) |
 | [0077](0077-discover.md) | Discover: a public shelf of single Dispatches, each published by its own vote; Ask to join through open front doors; personal Documents sealed into an application; an on-device strange-bedfellows view; doors take reconcile cards; a bottom tab bar | Accepted; shelf publishing waits on 0035's wording and a spike |
 | [0078](0078-landing-page-and-painted-edges.md) | The landing page is the first step of first run, storing nothing; some screens show a few pixels of the painting at their edges, and focus screens stay plain | Accepted |
+| [0079](0079-vote-links.md) | A vote link carries a token keyed by the group's secret, not ids, so it opens one Proposal only on the group's devices and never ties groups in a coalition together; Tell your group, the Discord bot and Copy link carry it | Accepted |
 
 **Status column:** "amended by 00NN" means a later ADR changed part of the decision, and the ADR's own file says what changed. A date means the ADR was amended in place, with no ADR of its own. Each one-liner describes the decision as amended.
 
