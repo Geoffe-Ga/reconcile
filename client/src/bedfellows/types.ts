@@ -21,12 +21,25 @@ export interface BedfellowsEntry {
   readonly text: string;
 }
 
-/** One run's input: the reader's Documents, the shelf, and the dial's position. */
+/**
+ * What one view shows (#479): at most `size` rows, their order within a tier
+ * turned by the reader's calendar `date` (YYYY-MM-DD) and `seed`. The seed is
+ * the caller's to keep; the pipeline stores nothing.
+ */
+export interface BedfellowsView {
+  readonly size: number;
+  readonly date: string;
+  readonly seed: number;
+}
+
+/** One run's input: the reader's Documents, the shelf, the dial's position and the view. */
 export interface BedfellowsInput {
   readonly reader: readonly BedfellowsDocument[];
   readonly entries: readonly BedfellowsEntry[];
-  /** The stretch dial (ADR-0080 §4). Accepted and not yet read: #479 reads it. */
+  /** The stretch dial (ADR-0080 §4): a step from 0 to `TOP` (`mix.ts`), read only with a view. */
   readonly dial: number;
+  /** The view to pick; without one, every row comes back ranked (the harness scores matches, not views). */
+  readonly view?: BedfellowsView;
 }
 
 /** A claim's vector. */
