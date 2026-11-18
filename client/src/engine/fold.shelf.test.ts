@@ -13,7 +13,7 @@ import { describe, expect, it } from 'vitest';
 import { DOOR, LISTED } from '../test/door';
 import { deadlineOf, groupLog, type LogBuilder } from '../test/votes';
 import { publishedBy, shelfLineId } from './dispatches';
-import type { Reach, Score } from './event';
+import type { Score } from './event';
 import { heldRecord, type GroupState, type Proposal, shelfPassed } from './fold';
 
 /** Ana and `members`, whose front door is open and listed by an entrenched vote of all 4s. */
@@ -110,14 +110,21 @@ describe('the shelf line (#430)', () => {
     expect(log.state().proposals.map((p) => p.id)).toEqual([open]);
   });
 
-  it('takes a shelf line on a Dispatch that may rise too, and a ceiling of 0 only with one', () => {
+  it('takes a shelf line only on a Dispatch that stays in the group, and a ceiling of 0 only with one', () => {
+    // A rising Dispatch with a shelf line would split from a build before #430,
+    // which reads it as a plain rising Dispatch and ignores the shelf line's
+    // ballots; with a reach of 0 such a build only lags (listed-doors.md §5.1).
     const log = listedGroup();
-    const rising = log.rising('Ana', 2, WORDS, undefined, true);
+    const stays = log.rising('Ana', 0, WORDS, undefined, true);
+    log.rising('Ana', 2, WORDS, undefined, true);
     log.rising('Ana', 0, WORDS);
     const state = log.state();
-    expect(state.proposals.at(-1)?.id).toBe(rising);
-    expect(proposalIn(state, rising).target).toEqual({ kind: 'dispatch', ceiling: 2, shelf: true });
-    expect(state.ignored.at(-1)).toMatchObject({ seq: log.records.length });
+    expect(proposalIn(state, stays).target).toEqual({ kind: 'dispatch', ceiling: 0, shelf: true });
+    expect(state.proposals.at(-1)?.id).toBe(stays);
+    expect(state.ignored.slice(-2).map(({ seq }) => seq)).toEqual([
+      log.records.length - 1,
+      log.records.length,
+    ]);
   });
 
   it('publishes nothing when the listing ends before the vote closes, and keeps what closed while listed', () => {
@@ -171,31 +178,26 @@ describe('the shelf line (#430)', () => {
     const score = fc.constantFrom<Score>(0, 1, 2, 3, 4);
     const ballot = fc.record({ dispatch: score, shelf: score });
     fc.assert(
-      fc.property(
-        fc.array(ballot, { minLength: 3, maxLength: 3 }),
-        fc.boolean(),
-        (ballots, reach) => {
-          const outcomes = [ballots, [...ballots].reverse()].map((ordered) => {
-            const log = listedGroup();
-            const ceiling: Reach = reach ? 0 : 1;
-            const id = log.rising('Ana', ceiling, WORDS, undefined, true);
-            const names = ['Ana', 'Ben', 'Cal'];
-            const voters = ordered === ballots ? names : [...names].reverse();
-            ordered.forEach((b, i) => {
-              log.minute += 1;
-              cast(log, voters[i] ?? '', id, b.dispatch, b.shelf);
-            });
-            const state = log.state(deadlineOf(log.minute));
-            const proposal = proposalIn(state, id);
-            return {
-              outcome: proposal.outcome,
-              shelf: shelfPassed(proposal),
-              published: publishedBy(state).length,
-            };
+      fc.property(fc.array(ballot, { minLength: 3, maxLength: 3 }), (ballots) => {
+        const outcomes = [ballots, [...ballots].reverse()].map((ordered) => {
+          const log = listedGroup();
+          const id = log.rising('Ana', 0, WORDS, undefined, true);
+          const names = ['Ana', 'Ben', 'Cal'];
+          const voters = ordered === ballots ? names : [...names].reverse();
+          ordered.forEach((b, i) => {
+            log.minute += 1;
+            cast(log, voters[i] ?? '', id, b.dispatch, b.shelf);
           });
-          expect(outcomes[0]).toEqual(outcomes[1]);
-        },
-      ),
+          const state = log.state(deadlineOf(log.minute));
+          const proposal = proposalIn(state, id);
+          return {
+            outcome: proposal.outcome,
+            shelf: shelfPassed(proposal),
+            published: publishedBy(state).length,
+          };
+        });
+        expect(outcomes[0]).toEqual(outcomes[1]);
+      }),
       { numRuns: 40 },
     );
   });

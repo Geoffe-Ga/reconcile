@@ -181,6 +181,19 @@ function visibilityOf(voted: boolean, shelf: boolean): string {
   return voted ? sendDispatch.visibilityVote : sendDispatch.visibility;
 }
 
+/** A Dispatch's reach as chosen: one that asks for the shelf stays in this group (#430). */
+function reachOf(chosen: Reach, asked: boolean): Reach {
+  return asked ? 0 : chosen;
+}
+
+/** Whether the form offers a ceiling: it can rise, and it doesn't ask for the shelf (#430). */
+function offersCeiling(
+  { onPropose, rises = false }: Pick<SendDispatchProps, 'onPropose' | 'rises'>,
+  asked: boolean,
+): boolean {
+  return onPropose !== undefined && rises && !asked;
+}
+
 /**
  * The form: title, text, Document and, once the group sits in a formed
  * coalition, how far it can go (#126), and while its door is listed, the
@@ -188,7 +201,7 @@ function visibilityOf(voted: boolean, shelf: boolean): string {
  * puts it to a vote.
  */
 function DispatchForm(props: Pick<SendDispatchProps, 'state' | 'onSend' | 'onPropose' | 'rises'>) {
-  const { state, onPropose, rises = false } = props;
+  const { state, onPropose } = props;
   const [title, setTitle] = useState('');
   const [text, setText] = useState('');
   const [doc, setDoc] = useState(NO_DOCUMENT);
@@ -201,7 +214,13 @@ function DispatchForm(props: Pick<SendDispatchProps, 'state' | 'onSend' | 'onPro
   const submit = (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
     const chosen = doc === NO_DOCUMENT ? null : doc;
-    void run({ title: title.trim(), text: text.trim(), doc: chosen, reach, shelf: asked });
+    void run({
+      title: title.trim(),
+      text: text.trim(),
+      doc: chosen,
+      reach: reachOf(reach, asked),
+      shelf: asked,
+    });
   };
   const voted = reach !== 0 || asked;
   return (
@@ -226,9 +245,7 @@ function DispatchForm(props: Pick<SendDispatchProps, 'state' | 'onSend' | 'onPro
         onChange={setText}
       />
       <DocumentPicker state={state} value={doc} onChange={setDoc} />
-      {onPropose === undefined || !rises ? null : (
-        <CeilingPicker value={reach} onChange={setReach} />
-      )}
+      {offersCeiling(props, asked) ? <CeilingPicker value={reach} onChange={setReach} /> : null}
       {offersShelf ? <ShelfChoice value={shelf} onChange={setShelf} /> : null}
       <p className="caption">{visibilityOf(voted, asked)}</p>
       {outcome === 'failed' ? (

@@ -2,7 +2,7 @@
   "kind": "fold",
   "vectors": [
     {
-      "name": "shelf-line-unlisted: a door that is open but not listed takes no shelf line, for this group only or with a ceiling, and a Dispatch put to the vote for this group only without one is a bad shape; the same Dispatch rising with no shelf line opens",
+      "name": "shelf-line-unlisted: a door that is open but not listed takes no shelf line for this group only, and a shelf line with a ceiling, or a Dispatch put to the vote for this group only without one, is a bad shape; the same Dispatch rising with no shelf line opens",
       "records": [
         {
           "seq": 1,
@@ -262,10 +262,7 @@
             "seq": 8,
             "id": "@8"
           },
-          {
-            "seq": 9,
-            "id": "@9"
-          },
+          { "seq": 9 },
           {
             "seq": 10
           }

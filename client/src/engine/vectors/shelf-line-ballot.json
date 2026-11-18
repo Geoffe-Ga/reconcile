@@ -888,7 +888,7 @@
       }
     },
     {
-      "name": "shelf-line-ballot: on a Dispatch that may rise one level and asks for the shelf, a 0 on the shelf line with no reason and a score for a line that isn't there are ignored; three ballots on the Dispatch line alone don't close it early, and the three that score both lines do",
+      "name": "shelf-line-ballot: on a Dispatch put to the vote for this group only that asks for the shelf, a 0 on the shelf line with no reason and a score for a line that isn't there are ignored; three ballots on the Dispatch line alone don't close it early, and the three that score both lines do",
       "records": [
         {
           "seq": 1,
@@ -1045,7 +1045,7 @@
             "body": {
               "target": {
                 "kind": "dispatch",
-                "ceiling": 1,
+                "ceiling": 0,
                 "shelf": true
               },
               "title": "Rally Saturday",
@@ -1210,7 +1210,7 @@
             "text": "",
             "target": {
               "kind": "dispatch",
-              "ceiling": 1,
+              "ceiling": 0,
               "shelf": true
             },
             "class": "ordinary",

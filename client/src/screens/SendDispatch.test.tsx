@@ -308,14 +308,15 @@ describe('SendDispatch', () => {
       expect(await axeViolations()).toEqual([]);
     });
 
-    it('carries the shelf line on a Dispatch that may rise too', async () => {
+    it('keeps a Dispatch that asks for the shelf in the group: no ceiling while the box is ticked', async () => {
       const { user, onPropose } = renderSend(listedGroup().state(), { rises: true });
       await fill(user, 'Rally');
       await user.click(screen.getByText('Two levels up'));
       await user.click(shelf());
+      expect(screen.queryByText('Two levels up')).toBeNull();
       await user.click(screen.getByRole('button', { name: sendDispatch.submitVote }));
       expect(onPropose).toHaveBeenCalledExactlyOnceWith(
-        expect.objectContaining({ ceiling: 2, shelf: true }),
+        expect.objectContaining({ ceiling: 0, shelf: true }),
       );
     });
 

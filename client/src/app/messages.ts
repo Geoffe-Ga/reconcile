@@ -1858,7 +1858,7 @@ export const messages = {
      */
     shelfLabel: 'Also ask to put it on the public shelf',
     shelfHint:
-      'Your group votes on it first, with a second line: putting your group’s name to it on the public shelf, where anyone with the app can read it.',
+      'Your group votes on it first, with a second line: putting your group’s name to it on the public shelf, where anyone with the app can read it. It stays in this group, rising to no coalition.',
     visibilityShelf:
       'Everyone in your group sees this Proposal and that you made it. If your group passes both lines, anyone with the app can read its title and text under your group’s name, but never who wrote it or how anyone voted.',
     submitVote: 'Put it to a vote',

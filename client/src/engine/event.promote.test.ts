@@ -13,7 +13,6 @@ import {
   isPromoteProposal,
   isRulesProposal,
   parseEvent,
-  type Reach,
 } from './event';
 
 const ANA = authorOf('ana');
@@ -105,11 +104,21 @@ describe('a Dispatch put to a vote (#126)', () => {
 });
 
 describe('a shelf line on a Dispatch put to a vote (#430)', () => {
-  const reaches: readonly (readonly [Reach])[] = [[0], ...CEILINGS.map((c) => [c] as const)];
-  it.each(reaches)('reads shelf: true with a reach of %s, 0 only beside it', (ceiling) => {
-    const target = { kind: 'dispatch', ceiling, doc: 'g1', shelf: true };
+  it('reads shelf: true with a reach of 0, for this group only', () => {
+    const target = { kind: 'dispatch', ceiling: 0, doc: 'g1', shelf: true };
     expect(bodyOf({ ...DISPATCH, target })).toEqual({ ...DISPATCH, target });
   });
+
+  // A build from before #430 would read a rising Dispatch with a shelf line as a plain rising
+  // Dispatch and ignore the shelf line's ballots, splitting its outcome (listed-doors.md §5.1).
+  it.each(CEILINGS.map((c) => [c] as const))(
+    'refuses shelf: true beside a ceiling of %s: a shelf line stays in the group',
+    (ceiling) => {
+      expect(
+        parseEvent(proposal({ ...DISPATCH, target: { kind: 'dispatch', ceiling, shelf: true } })),
+      ).toBeNull();
+    },
+  );
 
   it.each([
     ['shelf: false', { kind: 'dispatch', ceiling: 1, shelf: false }],

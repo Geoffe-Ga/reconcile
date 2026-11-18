@@ -515,7 +515,8 @@ export type Reach = 0 | Ceiling;
  * opens, and the Document in this group it points to, if any, which no level
  * above sees. `shelf: true` (#430) puts a second line on its ballot, asking to
  * put the group's name to it on the public shelf; only a listed group takes
- * one, and only it may carry a reach of 0.
+ * one, and a Dispatch with one has a reach of 0, and only it: it stays in
+ * this group.
  */
 export interface DispatchTarget {
   readonly kind: 'dispatch';
@@ -1473,16 +1474,22 @@ function isCeiling(value: unknown): value is Ceiling {
   return CEILINGS.some((ceiling) => ceiling === value);
 }
 
-/** A Dispatch's reach: a ceiling, or 0 beside a shelf line (#430); null for anything else. */
+/**
+ * A Dispatch's reach: a ceiling, or 0 beside a shelf line (#430); null for
+ * anything else. A shelf line takes only a reach of 0: a build from before
+ * #430 reads a rising Dispatch with one as a plain rising Dispatch and ignores
+ * the shelf line's ballots, which would split its outcome, where a reach of 0
+ * it ignores whole and only lags (listed-doors.md §5.1).
+ */
 function reachOf(ceiling: unknown, shelf: boolean): Reach | null {
-  if (isCeiling(ceiling)) return ceiling;
-  return shelf && ceiling === 0 ? 0 : null;
+  if (shelf) return ceiling === 0 ? 0 : null;
+  return isCeiling(ceiling) ? ceiling : null;
 }
 
 /**
  * A Dispatch put to a vote: its reach, any Document and any shelf line, or
  * null for any other shape (#126, #430). `shelf` is absent or `true`, and a
- * reach of 0 needs it.
+ * reach of 0 goes with it and only with it.
  */
 function parseDispatchTarget(value: Json): DispatchTarget | null {
   const { doc, shelf } = value;
