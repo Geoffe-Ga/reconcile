@@ -3,10 +3,11 @@
  * group from one, join one from its invite link at a level, open a vote from
  * Needs your vote, and score it; and the public shelf's (#434): list a door,
  * put a Dispatch to the shelf line's vote, and import the steward's key and
- * release a listing. A spec about something else takes these rather than its
- * own copy.
+ * release a listing; and moderation's (#494): report an entry, read the
+ * steward's console afresh, and hold, uphold or suspend from it. A spec about
+ * something else takes these rather than its own copy.
  */
-import type { Locator, Page } from '@playwright/test';
+import type { APIRequestContext, Locator, Page } from '@playwright/test';
 
 import {
   acceptNotice,
@@ -242,4 +243,97 @@ export async function release(steward: Person, name: string): Promise<void> {
   await expect(
     waiting.getByText('Released. Devices show it at their next read of the shelf.'),
   ).toBeVisible();
+}
+
+/** One record as `GET /v1/shelf` and `/v1/shelf/held` page it. */
+interface ServedRecord {
+  readonly address: string;
+  readonly data: string;
+}
+
+/**
+ * The kind of each record at `address` the relay serves from `path`, in seq
+ * order: what a spec polls while a device's PUT is on its way (#494).
+ */
+export async function shelfKinds(
+  request: APIRequestContext,
+  path: '/v1/shelf' | '/v1/shelf/held',
+  address: string,
+): Promise<string[]> {
+  const response = await request.get(`${path}?after=0&limit=100`);
+  expect(response.status()).toBe(200);
+  const { records } = (await response.json()) as { records: ServedRecord[] };
+  return records
+    .filter((record) => record.address === address)
+    .map((record) => {
+      // A record is its 64-byte signature, then its JSON.
+      const message = Buffer.from(record.data, 'base64').subarray(64).toString('utf8');
+      return (JSON.parse(message) as { kind: string }).kind;
+    });
+}
+
+/**
+ * On a shelf entry's own page (#490), `reader` reports it to the steward
+ * under the clause option `clause`, such as 'C2: spam', with `note`.
+ */
+export async function report(reader: Person, clause: string, note: string): Promise<void> {
+  const { page } = reader;
+  await page.getByRole('button', { name: 'Report this entry' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Report this entry to Reconcile’s steward' });
+  await pick(page, clause, dialog);
+  await dialog.getByRole('textbox', { name: 'Note (optional)' }).fill(note);
+  await dialog.getByRole('button', { name: 'Send', exact: true }).click();
+  await expect(dialog).toBeHidden();
+  await expect(page.getByText('Sent to Reconcile’s steward.')).toBeVisible();
+}
+
+/** The steward's console (#488), read afresh: leaving and coming back reads the relay again. */
+export async function openConsole(steward: Person): Promise<void> {
+  const { page } = steward;
+  await visit(page, '/#/settings');
+  await visit(page, '/#/steward');
+  await expect(heading(page, 'Steward’s console')).toBeVisible();
+}
+
+/**
+ * The item in the console's section `section` (such as 'Reports and
+ * appeals', 'Holds' or 'On the shelf') whose own text holds `text`, and not
+ * an item nested in it: an entry's, inside its listing's.
+ */
+export function consoleItem(page: Page, section: string, text: string): Locator {
+  return page
+    .getByRole('region', { name: section, exact: true })
+    .getByRole('listitem')
+    .filter({ hasText: text })
+    .filter({ hasNot: page.getByRole('listitem') });
+}
+
+/** On the console's `item`, chooses the clause option `clause` and sends the act labelled `label`. */
+async function act(
+  steward: Person,
+  item: Locator,
+  label: 'Hold' | 'Uphold' | 'Suspend',
+  clause: string,
+): Promise<void> {
+  const { page } = steward;
+  await pick(page, clause, item);
+  await item.getByRole('button', { name: label, exact: true }).click();
+  await expect(
+    item.getByText('Sent. Devices act on it at their next read of the shelf.'),
+  ).toBeVisible();
+}
+
+/** Holds what the console's `item` names (#489) under `clause`, for 7 relay days. */
+export function hold(steward: Person, item: Locator, clause: string): Promise<void> {
+  return act(steward, item, 'Hold', clause);
+}
+
+/** Upholds the entry the console's `item` names (#489) under `clause`: a tombstone in its place. */
+export function uphold(steward: Person, item: Locator, clause: string): Promise<void> {
+  return act(steward, item, 'Uphold', clause);
+}
+
+/** Suspends the listing the console's `item` names (#489) under `clause`. */
+export function suspend(steward: Person, item: Locator, clause: string): Promise<void> {
+  return act(steward, item, 'Suspend', clause);
 }
