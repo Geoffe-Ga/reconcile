@@ -8,8 +8,9 @@
 set -euo pipefail
 cd "$(dirname "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)")"
 echo "=== Tracked sources (git) ==="
-# Output the client's tools write; nothing in these is a source.
-GENERATED='^(node_modules|dist|coverage|reports|\.stryker-tmp|test-results)/'
+# Output the client's tools write; nothing in these is a source. scripts/models.sh
+# writes .models/, the model files too large for git (#476).
+GENERATED='^(node_modules|dist|coverage|reports|\.stryker-tmp|test-results|\.models)/'
 listed="$(git ls-files --others --ignored --exclude-standard --directory -- .)" \
     || { echo "✗ git couldn't list ignored files; run this inside the repository" >&2; exit 1; }
 ignored="$(grep -Ev "$GENERATED" <<< "$listed" || true)"

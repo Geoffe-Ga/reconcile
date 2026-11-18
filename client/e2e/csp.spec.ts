@@ -4,7 +4,9 @@
  * and reaches `navigator.serviceWorker.ready` with no `securitypolicyviolation`
  * event (the `openProfile` fixture fails on any) and no CSP error on the
  * console. The worker, the manifest and the app all come from the app's own
- * origin.
+ * origin. Its `script-src` allows our own scripts and, for Bedfellows'
+ * model (#476), compiling WebAssembly, and nothing else: no `eval`, no
+ * inline script; e2e/bedfellows-model.spec.ts runs the model under it.
  *
  * The page may connect to its own origin and to one path more, Discord's
  * webhooks, which a group's chat bot posts to (#119), with or without the
@@ -57,6 +59,8 @@ test('reaches a ready service worker under the deploy CSP, with no violation', a
   const response = await page.goto('/');
   expect(response?.headers()['content-security-policy']).toBe(csp);
   expect(csp).toContain("; connect-src 'self' https://discord.com/api/webhooks/;");
+  // WebAssembly from our own origin, for Bedfellows' model (#476), and no other script.
+  expect(csp).toContain("; script-src 'self' 'wasm-unsafe-eval';");
   await acceptNotice(ana);
   await expect(heading(page, 'Your groups')).toBeVisible();
 

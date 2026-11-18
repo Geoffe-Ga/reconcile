@@ -33,6 +33,7 @@ client/coverage/
 client/reports/
 client/.stryker-tmp/
 client/test-results/
+client/.models/
 graphify-out/
 
 # Agent worktrees (local only)

@@ -13,14 +13,20 @@ const ORIGIN = 'https://reconcile.test';
 const PRECACHE: Precache = {
   version: 'abc123',
   urls: ['/', '/assets/index-1a2b.js', '/assets/public-sans-latin.woff2', '/manifest.webmanifest'],
+  lazy: ['/models/model-afdb6f1a.onnx', '/models/runtime-4b884c20.wasm'],
 };
 const CURRENT = 'reconcile-app-abc123';
+/** The cache the files kept on first use go in (#476). */
+const MODELS = 'reconcile-models';
 
 /** One cache: what it holds, and every request `addAll` was handed. */
 class FakeCache {
   readonly entries = new Map<string, Response>();
   readonly added: Request[] = [];
-  readonly put = vi.fn();
+  readonly put = vi.fn((key: string, response: Response) => {
+    this.entries.set(key, response);
+    return Promise.resolve();
+  });
 
   constructor(private readonly serve: (request: Request) => Response) {}
 
@@ -38,6 +44,14 @@ class FakeCache {
 
   match(key: string): Promise<Response | undefined> {
     return Promise.resolve(this.entries.get(key)?.clone());
+  }
+
+  keys(): Promise<Request[]> {
+    return Promise.resolve([...this.entries.keys()].map((key) => new Request(key)));
+  }
+
+  delete(key: Request | string): Promise<boolean> {
+    return Promise.resolve(this.entries.delete(typeof key === 'string' ? key : key.url));
   }
 }
 
@@ -192,9 +206,75 @@ describe('activate', () => {
     const { listeners, scope } = fakeScope(caches);
     await lifecycle(listeners, 'install');
     await lifecycle(listeners, 'activate');
-    expect(await caches.keys()).toEqual(['someone-else', CURRENT]);
+    expect(await caches.keys()).toEqual(['someone-else', CURRENT, MODELS]);
     // Open windows keep the version they started with.
     expect(scope.clients.claim).not.toHaveBeenCalled();
+  });
+});
+
+describe('files kept on first use (#476)', () => {
+  it('fetches none of them at install, so the model never downloads with the app', async () => {
+    const { caches, listeners, network } = fakeScope();
+    await lifecycle(listeners, 'install');
+    const added = caches.byName.get(CURRENT)?.added.map((one) => new URL(one.url).pathname);
+    expect(added).toEqual(PRECACHE.urls);
+    expect(caches.byName.get(MODELS)?.entries.size ?? 0).toBe(0);
+    expect(network).not.toHaveBeenCalled();
+  });
+
+  it('fetches one the first time it is asked for and keeps it, then answers from the cache', async () => {
+    const { caches, listeners, network } = fakeScope();
+    await lifecycle(listeners, 'install');
+    const path = '/models/model-afdb6f1a.onnx';
+
+    expect(await text(request(listeners, path))).toBe(`network ${ORIGIN}${path}`);
+    expect(await text(request(listeners, path))).toBe(`network ${ORIGIN}${path}`);
+
+    expect(network).toHaveBeenCalledTimes(1);
+    expect([...(caches.byName.get(MODELS)?.entries.keys() ?? [])]).toEqual([`${ORIGIN}${path}`]);
+  });
+
+  it('keeps nothing the network refused, so the next ask tries again', async () => {
+    const { caches, listeners, network } = fakeScope();
+    network.mockImplementationOnce(() => Promise.resolve(new Response('', { status: 503 })));
+    const path = '/models/runtime-4b884c20.wasm';
+
+    expect((await (request(listeners, path).response ?? Promise.reject(new Error()))).status).toBe(
+      503,
+    );
+    expect(await text(request(listeners, path))).toBe(`network ${ORIGIN}${path}`);
+
+    expect(network).toHaveBeenCalledTimes(2);
+    expect(caches.byName.get(MODELS)?.entries.size).toBe(1);
+  });
+
+  it('drops, at activate, a kept file this version no longer lists, and keeps the rest', async () => {
+    const caches = new FakeCaches();
+    const models = await caches.open(MODELS);
+    const kept = `${ORIGIN}/models/model-afdb6f1a.onnx`;
+    await models.put(kept, new Response('kept'));
+    await models.put(`${ORIGIN}/models/model-0ld0ld00.onnx`, new Response('old'));
+    const { listeners } = fakeScope(caches);
+
+    await lifecycle(listeners, 'activate');
+
+    expect([...models.entries.keys()]).toEqual([kept]);
+  });
+
+  it.each<[string, string, { method?: string; mode?: RequestMode }]>([
+    ['with a query', '/models/model-afdb6f1a.onnx?v=2', {}],
+    ['as a page load', '/models/model-afdb6f1a.onnx', { mode: 'navigate' }],
+    ['by POST', '/models/model-afdb6f1a.onnx', { method: 'POST' }],
+    ['it doesn’t list', '/models/other.onnx', {}],
+  ])('leaves one asked for %s to the network, or the app shell', (_name, url, init) => {
+    const lazy = new Set(PRECACHE.lazy);
+    const answer = answerFor(
+      { url: new URL(url, ORIGIN).href, method: init.method ?? 'GET', mode: init.mode ?? 'cors' },
+      ORIGIN,
+      new Set(PRECACHE.urls),
+      lazy,
+    );
+    expect(answer).not.toBe('lazy');
   });
 });
 
@@ -290,6 +370,10 @@ describe('answerFor', () => {
     expect(answerFor({ url: `${ORIGIN}/v1x`, method: 'GET', mode: 'cors' }, ORIGIN, urls)).toBe(
       'network',
     );
+    const lazy = new Set(PRECACHE.lazy);
+    const model = `${ORIGIN}/models/model-afdb6f1a.onnx`;
+    expect(answerFor({ url: model, method: 'GET', mode: 'cors' }, ORIGIN, urls, lazy)).toBe('lazy');
+    expect(answerFor({ url: model, method: 'GET', mode: 'cors' }, ORIGIN, urls)).toBe('network');
   });
 });
 

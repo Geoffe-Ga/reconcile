@@ -1,7 +1,7 @@
 import fc from 'fast-check';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-import { sha256 } from './hash';
+import { sha256, sha256OfFile } from './hash';
 import { utf8 } from '../test/bytes';
 
 /** Lower-case hex of `bytes`. */
@@ -28,5 +28,24 @@ describe('sha256', () => {
         expect(hex(digest)).toBe(await platformSha256(bytes));
       }),
     );
+  });
+});
+
+describe('sha256OfFile (#476)', () => {
+  it('gives the same digest as sha256, through WebCrypto where the context has it', async () => {
+    await fc.assert(
+      fc.asyncProperty(fc.uint8Array({ maxLength: 300 }), async (bytes) => {
+        expect(hex(await sha256OfFile(bytes))).toBe(hex(sha256(bytes)));
+      }),
+    );
+  });
+
+  it('falls back to @noble/hashes where WebCrypto is missing, as on a phone over plain http', async () => {
+    vi.stubGlobal('crypto', {});
+    try {
+      expect(hex(await sha256OfFile(utf8('abc'))).slice(0, 8)).toBe('ba7816bf');
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

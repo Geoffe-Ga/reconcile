@@ -31,8 +31,12 @@
 		# Discord's webhooks, which a group's chat bot posts to once the group
 		# turns it on by Proposal (#119). client/src/net/discord.ts posts only
 		# there and follows no redirect, which a path check can't hold.
+		# script-src's 'wasm-unsafe-eval' lets the Bedfellows worker compile
+		# the model runtime's WebAssembly, fetched from /models/ here and
+		# checked by hash (#476, ADR-0080 §2). It allows no eval and no inline
+		# script.
 		# pragma: allowlist nextline secret
-		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src-elem 'self' 'sha256-gYiS/BvZvRcK27JIXTuwhZ3hs2+VJ1X+2gUlE+farlg='; connect-src 'self' https://discord.com/api/webhooks/; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src-elem 'self' 'sha256-gYiS/BvZvRcK27JIXTuwhZ3hs2+VJ1X+2gUlE+farlg='; connect-src 'self' https://discord.com/api/webhooks/; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
 		# HSTS: for a year after each visit, a browser uses only HTTPS here,
 		# so no later request goes out in plaintext to be downgraded. No
 		# includeSubDomains and no preload: deploy/README.md says why, and

@@ -10,6 +10,10 @@
  *   `public/` (the manifest, the icons and the screens' painted edges), with
  *   index.html as `/`, the app shell. `/sw.js` itself isn't on it, and neither
  *   is anything under `/v1`: the relay isn't part of the build.
+ * - The model's files (`models/`, `plugins/modelFiles.ts`) aren't on it: they
+ *   are tens of megabytes that only Bedfellows uses, so the worker fetches and
+ *   keeps each the first time it's asked for, never at install (#476). They
+ *   go on a list of their own, `lazy`.
  * - The landing page's painting (`public/painting/`) isn't on it either. Only
  *   a new visitor, who is online, ever sees it, and it's a few megabytes that
  *   an installed app would otherwise download and keep for nothing (ADR-0078).
@@ -40,6 +44,8 @@ const PLACEHOLDER = '__RECONCILE_PRECACHE__';
 const VERSION_LENGTH = 16;
 /** Files in `public/` under this folder are served, but never kept on the device. */
 const NETWORK_ONLY = 'painting/';
+/** Files of the build under this folder are kept only once something asks for them (#476). */
+const KEPT_ON_USE = 'models/';
 
 /** One file the build writes: its URL and its contents. */
 interface BuiltFile {
@@ -64,11 +70,24 @@ function filesUnder(dir: string): string[] {
     .map((entry) => relative(dir, join(entry.parentPath, entry.name)).split(sep).join('/'));
 }
 
-/** The list and version for `files`, sorted so the same build always gives the same worker. */
-function precacheFor(files: readonly BuiltFile[]): { version: string; urls: string[] } {
+/**
+ * The lists and version for `files`, sorted so the same build always gives
+ * the same worker: those under `models/` kept on first use, the rest at
+ * install. The version hashes every file, on either list.
+ */
+function precacheFor(files: readonly BuiltFile[]): {
+  version: string;
+  urls: string[];
+  lazy: string[];
+} {
   const sorted = [...files].sort((a, b) => (a.url < b.url ? -1 : 1));
   const digest = sha256(sorted.map((file) => `${file.url}\0${sha256(file.bytes)}`).join('\n'));
-  return { version: digest.slice(0, VERSION_LENGTH), urls: sorted.map((file) => file.url) };
+  const urls = sorted.map((file) => file.url);
+  return {
+    version: digest.slice(0, VERSION_LENGTH),
+    urls: urls.filter((url) => !url.startsWith(`/${KEPT_ON_USE}`)),
+    lazy: urls.filter((url) => url.startsWith(`/${KEPT_ON_USE}`)),
+  };
 }
 
 /** The Vite plugin that emits `/sw.js` and writes its precache list into it. */
@@ -90,6 +109,14 @@ export function serviceWorker(): Plugin {
       if (worker?.type !== 'chunk') return this.error(`The build is missing ${OUTPUT}.`);
       if (worker.imports.length > 0 || worker.dynamicImports.length > 0) {
         return this.error(`${OUTPUT} must be one script: it imports ${worker.imports.join(', ')}.`);
+      }
+      const strayWasm = Object.keys(bundle).filter(
+        (name) => name.endsWith('.wasm') && !name.startsWith(KEPT_ON_USE),
+      );
+      if (strayWasm.length > 0) {
+        return this.error(
+          `${strayWasm.join(', ')} would download at install: WebAssembly belongs under ${KEPT_ON_USE} (#476).`,
+        );
       }
       const built = Object.values(bundle)
         .filter((file) => file.fileName !== OUTPUT)

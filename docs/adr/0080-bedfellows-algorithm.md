@@ -35,6 +35,7 @@ ADR-0077 §4's rules stand: everything runs on the reader's device; no text, ter
 - It is pinned by hash and changes only with an app release.
 - Non-English text falls back to term overlap. **Trigger to revisit:** a pilot group writes in another language. The multilingual model is then a larger download and a re-tune, not a migration, because nothing derived from the old model is kept.
 - Running a model in the browser needs WebAssembly, so the deploy CSP's `script-src` gains `'wasm-unsafe-eval'` and nothing else. `connect-src` doesn't change.
+- **Measured (#476).** The model is Xenova's 8-bit ONNX export of sentence-transformers/all-MiniLM-L6-v2 (Apache-2.0), with its WordPiece tokenizer (Apache-2.0), run by ONNX Runtime Web 1.31.1's plain WebAssembly build (MIT) on one thread, through Hugging Face's tokenizers.js 0.2.0 (Apache-2.0). All four fit ADR-0024: none is copyleft, and `/models/NOTICE.txt` carries their notices. The three files every device downloads are 38.5 MB: the model 23.0 MB, the runtime 14.8 MB and the tokenizer 0.7 MB, not the 25 MB estimated, because the runtime is a file of its own (gzip would send about 20.7 MB; the server doesn't compress them yet). They are pinned by SHA-256 in `client/src/net/modelPins.ts`, served from `/models/`, checked again on the device before first use, and kept by the service worker from the first ask. WebGPU isn't used: it needs a second, 29.5 MB runtime that only some devices would fetch, which would break "the same file for every device".
 
 ### 3. Stance: verify, then leave out
 
@@ -82,6 +83,18 @@ ADR-0077 §4's rules stand: everything runs on the reader's device; no text, ter
 - **Targets:** at least 90% of "You both care about" lines judged correct; under 5% of opposed pairs counted as agreement.
 - **Simulation**, since no device reports anything: simulated readers over a year of clock steps. Distinct groups and subjects shown should rise, the top group's share should fall, verified-agreement precision should hold, and the share of shown entries labelled hostile toward a group of people must not rise.
 - **Phone budget**, measured on a mid-range Android and an iPhone: at most 60 MB downloaded, first matches within 3 seconds on a 50-entry shelf, a full refresh within 10 seconds, and peak memory under 300 MB (250 MB on the iPhone).
+- **Measured (#476), on desktop only; the phone numbers are pending** (the founder's mid-range Android and iPhone, with `client/scripts/measure-model.sh`). Headless Chromium 157 on a 4-core Linux machine, one thread, files served from the same machine, the embedding model alone (no stance model yet, #478):
+
+  | | Desktop | Budget |
+  |---|---|---|
+  | Downloaded | 38.5 MB | ≤ 60 MB: inside, with 21.5 MB left for the stance model |
+  | Time to first vector, download included | 2.0–3.6 s (fetch and check 1.1–1.8 s, start 0.6–0.9 s, first vector 0.14 s) | |
+  | Per sentence | about 20 ms | |
+  | 50 entries against 5 Documents (217 claims) | 2.9–3.0 s, model loaded | ≤ 3 s: at the edge on desktop, so over on a phone |
+  | 500 entries against 20 Documents (1,997 claims) | 24.6–24.9 s | ≤ 10 s: over, 2.5 times |
+  | Peak memory, the page's renderer | 400 MB at peak, about 320 MB once settled (115 MB before loading) | < 300 MB: over |
+
+  Embedding claims is nearly all the time. What would bring the shelves in, cheapest first: keep public entries' vectors in the ordinary cache §5 allows, so a refresh embeds only new entries; show rows as each entry is placed, so first matches don't wait for the whole shelf; give the page cross-origin isolation (COOP and COEP headers), so the runtime can run on several threads; cap the claims or tokens embedded per entry; or a smaller model, with the harness judging what it costs. Memory: hand the files' bytes to the runtime and drop them, as `embedderLoader` does, and measure inside the app rather than the test page.
 - A part that misses its target ships in its weaker form: unverified wording everywhere if the stance check misses, and the shared-enemy check off if it's unmeasured.
 
 ## Why
@@ -106,4 +119,4 @@ ADR-0077 §4's rules stand: everything runs on the reader's device; no text, ter
 - Whether a small inference model can read implied values at all. The opposed-pair set in §8 answers it.
 - Whether a zero-shot use of the stance model is enough for the shared-enemy check, or it needs a classifier of its own.
 - The pace of the clock and the size of each tier's floor. The simulation proposes first values, and the pilot corrects them.
-- The model files' licenses, checked before either ships (ADR-0024).
+- The model files' licenses, checked before either ships (ADR-0024). The embedding model's are (#476, §2); the stance model's are #478's.

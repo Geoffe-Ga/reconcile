@@ -6,7 +6,9 @@
 # RECONCILE_DEPLOY_HOST (an SSH destination, such as deploy@<vm>) and
 # RECONCILE_SITE (the domain) from the environment, or else from the
 # gitignored deploy/.env. Then it:
-#   1. builds the client (npm ci, npm run build);
+#   1. builds the client (npm ci, client/scripts/models.sh, which fetches the
+#      Bedfellows model's files by their pinned SHA-256, and npm run build,
+#      which fails without them);
 #   2. syncs client/dist to /srv/reconcile/app/, and the relay (reconcile/,
 #      requirements.txt, the units and the Caddyfile) to /opt/reconcile/src/.
 #      It never touches /var/lib/reconcile, where the database lives;
@@ -39,7 +41,7 @@ READY_SECONDS=120
 
 case "${1:-}" in
     "") ;;
-    --help) sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --help) sed -n '2,29p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "Error: Unknown option: $1" >&2; exit 2 ;;
 esac
 
@@ -180,7 +182,10 @@ echo "deploy: $revision to $site"
 
 # 1. Build.
 npm --prefix "$PROJECT_ROOT/client" ci --no-audit --no-fund --loglevel=error
-npm --prefix "$PROJECT_ROOT/client" run build --silent
+# The model's files are too large for git: fetch them, each checked against
+# its pin, and make the build fail rather than ship without them (#476).
+"$PROJECT_ROOT/client/scripts/models.sh" || die "couldn't fetch the model's files."
+RECONCILE_MODELS=required npm --prefix "$PROJECT_ROOT/client" run build --silent
 [[ -f "$PROJECT_ROOT/client/dist/index.html" ]] || die "the build left no client/dist/index.html."
 summary="built client"
 
