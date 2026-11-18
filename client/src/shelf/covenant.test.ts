@@ -23,8 +23,8 @@ import {
  */
 const PINNED: Readonly<Record<number, readonly number[]>> = {
   1: [
-    219, 57, 51, 148, 122, 188, 31, 94, 96, 209, 150, 22, 25, 206, 144, 230, 234, 240, 228, 80, 160,
-    70, 54, 243, 99, 199, 112, 223, 229, 159, 61, 122,
+    192, 33, 54, 78, 222, 169, 190, 141, 192, 172, 138, 9, 38, 233, 138, 70, 122, 174, 13, 115, 107,
+    74, 128, 154, 45, 131, 101, 239, 75, 147, 143, 185,
   ],
 };
 
@@ -49,7 +49,7 @@ describe('the covenant a listing accepts (ADR-0081 §3)', () => {
   it('is the pilot draft: ADR-0035’s placeholder core, then no spam, then no impersonation', () => {
     expect(COVENANT.draft).toBe(true);
     expect(COVENANT_CLAUSES).toEqual([
-      "Reconcile does not carry calls for violence against people, or speech that denies any group's humanity.",
+      'Reconcile does not carry calls for violence against people, or speech that denies any group’s humanity.',
       'A listed group does not post spam.',
       'A listed group does not pretend to be another group or person.',
     ]);

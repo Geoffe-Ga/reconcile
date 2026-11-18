@@ -30,11 +30,11 @@ export interface Covenant {
 }
 
 /**
- * The pilot draft's clauses: C1, ADR-0035's placeholder core, verbatim; C2,
+ * The pilot draft's clauses: C1, ADR-0035's placeholder core in its words (with the app's curly apostrophe); C2,
  * no spam; C3, no impersonation of another group or person.
  */
 export const COVENANT_CLAUSES: readonly string[] = [
-  "Reconcile does not carry calls for violence against people, or speech that denies any group's humanity.",
+  'Reconcile does not carry calls for violence against people, or speech that denies any group’s humanity.',
   'A listed group does not post spam.',
   'A listed group does not pretend to be another group or person.',
 ];

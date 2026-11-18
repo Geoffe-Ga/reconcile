@@ -57,7 +57,7 @@ A group can list its front door. A listed group can publish single Dispatches to
 ### 3.2 The covenant
 
 - **The text ships with the app** in `client/src/shelf/covenant.ts`, versioned, with its hash pinned by a test.
-- **The pilot draft has three clauses:** C1, ADR-0035's placeholder core; C2, no spam; C3, no impersonation of another group or person. As shipped (#485): "Reconcile does not carry calls for violence against people, or speech that denies any group's humanity.", "A listed group does not post spam." and "A listed group does not pretend to be another group or person."
+- **The pilot draft has three clauses:** C1, ADR-0035's placeholder core; C2, no spam; C3, no impersonation of another group or person. As shipped (#485): "Reconcile does not carry calls for violence against people, or speech that denies any group’s humanity." (ADR-0035's words, set with the app's curly apostrophe), "A listed group does not post spam." and "A listed group does not pretend to be another group or person."
 - **It is marked a draft on screen.** The wording waits on ADR-0035 and counsel. A new version changes the hash, and a group re-accepts by an ordinary rules Proposal.
 
 ### 3.3 When a listing ends
