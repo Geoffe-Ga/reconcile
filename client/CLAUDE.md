@@ -57,7 +57,7 @@ npm run build            # production build
   - network libraries belong in `src/net/` only
   - only `src/crypto` imports `@noble/*`, and `src/crypto` imports no other third-party package but `shamir-secret-sharing`, which only `src/crypto/shares.ts` imports (#109)
 - **Tracked sources:** `scripts/tracked.sh` fails when git ignores anything in `client/` but tool output, because CI's checkout wouldn't have it (the root's Python `build/` rule once hid `client/build/`, #76)
-- **Audit:** `npm audit --audit-level=moderate`
+- **Audit:** `scripts/audit.sh`: `npm audit --audit-level=moderate`, production dependencies with no exception. A dev-tooling advisory with no patched release passes only while it's on `.npm-audit-known-vulnerabilities` with an `expires=` date at most 30 days out, which `scripts/auditKnown.mjs` enforces (#495; the cve-remediation skill's last resort)
   - `package.json` `overrides` pin `minimatch` and `qs` to patched releases. Remove an override once its upstream package ships the fix
 - **Fonts:** self-hosted through `@fontsource-variable/*`, never fetched from a third party
 
