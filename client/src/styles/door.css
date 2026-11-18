@@ -143,3 +143,17 @@
 .door-card-form {
   gap: var(--space-3);
 }
+
+/* The covenant a listing accepts (#485): read as a document, its draft mark beside the heading. */
+.covenant-clauses {
+  max-width: 34em;
+  margin: 0;
+  padding-inline-start: 1.5em;
+  color: var(--ink);
+  font: var(--type-document);
+}
+
+.covenant-draft {
+  margin-inline-start: var(--space-2);
+  vertical-align: middle;
+}

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { OFF, rulesChange } from '../engine/optIns';
-import { COUNTED, DOOR, ROTATED } from '../test/door';
+import { COUNTED, COVENANT_HASH, DOOR, LISTED, RENEWED, ROTATED } from '../test/door';
 import { authorOf } from '../test/keys';
 import { groupLog } from '../test/votes';
 import { directionOf, optInState, type RulesView, rulesView, webhookTail } from './optInLines';
@@ -43,6 +43,7 @@ describe('rulesView: what a rules ballot decides, in words', () => {
       line: 'If this passes, the bot posts content-free nudges in the channel the webhook belongs to.',
       passed: 'This passed. The Discord chat bot is on.',
       tail: 'WXYZ',
+      covenant: null,
     });
   });
 
@@ -85,6 +86,7 @@ describe('rulesView: what a rules ballot decides, in words', () => {
       line: 'If this passes, the front door changes. It moves to a new link, and the old link closes.',
       passed: 'This passed. The front door changed.',
       tail: null,
+      covenant: null,
     });
     expect(rulesView(change('frontDoor', COUNTED, open)).line).toBe(
       'If this passes, the front door changes. Its page shows how many people are in your group.',
@@ -94,6 +96,71 @@ describe('rulesView: what a rules ballot decides, in words', () => {
     );
     expect(rulesView(change('frontDoor', { ...ROTATED, showCount: true }, open)).line).toBe(
       'If this passes, the front door changes. It moves to a new link, and the old link closes. Its page shows how many people are in your group.',
+    );
+  });
+});
+
+describe('rulesView of a listing (#485; listed-doors.md §3.1)', () => {
+  const open = { ...OFF, frontDoor: DOOR };
+  const listed = { ...OFF, frontDoor: LISTED };
+
+  it('heads listing an open door with its own motion, and names the covenant it accepts', () => {
+    expect(rulesView(change('frontDoor', LISTED, open))).toEqual<RulesView>({
+      optIn: 'frontDoor',
+      title: 'List the front door on the public shelf',
+      line: 'If this passes, the front door changes. Your group’s name goes on the public shelf, under the covenant below.',
+      passed: 'This passed. Your group’s front door is listed on the public shelf.',
+      tail: null,
+      covenant: COVENANT_HASH,
+    });
+  });
+
+  it('words opening and listing at once as opening, with the listing after it', () => {
+    const view = rulesView(change('frontDoor', LISTED));
+    expect(view).toMatchObject({
+      title: 'Open a front door',
+      line: 'If this passes, your group gets a public page where people can ask to join. Your group’s name goes on the public shelf, under the covenant below.',
+      passed: 'This passed. Your group’s front door is open and listed on the public shelf.',
+      covenant: COVENANT_HASH,
+    });
+  });
+
+  it('words unlisting, and closing a listed door, with no covenant to show', () => {
+    expect(rulesView(change('frontDoor', DOOR, listed))).toEqual<RulesView>({
+      optIn: 'frontDoor',
+      title: 'Take the front door off the public shelf',
+      line: 'If this passes, the front door changes. Your group comes off the public shelf.',
+      passed: 'This passed. Your group’s front door is off the public shelf.',
+      tail: null,
+      covenant: null,
+    });
+    expect(rulesView(change('frontDoor', false, listed)).line).toBe(
+      'If this passes, the front door closes. Your group comes off the public shelf.',
+    );
+  });
+
+  it('words accepting another covenant version, and names it', () => {
+    expect(rulesView(change('frontDoor', RENEWED, listed))).toMatchObject({
+      title: 'Accept the new covenant',
+      line: 'If this passes, the front door changes. Your group’s listing accepts the covenant below in place of the one it accepted before.',
+      passed: 'This passed. Your group’s listing accepts the new covenant.',
+      covenant: RENEWED.covenant,
+    });
+  });
+
+  it('shows no covenant when a listed door changes in another way only', () => {
+    const view = rulesView(change('frontDoor', { ...LISTED, showCount: true }, listed));
+    expect(view.covenant).toBeNull();
+    expect(view.title).toBe('Change the front door');
+  });
+
+  it('keeps the general heading when the door’s link or count changes beside its listing', () => {
+    const view = rulesView(
+      change('frontDoor', { ...ROTATED, listed: true, covenant: COVENANT_HASH }, open),
+    );
+    expect(view.title).toBe('Change the front door');
+    expect(view.line).toBe(
+      'If this passes, the front door changes. It moves to a new link, and the old link closes. Your group’s name goes on the public shelf, under the covenant below.',
     );
   });
 });

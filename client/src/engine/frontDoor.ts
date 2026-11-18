@@ -17,10 +17,17 @@
  * each device as applications do. What the log holds of one is
  * `door-card-closed`: a member who may propose brought it to a vote or
  * dismissed it, so every device stops showing it ({@link mayCloseCard}).
+ *
+ * A front door may also be listed in the public registry (#485; ADR-0081):
+ * its value carries the covenant its group accepted. The listing is part of
+ * the door, so it ends whenever the door closes, by a vote, by a steward's
+ * narrowing or when a membership ends (#288), and relisting takes a new
+ * opening Proposal, with fresh secrets and a new address
+ * ({@link listingInEffect}; docs/spec/listed-doors.md §3.3).
  */
 import { base64url, fromBase64url } from '../crypto/base64url';
 import { can, type Roster } from './capabilities';
-import { effectiveOptIn, type OptInState } from './optIns';
+import { effectiveOptIn, listedUnder, type OptInState } from './optIns';
 
 /** A SHA-256 in unpadded base64url: 43 characters. */
 const DIGEST = /^[A-Za-z0-9_-]{43}$/;
@@ -115,4 +122,15 @@ export function mayCloseCard(state: DoorCardState, author: string, card: string)
     can(state, author, 'propose') &&
     cardClosedFor(state, card) === undefined
   );
+}
+
+/**
+ * The covenant the front door is listed under at `state.at` (#485), or null
+ * when it isn't listed: the door is closed, a steward's narrowing holds it
+ * shut, or its group never listed it. A listing ends with its door.
+ */
+export function listingInEffect(
+  state: Pick<OptInState, 'rules' | 'proposals' | 'narrowings' | 'at'>,
+): string | null {
+  return listedUnder(effectiveOptIn(state, 'frontDoor'));
 }

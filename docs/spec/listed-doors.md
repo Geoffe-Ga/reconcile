@@ -38,6 +38,8 @@ A group can list its front door. A listed group can publish single Dispatches to
 
 ## 3. Listing a door
 
+**Built.** #485 built §3.1 to §3.3: the front door's value with `listed` and `covenant`, its class, the covenant module, the composer, the ballot and the Group rules lines. That contract now lives in [`phase-1/04-events/07-opt-ins.md`](phase-1/04-events/07-opt-ins.md) and [`phase-1/08-screens.md`](phase-1/08-screens.md) (items 11 and 8). Nothing is posted to the shelf yet: §4.5 is a later issue's.
+
 ### 3.1 The opt-in
 
 - **The front door's value gains two fields:** `{sign, box, showCount, listed, covenant}`. `listed` is a boolean. `covenant` is present only when `listed` is true: the SHA-256 of the covenant text the group read, in unpadded base64url.
@@ -45,12 +47,17 @@ A group can list its front door. A listed group can publish single Dispatches to
 - **One Proposal can open and list** a door, or list a door that is already open.
 - **The composer and the ballot show the covenant's text** and one plain line: "Your group's name will be public beside the words it votes to publish. Anyone can read them, and copy them before they come down."
 - **A group is never prompted toward listing.** It appears only in Group rules, under the front door.
-- **Older apps.** A build from before this change refuses a front door value with fields it doesn't know. The issue decides how the new fields reach older devices without splitting the fold (see #459).
+- **Older apps (decided in #485).** A build from before #485 refuses a front door value with fields it doesn't know (see #459), so it ignores a Proposal carrying one and every vote on it. The decision:
+  - **An unlisted door is written as before #485,** `{sign, box, showCount}`, never with `listed: false` (which every build from #485 reads as the same door). So opening, rotating, counting and closing a door that isn't listed fold the same on every build. Only a Proposal that lists a door, accepts a new covenant or unlists one is new to an older build.
+  - **An older device lags; the log never splits.** Every device holds the same records, the fold is a pure function of them, and no build stores folded state, so a device that updates refolds the same records and agrees with every other device at once. ADR-0057's background update applies at the next launch.
+  - **Until it updates,** an older device doesn't show a listing Proposal; numbers the Proposals after it one lower; keeps a door that one Proposal opened and listed closed; and, since it reads the door as it stood before, may class its own later door Proposal differently from newer devices. None of this reaches the log: newer devices fold it as written.
+  - **The pilot rule:** every device in a group runs a build with #485 before that group's first listing Proposal. A listing runs 14 to 28 days and, during the pilot, the steward releases only the founder's own groups, so updating meets it. It stands as ADR-0075's rule for key changes does. The founder accepted it on 2026-11-18.
+  - **Rejected:** a separate opt-in for the listing, since an older build ignores an opt-in it doesn't know just as it ignores an unknown field, and it would split opening and listing into two votes; a new event version `v`, since an older build ignores every event of an unknown version (`admits` in `fold.ts`), the same outcome, and ADR-0057's per-version validators aren't built; and carrying the listing beside the value, or on a key rotation, since an older build would then fold a listing as no change, or as an ordinary rotation where newer builds see an entrenched listing, a real split in outcome rather than a lag.
 
 ### 3.2 The covenant
 
 - **The text ships with the app** in `client/src/shelf/covenant.ts`, versioned, with its hash pinned by a test.
-- **The pilot draft has three clauses:** C1, ADR-0035's placeholder core; C2, no spam; C3, no impersonation of another group or person.
+- **The pilot draft has three clauses:** C1, ADR-0035's placeholder core; C2, no spam; C3, no impersonation of another group or person. As shipped (#485): "Reconcile does not carry calls for violence against people, or speech that denies any group's humanity.", "A listed group does not post spam." and "A listed group does not pretend to be another group or person."
 - **It is marked a draft on screen.** The wording waits on ADR-0035 and counsel. A new version changes the hash, and a group re-accepts by an ordinary rules Proposal.
 
 ### 3.3 When a listing ends

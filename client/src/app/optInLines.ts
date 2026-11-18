@@ -10,6 +10,7 @@ import {
   isFrontDoor,
   isNarrowed,
   isOff,
+  listedUnder,
   type OptIn,
   type RulesChange,
 } from '../engine/optIns';
@@ -55,6 +56,44 @@ function doorChanges(change: RulesChange): string[] {
   return [...moves, change.value.showCount ? doorCount.shows : doorCount.hides];
 }
 
+/** What a front door change does to its listing (#485), or null when it leaves it as it is. */
+export type ListingChange = 'list' | 'unlist' | 'renew';
+
+/**
+ * How `change` moves the front door's listing: it lists a door that wasn't,
+ * unlists or closes one that was, or accepts another covenant (#485).
+ */
+export function listingChangeOf(change: RulesChange): ListingChange | null {
+  if (change.optIn !== 'frontDoor') return null;
+  const from = listedUnder(change.from);
+  const to = listedUnder(change.value);
+  if (from === to) return null;
+  if (from === null) return 'list';
+  return to === null ? 'unlist' : 'renew';
+}
+
+/** True when `change` keeps an open door's keys and count, so only its listing changes. */
+function onlyListing(change: RulesChange): boolean {
+  const { from, value } = change;
+  return (
+    isFrontDoor(from) &&
+    isFrontDoor(value) &&
+    from.sign === value.sign &&
+    from.box === value.box &&
+    from.showCount === value.showCount
+  );
+}
+
+/** The heading and the pass of `change`, when they're its listing's own (#485), or null. */
+function listingWords(change: RulesChange, listing: ListingChange | null) {
+  const { motions, passed, openedAndListed } = messages.optIns.listing;
+  if (listing === null) return null;
+  if (onlyListing(change)) return { title: motions[listing], passed: passed[listing] };
+  return listing === 'list' && isOff(change.optIn, change.from)
+    ? { title: wordsFor(messages.optIns.motions, change), passed: openedAndListed }
+    : null;
+}
+
 /** What a rules ballot decides, in words (#117). */
 export interface RulesView {
   readonly optIn: OptIn;
@@ -66,6 +105,12 @@ export interface RulesView {
   readonly passed: string;
   /** The last 4 characters of the webhook it would set, or null for none. */
   readonly tail: string | null;
+  /**
+   * The covenant hash a front door Proposal asks the group to accept, when it
+   * lists the door or accepts another version (#485), so its ballot shows the
+   * covenant; else null.
+   */
+  readonly covenant: string | null;
 }
 
 /**
@@ -76,14 +121,37 @@ export interface RulesView {
  */
 export function rulesView(change: RulesChange, exposed = false): RulesView {
   const { motions, lines, passed } = messages.optIns;
-  const webhook = change.optIn === 'chatBot' ? (change.value?.webhook ?? null) : null;
   const left = exposed ? [messages.optIns.exposed.line] : [];
+  const listing = listingView(change);
+  const own = listing.words;
   return {
     optIn: change.optIn,
-    title: wordsFor(motions, change),
-    line: [wordsFor(lines, change), ...doorChanges(change), ...left].join(' '),
-    passed: exposed ? messages.optIns.exposed.passed : wordsFor(passed, change),
-    tail: webhook === null ? null : webhookTail(webhook),
+    title: own?.title ?? wordsFor(motions, change),
+    line: [wordsFor(lines, change), ...doorChanges(change), ...listing.line, ...left].join(' '),
+    passed: exposed ? messages.optIns.exposed.passed : (own?.passed ?? wordsFor(passed, change)),
+    tail: tailOf(change),
+    covenant: listing.covenant,
+  };
+}
+
+/** The last 4 characters of the webhook a chat bot change would set, or null for none. */
+function tailOf(change: RulesChange): string | null {
+  const webhook = change.optIn === 'chatBot' ? (change.value?.webhook ?? null) : null;
+  return webhook === null ? null : webhookTail(webhook);
+}
+
+/**
+ * What a change does to the front door's listing, in words (#485): its
+ * sentence after the line, its own heading and pass when it has them, and
+ * the covenant it asks the group to accept, when it lists or renews.
+ */
+function listingView(change: RulesChange) {
+  const listing = listingChangeOf(change);
+  const accepts = listing === 'list' || listing === 'renew';
+  return {
+    line: listing === null ? [] : [messages.optIns.listing.lines[listing]],
+    words: listingWords(change, listing),
+    covenant: accepts ? listedUnder(change.value) : null,
   };
 }
 

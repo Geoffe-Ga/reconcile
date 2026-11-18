@@ -1,10 +1,12 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { COUNTED, DOOR, doorOf, ROTATED } from '../test/door';
+import { COUNTED, COVENANT_HASH, DOOR, doorOf, LISTED, RENEWED, ROTATED } from '../test/door';
 import { authorOf } from '../test/keys';
+import { vector } from '../test/vectors';
 import { groupLog } from '../test/votes';
 import { LEVELS } from './capabilities';
+import { fold } from './fold';
 import {
   doorIn,
   effectiveOptIn,
@@ -266,6 +268,99 @@ describe('isWider: only what outsiders can see or reach widens (ADR-0040, ADR-00
     expect(sameValue('frontDoor', DOOR, ROTATED)).toBe(false);
     expect(sameValue('frontDoor', DOOR, { ...DOOR, sign: ROTATED.sign })).toBe(false);
     expect(sameValue('frontDoor', DOOR, { ...DOOR, box: ROTATED.box })).toBe(false);
+  });
+});
+
+describe('a listed front door (#485; ADR-0081; listed-doors.md §3.1)', () => {
+  const sign = DOOR.sign;
+  const box = DOOR.box;
+
+  it('makes listing an open door entrenched and unlisting it ordinary', () => {
+    const open = { sign, box, showCount: false, listed: false };
+    const listed = { ...open, listed: true, covenant: COVENANT_HASH };
+    expect(isWider('frontDoor', open, listed)).toBe(true);
+    expect(isWider('frontDoor', listed, open)).toBe(false);
+  });
+
+  it('takes {sign, box, showCount, listed, covenant}, the covenant there exactly when it is listed', () => {
+    expect(isOptInValue('frontDoor', LISTED)).toBe(true);
+    expect(isOptInValue('frontDoor', { ...DOOR, listed: false })).toBe(true);
+    expect(isOptInValue('frontDoor', DOOR)).toBe(true);
+  });
+
+  it.each([
+    ['listed with no covenant', { ...DOOR, listed: true }],
+    ['a covenant while unlisted', { ...DOOR, listed: false, covenant: COVENANT_HASH }],
+    ['a covenant with no listed', { ...DOOR, covenant: COVENANT_HASH }],
+    ['a covenant of 31 bytes', { ...LISTED, covenant: COVENANT_HASH.slice(0, 42) }],
+    ['a covenant of 33 bytes', { ...LISTED, covenant: `${COVENANT_HASH}A` }],
+    [
+      'a covenant spelled with spare bits set',
+      { ...LISTED, covenant: `${COVENANT_HASH.slice(0, 42)}b` },
+    ],
+    ['a covenant that is not text', { ...LISTED, covenant: 5 }],
+    ['a listed that is not true or false', { ...LISTED, listed: 'yes' }],
+    ['an extra field beside the listing', { ...LISTED, name: 'Riverside Tenants' }],
+  ])('refuses a front door with %s', (_name, value) => {
+    expect(isOptInValue('frontDoor', value)).toBe(false);
+  });
+
+  it('opening and listing at once is entrenched, as opening is', () => {
+    expect(isWider('frontDoor', false, LISTED)).toBe(true);
+  });
+
+  it('keeps unlisting, closing a listed door and accepting a new covenant version ordinary', () => {
+    expect(isWider('frontDoor', LISTED, DOOR)).toBe(false);
+    expect(isWider('frontDoor', LISTED, false)).toBe(false);
+    expect(isWider('frontDoor', LISTED, RENEWED)).toBe(false);
+    expect(isWider('frontDoor', { ...LISTED, showCount: true }, DOOR)).toBe(false);
+  });
+
+  it('widens when any one of open, count and listed grows, even as another shrinks', () => {
+    expect(isWider('frontDoor', COUNTED, LISTED)).toBe(true);
+    expect(isWider('frontDoor', LISTED, COUNTED)).toBe(true);
+    expect(isWider('frontDoor', DOOR, { ...ROTATED, listed: true, covenant: COVENANT_HASH })).toBe(
+      true,
+    );
+  });
+
+  it('reads an unlisted door written with or without listed: false as the same door', () => {
+    expect(sameValue('frontDoor', DOOR, { ...DOOR, listed: false })).toBe(true);
+    expect(sameValue('frontDoor', DOOR, LISTED)).toBe(false);
+    expect(sameValue('frontDoor', LISTED, { ...LISTED })).toBe(true);
+    expect(sameValue('frontDoor', LISTED, RENEWED)).toBe(false);
+  });
+
+  it('leaves an unlisted door written as before #485 once a group unlists it (listed-door-unlist)', () => {
+    const { records, relayNow } = vector('listed-door-unlist');
+    const state = fold(records, relayNow);
+    expect(state.rules.optIns.frontDoor).toStrictEqual(DOOR);
+    expect(state.optIns.frontDoor).toStrictEqual(DOOR);
+  });
+
+  it('widens exactly when one of open, count and listed grows, whatever the keys and covenant (fast-check)', () => {
+    const byte = fc.integer({ min: 0, max: 255 });
+    const door = fc.oneof(
+      fc.constant<false>(false),
+      fc
+        .record({ sign: byte, box: byte, count: fc.boolean(), covenant: fc.option(byte) })
+        .map(({ sign: s, box: b, count, covenant }) => {
+          const open = doorOf(s, b, count);
+          if (covenant === null) return open;
+          const hash = doorOf(covenant, covenant).sign;
+          return { ...open, listed: true, covenant: hash };
+        }),
+    );
+    const flags = (value: false | { readonly showCount: boolean; readonly listed?: boolean }) =>
+      value === false ? [false, false, false] : [true, value.showCount, value.listed === true];
+    fc.assert(
+      fc.property(door, door, (from, to) => {
+        expect(isOptInValue('frontDoor', to)).toBe(true);
+        const before = flags(from);
+        const grows = flags(to).some((on, i) => on && before[i] !== true);
+        expect(isWider('frontDoor', from, to)).toBe(grows);
+      }),
+    );
   });
 });
 

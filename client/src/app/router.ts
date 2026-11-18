@@ -94,6 +94,8 @@ export type Route =
       readonly optIn: OptIn;
       /** True for a steward's Turn off now, which also narrows it at once (#117). */
       readonly narrow: boolean;
+      /** True to list the open front door, or unlist a listed one (#485). */
+      readonly listing?: true;
     }
   | { readonly name: 'dissolve'; readonly groupId: string }
   /** Propose removing a member (#115), by their key in the group. */
@@ -159,6 +161,13 @@ function stewardPage(groupId: string, recall: boolean, arg: string): Route {
 /** `rules/{optIn}` or, when `narrow`, `narrow/{optIn}`: the opt-in composer (#117). */
 function optInPage(groupId: string, narrow: boolean, arg: string): Route {
   return isOptIn(arg) ? { name: 'optIn', groupId, optIn: arg, narrow } : START;
+}
+
+/** `list/frontDoor`: the opt-in composer, listing the front door or unlisting it (#485). */
+function listingPage(groupId: string, arg: string): Route {
+  return arg === 'frontDoor'
+    ? { name: 'optIn', groupId, optIn: arg, narrow: false, listing: true }
+    : START;
 }
 
 /**
@@ -242,6 +251,7 @@ const ARG_PAGES: ReadonlyMap<string, ArgPage> = new Map<string, ArgPage>([
   ['recall', (groupId, arg) => stewardPage(groupId, true, arg)],
   ['rules', (groupId, arg) => optInPage(groupId, false, arg)],
   ['narrow', (groupId, arg) => optInPage(groupId, true, arg)],
+  ['list', (groupId, arg) => listingPage(groupId, arg)],
   ['remove-member', idPage(ID, (groupId, member) => ({ name: 'removal', groupId, member }))],
 ]);
 
@@ -263,8 +273,9 @@ const BARE_PAGES: ReadonlyMap<string, ArgPage> = new Map<string, ArgPage>([
  * `remove/{atomId}` (#75), `add-header/{atomId}`, `add-subheader/{atomId}`,
  * `add-first-header/{documentId}`, `add-first-subheader/{documentId}` and
  * `move/{atomId}` (#103), `steward/{seat}`, `recall/{seat}`, `rules/{optIn}`,
- * `narrow/{optIn}` or `remove-member/{member}` (#115), which a section's own
- * `remove` can't share: an added Atom's id is a Proposal's.
+ * `narrow/{optIn}`, `list/frontDoor` (#485) or `remove-member/{member}`
+ * (#115), which a section's own `remove` can't share: an added Atom's id is a
+ * Proposal's.
  */
 function groupPage(groupId: string, page: string, arg: string | undefined): Route {
   const fixed = FIXED_PAGES.get(arg === undefined ? page : `${page}/${arg}`);
@@ -492,8 +503,12 @@ function stewardPath(route: Extract<Route, { readonly name: 'steward' }>): strin
   return `/${page}/${String(route.seat)}`;
 }
 
-/** An opt-in composer's path: `/narrow/{optIn}` for Turn off now, else `/rules/{optIn}` (#117). */
+/**
+ * An opt-in composer's path: `/narrow/{optIn}` for Turn off now, `/list/{optIn}`
+ * for a listing (#485), else `/rules/{optIn}` (#117).
+ */
 function optInPath(route: Extract<Route, { readonly name: 'optIn' }>): string {
+  if (route.listing === true) return `/list/${route.optIn}`;
   return `/${route.narrow ? 'narrow' : 'rules'}/${route.optIn}`;
 }
 

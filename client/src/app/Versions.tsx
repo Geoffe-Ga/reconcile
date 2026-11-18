@@ -11,6 +11,7 @@
 import { type ReactNode, useId } from 'react';
 import { Button, Disclosure, DisclosurePanel, Heading } from 'react-aria-components';
 
+import { CovenantText } from './Covenant';
 import { messages } from './messages';
 import type { RulesView } from './optInLines';
 import { MotionTitle, Named } from './stewards';
@@ -56,7 +57,10 @@ function Change({ version, current }: Omit<VersionCardProps, 'children'>) {
   );
 }
 
-/** What a rules ballot decides passing does, and the webhook it would set, by its last 4 only (#117). */
+/**
+ * What a rules ballot decides passing does, the webhook it would set, by its
+ * last 4 only (#117), and the covenant a listing accepts (#485).
+ */
 function RulesLines({ rules }: { readonly rules: RulesView }) {
   return (
     <>
@@ -66,6 +70,7 @@ function RulesLines({ rules }: { readonly rules: RulesView }) {
           {messages.optIns.webhookEnding} <span className="webhook-tail">{rules.tail}</span>
         </p>
       )}
+      {rules.covenant === null ? null : <CovenantText hash={rules.covenant} level={4} />}
     </>
   );
 }

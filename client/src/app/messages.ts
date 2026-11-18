@@ -1264,6 +1264,41 @@ export const messages = {
       hides: 'Its page stops showing how many people are in your group.',
       moves: 'It moves to a new link, and the old link closes.',
     },
+    /**
+     * A listing (#485; ADR-0081): what passing does, after the line; the
+     * heading and the pass of a change to the listing alone; and an opening
+     * that also lists.
+     */
+    listing: {
+      lines: {
+        list: 'Your group’s name goes on the public shelf, under the covenant below.',
+        unlist: 'Your group comes off the public shelf.',
+        renew:
+          'Your group’s listing accepts the covenant below in place of the one it accepted before.',
+      },
+      motions: {
+        list: 'List the front door on the public shelf',
+        unlist: 'Take the front door off the public shelf',
+        renew: 'Accept the new covenant',
+      },
+      passed: {
+        list: 'This passed. Your group’s front door is listed on the public shelf.',
+        unlist: 'This passed. Your group’s front door is off the public shelf.',
+        renew: 'This passed. Your group’s listing accepts the new covenant.',
+      },
+      openedAndListed:
+        'This passed. Your group’s front door is open and listed on the public shelf.',
+      /** Opening a door's choice to list it too, never ticked for the proposer. */
+      choiceLabel: 'Also list it on the public shelf',
+      choiceHint:
+        'Its name goes in a public list anyone with the app can read. Your group votes on a covenant too.',
+      proposeList: 'Propose listing this door',
+      proposeUnlist: 'Propose taking it off the shelf',
+      /** Group rules, under an open front door that is listed. */
+      listed: 'Listed on the public shelf, under the covenant your group accepted.',
+      unavailable:
+        'Only an open front door can be listed. Go back to your group’s rules to see where it stands.',
+    },
     /** A pass's outcome sentence. */
     passed: {
       chatBot: {
@@ -1309,6 +1344,20 @@ export const messages = {
       'Your group may be voting on this already. Go back to your group’s rules to see where it stands.',
     nowUnavailable:
       'You can’t turn this off at once right now. You can still propose turning it off.',
+  },
+  /**
+   * The covenant a listed door accepts (#485; ADR-0081 §3), wherever it
+   * shows: the listing composer and the ballot. Its text lives in
+   * src/shelf/covenant.ts; this is what is said around it.
+   */
+  covenant: {
+    heading: 'The covenant',
+    draft: 'Draft',
+    draftLine: 'This is a draft. Its wording isn’t final yet.',
+    exposure:
+      'Your group’s name will be public beside the words it votes to publish. Anyone can read them, and copy them before they come down.',
+    unknown:
+      'This vote names a covenant this app doesn’t have. Update Reconcile to read it before you vote.',
   },
   /**
    * A group's front door (#121; ADR-0038): the public page, its form, and
