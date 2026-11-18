@@ -27,7 +27,7 @@ const OPEN: ShelfBody = {
   kind: 'listing',
   open: true,
   name: NAME,
-  skeleton: NAME,
+  skeleton: 'riversidetenants',
   covenant: COVENANT_HASH,
 };
 const FINAL: ShelfBody = { v: 1, kind: 'listing', open: false, final: true };
@@ -122,6 +122,13 @@ describe('listingsDue: what a listed group keeps on the shelf (§4.5)', () => {
   it('cuts a longer name to 120 code points, the last of them "…"', () => {
     const state = { ...opened().state(), name: 'x'.repeat(130) };
     expect(listingsDue(state)[0]?.[1]).toMatchObject({ name: `${'x'.repeat(119)}…` });
+  });
+
+  it('carries the skeleton of the name it lists, cut or not (#487)', () => {
+    const state = { ...opened().state(), name: 'RIVERSIDE  Tenants-UNI0N '.repeat(6) };
+    expect(listingsDue(state)[0]?.[1]).toMatchObject({
+      skeleton: 'riversidetenantsunion'.repeat(4) + 'riversidetenants',
+    });
   });
 
   it.each([

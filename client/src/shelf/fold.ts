@@ -16,13 +16,23 @@
  *    does (#486): once a door's listing is final, the address has none, and
  *    no open copy after it, replayed or forged with a key someone kept,
  *    reopens it.
+ * 3. **Skeletons** (#487). The device recomputes a listing's skeleton from
+ *    its name (`skeleton.ts`). A listing whose `skeleton` differs is ignored,
+ *    as if it were never posted, so the copy before it stands.
+ * 4. **Name ownership** (#487). Among standing listings that share a
+ *    skeleton, the one with the lowest claim holds the name, and the others
+ *    are shadowed: neither they nor their entries show. A door claims its
+ *    skeleton from the first copy of its newest unbroken run of listings
+ *    under it, so a refresh or a respelling with the same skeleton keeps the
+ *    claim, while a door that renames into a name another door holds claims
+ *    it only from the rename. A tie, which only a faulty relay serves, goes
+ *    to the lower address, so no order of arrival changes who holds a name.
  *
  * An entry shows under its address's standing listing, with that listing's
  * name, newest first, once per address and id. Without a standing listing
- * it shows nowhere: an entry carries no name of its own.
+ * that holds its name it shows nowhere: an entry carries no name of its own.
  *
- * Still to come, each with the issue that builds it: skeletons and name
- * ownership (#487); the
+ * Still to come, each with the issue that builds it: the
  * caps, the day's wait and withdrawals (#431); and the steward's notices,
  * which fill `tombstones` and `paused` (#488, #489). Until then those two
  * stay empty and false, and `now`, the relay minute those rules read, is
@@ -31,6 +41,7 @@
 import { verifyShelfRecord } from '../crypto/shelf';
 import type { ShelfRecord } from '../net/shelf';
 import { type EntryBody, type OpenListingBody, parseShelfBody, type ShelfBody } from './record';
+import { nameSkeleton } from './skeleton';
 
 /** A listing that stands: a listed door's name, as readers see it. */
 export interface ShelfListing {
@@ -70,7 +81,7 @@ export interface ShelfTombstone {
 
 /** The shelf as a device shows it. */
 export interface ShelfState {
-  /** The standing listings, oldest standing copy first. */
+  /** The standing listings that hold their names, oldest standing copy first. */
   readonly listings: readonly ShelfListing[];
   /** The entries that show, newest first. */
   readonly entries: readonly ShelfEntry[];
@@ -92,24 +103,66 @@ interface Verified {
   readonly body: ShelfBody;
 }
 
-/** Rule 1: the record's body, when its address signed it and it parses; else null. */
+/** Whether `body` is an open listing whose skeleton isn't its name's (rule 3). */
+const misnamed = (body: ShelfBody): boolean =>
+  body.kind === 'listing' && body.open && body.skeleton !== nameSkeleton(body.name);
+
+/**
+ * Rules 1 and 3: the record's body, when its address signed it, it parses
+ * and, for an open listing, its skeleton is its name's; else null.
+ */
 function verified(record: ShelfRecord): Verified | null {
   const message = verifyShelfRecord(record.data, record.address);
   const body = message === null ? null : parseShelfBody(message);
-  return body === null ? null : { record, body };
+  return body === null || misnamed(body) ? null : { record, body };
 }
 
-/** Rule 2: each address's newest listing, unless any of its listings is final. */
-function standingListings(records: readonly Verified[]): Map<string, ShelfListing> {
-  const standing = new Map<string, ShelfListing>();
+/** An address's standing listing, its skeleton, and the seq its claim to that skeleton starts. */
+interface Claim {
+  readonly listing: ShelfListing;
+  readonly skeleton: string;
+  readonly since: number;
+}
+
+/**
+ * Rule 2: each address's newest listing, unless any of its listings is
+ * final, with the seq that started its run under that skeleton (rule 4).
+ */
+function standingClaims(records: readonly Verified[]): Map<string, Claim> {
+  const standing = new Map<string, Claim>();
   const ended = new Set<string>();
   for (const { record, body } of records) {
     if (body.kind !== 'listing') continue;
-    if (body.open) standing.set(record.address, listingOf(record, body));
-    else ended.add(record.address);
+    if (!body.open) {
+      ended.add(record.address);
+      continue;
+    }
+    const before = standing.get(record.address);
+    const since = before?.skeleton === body.skeleton ? before.since : record.seq;
+    standing.set(record.address, {
+      listing: listingOf(record, body),
+      skeleton: body.skeleton,
+      since,
+    });
   }
   for (const address of ended) standing.delete(address);
   return standing;
+}
+
+/** Whether `claim` comes before `other`: the lower seq, then the lower address. */
+const earlier = (claim: Claim, other: Claim): boolean =>
+  claim.since !== other.since
+    ? claim.since < other.since
+    : claim.listing.address < other.listing.address;
+
+/** Rule 4: the listings that hold their skeletons, by address. */
+function holders(claims: ReadonlyMap<string, Claim>): Map<string, ShelfListing> {
+  const bySkeleton = new Map<string, Claim>();
+  for (const claim of claims.values()) {
+    const held = bySkeleton.get(claim.skeleton);
+    if (held === undefined || earlier(claim, held)) bySkeleton.set(claim.skeleton, claim);
+  }
+  return new Map([...bySkeleton.values()].map(({ listing }) => [listing.address, listing]));
 }
 
 /** A standing listing from its record and open body. */
@@ -151,7 +204,7 @@ function entriesUnder(
 export const foldShelf: FoldShelf = (records) => {
   const inOrder = [...records].sort((a, b) => a.seq - b.seq);
   const valid = inOrder.map(verified).filter((item) => item !== null);
-  const listings = standingListings(valid);
+  const listings = holders(standingClaims(valid));
   return {
     listings: [...listings.values()].sort((a, b) => a.seq - b.seq),
     entries: entriesUnder(valid, listings),
@@ -159,3 +212,20 @@ export const foldShelf: FoldShelf = (records) => {
     paused: false,
   };
 };
+
+/**
+ * The standing listing that holds `name`'s skeleton on `shelf`, other than
+ * the one at `except`; else null. A listing under `name` would sit behind
+ * it, shadowed (rule 4), so the listing composer warns before the vote.
+ */
+export function nameHolder(
+  shelf: ShelfState,
+  name: string,
+  except: string | null,
+): ShelfListing | null {
+  const skeleton = nameSkeleton(name);
+  const held = shelf.listings.find(
+    (listing) => listing.address !== except && nameSkeleton(listing.name) === skeleton,
+  );
+  return held ?? null;
+}

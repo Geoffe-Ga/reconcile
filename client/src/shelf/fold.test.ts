@@ -1,17 +1,21 @@
 /**
- * The shelf's fold (#484, #486; docs/spec/listed-doors.md §4.3): rule 1, the
- * signature, and rule 2, the newest listing per address, which a final one
- * outranks. Every other rule is a named `it.todo` in the issue that builds it.
+ * The shelf's fold (#484, #486, #487; docs/spec/listed-doors.md §4.3): rule
+ * 1, the signature; rule 2, the newest listing per address, which a final
+ * one outranks; rule 3, the skeleton; and rule 4, name ownership, with its
+ * golden vectors in `vectors/ownership.json`. Every other rule is a named
+ * `it.todo` in the issue that builds it.
  */
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import { base64url } from '../crypto/base64url';
+import { sha256 } from '../crypto/hash';
 import { signShelfRecord } from '../crypto/shelf';
-import { newSigningKeys, type SigningKeys } from '../crypto/sign';
+import { newSigningKeys, publicKeyOf, type SigningKeys } from '../crypto/sign';
 import type { ShelfRecord } from '../net/shelf';
-import { foldShelf } from './fold';
+import { foldShelf, nameHolder, type ShelfState } from './fold';
 import { type ShelfBody, signShelfBody } from './record';
+import { nameSkeleton } from './skeleton';
 
 const NOW = 29_000_000;
 const COVENANT = base64url(new Uint8Array(32).fill(9));
@@ -33,16 +37,9 @@ function recordOf(
   return { seq: nextSeq, received: NOW - 2000 + nextSeq, address, data: signShelfBody(keys, body) };
 }
 
-/** An open listing under `name`, from the Oak St door unless told otherwise. */
-function listing(name: string, keys = OAK): ShelfRecord {
-  return recordOf(keys, {
-    v: 1,
-    kind: 'listing',
-    open: true,
-    name,
-    skeleton: name,
-    covenant: COVENANT,
-  });
+/** An open listing under `name` and its skeleton (unless given), from the Oak St door unless told otherwise. */
+function listing(name: string, keys = OAK, skeleton = nameSkeleton(name)): ShelfRecord {
+  return recordOf(keys, { v: 1, kind: 'listing', open: true, name, skeleton, covenant: COVENANT });
 }
 
 /** An entry with `label`'s id and `title`, from the Oak St door unless told otherwise. */
@@ -53,6 +50,69 @@ function entry(label: string, title: string, keys = OAK): ShelfRecord {
 /** The final listing of a door that closed. */
 function final(keys = OAK): ShelfRecord {
   return recordOf(keys, { v: 1, kind: 'listing', open: false, final: true });
+}
+
+/** `vectors/ownership.json`: which listings hold a name, and whose entries show. */
+interface OwnershipFile {
+  readonly kind: 'ownership';
+  readonly cases: readonly {
+    readonly about: string;
+    readonly records: readonly VectorRecord[];
+    readonly listings: readonly (readonly [string, string])[];
+    readonly entries: readonly (readonly [string, string])[];
+  }[];
+}
+
+/** A record as a vector writes it: an open listing, an entry's id label, or a final listing. */
+interface VectorRecord {
+  readonly seq: number;
+  readonly door: string;
+  readonly listing?: string;
+  readonly skeleton?: string;
+  readonly entry?: string;
+  readonly final?: true;
+}
+
+const [OWNERSHIP] = Object.values(
+  import.meta.glob<OwnershipFile>('./vectors/ownership.json', { import: 'default', eager: true }),
+);
+if (OWNERSHIP === undefined) throw new Error('vectors/ownership.json is missing.');
+
+/** A vector door's keys, from its label: the secret is the label's SHA-256. */
+function doorKeys(label: string): SigningKeys {
+  const secretKey = sha256(new TextEncoder().encode(`reconcile/vector/ownership/${label}`));
+  return { secretKey, publicKey: publicKeyOf(secretKey) };
+}
+
+/** A vector's record, signed by its door. */
+function recordFrom(vector: VectorRecord): ShelfRecord {
+  const keys = doorKeys(vector.door);
+  const body: ShelfBody =
+    vector.listing !== undefined
+      ? {
+          v: 1,
+          kind: 'listing',
+          open: true,
+          name: vector.listing,
+          skeleton: vector.skeleton ?? nameSkeleton(vector.listing),
+          covenant: COVENANT,
+        }
+      : vector.entry !== undefined
+        ? { v: 1, kind: 'entry', id: idOf(vector.entry), title: vector.entry, text: '' }
+        : { v: 1, kind: 'listing', open: false, final: true };
+  const address = base64url(keys.publicKey);
+  return { seq: vector.seq, received: NOW - 100, address, data: signShelfBody(keys, body) };
+}
+
+/** What `state` shows, by the vectors' door labels and entry titles. */
+function shown(state: ShelfState) {
+  const labels = new Map(
+    ['oak', 'birch', 'elm', 'ash'].map((label) => [base64url(doorKeys(label).publicKey), label]),
+  );
+  return {
+    listings: state.listings.map((l) => [labels.get(l.address), l.name]),
+    entries: state.entries.map((e) => [labels.get(e.address), e.title]),
+  };
 }
 
 describe('foldShelf', () => {
@@ -228,9 +288,95 @@ describe('foldShelf', () => {
     );
   });
 
+  describe('rule 3: skeletons (#487)', () => {
+    it('ignores a listing whose skeleton isn’t the one its name makes', () => {
+      const state = foldShelf(
+        [listing('Oak St Tenants', OAK, 'Oak St Tenants'), entry('d1', 'Rent strike vote')],
+        NOW,
+      );
+
+      expect(state).toEqual(foldShelf([], NOW));
+    });
+
+    it('keeps the copy before one whose skeleton is wrong', () => {
+      const state = foldShelf(
+        [listing('Oak St Tenants'), listing('Oak Street Tenants', OAK, 'oakstreettenant')],
+        NOW,
+      );
+
+      expect(state.listings.map((l) => l.name)).toEqual(['Oak St Tenants']);
+    });
+  });
+
+  describe('rule 4: name ownership (#487)', () => {
+    it('shadows a later listing that shares a skeleton, and its entries', () => {
+      const state = foldShelf(
+        [
+          listing('Eastside Tenants Union'),
+          listing('EASTSIDE TENANTS UNI0N', BIRCH),
+          entry('d2', 'Look at us', BIRCH),
+        ],
+        NOW,
+      );
+
+      expect(state.listings.map((l) => l.address)).toEqual([base64url(OAK.publicKey)]);
+      expect(state.entries).toEqual([]);
+    });
+
+    it('gives a name tied on seq, as only a faulty relay serves, to the lower address', () => {
+      const [oak, birch] = [listing('Oak St Tenants'), listing('0ak St Tenants', BIRCH)];
+      const tied = [oak, { ...birch, seq: oak.seq }] as ShelfRecord[];
+      const [lower] = [base64url(OAK.publicKey), base64url(BIRCH.publicKey)].sort();
+
+      expect(foldShelf(tied, NOW).listings.map((l) => l.address)).toEqual([lower]);
+      expect(foldShelf([...tied].reverse(), NOW).listings.map((l) => l.address)).toEqual([lower]);
+    });
+
+    it('gives a name to the same listing whatever order the records arrive in (fast-check)', () => {
+      const records = [
+        listing('Eastside Tenants Union'),
+        listing('Еastside Tenants Union', BIRCH),
+        entry('d2', 'Look at us', BIRCH),
+        listing('EASTSIDE TENANTS UNION'),
+        entry('d1', 'Rent strike vote'),
+        listing('Birch Ave', BIRCH),
+        listing('Eastside Tenants-Union', BIRCH),
+      ];
+      const folded = foldShelf(records, NOW);
+      expect(folded.listings.map((l) => l.name)).toEqual(['EASTSIDE TENANTS UNION']);
+      fc.assert(
+        fc.property(fc.shuffledSubarray(records, { minLength: records.length }), (shuffled) => {
+          expect(foldShelf(shuffled, NOW)).toEqual(folded);
+        }),
+      );
+    });
+  });
+
+  describe('nameHolder: the listing a new listing under a name would sit behind', () => {
+    const shelf = foldShelf([listing('Eastside Tenants Union'), listing('Birch Ave', BIRCH)], NOW);
+    const oak = base64url(OAK.publicKey);
+
+    it('finds the listing that holds a name like it', () => {
+      expect(nameHolder(shelf, 'EASTSIDE TENANTS UNI0N', null)?.address).toBe(oak);
+    });
+
+    it('finds none for a name no listing holds', () => {
+      expect(nameHolder(shelf, 'Westside Tenants Union', null)).toBeNull();
+    });
+
+    it('passes over the address it is asked about, so a door never sits behind itself', () => {
+      expect(nameHolder(shelf, 'Eastside Tenants Union', oak)).toBeNull();
+    });
+  });
+
+  describe('vectors/ownership.json', () => {
+    it.each(OWNERSHIP.cases.map((vector) => [vector.about, vector] as const))('%s', (_, vector) => {
+      const state = foldShelf(vector.records.map(recordFrom), NOW);
+      expect(shown(state)).toEqual({ listings: vector.listings, entries: vector.entries });
+    });
+  });
+
   describe('rules to come', () => {
-    it.todo('ignores a listing whose skeleton isn’t the one its name makes (#487)');
-    it.todo('shadows a later listing that shares a skeleton, and its entries (#487)');
     it.todo('shows only an address’s first 4 unexpired entries in seq order (#431)');
     it.todo('waits until the relay clock is 1,440 minutes past an entry’s receipt (#431)');
     it.todo('removes an entry its own address withdrew, and no other address’s (#431)');

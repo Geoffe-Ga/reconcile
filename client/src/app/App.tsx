@@ -161,6 +161,7 @@ import { GroupServicesContext, type GroupView, useCoalitionList, useGroup } from
 import { useGroupList, useGroups } from './useGroupList';
 import { useNow } from './useNow';
 import { usePasskeyState } from './usePasskeyState';
+import { usePublicShelf } from './usePublicShelf';
 import { useHeardRelay, usePersonalList } from './usePersonalList';
 import { DiscoverScreen } from './DiscoverScreen';
 import { chooseContacts } from '../store/recovery';
@@ -1318,9 +1319,14 @@ interface OptInScreenProps extends GroupScreenProps {
   readonly listing: boolean;
 }
 
-/** The opt-in composer (#117); sending a Proposal replaces it with the Proposal's ballot. */
+/**
+ * The opt-in composer (#117); sending a Proposal replaces it with the Proposal's ballot.
+ * The front door's reads the public shelf as Discover does, at most once an
+ * hour, to warn before listing under a name a listed group holds (#487).
+ */
 function OptInScreen({ services, groupId, optIn, narrow, listing }: OptInScreenProps) {
   const deviceNow = useNow(services.now);
+  const shelf = usePublicShelf(optIn === 'frontDoor' ? services.shelf : undefined);
   const onPropose = async (values: RulesValues): Promise<OptInOutcome> => {
     const result = await proposeRules(services, groupId, values);
     if (result.outcome === 'too-large') return result.outcome;
@@ -1339,6 +1345,7 @@ function OptInScreen({ services, groupId, optIn, narrow, listing }: OptInScreenP
           listing={listing}
           now={deviceNow}
           onPropose={onPropose}
+          shelf={shelf}
         />
       )}
     </GroupGate>

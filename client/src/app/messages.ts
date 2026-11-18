@@ -1301,6 +1301,9 @@ export const messages = {
       listed: 'Listed on the public shelf, under the covenant your group accepted.',
       unavailable:
         'Only an open front door can be listed. Go back to your group’s rules to see where it stands.',
+      /** Before a listing vote, when a listed group already holds a name like this one (#487). */
+      lookAlike:
+        'A listed group already uses a name like this. Yours won’t be shown while theirs is.',
     },
     /** A pass's outcome sentence. */
     passed: {
