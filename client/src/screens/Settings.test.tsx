@@ -466,3 +466,76 @@ describe('Settings › Notifications (#99)', () => {
     expect(pending.onTurnOn).not.toHaveBeenCalled();
   });
 });
+
+describe('Settings › Steward key (#488)', () => {
+  it('shows nothing of the steward unless offered', () => {
+    setup();
+
+    expect(screen.queryByRole('region', { name: 'Steward key' })).toBeNull();
+  });
+
+  it('imports the secret as a password, says why one didn’t take, and passes axe', async () => {
+    const onImport = vi.fn((text: string) =>
+      Promise.resolve(text === 'right' ? ('imported' as const) : ('wrong' as const)),
+    );
+    const { user } = setup({ steward: { held: false, onImport } });
+    const section = screen.getByRole('region', { name: 'Steward key' });
+    const field = within(section).getByLabelText('Steward secret');
+    expect(field).toHaveAttribute('type', 'password');
+    expect(within(section).getByText(messages.shelfSteward.keyLede)).toBeVisible();
+
+    await user.type(field, 'nope');
+    await user.click(within(section).getByRole('button', { name: 'Import' }));
+    expect(await within(section).findByText(messages.shelfSteward.wrong)).toBeVisible();
+    expect(field).toHaveValue('nope');
+
+    await user.clear(field);
+    await user.type(field, 'right');
+    await user.click(within(section).getByRole('button', { name: 'Import' }));
+    await waitFor(() => {
+      expect(field).toHaveValue('');
+    });
+    expect(onImport).toHaveBeenCalledTimes(2);
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('imports nothing blank, and says a locked device or a failed write didn’t keep it', async () => {
+    const outcomes = ['locked', 'failed'] as const;
+    const onImport = vi.fn(() =>
+      Promise.resolve(outcomes[onImport.mock.calls.length - 1] ?? 'failed'),
+    );
+    const { user } = setup({ steward: { held: false, onImport } });
+    const section = screen.getByRole('region', { name: 'Steward key' });
+
+    await user.click(within(section).getByRole('button', { name: 'Import' }));
+    expect(onImport).not.toHaveBeenCalled();
+    await user.type(within(section).getByLabelText('Steward secret'), 'x');
+    await user.click(within(section).getByRole('button', { name: 'Import' }));
+    expect(await within(section).findByText(messages.shelfSteward.locked)).toBeVisible();
+    await user.click(within(section).getByRole('button', { name: 'Import' }));
+    expect(await within(section).findByText(messages.shelfSteward.failed)).toBeVisible();
+  });
+
+  it('reads a rejected import as not kept', async () => {
+    const { user } = setup({
+      steward: { held: false, onImport: () => Promise.reject(new Error('boom')) },
+    });
+    const section = screen.getByRole('region', { name: 'Steward key' });
+    await user.type(within(section).getByLabelText('Steward secret'), 'x');
+    await user.click(within(section).getByRole('button', { name: 'Import' }));
+
+    expect(await within(section).findByText(messages.shelfSteward.failed)).toBeVisible();
+  });
+
+  it('on a device that holds the key, says so and links to the console', () => {
+    setup({ steward: { held: true, onImport: vi.fn() } });
+    const section = screen.getByRole('region', { name: 'Steward key' });
+
+    expect(within(section).getByText(messages.shelfSteward.held)).toBeVisible();
+    expect(within(section).getByRole('link', { name: messages.shelfSteward.open })).toHaveAttribute(
+      'href',
+      '#/steward',
+    );
+    expect(within(section).queryByLabelText('Steward secret')).toBeNull();
+  });
+});

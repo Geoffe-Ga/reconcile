@@ -20,7 +20,7 @@ from starlette.testclient import TestClient
 from reconcile.relay.app import create_app
 from reconcile.relay.purge import purge
 from reconcile.relay.settings import Settings
-from reconcile.relay.store import ShelfWhen
+from reconcile.relay.store import HELD_UNTIL_RELEASED, ShelfWhen
 from tests.relay.helpers import (
     DAY,
     MINUTE,
@@ -54,6 +54,18 @@ WITHDRAW = {"v": 1, "kind": "withdraw", "id": "d" * 43}
 def _seqs(response: Any) -> list[int]:
     """The seqs of a GET response's records, in the order returned."""
     return [record["seq"] for record in response.json()["records"]]
+
+
+def _live(client: TestClient, signer: ShelfSigner, body: dict[str, Any]) -> Any:
+    """PUT a first listing, then clear its hold as a release would (#488).
+
+    These tests are about the routes, so the hold is cleared in the store,
+    with no notice that would take a seq; ``test_shelf_held.py`` has the
+    notice itself.
+    """
+    response = put_shelf(client, signer.address, signer.record(body))
+    store_of(client.app).release(signer.address)
+    return response
 
 
 # --- Off without the steward's key -----------------------------------------
@@ -101,7 +113,16 @@ def test_put_stores_a_listing_and_returns_its_seq(
     assert response.status_code == 201
     assert response.json() == {"seq": 1}
     assert shelf_rows(db_path) == [
-        (1, door.address, "listing", "", len(record), NOW_MINUTE, TODAY + 31, 0)
+        (
+            1,
+            door.address,
+            "listing",
+            "",
+            len(record),
+            NOW_MINUTE,
+            TODAY + 31,
+            HELD_UNTIL_RELEASED,
+        )
     ]
 
 
@@ -339,7 +360,7 @@ def test_a_later_listing_replaces_the_address_earlier_one_in_its_place(
     shelf_client: TestClient, door: ShelfSigner, clock: FakeClock, db_path: Path
 ) -> None:
     """One row per address: a new copy keeps the first one's seq, with its own times."""
-    put_shelf(shelf_client, door.address, door.record(listing()))
+    _live(shelf_client, door, listing())
     clock.advance(7 * DAY)
     renamed = door.record(listing("Oak Street Tenants Union"))
 
@@ -358,9 +379,9 @@ def test_a_listing_never_replaces_another_address_listing(
 ) -> None:
     """Each address keeps its own listing."""
     other = ShelfSigner.fresh()
-    put_shelf(shelf_client, door.address, door.record(listing()))
+    _live(shelf_client, door, listing())
 
-    response = put_shelf(shelf_client, other.address, other.record(listing("Birch")))
+    response = _live(shelf_client, other, listing("Birch"))
 
     assert response.json() == {"seq": 2}
     assert _seqs(shelf_client.get("/v1/shelf")) == [1, 2]
@@ -370,7 +391,7 @@ def test_a_listing_lapses_thirty_days_after_its_last_post(
     shelf_client: TestClient, door: ShelfSigner, clock: FakeClock, db_path: Path
 ) -> None:
     """Each post renews the 30 days; without one the listing lapses and is purged."""
-    put_shelf(shelf_client, door.address, door.record(listing()))
+    _live(shelf_client, door, listing())
     clock.advance(20 * DAY)
     put_shelf(shelf_client, door.address, door.record(listing()))
     clock.advance(30 * DAY)
@@ -387,7 +408,7 @@ def test_a_final_listing_deletes_the_address_entries_and_stands(
 ) -> None:
     """The final copy takes the listing's row; the entries and withdraws go."""
     other = ShelfSigner.fresh()
-    put_shelf(shelf_client, door.address, door.record(listing()))
+    _live(shelf_client, door, listing())
     put_shelf(shelf_client, door.address, door.record(entry("e" * 43)))
     put_shelf(shelf_client, door.address, door.record({**WITHDRAW, "id": "e" * 43}))
     put_shelf(shelf_client, other.address, other.record(listing("Birch")))
@@ -433,8 +454,18 @@ def test_no_open_listing_follows_a_final_one(
         {"error": "listing_final"},
     )
     assert renewed.status_code == 201
+    held = HELD_UNTIL_RELEASED  # never released, so its hold stays
     assert shelf_rows(db_path) == [
-        (1, door.address, "listing", "", len(final), NOW_MINUTE + WEEK, TODAY + 38, 0)
+        (
+            1,
+            door.address,
+            "listing",
+            "",
+            len(final),
+            NOW_MINUTE + WEEK,
+            TODAY + 38,
+            held,
+        )
     ]
 
 
@@ -508,9 +539,9 @@ def test_get_returns_every_record_in_seq_order_with_its_address(
     other = ShelfSigner.fresh()
     first = door.record(listing())
     clock.advance(5 * MINUTE)
-    put_shelf(shelf_client, door.address, first)
+    _live(shelf_client, door, listing())
     second = other.record(listing("Birch Ave Tenants"))
-    put_shelf(shelf_client, other.address, second)
+    _live(shelf_client, other, listing("Birch Ave Tenants"))
 
     response = shelf_client.get("/v1/shelf")
 
@@ -538,7 +569,7 @@ def test_get_pages_after_a_seq(
     shelf_client: TestClient, door: ShelfSigner, clock: FakeClock
 ) -> None:
     """``after`` and ``limit`` page the shelf as they page a mailbox."""
-    put_shelf(shelf_client, door.address, door.record(listing()))
+    _live(shelf_client, door, listing())
     for label in "abcd":
         put_shelf(shelf_client, door.address, door.record(entry(label * 43)))
         clock.advance(DAY)  # an address posts one new entry a day (#431)
@@ -573,7 +604,7 @@ def test_a_record_is_kept_thirty_days_then_purged(
     shelf_client: TestClient, door: ShelfSigner, clock: FakeClock, db_path: Path
 ) -> None:
     """A GET skips a record from its expiry day; the daily purge deletes it."""
-    put_shelf(shelf_client, door.address, door.record(listing()))
+    _live(shelf_client, door, listing())
 
     clock.advance(30 * DAY)
     assert _seqs(shelf_client.get("/v1/shelf")) == [1]
@@ -587,8 +618,8 @@ def test_a_record_is_kept_thirty_days_then_purged(
 def test_get_leaves_out_a_held_record(
     shelf_client: TestClient, door: ShelfSigner, clock: FakeClock
 ) -> None:
-    """A row held until a later minute isn't served until that minute (#488 holds)."""
-    put_shelf(shelf_client, door.address, door.record(listing()))
+    """A row held until a later minute isn't served until that minute (#489 holds)."""
+    _live(shelf_client, door, listing())
     store = store_of(shelf_client.app)
     store.add_shelf(
         door.address,
@@ -608,7 +639,7 @@ def test_the_shelf_and_the_mailboxes_are_apart(
 ) -> None:
     """A shelf record never shows in a mailbox of its name, nor a blob on the shelf."""
     record = door.record(listing())
-    put_shelf(shelf_client, door.address, record)
+    _live(shelf_client, door, listing())
     shelf_client.put(
         f"/v1/mailbox/{door.address}", content=b"\x01" * 1024, headers=OCTET_STREAM
     )
@@ -633,7 +664,7 @@ def test_shelf_requests_leave_no_client_address(
     capfd: pytest.CaptureFixture[str],
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Shelf PUTs and GETs from several addresses leave none in files or output."""
+    """Shelf PUTs and GETs, held ones too, leave no client address anywhere."""
     caplog.set_level(logging.DEBUG)
     needles = [CANARY, *CLIENT_ADDRESSES]
     forwarded = {"x-forwarded-for": CANARY, "x-real-ip": CANARY}
@@ -643,8 +674,13 @@ def test_shelf_requests_leave_no_client_address(
             client, door.address, door.record(listing()), headers=forwarded
         )
         page = client.get("/v1/shelf", headers=forwarded)
-        assert (stored.status_code, page.status_code) == (201, 200)
-        assert not [n for n in needles if n.encode() in page.content]
+        held = client.get("/v1/shelf/held", headers=forwarded)
+        assert (stored.status_code, page.status_code, held.status_code) == (
+            201,
+            200,
+            200,
+        )
+        assert not [n for n in needles if n.encode() in page.content + held.content]
     out, err = capfd.readouterr()
     logged = "\n".join(record.getMessage() for record in caplog.records)
 

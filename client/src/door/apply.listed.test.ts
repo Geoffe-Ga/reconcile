@@ -24,7 +24,7 @@ import { nameSkeleton } from '../shelf/skeleton';
 import { openStore } from '../store/db';
 import { COVENANT_HASH, DOOR } from '../test/door';
 import { createFakeRelay } from '../test/fakeRelay';
-import { createFakeShelf } from '../test/fakeShelf';
+import { createFakeShelf, release } from '../test/fakeShelf';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { apply, takesDocuments } from './apply';
 import { addressOf, type OpenPage } from './page';
@@ -82,6 +82,7 @@ async function shelfAfter(minutes: number, { listed = true } = {}): Promise<Shel
         covenant: COVENANT_HASH,
       }),
     );
+    await release(shelf, DOOR_ADDRESS);
   }
   fake.minute = LISTED_AT + minutes;
   return createShelfReader({ shelf, keep: memoryKeep(), now: () => 0 });

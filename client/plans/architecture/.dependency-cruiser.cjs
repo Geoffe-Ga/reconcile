@@ -74,9 +74,9 @@ module.exports = {
     {
       name: 'test-helpers-stay-in-tests',
       comment:
-        'src/test/ holds fakes (an in-memory relay, fake IndexedDB). Only tests may import them, so the app can never talk to a fake.',
+        'src/test/ holds fakes (an in-memory relay, fake IndexedDB). Only tests, and the setup Vitest runs before them (which pins the tests’ steward key, #488), may import them, so the app can never talk to a fake.',
       severity: 'error',
-      from: { pathNot: ['\\.test\\.tsx?$', '^src/test/'] },
+      from: { pathNot: ['\\.test\\.tsx?$', '^src/test/', '^src/test-setup\\.ts$'] },
       to: { path: ['^src/test/', 'node_modules/fake-indexeddb/'] },
     },
     {

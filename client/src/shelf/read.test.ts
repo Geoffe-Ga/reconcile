@@ -9,7 +9,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { base64url } from '../crypto/base64url';
 import { newSigningKeys } from '../crypto/sign';
 import { createShelf, type ShelfPage, type ShelfRecord } from '../net/shelf';
-import { createFakeShelf } from '../test/fakeShelf';
+import { createFakeShelf, release } from '../test/fakeShelf';
 import { createShelfReader, type KeptShelf, SHELF_READ_MS, type ShelfKeep } from './read';
 import { signShelfBody } from './record';
 
@@ -18,7 +18,7 @@ const ADDRESS = base64url(door.publicKey);
 const COVENANT = base64url(new Uint8Array(32).fill(9));
 const ID = base64url(new Uint8Array(32).fill(1));
 
-/** A fake shelf holding Oak St Tenants' listing and one entry. */
+/** A fake shelf holding Oak St Tenants' listing, the steward's release of it, and one entry. */
 async function stocked() {
   const fake = createFakeShelf();
   const shelf = createShelf({ fetch: fake.fetch });
@@ -33,6 +33,7 @@ async function stocked() {
       covenant: COVENANT,
     }),
   );
+  await release(shelf, ADDRESS);
   await shelf.put(
     ADDRESS,
     signShelfBody(door, { v: 1, kind: 'entry', id: ID, title: 'Rent strike vote', text: '' }),
@@ -66,7 +67,7 @@ describe('createShelfReader', () => {
     const { fake, shelf } = await stocked();
     const read = await createShelfReader({ shelf, keep: memoryKeep(), now: () => 0 }).current();
 
-    expect(read?.records.map((r) => r.seq)).toEqual([1, 2]);
+    expect(read?.records.map((r) => r.seq)).toEqual([1, 2, 3]);
     expect(read?.now).toBe(fake.minute);
   });
 
@@ -201,6 +202,6 @@ describe('createShelfReader', () => {
 
     const read = await createShelfReader({ shelf, keep, now: () => 0 }).current();
 
-    expect(read?.records).toHaveLength(2);
+    expect(read?.records).toHaveLength(3);
   });
 });

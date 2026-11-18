@@ -90,9 +90,13 @@ function bodiesAt(fake: FakeShelf, door: FrontDoor): (ShelfBody | null)[] {
 /** How many PUTs the fake has answered. */
 const puts = (fake: FakeShelf): number => fake.urls.filter((url) => !url.includes('?')).length;
 
-/** A fake shelf whose clock reads the log's minute. */
-function shelfAt(log: LogBuilder): FakeShelf {
-  return createFakeShelf({ minute: log.minute });
+/**
+ * A fake shelf whose clock reads the log's minute, on which the steward
+ * releases each listing as it comes (#488), so what the keeper posts reads
+ * back; `held` keeps every first listing waiting, as a held relay does.
+ */
+function shelfAt(log: LogBuilder, { held = false } = {}): FakeShelf {
+  return createFakeShelf({ minute: log.minute, holds: held });
 }
 
 /** The door's signing keys, as the keeper signs with them. */
@@ -228,6 +232,21 @@ describe('createShelfKeeper: posting and refreshing the listing (§4.2, §4.5)',
     await device(fake, log).run();
 
     expect(puts(fake)).toBe(1);
+  });
+
+  it('on a held relay, posts once a launch while the listing waits, and the relay keeps one held copy (#488)', async () => {
+    const log = opened();
+    const fake = shelfAt(log, { held: true });
+    const ana = device(fake, log);
+    await ana.run();
+    inStep(fake, log, 60);
+    await ana.run();
+    expect(puts(fake)).toBe(1);
+
+    await device(fake, log).run();
+
+    expect(puts(fake)).toBe(2);
+    expect(fake.records.map((r) => [r.seq, r.held])).toEqual([[1, true]]);
   });
 
   it('refreshes the listing when its newest copy is 10,080 relay minutes old', async () => {
@@ -383,7 +402,7 @@ describe('createShelfKeeper: the final listing (§4.2, §4.5)', () => {
   it('stops for good when the relay answers that the listing is final', async () => {
     const log = opened();
     const calls: string[] = [];
-    const shelf: Shelf = {
+    const shelf: Pick<Shelf, 'read' | 'put'> = {
       read: () => Promise.resolve({ records: [], now: log.minute, instance: 'i' }),
       put: () => {
         calls.push('put');
@@ -404,7 +423,7 @@ describe('createShelfKeeper: the final listing (§4.2, §4.5)', () => {
 
   it('lets any other refusal through, so the next pass tries again', async () => {
     const log = opened();
-    const shelf: Shelf = {
+    const shelf: Pick<Shelf, 'read' | 'put'> = {
       read: () => Promise.resolve({ records: [], now: log.minute, instance: 'i' }),
       put: () => Promise.reject(new RelayError(507, 'shelf_full')),
     };
@@ -543,7 +562,7 @@ describe('createShelfKeeper: entries (§4.2, §4.5)', () => {
   it('lets any other refusal of an entry through, so the next pass tries again', async () => {
     const log = opened();
     publish(log);
-    const shelf: Shelf = {
+    const shelf: Pick<Shelf, 'read' | 'put'> = {
       read: () => Promise.resolve({ records: [], now: log.minute, instance: 'i' }),
       put: (_address, record) => {
         const body = parseShelfBody(record.slice(64));
@@ -624,7 +643,7 @@ describe('createShelfKeeper: a stray entry (§4.5)', () => {
     await postStray(fake, 0x53);
     log.minute += 1;
     const { records } = (await createShelf({ fetch: fake.fetch }).read()) ?? { records: [] };
-    const shelf: Shelf = {
+    const shelf: Pick<Shelf, 'read' | 'put'> = {
       read: () => Promise.resolve({ records, now: log.minute, instance: 'i' }),
       put: (_address, record) =>
         parseShelfBody(record.slice(64))?.kind === 'withdraw'

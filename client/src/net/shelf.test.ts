@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { base64url } from '../crypto/base64url';
 import { newSigningKeys } from '../crypto/sign';
 import { signShelfBody } from '../shelf/record';
-import { createFakeShelf } from '../test/fakeShelf';
+import { createFakeShelf, release } from '../test/fakeShelf';
+import { STEWARD_ADDRESS } from '../test/steward';
 import { type Fetch, RelayError } from './relay';
 import { createShelf } from './shelf';
 
@@ -91,16 +92,40 @@ describe('read', () => {
     const fake = createFakeShelf({ minute: 500 });
     const shelf = createShelf({ fetch: fake.fetch });
     await shelf.put(ADDRESS, LISTING);
+    await release(shelf, ADDRESS);
 
     const page = await shelf.read();
 
     expect(page?.now).toBe(500);
     expect(page?.instance).toBe('fake-shelf-instance');
     expect(page?.records.map(({ seq, received, address }) => ({ seq, received, address }))).toEqual(
-      [{ seq: 1, received: 500, address: ADDRESS }],
+      [
+        { seq: 1, received: 500, address: ADDRESS },
+        { seq: 2, received: 500, address: STEWARD_ADDRESS },
+      ],
     );
     expect(Array.from(page?.records[0]?.data ?? [])).toEqual(Array.from(LISTING));
     expect(fake.urls.at(-1)).toBe('/v1/shelf?after=0&limit=100');
+  });
+
+  it('reads the held records alone from their own route, for the steward’s console (#488)', async () => {
+    const fake = createFakeShelf({ minute: 500 });
+    const shelf = createShelf({ fetch: fake.fetch });
+    await shelf.put(ADDRESS, LISTING);
+
+    expect((await shelf.read())?.records).toEqual([]);
+    const held = await shelf.readHeld();
+
+    expect(held?.records.map(({ seq, address }) => ({ seq, address }))).toEqual([
+      { seq: 1, address: ADDRESS },
+    ]);
+    expect(fake.urls.at(-1)).toBe('/v1/shelf/held?after=0&limit=100');
+  });
+
+  it('reads no held records while the relay has no shelf', async () => {
+    const fake = createFakeShelf({ available: false });
+
+    expect(await createShelf({ fetch: fake.fetch }).readHeld()).toBeNull();
   });
 
   it('pages 100 at a time until a page comes back short', async () => {
@@ -111,15 +136,15 @@ describe('read', () => {
       await shelf.put(base64url(door.publicKey), listingBy(door));
     }
 
-    const page = await shelf.read();
+    const page = await shelf.readHeld();
 
     expect(page?.records.map((record) => record.seq)).toEqual(
       Array.from({ length: 201 }, (_, i) => i + 1),
     );
     expect(fake.urls.slice(-3)).toEqual([
-      '/v1/shelf?after=0&limit=100',
-      '/v1/shelf?after=100&limit=100',
-      '/v1/shelf?after=200&limit=100',
+      '/v1/shelf/held?after=0&limit=100',
+      '/v1/shelf/held?after=100&limit=100',
+      '/v1/shelf/held?after=200&limit=100',
     ]);
   });
 

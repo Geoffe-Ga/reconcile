@@ -7,6 +7,9 @@
  * records a page, so every device asks for exactly the same thing and a read
  * says nothing about its reader (ADR-0077 §4). A relay without the steward's
  * key has no shelf: its 404 `shelf_unavailable` reads as null, never an error.
+ *
+ * The steward's console (#488) reads the held records too, from
+ * `/v1/shelf/held`, the same way: only the steward's device asks for them.
  */
 import {
   browserFetch,
@@ -43,6 +46,8 @@ export interface ShelfPage {
 export interface Shelf {
   /** Every record the relay serves, in seq order; null while the relay has no shelf. */
   read(): Promise<ShelfPage | null>;
+  /** Every held record, in seq order, for the steward's console (#488); null while the relay has no shelf. */
+  readHeld(): Promise<ShelfPage | null>;
   /** PUT one signed record under `address`, and return its seq. */
   put(address: string, record: Uint8Array<ArrayBuffer>): Promise<number>;
 }
@@ -72,29 +77,29 @@ export function createShelf({
     return body.seq;
   }
 
-  async function page(after: number): Promise<ShelfPage> {
-    const url = `${baseUrl}/shelf?after=${String(after)}&limit=${String(PAGE_LIMIT)}`;
+  async function page(path: string, after: number): Promise<ShelfPage> {
+    const url = `${baseUrl}/${path}?after=${String(after)}&limit=${String(PAGE_LIMIT)}`;
     const response = await send(url, { ...PRIVATE, method: 'GET' });
     const parsed = parsePage(await readJson(response), after);
     if (parsed === null) throw new RelayError(response.status, 'bad_response');
     return parsed;
   }
 
-  async function readAll(): Promise<ShelfPage> {
-    let next = await page(0);
+  async function readAll(path: string): Promise<ShelfPage> {
+    let next = await page(path, 0);
     const { instance } = next;
     const records = [...next.records];
     while (next.records.length >= PAGE_LIMIT) {
-      next = await page(records.at(-1)?.seq ?? 0);
+      next = await page(path, records.at(-1)?.seq ?? 0);
       if (next.instance !== instance) throw new RelayError(200, 'instance_changed');
       records.push(...next.records);
     }
     return { records, now: next.now, instance };
   }
 
-  async function read(): Promise<ShelfPage | null> {
+  async function read(path = 'shelf'): Promise<ShelfPage | null> {
     try {
-      return await readAll();
+      return await readAll(path);
     } catch (error) {
       if (error instanceof RelayError && error.status === 404 && error.code === SHELF_UNAVAILABLE) {
         return null;
@@ -103,7 +108,7 @@ export function createShelf({
     }
   }
 
-  return { read, put };
+  return { read: () => read(), readHeld: () => read('shelf/held'), put };
 }
 
 /** `address`, if it is 43 base64url characters; anything else could rewrite the URL. */

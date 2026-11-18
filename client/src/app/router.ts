@@ -23,6 +23,8 @@ export type Route =
   | { readonly name: 'start' }
   | { readonly name: 'create' }
   | { readonly name: 'settings' }
+  /** The steward's console (#488; listed-doors.md §6.4): shown only on a device holding the steward's key. */
+  | { readonly name: 'console' }
   /** Personal (#93): this device's personal Documents. */
   | { readonly name: 'personal' }
   /** Discover (#423; ADR-0077): reading across groups, and the field that opens a card or link. */
@@ -413,7 +415,14 @@ export type BareRoute = Extract<
   Route,
   {
     readonly name:
-      'create' | 'settings' | 'linkNew' | 'linkThis' | 'recovery' | 'recover' | 'helpRecover';
+      | 'create'
+      | 'settings'
+      | 'console'
+      | 'linkNew'
+      | 'linkThis'
+      | 'recovery'
+      | 'recover'
+      | 'helpRecover';
   }
 >;
 
@@ -421,6 +430,7 @@ export type BareRoute = Extract<
 const PAGES: ReadonlyMap<string, Route> = new Map<string, Route>([
   ['create', { name: 'create' }],
   ['settings', { name: 'settings' }],
+  ['steward', { name: 'console' }],
   ['about', { name: 'about' }],
   ['link-new', { name: 'linkNew' }],
   ['link-this', { name: 'linkThis' }],
@@ -437,6 +447,7 @@ const PAGES: ReadonlyMap<string, Route> = new Map<string, Route>([
 const BARE_NAMES: ReadonlySet<Route['name']> = new Set<BareRoute['name']>([
   'create',
   'settings',
+  'console',
   'linkNew',
   'linkThis',
   'recovery',
@@ -650,6 +661,7 @@ type FixedTop = Extract<
       | 'start'
       | 'create'
       | 'settings'
+      | 'console'
       | 'personal'
       | 'discover'
       | 'about'
@@ -666,6 +678,7 @@ const TOP_HREFS: Readonly<Record<FixedTop['name'], string>> = {
   start: '#/',
   create: '#/create',
   settings: '#/settings',
+  console: '#/steward',
   personal: '#/me',
   discover: '#/discover',
   about: '#/about',

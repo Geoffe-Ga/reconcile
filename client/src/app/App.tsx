@@ -49,6 +49,9 @@ import { RemovalComposer } from '../screens/RemovalComposer';
 import { AddSection, RemoveSection } from '../screens/SectionComposer';
 import { SendDispatch } from '../screens/SendDispatch';
 import { type NotifyGroup, Settings } from '../screens/Settings';
+import { Steward } from '../screens/Steward';
+import { importStewardKey, releaseListing } from './steward';
+import { useHoldsStewardKey, useOffersStewardKey, useStewardQueue } from './useSteward';
 import { SharedPage } from '../screens/SharedPage';
 import type { SeatNumber } from '../engine/stewards';
 import type { GuideRecord } from '../platform/guide';
@@ -391,6 +394,8 @@ function SettingsScreen({ services }: { readonly services: AppServices }) {
   const recovery = useRecovery(services.store);
   const { push, passkey } = services;
   const passkeyState = usePasskeyState(passkey, services.store);
+  const stewardHeld = useHoldsStewardKey(services.store);
+  const offersSteward = useOffersStewardKey(stewardHeld, services.shelf);
   const loaded = groups !== null && switches !== null && relayBackup !== null && recovery !== null;
   return !loaded || passkeyState === null ? null : (
     <Settings
@@ -418,6 +423,38 @@ function SettingsScreen({ services }: { readonly services: AppServices }) {
         onCreate: () => passkey.create(),
         onProtect: (id) => passkey.protect(id),
       }}
+      steward={
+        offersSteward === true
+          ? {
+              held: stewardHeld === true,
+              onImport: (text) => importStewardKey(services.store, text, services.now()),
+            }
+          : undefined
+      }
+    />
+  );
+}
+
+/**
+ * The steward's console (#488, `#/steward`): only on a device that holds the
+ * steward's key; any other device goes to Start, as for an unknown page.
+ */
+function ConsoleScreen({ services }: { readonly services: AppServices }) {
+  const held = useHoldsStewardKey(services.store);
+  const { stewardShelf } = services;
+  const { queue } = useStewardQueue(held === true ? stewardShelf : undefined);
+  useEffect(() => {
+    if (held === false) replaceRoute({ name: 'start' });
+  }, [held]);
+  if (held !== true || queue === null) return null;
+  return (
+    <Steward
+      queue={queue}
+      onRelease={(address) =>
+        stewardShelf === undefined
+          ? Promise.resolve(false)
+          : releaseListing(services.store, stewardShelf, address)
+      }
     />
   );
 }
@@ -1602,6 +1639,8 @@ function BareScreen({ route, services, guide }: BareScreenProps) {
       return <CreateScreen services={services} offerGuide={guide.offer} />;
     case 'settings':
       return <SettingsScreen services={services} />;
+    case 'console':
+      return <ConsoleScreen services={services} />;
     case 'linkNew':
       return <LinkNewScreen services={services} />;
     case 'linkThis':

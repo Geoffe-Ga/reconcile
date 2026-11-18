@@ -12,9 +12,14 @@
  *   most 500), with no name, author, count or time of its own;
  * - a `withdraw`, naming an entry's id.
  *
- * The steward's `notice` comes with #488; until then it reads as no record,
- * so the fold ignores it. A body with any other key, or one missing, reads as
- * none either: a reader never guesses at what a signer meant.
+ * The steward signs the fifth kind, a `notice` (#488, §6.1):
+ * `{v, kind, act, address?, id?, clause?}`. A `release` names exactly the
+ * address it releases. Every later act (`hold`, `uphold`, `suspend` and
+ * `pause`) reads back as a stub, its fields checked but none required, and
+ * the fold ignores it until #489 folds it.
+ *
+ * A body with any other key, or one missing, reads as none: a reader never
+ * guesses at what a signer meant.
  */
 import { canonicalBytes } from '../crypto/base64url';
 import { objectIn } from '../crypto/json';
@@ -77,8 +82,36 @@ export interface WithdrawBody {
   readonly id: string;
 }
 
-/** Any record a door signs. */
-export type ShelfBody = OpenListingBody | FinalListingBody | EntryBody | WithdrawBody;
+/** The steward's word that an address's held listing may show (§6.1). */
+export interface ReleaseNoticeBody {
+  readonly v: typeof SHELF_VERSION;
+  readonly kind: 'notice';
+  readonly act: 'release';
+  /** The address it releases. */
+  readonly address: string;
+}
+
+/** The acts #489 folds: each parses now, and is ignored until then. */
+export type LaterAct = 'hold' | 'uphold' | 'suspend' | 'pause';
+
+/** A covenant clause a notice may name (§6.1). */
+export type Clause = 'C1' | 'C2' | 'C3';
+
+/** A later notice (#489): what it names, as far as it names it. */
+export interface LaterNoticeBody {
+  readonly v: typeof SHELF_VERSION;
+  readonly kind: 'notice';
+  readonly act: LaterAct;
+  readonly address?: string;
+  readonly id?: string;
+  readonly clause?: Clause;
+}
+
+/** A record the steward signs. */
+export type NoticeBody = ReleaseNoticeBody | LaterNoticeBody;
+
+/** Any record a door, or the steward, signs. */
+export type ShelfBody = OpenListingBody | FinalListingBody | EntryBody | WithdrawBody | NoticeBody;
 
 /** The body as an object whose keys are in the spec's order, so JSON keeps it. */
 function ordered(body: ShelfBody): ShelfBody {
@@ -92,7 +125,29 @@ function ordered(body: ShelfBody): ShelfBody {
       return { v, kind, id: body.id, title: body.title, text: body.text };
     case 'withdraw':
       return { v, kind, id: body.id };
+    case 'notice':
+      return orderedNotice(body);
   }
+}
+
+/** A notice with its keys in the spec's order, leaving out those it lacks. */
+function orderedNotice(body: NoticeBody): NoticeBody {
+  return body.act === 'release'
+    ? { v: body.v, kind: body.kind, act: body.act, address: body.address }
+    : orderedLater(body);
+}
+
+/** A later notice with its keys in the spec's order, leaving out those it lacks. */
+function orderedLater(body: LaterNoticeBody): LaterNoticeBody {
+  const { v, kind, act, address, id, clause } = body;
+  return {
+    v,
+    kind,
+    act,
+    ...(address === undefined ? {} : { address }),
+    ...(id === undefined ? {} : { id }),
+    ...(clause === undefined ? {} : { clause }),
+  };
 }
 
 /** `body` as the bytes a door signs: compact JSON, keys in the spec's order, in UTF-8. */
@@ -117,6 +172,9 @@ function isHash(value: unknown): value is string {
   return canonicalBytes(value)?.length === HASH_BYTES;
 }
 
+/** Whether `value` is a key in canonical unpadded base64url: 32 bytes, as a hash is. */
+const isKey = isHash;
+
 /** Whether `fields` holds exactly `keys`, in any order. */
 function hasKeys(fields: Readonly<Record<string, unknown>>, keys: readonly string[]): boolean {
   const own = Object.keys(fields);
@@ -127,6 +185,16 @@ const OPEN_KEYS = ['v', 'kind', 'open', 'name', 'skeleton', 'covenant'];
 const FINAL_KEYS = ['v', 'kind', 'open', 'final'];
 const ENTRY_KEYS = ['v', 'kind', 'id', 'title', 'text'];
 const WITHDRAW_KEYS = ['v', 'kind', 'id'];
+const RELEASE_KEYS = ['v', 'kind', 'act', 'address'];
+const NOTICE_KEYS: ReadonlySet<string> = new Set(['v', 'kind', 'act', 'address', 'id', 'clause']);
+const LATER_ACTS: ReadonlySet<unknown> = new Set<LaterAct>(['hold', 'uphold', 'suspend', 'pause']);
+const CLAUSES: ReadonlySet<unknown> = new Set<Clause>(['C1', 'C2', 'C3']);
+
+/** Whether `value` is an act #489 folds. */
+const isLaterAct = (value: unknown): value is LaterAct => LATER_ACTS.has(value);
+
+/** Whether `value` is one of the covenant's clauses. */
+const isClause = (value: unknown): value is Clause => CLAUSES.has(value);
 
 /** A listing's fields as its body, open or final, or null. */
 function listingOf(fields: Readonly<Record<string, unknown>>): ShelfBody | null {
@@ -164,9 +232,48 @@ function withdrawOf(fields: Readonly<Record<string, unknown>>): WithdrawBody | n
     : null;
 }
 
+/** A release's fields as its body, or null. */
+function releaseOf(fields: Readonly<Record<string, unknown>>): ReleaseNoticeBody | null {
+  const { address } = fields;
+  return hasKeys(fields, RELEASE_KEYS) && isKey(address)
+    ? { v: SHELF_VERSION, kind: 'notice', act: 'release', address }
+    : null;
+}
+
+/** Whether `value` is absent, or passes `check`. */
+const absentOr = (value: unknown, check: (value: unknown) => boolean): boolean =>
+  value === undefined || check(value);
+
+/**
+ * A later notice's fields as its body, or null (#489's stub): an act it
+ * knows, keys it knows, and each field it has well formed.
+ */
+function laterOf(fields: Readonly<Record<string, unknown>>): LaterNoticeBody | null {
+  const { act, address, id, clause } = fields;
+  const fits =
+    Object.keys(fields).every((key) => NOTICE_KEYS.has(key)) &&
+    absentOr(address, isKey) &&
+    absentOr(id, isHash) &&
+    absentOr(clause, isClause);
+  if (!fits || !isLaterAct(act)) return null;
+  return orderedLater({
+    v: SHELF_VERSION,
+    kind: 'notice',
+    act,
+    ...(typeof address === 'string' ? { address } : {}),
+    ...(typeof id === 'string' ? { id } : {}),
+    ...(isClause(clause) ? { clause } : {}),
+  });
+}
+
+/** A notice's fields as its body: a release, a later act, or null. */
+function noticeOf(fields: Readonly<Record<string, unknown>>): NoticeBody | null {
+  return fields.act === 'release' ? releaseOf(fields) : laterOf(fields);
+}
+
 /**
  * The body in a verified record's message, or null for anything but exactly
- * one of the four kinds, in this version, with every field in bounds.
+ * one of the five kinds, in this version, with every field in bounds.
  */
 export function parseShelfBody(message: Uint8Array): ShelfBody | null {
   const fields = objectIn(message);
@@ -178,6 +285,8 @@ export function parseShelfBody(message: Uint8Array): ShelfBody | null {
       return entryOf(fields);
     case 'withdraw':
       return withdrawOf(fields);
+    case 'notice':
+      return noticeOf(fields);
     default:
       return null;
   }

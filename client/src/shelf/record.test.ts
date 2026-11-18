@@ -1,7 +1,8 @@
 /**
  * A shelf record's body (#484; docs/spec/listed-doors.md §4.1): compact
  * UTF-8 JSON in a fixed key order, read back only when it is exactly one of
- * the kinds this slice writes.
+ * the kinds this slice writes. A steward's notice (#488, §6.1) reads back
+ * too: a release in full, and every later act as a stub #489 folds.
  */
 import { describe, expect, it } from 'vitest';
 
@@ -35,6 +36,8 @@ const LISTING: ShelfBody = {
 const FINAL: ShelfBody = { v: 1, kind: 'listing', open: false, final: true };
 const ENTRY: ShelfBody = { v: 1, kind: 'entry', id: ID, title: 'Rent strike vote', text: '' };
 const WITHDRAW: ShelfBody = { v: 1, kind: 'withdraw', id: ID };
+const ADDRESS = base64url(new Uint8Array(32).fill(3));
+const RELEASE: ShelfBody = { v: 1, kind: 'notice', act: 'release', address: ADDRESS };
 
 describe('encodeShelfBody', () => {
   it('writes each kind as compact JSON with its keys in the spec’s order', () => {
@@ -46,6 +49,19 @@ describe('encodeShelfBody', () => {
       `{"v":1,"kind":"entry","id":"${ID}","title":"Rent strike vote","text":""}`,
     );
     expect(text(encodeShelfBody(WITHDRAW))).toBe(`{"v":1,"kind":"withdraw","id":"${ID}"}`);
+    expect(text(encodeShelfBody(RELEASE))).toBe(
+      `{"v":1,"kind":"notice","act":"release","address":"${ADDRESS}"}`,
+    );
+  });
+
+  it('writes a later notice’s fields in the spec’s order, leaving out those it lacks', () => {
+    const uphold = { clause: 'C2', id: ID, address: ADDRESS, act: 'uphold', kind: 'notice', v: 1 };
+    expect(text(encodeShelfBody(uphold as ShelfBody))).toBe(
+      `{"v":1,"kind":"notice","act":"uphold","address":"${ADDRESS}","id":"${ID}","clause":"C2"}`,
+    );
+    expect(text(encodeShelfBody({ v: 1, kind: 'notice', act: 'pause' }))).toBe(
+      '{"v":1,"kind":"notice","act":"pause"}',
+    );
   });
 
   it('writes the same bytes whatever order the object was built in', () => {
@@ -55,12 +71,22 @@ describe('encodeShelfBody', () => {
 });
 
 describe('parseShelfBody', () => {
-  it.each([LISTING, FINAL, ENTRY, WITHDRAW].map((body) => [body.kind, body] as const))(
+  it.each([LISTING, FINAL, ENTRY, WITHDRAW, RELEASE].map((body) => [body.kind, body] as const))(
     'reads back a %s it wrote',
     (_kind, body) => {
       expect(parseShelfBody(encodeShelfBody(body))).toEqual(body);
     },
   );
+
+  it.each([
+    ['a hold of an entry', { v: 1, kind: 'notice', act: 'hold', address: ADDRESS, id: ID }],
+    ['a hold of an address', { v: 1, kind: 'notice', act: 'hold', address: ADDRESS }],
+    ['an uphold', { v: 1, kind: 'notice', act: 'uphold', address: ADDRESS, id: ID, clause: 'C1' }],
+    ['a suspend', { v: 1, kind: 'notice', act: 'suspend', address: ADDRESS, clause: 'C3' }],
+    ['a pause', { v: 1, kind: 'notice', act: 'pause' }],
+  ] as const)('reads %s as a later notice, which #489 folds', (_name, body) => {
+    expect(parseShelfBody(json(body))).toEqual(body);
+  });
 
   it('takes a name, title and text at their longest, counted in code points', () => {
     const listing = { ...LISTING, name: '𝔸'.repeat(LISTING_NAME_MAX) };
@@ -78,7 +104,14 @@ describe('parseShelfBody', () => {
     ['not JSON', encoder.encode('listing')],
     ['an array', json([LISTING])],
     ['another version', json({ ...LISTING, v: 2 })],
-    ['a notice, which is the steward’s (#488)', json({ v: 1, kind: 'notice', act: 'pause' })],
+    ['a notice with an act it doesn’t know', json({ ...RELEASE, act: 'ban' })],
+    ['a release naming no address', json({ v: 1, kind: 'notice', act: 'release' })],
+    ['a release naming no key', json({ ...RELEASE, address: 'oak' })],
+    ['a release with a key too many', json({ ...RELEASE, id: ID })],
+    ['a later notice with a key it doesn’t know', json({ ...RELEASE, act: 'pause', on: true })],
+    ['a later notice naming no key', json({ ...RELEASE, act: 'hold', address: 7 })],
+    ['a later notice with a bad id', json({ ...RELEASE, act: 'hold', id: 'd1' })],
+    ['a later notice with a bad clause', json({ ...RELEASE, act: 'uphold', clause: 'C4' })],
     ['an unknown kind', json({ ...WITHDRAW, kind: 'pitch' })],
     ['a key too many', json({ ...LISTING, author: 'Ana' })],
     ['a key too few', json({ v: 1, kind: 'listing', open: true, name: 'Oak' })],

@@ -121,6 +121,7 @@ import {
   textOf,
 } from './personal';
 import { type RecoverRequest, requestSealing, type StoredRecoverRequest } from './recoverRequest';
+import { type StewardKey, stewardSealing, type StoredStewardKey } from './stewardKey';
 import type { KeptShelf, ShelfKeep } from '../shelf/read';
 import { plainRecords, type Sealing, type Split, wholeRecord } from './sealing';
 
@@ -757,6 +758,28 @@ export const RELAY_BACKUP_CHANGED = 'relay-backup';
  */
 export const RECOVERY_CHANGED = 'recovery';
 
+/**
+ * What {@link Store.subscribe}'s listeners hear when the steward's key comes
+ * or goes (#488): never a group id either.
+ */
+export const STEWARD_CHANGED = 'steward';
+
+/** The steward's secret, on the one device that holds it (#488, `./stewardKey.ts`). */
+export interface StewardKeyStore {
+  /** Whether this device holds the steward's key: read without opening the vault. */
+  holdsStewardKey(): Promise<boolean>;
+  /**
+   * The steward's 32-byte secret, or undefined on a device without it.
+   *
+   * @throws {VaultLocked} when it is sealed in a vault this session hasn't opened.
+   */
+  getStewardKey(): Promise<Uint8Array | undefined>;
+  /** Keep `secret` as the steward's, through `keepKeys`, in place of any earlier one. */
+  keepStewardKey(secret: Uint8Array, at: number): Promise<void>;
+  /** Forget the steward's key on this device. */
+  dropStewardKey(): Promise<void>;
+}
+
 /** The recovery contacts' one device-wide record (#109). */
 export interface RecoveryStore {
   /** The person's recovery contacts, or undefined while they've chosen none on this device. */
@@ -869,7 +892,8 @@ export interface Store
     RecoveryStore,
     PushForgetStore,
     SentStore,
-    ShelfCopyStore {
+    ShelfCopyStore,
+    StewardKeyStore {
   /** Every group on the device: never a coalition's entry (#114) or a room (#125). */
   listGroups(): Promise<Group[]>;
   /** Every coalition entry on the device (#114). */
@@ -1174,7 +1198,8 @@ type DeviceRecord =
   | RecoveredMark
   | RetiredMark
   | PushForgets
-  | KeptShelf;
+  | KeptShelf
+  | StoredStewardKey;
 
 interface Schema extends DBSchema {
   groups: { key: string; value: StoredGroup };
@@ -1197,6 +1222,11 @@ function recoveryPlanIn(record: DeviceRecord | undefined): RecoveryPlan | undefi
 /** A recovering device's request in a device record read from its key, or undefined: only it has a start (#118). */
 function recoverRequestIn(record: DeviceRecord | undefined): StoredRecoverRequest | undefined {
   return record !== undefined && 'startedAt' in record ? record : undefined;
+}
+
+/** The steward's key in a device record read from its key, or undefined: only it has `stewardSince` (#488). */
+function stewardKeyIn(record: DeviceRecord | undefined): StoredStewardKey | undefined {
+  return record !== undefined && 'stewardSince' in record ? record : undefined;
 }
 
 /** When the device was recovered, in a device record read from its key, or undefined (#118). */
@@ -1251,6 +1281,8 @@ const RELAY_BACKUP = 'relay-backup';
 const RECOVERY = 'recovery';
 /** The device store's key for a recovering device's request (#118). */
 const RECOVER_REQUEST = 'recover-request';
+/** The device store's key for the steward's key (#488): a key of its own, so no new version. */
+const STEWARD_KEY = 'steward-key';
 /** The device store's key for the mark a recovered device keeps (#118). */
 const RECOVERED = 'recovered';
 /** The device store's key for the mark a device keeps once its backup key was retired (#272). */
@@ -1638,6 +1670,9 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
     }),
     ...pushForgetStore(db),
     ...shelfCopyStore(db),
+    ...stewardKeyStore(db, session, () => {
+      notify(STEWARD_CHANGED);
+    }),
     async readVault() {
       const vault = await db.get(VAULT, VAULT_ID);
       return vault === undefined
@@ -1699,8 +1734,9 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
         await backups.delete(RELAY_BACKUP);
         const lost = await forgetSealed(tx, session, personal);
         const request = await forgetSealedRequest(tx);
+        const steward = await forgetSealedSteward(tx);
         await restoreInto(tx, session, { groups, personal, from: 'backup' });
-        return { backup: held, sent: lost, request };
+        return { backup: held, sent: lost, request, steward };
       });
       session.key?.fill(0);
       session.key = null;
@@ -1708,6 +1744,7 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
       if (dropped.backup) notify(RELAY_BACKUP_CHANGED);
       if (dropped.sent) notify(SENT_CHANGED);
       if (dropped.request) notify(RECOVERY_CHANGED);
+      if (dropped.steward) notify(STEWARD_CHANGED);
     },
     subscribe(listener) {
       listeners.add(listener);
@@ -1900,6 +1937,33 @@ function shelfCopyStore(db: IDBPDatabase<Schema>): ShelfCopyStore {
     async keepShelfCopy(copy) {
       if (copy === null) await db.delete(DEVICE, SHELF_COPY);
       else await db.put(DEVICE, copy, SHELF_COPY);
+    },
+  };
+}
+
+/** The steward's key, one record in `db`'s device store (#488), telling `changed` after each write. */
+function stewardKeyStore(
+  db: IDBPDatabase<Schema>,
+  session: Session,
+  changed: () => void,
+): StewardKeyStore {
+  return {
+    holdsStewardKey: async () => stewardKeyIn(await db.get(DEVICE, STEWARD_KEY)) !== undefined,
+    async getStewardKey() {
+      const tx = db.transaction([DEVICE, VAULT]);
+      const stored = stewardKeyIn(await tx.objectStore(DEVICE).get(STEWARD_KEY));
+      if (stored === undefined) return undefined;
+      const opened = await vaultKeys(tx, session);
+      return wholeRecord(stewardSealing, stored, sealedFor(opened, DEVICE, STEWARD_KEY)).secret;
+    },
+    async keepStewardKey(secret, at) {
+      const key = { secret: Uint8Array.from(secret), stewardSince: at };
+      await writeKeys(db, (tx) => keepKeys(tx, session, { steward: key }));
+      changed();
+    },
+    async dropStewardKey() {
+      await writeKeys(db, (tx) => keepKeys(tx, session, { steward: null }));
+      changed();
     },
   };
 }
@@ -2139,6 +2203,20 @@ async function forgetSealedRequest(tx: KeyTransaction): Promise<boolean> {
   const request = recoverRequestIn(await devices.get(RECOVER_REQUEST));
   const lost = request !== undefined && requestSealing.split(request).secrets === null;
   if (lost) await devices.delete(RECOVER_REQUEST);
+  return lost;
+}
+
+/**
+ * What Restore on the unlock screen does with the steward's key (#488): a
+ * secret that went with the vault takes its record with it, and the steward
+ * imports it again. One that still holds its own secret stays. Returns
+ * whether it went.
+ */
+async function forgetSealedSteward(tx: KeyTransaction): Promise<boolean> {
+  const devices = tx.objectStore(DEVICE);
+  const key = stewardKeyIn(await devices.get(STEWARD_KEY));
+  const lost = key !== undefined && stewardSealing.split(key).secrets === null;
+  if (lost) await devices.delete(STEWARD_KEY);
   return lost;
 }
 
@@ -2410,6 +2488,8 @@ interface KeyChange {
   readonly personal?: RecordChange<PersonalDocument>;
   readonly sent?: RecordChange<SentApplication>;
   readonly recoverRequest?: RecoverRequest | null;
+  /** The steward's key to keep, whole, or null to forget it (#488). */
+  readonly steward?: StewardKey | null;
 }
 
 /** One write `keepKeys` makes, planned before it makes any (#391). */
@@ -2462,6 +2542,7 @@ async function keepKeysIn(
   planRecords(tx.objectStore(PERSONAL), SHARES, sealed, change.personal, writes);
   planRecords(tx.objectStore(SENT), REPLIES, sealed, change.sent, writes);
   if (change.recoverRequest !== undefined) planRequest(tx, sealed, change.recoverRequest, writes);
+  if (change.steward !== undefined) planSteward(tx, sealed, change.steward, writes);
   const vault = opened === null ? null : resealKeys(opened.vault, opened.key, opened.keys);
   for (const write of writes.drops) await write();
   if (vault !== null) await tx.objectStore(VAULT).put(vault);
@@ -2568,6 +2649,34 @@ function planRequest(
 }
 
 /**
+ * `keepKeys`' steward key (#488): deleted for null, or put whole without a
+ * vault, or split by {@link stewardSealing} with one, its secret into
+ * `sealed` and when it was imported into its record.
+ */
+function planSteward(
+  tx: KeyTransaction,
+  sealed: VaultKeys | null,
+  key: StewardKey | null,
+  writes: KeyWrites,
+): void {
+  const records = tx.objectStore(DEVICE);
+  const entries = entriesIn(sealed, DEVICE);
+  if (key === null) {
+    entries?.delete(STEWARD_KEY);
+    writes.drops.push(() => records.delete(STEWARD_KEY));
+    return;
+  }
+  if (entries === null) {
+    writes.puts.push(() => records.put(key, STEWARD_KEY));
+    return;
+  }
+  const { kept, secrets } = sealedSplit(stewardSealing, key);
+  if (secrets === null) entries.delete(STEWARD_KEY);
+  else entries.set(STEWARD_KEY, secrets);
+  writes.puts.push(() => records.put(kept, STEWARD_KEY));
+}
+
+/**
  * The personal Documents, sent applications and recovery request that still
  * hold their keys in the clear, whole: records kept before #255, #265 and
  * #118's sealing, or on a device with no vault, for `keepKeys` to seal.
@@ -2577,10 +2686,13 @@ async function plainSecrets(tx: KeyTransaction): Promise<PlainSecrets> {
   const sent = await tx.objectStore(SENT).getAll();
   const request = recoverRequestIn(await tx.objectStore(DEVICE).get(RECOVER_REQUEST));
   const [plainRequest] = plainRecords(requestSealing, request === undefined ? [] : [request]);
+  const steward = stewardKeyIn(await tx.objectStore(DEVICE).get(STEWARD_KEY));
+  const [plainSteward] = plainRecords(stewardSealing, steward === undefined ? [] : [steward]);
   return {
     personal: { put: plainRecords(SHARES.sealing, documents) },
     sent: { put: plainRecords(REPLIES.sealing, sent) },
     ...(plainRequest === undefined ? {} : { recoverRequest: plainRequest }),
+    ...(plainSteward === undefined ? {} : { steward: plainSteward }),
   };
 }
 
@@ -2589,6 +2701,7 @@ interface PlainSecrets {
   readonly personal: { readonly put: readonly PersonalDocument[] };
   readonly sent: { readonly put: readonly SentApplication[] };
   readonly recoverRequest?: RecoverRequest;
+  readonly steward?: StewardKey;
 }
 
 /**
@@ -2600,7 +2713,8 @@ interface PlainSecrets {
 async function sealPlain(tx: KeyTransaction, session: Session): Promise<void> {
   const plain = await plainSecrets(tx);
   const records = plain.personal.put.length + plain.sent.put.length;
-  if (records > 0 || plain.recoverRequest !== undefined) await keepKeys(tx, session, plain);
+  const keys = plain.recoverRequest !== undefined || plain.steward !== undefined;
+  if (records > 0 || keys) await keepKeys(tx, session, plain);
 }
 
 /**

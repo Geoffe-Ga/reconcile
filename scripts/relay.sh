@@ -32,11 +32,15 @@ ENVIRONMENT:
                                   The steward's Ed25519 public key, 43 base64url
                                   characters, that turns the public shelf on
                                   (#484, docs/spec/listed-doors.md); unset, its
-                                  routes answer 404 shelf_unavailable
+                                  routes answer 404 shelf_unavailable. Make one
+                                  offline: python -m scripts.steward_key
     RECONCILE_RELAY_SHELF_MAX_BYTES
                                   Refuse a shelf PUT that would take the
                                   shelf's unexpired records past this many
                                   bytes (default 64 MiB)
+    RECONCILE_RELAY_SHELF_MODE    held (the default, and the only mode, #488):
+                                  every new listing waits for the steward's
+                                  release; any other value stops the relay
 
 --no-proxy-headers matters: Uvicorn otherwise trusts X-Forwarded-For from
 127.0.0.1, which is where a reverse proxy on the same host connects from.

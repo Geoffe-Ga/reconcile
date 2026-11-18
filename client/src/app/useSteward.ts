@@ -1,0 +1,89 @@
+/**
+ * The steward's key and console as screens read them (#488;
+ * docs/spec/listed-doors.md §6.2, §6.4).
+ */
+import { useEffect, useState } from 'react';
+
+import type { Shelf } from '../net/shelf';
+import type { StewardQueue } from '../screens/Steward';
+import { STEWARD_PINS } from '../shelf/steward';
+import { STEWARD_CHANGED, type Store } from '../store/db';
+import { useShelfRead } from './usePublicShelf';
+import type { ShelfReader } from '../shelf/read';
+import { readQueue } from './steward';
+
+/**
+ * Whether this device holds the steward's key, kept current as it comes and
+ * goes, or null until the store answers. A store that can't answer reads as
+ * holding none.
+ */
+export function useHoldsStewardKey(
+  store: Pick<Store, 'holdsStewardKey' | 'subscribe'>,
+): boolean | null {
+  const [held, setHeld] = useState<boolean | null>(null);
+  useEffect(() => {
+    let live = true;
+    const load = (): void => {
+      store.holdsStewardKey().then(
+        (answer) => {
+          if (live) setHeld(answer);
+        },
+        () => {
+          if (live) setHeld(false);
+        },
+      );
+    };
+    load();
+    const unsubscribe = store.subscribe((changed) => {
+      if (changed === STEWARD_CHANGED) load();
+    });
+    return () => {
+      live = false;
+      unsubscribe();
+    };
+  }, [store]);
+  return held;
+}
+
+/**
+ * Whether Settings shows its quiet steward key section: on a device that
+ * holds the key, so it can reach the console; else only while the app pins
+ * a steward key and the relay has a shelf, so with neither nothing shows.
+ * Undefined until both answer.
+ */
+export function useOffersStewardKey(
+  held: boolean | null,
+  shelf: ShelfReader | undefined,
+): boolean | undefined {
+  const read = useShelfRead(STEWARD_PINS === null ? undefined : shelf);
+  if (held === null) return undefined;
+  if (held) return true;
+  if (STEWARD_PINS === null || read === null) return false;
+  return read === undefined ? undefined : true;
+}
+
+/** The console's queue once read, null until then; `reload` reads it again. */
+export function useStewardQueue(shelf: Pick<Shelf, 'read' | 'readHeld'> | undefined): {
+  readonly queue: StewardQueue | null;
+  readonly reload: () => void;
+} {
+  const [queue, setQueue] = useState<StewardQueue | null>(null);
+  const [round, setRound] = useState(0);
+  useEffect(() => {
+    let live = true;
+    const reading =
+      shelf === undefined ? Promise.resolve('unavailable' as const) : readQueue(shelf);
+    void reading.then((answer) => {
+      if (live) setQueue(answer);
+    });
+    return () => {
+      live = false;
+    };
+  }, [shelf, round]);
+  return {
+    queue,
+    reload: () => {
+      setRound((n) => n + 1);
+    },
+  };
+}

@@ -7,7 +7,7 @@ import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -19,6 +19,10 @@ VAPID_KEY_ENV = "RECONCILE_RELAY_VAPID_KEY"
 VAPID_SUBJECT_ENV = "RECONCILE_RELAY_VAPID_SUBJECT"
 SHELF_STEWARD_KEY_ENV = "RECONCILE_RELAY_SHELF_STEWARD_KEY"
 SHELF_MAX_BYTES_ENV = "RECONCILE_RELAY_SHELF_MAX_BYTES"
+SHELF_MODE_ENV = "RECONCILE_RELAY_SHELF_MODE"
+# The one shelf mode built (#488, listed-doors.md §4.2): every new listing
+# waits for the steward. Open mode is deferred (§9).
+HELD_MODE = "held"
 DEFAULT_MAX_DB_BYTES = 1 << 30  # 1 GiB
 # 64 MiB: over four times a busy 15-person group's worst 30 days, and 1/16 of
 # the relay's default cap (ADR-0028's amendment of 2026-11-10, #141).
@@ -40,6 +44,7 @@ _EXPECTED = {
         "an Ed25519 public key: 43 characters of canonical unpadded base64url"
     ),
     SHELF_MAX_BYTES_ENV: "a positive whole number of bytes",
+    SHELF_MODE_ENV: "held, or unset: open mode is deferred (listed-doors.md §9)",
 }
 
 
@@ -74,6 +79,9 @@ class Settings:
             its routes answer ``shelf_unavailable``.
         max_shelf_bytes: A shelf PUT is refused with ``shelf_full`` when it
             would take the shelf's unexpired records past this many bytes.
+        shelf_mode: ``held``, the only mode built (#488): an address's first
+            listing, and everything under it, waits until a ``release``
+            notice the steward signed clears it.
     """
 
     db_path: Path
@@ -83,6 +91,7 @@ class Settings:
     vapid_subject: str = ""
     shelf_steward_key: str | None = None
     max_shelf_bytes: int = DEFAULT_MAX_SHELF_BYTES
+    shelf_mode: Literal["held"] = "held"
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> Settings:
@@ -90,11 +99,13 @@ class Settings:
 
         An unset or empty ``RECONCILE_RELAY_VAPID_KEY`` leaves push off, and
         an unset or empty ``RECONCILE_RELAY_SHELF_STEWARD_KEY`` the shelf.
+        An unset or empty ``RECONCILE_RELAY_SHELF_MODE`` is held mode.
 
         Raises:
             SettingsError: ``RECONCILE_RELAY_DB`` is unset or empty, a size
-                cap is set but isn't a positive integer, or the steward key
-                is set but isn't a canonical 32-byte key.
+                cap is set but isn't a positive integer, the steward key
+                is set but isn't a canonical 32-byte key, or the shelf mode
+                is set to anything but ``held``.
         """
         env = os.environ if environ is None else environ
         db_path = env.get(DB_ENV, "")
@@ -111,6 +122,7 @@ class Settings:
             vapid_subject=env.get(VAPID_SUBJECT_ENV, ""),
             shelf_steward_key=_steward_key(env),
             max_shelf_bytes=_bytes(env, SHELF_MAX_BYTES_ENV, DEFAULT_MAX_SHELF_BYTES),
+            shelf_mode=_shelf_mode(env),
         )
 
 
@@ -145,3 +157,10 @@ def _steward_key(env: Mapping[str, str]) -> str | None:
     if key_bytes(raw) is None:
         raise SettingsError(SHELF_STEWARD_KEY_ENV)
     return raw
+
+
+def _shelf_mode(env: Mapping[str, str]) -> Literal["held"]:
+    """``held`` when the mode is unset, empty or ``held``; any other is refused."""
+    if env.get(SHELF_MODE_ENV, "") not in ("", HELD_MODE):
+        raise SettingsError(SHELF_MODE_ENV)
+    return "held"

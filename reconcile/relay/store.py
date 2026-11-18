@@ -23,6 +23,12 @@ record's seq, the address it was PUT under, its kind, the id it names or
 it is held until (0 for a record that isn't held). Nothing else, and no
 index on an address, so nothing is quicker to look up by group.
 
+Held mode (#488, §4.2): an address's first listing, and every record under it
+while it waits, is held until ``HELD_UNTIL_RELEASED``, a minute no clock
+reaches, and a ``release`` notice clears that hold. A notice's ``ref`` is the
+address it names, so a listing's renewal can carry its release's expiry with
+it: a release lasts as long as the listing it released.
+
 Each mailbox has a byte cap (#141). ``blobs_by_mailbox_size`` indexes each
 blob's length beside its mailbox and expiry, so summing a mailbox's unexpired
 bytes reads that index alone and never a blob.
@@ -43,6 +49,9 @@ SECONDS_PER_MINUTE = 60
 SECONDS_PER_DAY = 86_400
 MINUTES_PER_DAY = SECONDS_PER_DAY // SECONDS_PER_MINUTE
 INSTANCE_BYTES = 16
+# The minute a held record waits until: SQLite's largest INTEGER, which no
+# clock reaches, so only a release notice clears it (#488).
+HELD_UNTIL_RELEASED = 2**63 - 1
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS blobs (
@@ -240,8 +249,15 @@ class BlobStore:
 
         An address has one listing row. A later copy takes the row's body,
         receipt and expiry and keeps its seq, so the listing stays where it
-        was first listed in the shelf's order, and its hold stays as it was.
+        was first listed in the shelf's order, and its hold stays as it was:
+        ``when.held_until`` applies only to a first listing. Any release
+        notice naming ``address`` is kept at least as long as the listing.
         """
+        self._db.execute(
+            "UPDATE shelf SET expiry = max(expiry, ?)"
+            " WHERE kind = 'notice' AND ref = ?",
+            (when.expiry, address),
+        )
         rows = self._db.execute(
             "UPDATE shelf SET body = ?, received = ?, expiry = ?"
             " WHERE address = ? AND kind = 'listing' RETURNING seq",
@@ -250,6 +266,22 @@ class BlobStore:
         if rows:
             return int(rows[0][0])
         return self.add_shelf(address, "listing", "", body, when)
+
+    def listing_held(self, address: str) -> bool:
+        """Whether ``address``'s listing waits for a release (#488)."""
+        row = self._db.execute(
+            "SELECT 1 FROM shelf"
+            " WHERE address = ? AND kind = 'listing' AND held_until = ?",
+            (address, HELD_UNTIL_RELEASED),
+        ).fetchone()
+        return row is not None
+
+    def release(self, address: str) -> int:
+        """Clear the hold on every record under ``address``; return how many (#488)."""
+        return self._db.execute(
+            "UPDATE shelf SET held_until = 0 WHERE address = ? AND held_until = ?",
+            (address, HELD_UNTIL_RELEASED),
+        ).rowcount
 
     def drop_entries(self, address: str) -> int:
         """Delete every record under ``address`` but its listing; return how many."""
@@ -300,6 +332,18 @@ class BlobStore:
         rows = self._db.execute(
             "SELECT seq, received, address, body FROM shelf"
             " WHERE seq > ? AND expiry > ? AND held_until <= ?"
+            " ORDER BY seq LIMIT ?",
+            (after, today, minute, limit),
+        ).fetchall()
+        return [ShelfRow(*row) for row in rows]
+
+    def read_held(
+        self, *, after: int, limit: int, today: int, minute: int
+    ) -> list[ShelfRow]:
+        """Up to ``limit`` unexpired records held at ``minute``, after ``after``."""
+        rows = self._db.execute(
+            "SELECT seq, received, address, body FROM shelf"
+            " WHERE seq > ? AND expiry > ? AND held_until > ?"
             " ORDER BY seq LIMIT ?",
             (after, today, minute, limit),
         ).fetchall()

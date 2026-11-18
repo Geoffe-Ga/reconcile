@@ -12,6 +12,7 @@ import { hasRecoveryPath, type RecoveryPath } from '../app/recoveryPath';
 import { RestoreBackup, type RestoreBackupProps } from '../app/RestoreBackup';
 import { routeHref } from '../app/router';
 import { SaveBackup } from '../app/SaveBackup';
+import { StewardKeyCard, type StewardSettings } from '../app/StewardKeyCard';
 import type { SaveOutcome } from '../app/share';
 import { formatDay } from '../app/time';
 import { BackLink, PageHeader, Section } from '../app/ui';
@@ -94,6 +95,11 @@ export interface SettingsProps {
   readonly relayBackup: RelayBackupStatus;
   /** Recovery contacts, and the shares this device holds (#109). */
   readonly recovery: RecoveryProps;
+  /**
+   * The steward's key (#488): absent, as on every device while the app pins
+   * no steward key or the relay has no shelf, unless this device holds it.
+   */
+  readonly steward?: StewardSettings | undefined;
 }
 
 /** The relay backup's words for `status`, or null while the device keeps none. */
@@ -348,8 +354,9 @@ function PasskeySection({ passkey }: { readonly passkey: SettingsPasskey }) {
  * Settings (`#/settings`; spec §8.12, #78, #95, #96, #99, #109):
  * Notifications, one switch per group, then Save a backup, with the relay
  * backup's line once the device keeps one (#97), Recovery contacts (#109),
- * Restore a backup, Link a new device, Lock with a passkey, and Erase
- * Reconcile from this device behind a 3-second press and hold.
+ * Restore a backup, Link a new device, Lock with a passkey, the steward's
+ * key where it applies (#488), and Erase Reconcile from this device behind a
+ * 3-second press and hold.
  * Protective features live here, not promoted elsewhere (ADR-0018), apart
  * from group home's quiet backup card.
  */
@@ -396,6 +403,11 @@ export function Settings(props: SettingsProps) {
         <Section title={settings.passkeyHeading}>
           <PasskeySection passkey={props.passkey} />
         </Section>
+        {props.steward === undefined ? null : (
+          <Section title={settings.stewardHeading}>
+            <StewardKeyCard steward={props.steward} />
+          </Section>
+        )}
         <Section title={settings.eraseHeading}>
           <EraseCard onErase={props.onErase} />
         </Section>

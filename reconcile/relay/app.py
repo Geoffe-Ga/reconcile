@@ -54,6 +54,15 @@ the address's entries (409 ``no_entry``); and an address keeps at most 4 live
 entries, a withdrawn one no longer live, and posts at most 1 new one each UTC
 day (429 ``too_many_entries``).
 
+Held mode (#488, listed-doors.md §4.2, the only mode built). An address's
+first listing, and everything PUT under it while it waits, is stored held:
+``GET /v1/shelf`` leaves it out, and ``GET /v1/shelf/held``, the steward's
+console's read, pages held records alone in the same shape. A ``release``
+notice clears an address's hold. A notice is PUT under the configured
+steward key and signed by it; one under any other address gets 403
+``bad_signature``. A notice is kept 180 days, a release at least as long as
+the listing it released.
+
 Nothing here logs. Error bodies are a constant ``{"error": "<code>"}`` that
 never echoes the request. The privacy middleware wraps everything.
 """
@@ -69,7 +78,7 @@ import time
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, Protocol, TypeVar
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -81,6 +90,7 @@ from reconcile.relay import push, shelf
 from reconcile.relay.privacy import PrivacyMiddleware
 from reconcile.relay.settings import Settings, key_bytes
 from reconcile.relay.store import (
+    HELD_UNTIL_RELEASED,
     BlobStore,
     Record,
     ShelfRow,
@@ -105,6 +115,9 @@ BACKUP_SIZES = frozenset({1 << 16, 1 << 18, 1 << 20, 1 << 22, 1 << 24})
 BACKUP_KEEP_DAYS = 180
 # A shelf record is kept 30 whole days after the day it arrived (§4.2, proposed).
 SHELF_KEEP_DAYS = 30
+# A steward's notice is kept 180 whole days after the day it arrived (§4.2,
+# proposed); a release, at least as long as the listing it released (#488).
+NOTICE_KEEP_DAYS = 180
 # An address's entries (#431, §4.2, proposed): at most 4 live, 1 new a relay day.
 MAX_LIVE_ENTRIES = 4
 MAX_NEW_ENTRIES_A_DAY = 1
@@ -199,6 +212,7 @@ def create_app(
     api.add_api_route("/v1/push/{mailbox}/nudge", pushes.nudge, methods=["POST"])
     shelves = _Shelf(store, settings, clock)
     api.add_api_route("/v1/shelf", shelves.get, methods=["GET"])
+    api.add_api_route("/v1/shelf/held", shelves.get_held, methods=["GET"])
     api.add_api_route("/v1/shelf/{address}", shelves.put, methods=["PUT"])
     api.add_api_route("/v1/health", health, methods=["GET"])
     return PrivacyMiddleware(api)
@@ -376,6 +390,16 @@ class _Push:
         _check_space(self.store, self.settings)
 
 
+class _ShelfRead(Protocol):
+    """A store's read of one page of shelf records: held ones, or the rest."""
+
+    def __call__(
+        self, *, after: int, limit: int, today: int, minute: int
+    ) -> list[ShelfRow]:
+        """Up to ``limit`` unexpired records after ``after``, at ``minute``."""
+        ...
+
+
 class _Shelf:
     """The shelf's routes (#484), bound to one store, its settings and a clock."""
 
@@ -404,19 +428,37 @@ class _Shelf:
         record = shelf.open_record(key, body)
         if isinstance(record, shelf.Refusal):
             raise RelayError(record.status, record.code)
+        if record.kind == "notice" and address != self.settings.shelf_steward_key:
+            raise RelayError(403, "bad_signature")
         now = self.clock()  # only after the body, as for a blob
         self._check_room(length, now)  # another PUT may have landed
-        when = ShelfWhen(
-            received=minute_of(now), expiry=day_of(now) + SHELF_KEEP_DAYS + 1
-        )
-        if record.kind == "listing":
-            seq = self._list(address, record, body, when)
-        else:
-            first = self._first_of(address, record, day_of(now))
-            if first is not None:
-                return JSONResponse({"seq": first}, status_code=200)
+        seq, status = self._store(address, record, body, now)
+        return JSONResponse({"seq": seq}, status_code=status)
+
+    def _store(
+        self, address: str, record: shelf.ShelfRecord, body: bytes, now: float
+    ) -> tuple[int, int]:
+        """File ``record`` by its kind; its seq, and 201, or 200 for a repeat.
+
+        In held mode a first listing waits, and so does whatever comes under
+        it before a release (#488).
+        """
+        received, today = minute_of(now), day_of(now)
+        if record.kind == "notice":
+            when = ShelfWhen(received=received, expiry=today + NOTICE_KEEP_DAYS + 1)
             seq = self.store.add_shelf(address, record.kind, record.ref, body, when)
-        return JSONResponse({"seq": seq}, status_code=201)
+            self.store.release(record.ref)
+            return seq, 201
+        expiry = today + SHELF_KEEP_DAYS + 1
+        if record.kind == "listing":
+            when = ShelfWhen(received, expiry, held_until=HELD_UNTIL_RELEASED)
+            return self._list(address, record, body, when), 201
+        first = self._first_of(address, record, today)
+        if first is not None:
+            return first, 200
+        held = HELD_UNTIL_RELEASED if self.store.listing_held(address) else 0
+        when = ShelfWhen(received, expiry, held_until=held)
+        return self.store.add_shelf(address, record.kind, record.ref, body, when), 201
 
     def _first_of(
         self, address: str, record: shelf.ShelfRecord, today: int
@@ -467,13 +509,19 @@ class _Shelf:
 
     async def get(self, request: Request) -> JSONResponse:
         """Every record that isn't held, after a seq, ascending, with ``now``."""
+        return self._page(request, self.store.read_shelf)
+
+    async def get_held(self, request: Request) -> JSONResponse:
+        """Every record still held, after a seq, ascending, with ``now`` (#488)."""
+        return self._page(request, self.store.read_held)
+
+    def _page(self, request: Request, read: _ShelfRead) -> JSONResponse:
+        """One page of ``read``'s records, the relay's minute and its instance."""
         self._on()
         after = _query_int(request.query_params, AFTER)
         limit = _query_int(request.query_params, LIMIT)
         now = self.clock()  # before the select, as for a mailbox
-        rows = self.store.read_shelf(
-            after=after, limit=limit, today=day_of(now), minute=minute_of(now)
-        )
+        rows = read(after=after, limit=limit, today=day_of(now), minute=minute_of(now))
         return JSONResponse(
             {
                 "records": [_shelf_json(row) for row in rows],

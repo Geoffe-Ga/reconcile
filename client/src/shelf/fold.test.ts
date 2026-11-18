@@ -4,8 +4,14 @@
  * one outranks; rule 3, the skeleton; and rule 4, name ownership, with its
  * golden vectors in `vectors/ownership.json`; and rules 5 to 7 (#431), an
  * address's first 4 unexpired entries, the day's wait and withdrawals, with
- * theirs in `vectors/entries.json`. Every other rule is a named `it.todo` in
+ * theirs in `vectors/entries.json`; and rule 8's release (#488), with its
+ * vectors in `vectors/notices.json`. Every other rule is a named `it.todo` in
  * the issue that builds it.
+ *
+ * A held relay serves a listing only beside the release that let it show, so
+ * rules 1 to 7 fold here through {@link foldShelf} and {@link doorListing},
+ * which release every address their records name, as that relay would have.
+ * Rule 8's tests fold what they're given ({@link foldAsServed}).
  */
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
@@ -15,13 +21,16 @@ import { sha256 } from '../crypto/hash';
 import { signShelfRecord } from '../crypto/shelf';
 import { newSigningKeys, publicKeyOf, type SigningKeys } from '../crypto/sign';
 import type { ShelfRecord } from '../net/shelf';
+import { releaseRecord, STEWARD_ADDRESS, TEST_STEWARD } from '../test/steward';
 import {
-  doorListing,
-  foldShelf,
+  doorListing as doorListingAsServed,
+  type FoldShelfOptions,
+  foldShelf as foldAsServed,
   nameHolder,
   NEW_LISTING_MINUTES,
   newlyListed,
   type ShelfState,
+  waitingListings,
 } from './fold';
 import { type ShelfBody, signShelfBody } from './record';
 import { nameSkeleton } from './skeleton';
@@ -30,11 +39,37 @@ const NOW = 29_000_000;
 const COVENANT = base64url(new Uint8Array(32).fill(9));
 const OAK = newSigningKeys();
 const BIRCH = newSigningKeys();
+const ELM = newSigningKeys();
 
 /** A Dispatch id from a short label, so tests can name them. */
 const idOf = (label: string): string => base64url(new Uint8Array(32).fill(label.charCodeAt(1)));
 
 let nextSeq = 0;
+
+/** The seq the tests' releases take: after every record a test makes. */
+const RELEASE_SEQ = 1_000_000;
+
+/** A release of each address `records` came under, but the steward's, as a held relay serves them. */
+function releasesOf(records: readonly ShelfRecord[]): ShelfRecord[] {
+  const addresses = [...new Set(records.map((record) => record.address))];
+  return addresses
+    .filter((address) => address !== STEWARD_ADDRESS)
+    .map((address, at) => releaseRecord(address, RELEASE_SEQ + at, NOW - 1));
+}
+
+/** `records` folded once every address they name is released (rules 1 to 7). */
+function foldShelf(records: readonly ShelfRecord[], now: number, options?: FoldShelfOptions) {
+  return foldAsServed([...records, ...releasesOf(records)], now, options);
+}
+
+/** `address`'s listing among `records`, once every address they name is released. */
+function doorListing(
+  records: readonly ShelfRecord[],
+  address: string,
+  since?: ReadonlyMap<string, number>,
+) {
+  return doorListingAsServed([...records, ...releasesOf(records)], address, since);
+}
 
 /** `body` signed by `keys` and stored under `address` (the signer's own, unless given). */
 function recordOf(
@@ -84,13 +119,32 @@ interface OwnershipFile {
  */
 interface VectorRecord {
   readonly seq: number;
-  readonly door: string;
+  /** The door that signs it; a notice's signer is the steward, unless `signer` names a door. */
+  readonly door?: string;
   readonly received?: number;
   readonly listing?: string;
   readonly skeleton?: string;
   readonly entry?: string;
   readonly withdraw?: string;
   readonly final?: true;
+  /** A release naming this door (`vectors/notices.json`). */
+  readonly release?: string;
+  /** A later notice naming this door, which #489 folds. */
+  readonly later?: string;
+  /** The door that signs a release in the steward's place, under its own address. */
+  readonly signer?: string;
+}
+
+/** `vectors/notices.json`: which listings and entries show, and which are held, under rule 8 (#488). */
+interface NoticesFile {
+  readonly kind: 'notices';
+  readonly cases: readonly {
+    readonly about: string;
+    readonly records: readonly VectorRecord[];
+    readonly listings: readonly (readonly [string, string])[];
+    readonly entries: readonly (readonly [string, string])[];
+    readonly held: readonly string[];
+  }[];
 }
 
 /** `vectors/entries.json`: which entries show, under rules 5 to 7 (#431). */
@@ -116,6 +170,11 @@ const [ENTRIES] = Object.values(
   import.meta.glob<EntriesFile>('./vectors/entries.json', { import: 'default', eager: true }),
 );
 if (ENTRIES === undefined) throw new Error('vectors/entries.json is missing.');
+
+const [NOTICES] = Object.values(
+  import.meta.glob<NoticesFile>('./vectors/notices.json', { import: 'default', eager: true }),
+);
+if (NOTICES === undefined) throw new Error('vectors/notices.json is missing.');
 
 /** A vector door's keys, from its label: the secret is the label's SHA-256. */
 function doorKeys(label: string): SigningKeys {
@@ -143,9 +202,27 @@ function bodyFrom(vector: VectorRecord): ShelfBody {
   return { v: 1, kind: 'listing', open: false, final: true };
 }
 
-/** A vector's record, signed by its door. */
+/** A vector door's address. */
+const addressOf = (label: string): string => base64url(doorKeys(label).publicKey);
+
+/** A vector notice's record: signed by the steward under its address, or by `signer` under its own. */
+function noticeFrom(vector: VectorRecord, body: ShelfBody): ShelfRecord {
+  const keys = vector.signer === undefined ? TEST_STEWARD.signing : doorKeys(vector.signer);
+  const address = base64url(keys.publicKey);
+  return { seq: vector.seq, received: NOW - 1441, address, data: signShelfBody(keys, body) };
+}
+
+/** A vector's record, signed by its door, or a notice signed by the steward. */
 function recordFrom(vector: VectorRecord): ShelfRecord {
-  const keys = doorKeys(vector.door);
+  if (vector.release !== undefined) {
+    const address = addressOf(vector.release);
+    return noticeFrom(vector, { v: 1, kind: 'notice', act: 'release', address });
+  }
+  if (vector.later !== undefined) {
+    const address = addressOf(vector.later);
+    return noticeFrom(vector, { v: 1, kind: 'notice', act: 'hold', address });
+  }
+  const keys = doorKeys(vector.door ?? '');
   const address = base64url(keys.publicKey);
   const received = vector.received ?? NOW - 1441;
   return { seq: vector.seq, received, address, data: signShelfBody(keys, bodyFrom(vector)) };
@@ -241,14 +318,25 @@ describe('foldShelf', () => {
       expect(foldShelf([listing('Oak St Tenants'), { ...damaged, data }], NOW).entries).toEqual([]);
     });
 
-    it('ignores a signed record that isn’t one of this slice’s kinds', () => {
+    it('ignores a notice a door signed, as it ignores any record that isn’t its kind', () => {
       const notice = new TextEncoder().encode('{"v":1,"kind":"notice","act":"pause"}');
       const record = { ...listing('Oak St Tenants'), data: signShelfRecord(OAK, notice) };
 
       expect(foldShelf([record], NOW)).toEqual(foldShelf([], NOW));
     });
 
-    it.todo('ignores a notice the steward key pinned in shelf/steward.ts didn’t sign (#488)');
+    it('ignores a release the steward key pinned in shelf/steward.ts didn’t sign (#488)', () => {
+      const oak = base64url(OAK.publicKey);
+      const body = { v: 1, kind: 'notice', act: 'release', address: oak } as const;
+      const forged = [
+        recordOf(OAK, body),
+        recordOf(BIRCH, body, STEWARD_ADDRESS),
+        { ...releaseRecord(oak, 900, NOW), address: base64url(BIRCH.publicKey) },
+      ];
+
+      expect(foldAsServed([listing('Oak St Tenants'), ...forged], NOW).listings).toEqual([]);
+      expect(doorListingAsServed([listing('Oak St Tenants'), ...forged], oak)?.held).toBe(true);
+    });
   });
 
   describe('rule 2: listings', () => {
@@ -665,9 +753,19 @@ describe('foldShelf', () => {
       expect(newlyListed(null, NOW)).toBe(false);
     });
 
-    it.todo(
-      'is held while a hold notice stands on its address (#488, #489: holds aren’t folded yet)',
-    );
+    it('is held until a release the pinned key signed names it (#488)', () => {
+      const oak = base64url(OAK.publicKey);
+      const records = [listing('Oak St Tenants')];
+
+      expect(doorListingAsServed(records, oak)?.held).toBe(true);
+      expect(newlyListed(doorListingAsServed(records, oak), NOW + 99_999)).toBe(true);
+      const released = [...records, releaseRecord(oak, 900, NOW)];
+      expect(doorListingAsServed(released, oak)?.held).toBe(false);
+      const other = [...records, releaseRecord(base64url(BIRCH.publicKey), 900, NOW)];
+      expect(doorListingAsServed(other, oak)?.held).toBe(true);
+    });
+
+    it.todo('is held while a hold notice stands on its address (#489: holds aren’t folded yet)');
   });
 
   describe('vectors/entries.json', () => {
@@ -679,7 +777,65 @@ describe('foldShelf', () => {
     });
   });
 
+  describe('vectors/notices.json', () => {
+    it.each(NOTICES.cases.map((vector) => [vector.about, vector] as const))('%s', (_, vector) => {
+      const records = vector.records.map(recordFrom);
+      const state = foldAsServed(records, NOW);
+      const held = ['oak', 'birch'].filter(
+        (label) => doorListingAsServed(records, addressOf(label))?.held === true,
+      );
+      expect(shown(state)).toEqual({ listings: vector.listings, entries: vector.entries });
+      expect(held).toEqual(vector.held);
+    });
+
+    it('folds any order the relay could serve the same', () => {
+      const [richest] = NOTICES.cases.filter((vector) => vector.records.length >= 6);
+      const records = (richest?.records ?? []).map(recordFrom);
+      const folded = foldAsServed(records, NOW);
+      fc.assert(
+        fc.property(fc.shuffledSubarray(records, { minLength: records.length }), (shuffled) => {
+          expect(foldAsServed(shuffled, NOW)).toEqual(folded);
+        }),
+      );
+    });
+  });
+
+  describe('waitingListings: the steward’s console (#488, §6.4)', () => {
+    const oak = base64url(OAK.publicKey);
+    const birch = base64url(BIRCH.publicKey);
+
+    it('lists each held address’s newest listing in seq order, beside the live holder of its name', () => {
+      const live = foldShelf([listing('Eastside Tenants Union', BIRCH)], NOW);
+      const held = [
+        listing('Oak St Tenants'),
+        listing('Elm Co-op', ELM),
+        listing('EASTSIDE TENANTS UNI0N'),
+        entry('d1', 'Rent strike vote'),
+      ];
+
+      const waiting = waitingListings(held, live);
+
+      expect(waiting.map(({ listing: l }) => [l.address, l.name])).toEqual([
+        [base64url(ELM.publicKey), 'Elm Co-op'],
+        [oak, 'EASTSIDE TENANTS UNI0N'],
+      ]);
+      expect(waiting[0]?.holder).toBeNull();
+      expect(waiting[1]?.holder?.address).toBe(birch);
+    });
+
+    it('leaves out a forged, misnamed or ended listing', () => {
+      const forged = recordOf(
+        BIRCH,
+        { v: 1, kind: 'listing', open: true, name: 'Oak', skeleton: 'oak', covenant: COVENANT },
+        oak,
+      );
+      const held = [forged, listing('Birch Ave', BIRCH, 'other'), listing('Elm', ELM), final(ELM)];
+
+      expect(waitingListings(held, foldShelf([], NOW))).toEqual([]);
+    });
+  });
+
   describe('rules to come', () => {
-    it.todo('applies a release notice (#488), and hold, uphold, suspend and pause (#489)');
+    it.todo('applies hold, uphold, suspend and pause notices (#489)');
   });
 });

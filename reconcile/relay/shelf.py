@@ -8,9 +8,15 @@ record doesn't carry it again.
 
 These are the only bodies the relay can read, and it reads as little as it
 can: the signature, ``v`` and ``kind``, an entry's or withdraw's ``id``,
-which it files the record under, and a listing's ``open`` and ``final``,
-which say whether the door has closed for good (#486). It never reads a
-name, a title or a text.
+which it files the record under, a listing's ``open`` and ``final``, which
+say whether the door has closed for good (#486), and a notice's ``act`` and
+``address`` (#488). It never reads a name, a title or a text.
+
+A notice is the steward's (listed-doors.md §6.1). The relay takes one act in
+this slice, ``release``, naming the address whose hold it clears, and files
+it under that address; the route checks that the steward signed it. Every
+later act (``hold``, ``uphold``, ``suspend``, ``pause``) comes with #489,
+and until then is no record.
 
 Every device verifies each record again under strict RFC 8032 rules
 (``client/src/crypto/shelf.ts``), so a record this check lets through that a
@@ -27,6 +33,8 @@ from typing import Any
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
+from reconcile.relay.settings import key_bytes
+
 # The tag before the 0x00 byte, as client/src/crypto/sign.ts names it.
 SHELF_CONTEXT = b"reconcile/v1/shelf"
 SIGNATURE_BYTES = 64
@@ -40,10 +48,13 @@ _MAX_BYTES = {
     "listing": MAX_SMALL_BYTES,
     "entry": MAX_ENTRY_BYTES,
     "withdraw": MAX_SMALL_BYTES,
+    "notice": MAX_SMALL_BYTES,
 }
-# The kinds filed under the id they name; the third, a listing, under none. A
-# notice is the steward's (#488).
+# The kinds filed under the id they name; a listing is filed under none, and a
+# notice under the address it names.
 _REFERS = frozenset({"entry", "withdraw"})
+# The one act a notice takes in this slice (#488); the rest come with #489.
+RELEASE = "release"
 
 
 @dataclass(frozen=True)
@@ -64,7 +75,8 @@ class ShelfRecord:
     """What the relay files a record under: its kind, and the id it names or ``""``.
 
     ``final`` is true only for a final listing, ``{v: 1, kind: "listing",
-    open: false, final: true}``: its door has closed for good (#486).
+    open: false, final: true}``: its door has closed for good (#486). A
+    release notice's ``ref`` is the address it releases (#488).
     """
 
     kind: str
@@ -77,10 +89,10 @@ def open_record(key: bytes, body: bytes) -> ShelfRecord | Refusal:
 
     In order: a signature and at least one byte of message (else
     ``invalid_record``), the signature (else ``bad_signature``), a v1
-    listing, entry or withdraw (else ``invalid_record``), then the kind's
-    size (else ``too_large``). Unsigned bytes are never parsed. A listing is
-    open (``open`` is ``true``) or final (``open`` is ``false`` and ``final``
-    is ``true``); any other is no record.
+    listing, entry, withdraw or release notice (else ``invalid_record``),
+    then the kind's size (else ``too_large``). Unsigned bytes are never
+    parsed. A listing is open (``open`` is ``true``) or final (``open`` is
+    ``false`` and ``final`` is ``true``); any other is no record.
     """
     if len(body) <= SIGNATURE_BYTES:
         return INVALID_RECORD
@@ -117,6 +129,8 @@ def _parse(message: bytes) -> ShelfRecord | None:
     kind = body.get("kind")
     if not isinstance(kind, str) or kind not in _MAX_BYTES:
         return None
+    if kind == "notice":
+        return _notice(body)
     if kind not in _REFERS:
         return _listing(body)
     ref = body.get("id")
@@ -130,6 +144,14 @@ def _listing(body: dict[str, Any]) -> ShelfRecord | None:
     if body.get("open") is False and body.get("final") is True:
         return ShelfRecord("listing", "", final=True)
     return None
+
+
+def _notice(body: dict[str, Any]) -> ShelfRecord | None:
+    """A release naming a canonical key, filed under it; else ``None``."""
+    address = body.get("address")
+    if body.get("act") != RELEASE or not isinstance(address, str):
+        return None
+    return ShelfRecord("notice", address) if key_bytes(address) is not None else None
 
 
 def is_final(body: bytes) -> bool:
