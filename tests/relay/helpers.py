@@ -359,6 +359,11 @@ def listing(name: str = "Oak St Tenants") -> dict[str, Any]:
     }
 
 
+def final_listing() -> dict[str, Any]:
+    """A final listing's body: the door has closed for good (#486)."""
+    return {"v": 1, "kind": "listing", "open": False, "final": True}
+
+
 def entry(entry_id: str = "d" * 43, text: str = "Saturday at ten.") -> dict[str, Any]:
     """An entry's body under the id ``entry_id``."""
     return {

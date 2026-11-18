@@ -44,6 +44,7 @@ import { requestPersistence } from './platform/persist';
 import { browserPushPort, closeWhenVisible } from './platform/pushPort';
 import { plainText } from './app/text/markdown';
 import { createDoorKeeper } from './door/keeper';
+import { createShelfKeeper } from './shelf/keeper';
 import { browserCredentials, webAuthn } from './platform/webauthn';
 import { createChatBot } from './store/chatBot';
 import { openStore } from './store/db';
@@ -101,7 +102,18 @@ async function start(container: HTMLElement): Promise<void> {
   const now = (): number => Date.now();
   const afterPass = (): Promise<void> => afterEveryPass({ store, relay, seal: xchachaSeal, now });
   const door = createDoorKeeper({ store, relay, seal: xchachaSeal, plainText, clock: now });
-  const sync = createSync({ store, relay, seal: xchachaSeal, chatBot, push, door, afterPass });
+  const shelfClient = createShelf();
+  const shelf = createShelfKeeper({ store, shelf: shelfClient });
+  const sync = createSync({
+    store,
+    relay,
+    seal: xchachaSeal,
+    chatBot,
+    push,
+    door,
+    shelf,
+    afterPass,
+  });
   closeWhenVisible(port, document);
   const platform = readPlatform();
   const credentials = browserCredentials();
@@ -127,7 +139,7 @@ async function start(container: HTMLElement): Promise<void> {
     push,
     guide: guideRecord(),
     passkey: passkeyOn(keys),
-    shelf: createShelfFeed({ shelf: createShelf(), now }),
+    shelf: createShelfFeed({ shelf: shelfClient, now }),
   };
   const firstRun = {
     platform,

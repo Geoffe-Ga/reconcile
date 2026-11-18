@@ -38,6 +38,7 @@ describe('PilotNotice', () => {
       'when messages arrive',
       'each message’s size class, one of four sizes',
       'which mailboxes your device checks',
+      'if your group lists its front door on the public shelf, that your device is in that group, since your device posts the listing',
     ]);
     expect(document.body).not.toHaveTextContent(/only timing and sizes/i);
   });

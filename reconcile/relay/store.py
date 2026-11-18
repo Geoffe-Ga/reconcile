@@ -219,6 +219,36 @@ class BlobStore:
         ).fetchall()
         return int(rows[0][0])
 
+    def listing_body(self, address: str) -> bytes | None:
+        """The signed bytes of ``address``'s listing, expired or not, or ``None``."""
+        row = self._db.execute(
+            "SELECT body FROM shelf WHERE address = ? AND kind = 'listing'",
+            (address,),
+        ).fetchone()
+        return None if row is None else bytes(row[0])
+
+    def put_listing(self, address: str, body: bytes, when: ShelfWhen) -> int:
+        """Store ``address``'s listing in place of its earlier one; return its seq.
+
+        An address has one listing row. A later copy takes the row's body,
+        receipt and expiry and keeps its seq, so the listing stays where it
+        was first listed in the shelf's order, and its hold stays as it was.
+        """
+        rows = self._db.execute(
+            "UPDATE shelf SET body = ?, received = ?, expiry = ?"
+            " WHERE address = ? AND kind = 'listing' RETURNING seq",
+            (body, when.received, when.expiry, address),
+        ).fetchall()
+        if rows:
+            return int(rows[0][0])
+        return self.add_shelf(address, "listing", "", body, when)
+
+    def drop_entries(self, address: str) -> int:
+        """Delete every record under ``address`` but its listing; return how many."""
+        return self._db.execute(
+            "DELETE FROM shelf WHERE address = ? AND kind != 'listing'", (address,)
+        ).rowcount
+
     def read_shelf(
         self, *, after: int, limit: int, today: int, minute: int
     ) -> list[ShelfRow]:

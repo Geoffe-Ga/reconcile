@@ -813,6 +813,58 @@ describe('the front door keeper in a pass (#121)', () => {
   });
 });
 
+describe('the shelf keeper in a pass (#486)', () => {
+  it('runs for each group after its door, once its pull is saved', async () => {
+    const fake = createFakeRelay();
+    const ana = await device('ana', createRelay({ fetch: fake.fetch }), newKeys());
+    const order: string[] = [];
+    const sync = createSync({
+      store: ana.store,
+      relay: createRelay({ fetch: fake.fetch }),
+      seal: xchachaSeal,
+      door: {
+        run: (groupId) => {
+          order.push(`door ${groupId}`);
+          return Promise.resolve();
+        },
+        replies: () => Promise.resolve(),
+      },
+      shelf: {
+        run: async (groupId) => {
+          const relayNow = (await ana.store.getGroup(groupId))?.relayNow ?? null;
+          order.push(`shelf ${groupId} at ${String(relayNow)}`);
+        },
+      },
+    });
+    opened.push(sync);
+
+    expect(await sync.syncOnce()).toBe(true);
+
+    expect(order).toEqual([`door ${GROUP}`, `shelf ${GROUP} at 29000000`]);
+  });
+
+  it('never fails a pass, however it fails, and runs nothing once halted (#78)', async () => {
+    const fake = createFakeRelay();
+    const ana = await device('ana', createRelay({ fetch: fake.fetch }), newKeys());
+    const run = vi.fn(() => Promise.reject(new Error('shelf_full')));
+    const sync = createSync({
+      store: ana.store,
+      relay: createRelay({ fetch: fake.fetch }),
+      seal: xchachaSeal,
+      shelf: { run },
+    });
+    opened.push(sync);
+
+    expect(await sync.syncOnce()).toBe(true);
+    expect(run).toHaveBeenCalledWith(GROUP);
+    expect(sync.isReachable()).toBe(true);
+
+    await sync.halt();
+    await sync.syncOnce();
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('after a pass (#97)', () => {
   it('runs once a pass in which every group synced, after the pulls are saved', async () => {
     const fake = createFakeRelay();

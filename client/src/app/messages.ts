@@ -227,6 +227,9 @@ export const messages = {
           'when messages arrive',
           'each message’s size class, one of four sizes',
           'which mailboxes your device checks',
+          // A listing goes up from members' devices (#486; ADR-0081), so a live observer ties
+          // the listed name to the group's mailboxes: an accepted pilot risk (listed-doors.md §7).
+          'if your group lists its front door on the public shelf, that your device is in that group, since your device posts the listing',
         ],
       },
       {
@@ -1355,7 +1358,7 @@ export const messages = {
     draft: 'Draft',
     draftLine: 'This is a draft. Its wording isn’t final yet.',
     exposure:
-      'Your group’s name will be public beside the words it votes to publish. Anyone can read them, and copy them before they come down.',
+      'Your group’s name will be public beside the words it votes to publish. Anyone can read them, and copy them before they come down. Members’ devices post the listing, so whoever runs the relay can tell which devices are in your group.',
     unknown:
       'This vote names a covenant this app doesn’t have. Update Reconcile to read it before you vote.',
   },
