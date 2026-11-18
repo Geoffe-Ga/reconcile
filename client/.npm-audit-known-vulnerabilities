@@ -1,0 +1,12 @@
+# Known advisories in dev tooling that no release fixes yet (#495; the
+# cve-remediation skill's last resort). scripts/audit.sh reads this list:
+# production dependencies never get an exception, and every entry needs an
+# expires= date at most 30 days out, which the script enforces.
+#
+# Format: GHSA-xxxx-xxxx-xxxx  expires=YYYY-MM-DD  # package - reason - tracking #N
+#
+# picomatch <=4.0.7 (latest 4.0.7, checked 2026-11-18): ReDoS through repeated extglobs,
+# https://github.com/advisories/GHSA-fc5q-39xc-vjpf. Dev tooling only (vite, vitest,
+# typescript-eslint, dependency-cruiser); `npm ls picomatch --omit=dev` is empty, and its
+# inputs are this repository's own glob patterns.
+GHSA-fc5q-39xc-vjpf  expires=2026-12-18  # picomatch - no patched release, dev tooling only - tracking #495
