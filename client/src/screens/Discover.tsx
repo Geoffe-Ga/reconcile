@@ -104,14 +104,17 @@ function Shelf({ entries }: { readonly entries: readonly ShelfEntry[] }) {
       <h2 id={heading} className="eyebrow section-heading">
         {words.shelfHeading}
       </h2>
-      <p>{words.shelfLede}</p>
-      <ul className="dispatch-list" aria-labelledby={heading}>
-        {entries.map((entry) => (
-          <li key={`${entry.address} ${entry.id}`}>
-            <ShelfCard entry={entry} />
-          </li>
-        ))}
-      </ul>
+      {/* One body beside the heading: `.section` lays out two columns. */}
+      <div className="stack">
+        <p>{words.shelfLede}</p>
+        <ul className="dispatch-list" aria-labelledby={heading}>
+          {entries.map((entry) => (
+            <li key={`${entry.address} ${entry.id}`}>
+              <ShelfCard entry={entry} />
+            </li>
+          ))}
+        </ul>
+      </div>
     </section>
   );
 }

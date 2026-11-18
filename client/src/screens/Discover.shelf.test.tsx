@@ -58,6 +58,17 @@ describe('Discover’s public shelf', () => {
     expect(await axeViolations()).toEqual([]);
   });
 
+  it('gives its section a heading and one body, the two columns `.section` lays out', () => {
+    render(<Discover feed={[]} shelf={SHELF} />);
+
+    const section = screen.getByRole('region', { name: 'On the public shelf' });
+    const [heading, body, ...rest] = [...section.children];
+    expect(heading?.tagName).toBe('H2');
+    // The lede and the entries share one column, so the entries never squeeze into the heading's.
+    expect(body?.querySelector('ul')).not.toBeNull();
+    expect(rest).toEqual([]);
+  });
+
   it('shows nothing of the shelf without one, as on a relay without the steward’s key', () => {
     render(<Discover feed={[]} shelf={null} />);
 
