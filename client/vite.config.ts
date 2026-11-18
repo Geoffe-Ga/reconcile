@@ -37,6 +37,9 @@ export default defineConfig(({ mode }) => {
         thresholds: { lines: 90, statements: 90, functions: 90, branches: 85 },
       },
     },
+    // Workers the page starts, such as Bedfellows' (#475), are module workers:
+    // ES chunks from the app's own origin, which the CSP's default-src 'self' allows.
+    worker: { format: 'es' },
     // The CSP below allows no data: URLs, so no asset (a small font subset, say)
     // may be inlined as one: every asset is a file served from 'self'.
     build: { assetsInlineLimit: 0 },

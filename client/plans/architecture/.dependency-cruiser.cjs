@@ -24,6 +24,19 @@ module.exports = {
       to: { path: ['^src/(app|ui|screens)/', 'node_modules/(react|react-dom|react-aria-components)/'] },
     },
     {
+      name: 'bedfellows-stands-alone',
+      comment:
+        "Bedfellows (#475, ADR-0080) reads only the text it's handed and runs in a worker of its own: no React or UI code, nothing from src/net, so it can't send the reader's writing anywhere, and nothing from src/store, so it can't keep a score or a vector (ADR-0080 §5).",
+      severity: 'error',
+      from: { path: '^src/bedfellows/' },
+      to: {
+        path: [
+          '^src/(app|ui|screens|net|store)/',
+          'node_modules/(react|react-dom|react-aria-components)/',
+        ],
+      },
+    },
+    {
       name: 'engine-does-no-io',
       comment:
         'The engine is pure: it folds the records sync hands it and never reaches the network itself (spec §2, #63).',
