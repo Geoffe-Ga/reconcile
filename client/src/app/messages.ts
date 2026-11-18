@@ -157,7 +157,7 @@ export const messages = {
     toDiscover: 'Go to Discover',
     /** Opens the listing's front door (#432, §5.2). */
     askToJoin: 'Ask to join',
-    /** Opens the same door, where a group that may proposes reconciling with it (#426, #432). */
+    /** Opens the same door, where a group that may propose reconciling with it does so (#426, #432). */
     proposeReconciling: 'Propose reconciling',
     /**
      * On Group home (#431, §4.5): an entry under the group's name that its
