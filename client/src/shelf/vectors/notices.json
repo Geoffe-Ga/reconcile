@@ -1,0 +1,97 @@
+{
+  "kind": "notices",
+  "about": "The steward's release on the shelf (#488, shelf/fold.ts rules 1 and 8, shelf/notices.ts, docs/spec/listed-doors.md §4.3 and §6.1). Each door's record is signed by its door's key, made from the door's label (fold.test.ts), as in ownership.json. A record under `release` is a release notice naming that door, signed by the steward's key the tests pin (src/test/steward.ts) and served under its address, or, with `signer`, signed by that door's own key and served under that door's address, which every device ignores. A record under `later` is a later notice (hold, uphold, suspend or pause) naming that door, signed by the steward, which parses and changes nothing until #489. These records are folded as given, with no release added. `listings` are the doors whose listings show, each with its name; `entries` the doors and ids that show, newest first; `held` the doors whose listing the device sees but no release names.",
+  "cases": [
+    {
+      "about": "a listing no release names shows nowhere, nor do its entries",
+      "records": [
+        { "seq": 1, "door": "oak", "listing": "Oak St Tenants" },
+        { "seq": 2, "door": "oak", "entry": "d1" }
+      ],
+      "listings": [],
+      "entries": [],
+      "held": ["oak"]
+    },
+    {
+      "about": "a release lets the listing and its entries show",
+      "records": [
+        { "seq": 1, "door": "oak", "listing": "Oak St Tenants" },
+        { "seq": 2, "door": "oak", "entry": "d1" },
+        { "seq": 3, "release": "oak" }
+      ],
+      "listings": [["oak", "Oak St Tenants"]],
+      "entries": [["oak", "d1"]],
+      "held": []
+    },
+    {
+      "about": "a release folds the same whatever its seq",
+      "records": [
+        { "seq": 1, "release": "oak" },
+        { "seq": 2, "door": "oak", "listing": "Oak St Tenants" }
+      ],
+      "listings": [["oak", "Oak St Tenants"]],
+      "entries": [],
+      "held": []
+    },
+    {
+      "about": "a release a door signs, even of itself, releases nothing",
+      "records": [
+        { "seq": 1, "door": "oak", "listing": "Oak St Tenants" },
+        { "seq": 2, "release": "oak", "signer": "oak" },
+        { "seq": 3, "door": "birch", "listing": "Birch Ave" },
+        { "seq": 4, "release": "birch", "signer": "oak" }
+      ],
+      "listings": [],
+      "entries": [],
+      "held": ["oak", "birch"]
+    },
+    {
+      "about": "a release lets only the address it names show",
+      "records": [
+        { "seq": 1, "door": "oak", "listing": "Oak St Tenants" },
+        { "seq": 2, "door": "birch", "listing": "Birch Ave" },
+        { "seq": 3, "release": "birch" }
+      ],
+      "listings": [["birch", "Birch Ave"]],
+      "entries": [],
+      "held": ["oak"]
+    },
+    {
+      "about": "a listing no release names claims no name, so a later released look-alike holds it",
+      "records": [
+        { "seq": 1, "door": "oak", "listing": "Eastside Tenants Union" },
+        { "seq": 2, "door": "birch", "listing": "EASTSIDE TENANTS UNI0N" },
+        { "seq": 3, "door": "birch", "entry": "d1" },
+        { "seq": 4, "release": "birch" }
+      ],
+      "listings": [["birch", "EASTSIDE TENANTS UNI0N"]],
+      "entries": [["birch", "d1"]],
+      "held": ["oak"]
+    },
+    {
+      "about": "a later notice parses and changes nothing until #489",
+      "records": [
+        { "seq": 1, "door": "oak", "listing": "Oak St Tenants" },
+        { "seq": 2, "door": "oak", "entry": "d1" },
+        { "seq": 3, "release": "oak" },
+        { "seq": 4, "later": "oak" },
+        { "seq": 5, "door": "birch", "listing": "Birch Ave" },
+        { "seq": 6, "later": "birch" }
+      ],
+      "listings": [["oak", "Oak St Tenants"]],
+      "entries": [["oak", "d1"]],
+      "held": ["birch"]
+    },
+    {
+      "about": "a final listing ends a released listing as it ends any",
+      "records": [
+        { "seq": 1, "door": "oak", "listing": "Oak St Tenants" },
+        { "seq": 2, "release": "oak" },
+        { "seq": 3, "door": "oak", "final": true }
+      ],
+      "listings": [],
+      "entries": [],
+      "held": []
+    }
+  ]
+}

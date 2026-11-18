@@ -140,6 +140,7 @@ async function start(container: HTMLElement): Promise<void> {
     guide: guideRecord(),
     passkey: passkeyOn(keys),
     shelf: createShelfReader({ shelf: shelfClient, keep: store, now }),
+    stewardShelf: shelfClient,
   };
   const firstRun = {
     platform,

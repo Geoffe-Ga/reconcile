@@ -43,8 +43,8 @@ const PAINTED: Readonly<Record<string, string>> = {
 /**
  * The screens that stay plain: reading a Document or its history, writing or
  * weighing a Proposal or a Dispatch, the pilot notice, anything to do with
- * keys, recovery or linking a device, and Settings. Care matters more than
- * color there.
+ * keys, recovery or linking a device, Settings and the steward's console
+ * (#488). Care matters more than color there.
  */
 const PLAIN = [
   'ChangeLog',
@@ -67,6 +67,7 @@ const PLAIN = [
   'SendDispatch',
   'Settings',
   'SharedPage',
+  'Steward',
   'StewardComposer',
   'UnlockScreen',
 ];

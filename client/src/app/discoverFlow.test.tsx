@@ -35,7 +35,7 @@ import { type TestDevice, testDevice } from '../test/appServices';
 import { axeViolations } from '../test/axe';
 import { createFakeRelay } from '../test/fakeRelay';
 import { COVENANT_HASH, DOOR } from '../test/door';
-import { createFakeShelf } from '../test/fakeShelf';
+import { createFakeShelf, release } from '../test/fakeShelf';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { newPersonalId } from '../store/personal';
 import { foundAnother, go, members, type MountedApp, mountApp } from '../test/members';
@@ -109,6 +109,7 @@ describe('The public shelf on Discover through the app (#484)', { timeout: 60_00
       address,
       signShelfBody(door, { ...listing, skeleton: nameSkeleton(name), covenant }),
     );
+    await release(shelf, address);
     await shelf.put(
       address,
       signShelfBody(door, {
@@ -266,6 +267,7 @@ describe(
       const shelfFake = createFakeShelf();
       const shelf = createShelf({ fetch: shelfFake.fetch });
       await shelf.put(ADDRESS, listing);
+      await release(shelf, ADDRESS);
       await shelf.put(ADDRESS, entry);
       const listedAt = shelfFake.minute;
       shelfFake.minute += 1440;

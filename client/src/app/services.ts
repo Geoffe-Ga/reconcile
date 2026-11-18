@@ -12,6 +12,7 @@ import type { Services } from './actions';
 import type { Passkey } from './passkey';
 import type { FileTargets, WebShare } from './share';
 import type { ShelfReader } from '../shelf/read';
+import type { Shelf } from '../net/shelf';
 
 /** What `App` runs on. */
 export interface AppServices extends Services {
@@ -45,6 +46,12 @@ export interface AppServices extends Services {
    * Discover shows no shelf and asks the relay for nothing.
    */
   readonly shelf?: ShelfReader;
+  /**
+   * The shelf client the steward's console reads held listings from and
+   * posts a release to (#488). Without one, as in most tests, the console
+   * says the relay has no shelf.
+   */
+  readonly stewardShelf?: Pick<Shelf, 'read' | 'readHeld' | 'put'>;
 }
 
 /**

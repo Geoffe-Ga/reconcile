@@ -9,8 +9,9 @@
  * Built here:
  *
  * 1. **Signature.** A record whose signature doesn't verify against the
- *    address it came under, or whose body isn't exactly a listing, entry or
- *    withdraw (`record.ts`), is ignored.
+ *    address it came under, or whose body isn't exactly a listing, entry,
+ *    withdraw or notice (`record.ts`), is ignored. A notice counts only
+ *    under the steward's address pinned in `steward.ts` (`notices.ts`, #488).
  * 2. **Listings.** Per address, the newest valid listing (highest seq)
  *    stands, and a final one outranks every later copy, as a door's page
  *    does (#486): once a door's listing is final, the address has none, and
@@ -46,11 +47,23 @@
  *    withdrawn entry that still verifies, so Group home can say a stray was
  *    taken down.
  *
- * The rest come with their issues: the steward's notices fill `tombstones`
- * and `paused` (#488, #489), and until then those stay empty and false.
+ * 8. **Notices** (#488). A listing stands only once a release the pinned
+ *    steward key signed names its address (`notices.ts`): the relay holds
+ *    every new listing until the steward releases it, and every device
+ *    checks the release itself, so a relay that served an unreleased
+ *    listing still couldn't show it. An unreleased listing claims no name
+ *    and shows no entries. Every later notice parses and is ignored until
+ *    #489 fills `tombstones` and `paused`, which stay empty and false.
+ *
+ * A device reads only what the relay serves, and a held relay serves no
+ * record of a listing before its release: on an honest relay every listing
+ * a reader sees came with its release. `doorListing`'s `held` is true only
+ * for a listing a device sees without one (the steward's console reads
+ * held records on purpose).
  */
 import { verifyShelfRecord } from '../crypto/shelf';
 import type { ShelfRecord } from '../net/shelf';
+import { foldNotices } from './notices';
 import { type EntryBody, type OpenListingBody, parseShelfBody, type ShelfBody } from './record';
 import { nameSkeleton } from './skeleton';
 
@@ -205,6 +218,14 @@ const earlier = (claim: Claim, other: Claim): boolean =>
     ? claim.since < other.since
     : claim.listing.address < other.listing.address;
 
+/** Rule 8: the claims of the addresses a release names; the rest wait unseen. */
+function releasedOnly(
+  claims: ReadonlyMap<string, Claim>,
+  released: ReadonlySet<string>,
+): Map<string, Claim> {
+  return new Map([...claims].filter(([address]) => released.has(address)));
+}
+
 /** Rule 4: the listings that hold their skeletons, by address. */
 function holders(claims: ReadonlyMap<string, Claim>): Map<string, ShelfListing> {
   const bySkeleton = new Map<string, Claim>();
@@ -301,7 +322,8 @@ function entriesUnder(
 export const foldShelf: FoldShelf = (records, now, options = {}) => {
   const inOrder = [...records].sort((a, b) => a.seq - b.seq);
   const valid = inOrder.map(verified).filter((item) => item !== null);
-  const listings = holders(standingClaims(valid));
+  const { released } = foldNotices(inOrder);
+  const listings = holders(releasedOnly(standingClaims(valid), released));
   const { live, withdrawn } = entriesAt(valid, now);
   return {
     listings: [...listings.values()].sort((a, b) => a.seq - b.seq),
@@ -373,8 +395,10 @@ export interface DoorListing {
    */
   readonly listedSince: number;
   /**
-   * Whether a steward's hold stands on it. No notice is folded until the
-   * moderation issues (#488, #489), so none does yet.
+   * Whether it waits for the steward: no release the pinned key signed
+   * names it (rule 8, #488). A held relay serves a listing only after its
+   * release, so a reader sees this only from a relay that misbehaves; #489
+   * adds the steward's timed holds.
    */
   readonly held: boolean;
 }
@@ -382,8 +406,9 @@ export interface DoorListing {
 /**
  * The listing of the door at `address` among `records`, or null while it has
  * none: its newest open listing that verifies (rules 1 to 3), unless a final
- * one ended it. A listing shadowed by a look-alike name still counts, so a
- * shadowed door is held to the same rule.
+ * one ended it, held unless a release names it (rule 8). A listing shadowed
+ * by a look-alike name still counts, so a shadowed door is held to the same
+ * rule.
  */
 export function doorListing(
   records: readonly ShelfRecord[],
@@ -398,7 +423,7 @@ export function doorListing(
   const claim = standingClaims(valid).get(address);
   if (claim === undefined) return null;
   const listedSince = Math.min(claim.listing.received, since?.get(address) ?? Infinity);
-  return { listedSince, held: false };
+  return { listedSince, held: !foldNotices(records).released.has(address) };
 }
 
 /**
@@ -409,4 +434,30 @@ export function doorListing(
 export function newlyListed(listing: DoorListing | null, now: number): boolean {
   if (listing === null) return false;
   return listing.held || now - listing.listedSince < NEW_LISTING_MINUTES;
+}
+
+/** A listing waiting for the steward's release, as the console shows it (§6.4). */
+export interface WaitingListing {
+  /** The listing that waits: its address, name and covenant, and when its copy arrived. */
+  readonly listing: ShelfListing;
+  /** The live listing that holds the same skeleton, if any: what a release would sit behind. */
+  readonly holder: ShelfListing | null;
+}
+
+/**
+ * The listings among `held`, the records `GET /v1/shelf/held` served, each
+ * address's newest open listing that verifies (rules 1 to 3) unless a final
+ * one ended it, oldest first, each beside the listing on `live` that holds
+ * its name (rule 4), if another does. The steward sees only what readers
+ * will: a name and a covenant hash.
+ */
+export function waitingListings(held: readonly ShelfRecord[], live: ShelfState): WaitingListing[] {
+  const valid = [...held]
+    .sort((a, b) => a.seq - b.seq)
+    .map(verified)
+    .filter((item) => item !== null);
+  return [...standingClaims(valid).values()]
+    .map(({ listing }) => listing)
+    .sort((a, b) => a.seq - b.seq)
+    .map((listing) => ({ listing, holder: nameHolder(live, listing.name, listing.address) }));
 }

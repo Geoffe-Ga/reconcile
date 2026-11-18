@@ -1,0 +1,26 @@
+{
+  "kind": "steward",
+  "about": "The steward's two keys from one 32-byte secret (#488, crypto/steward.ts, docs/spec/listed-doors.md §6.2): the Ed25519 key that signs notices is the RFC 8032 key of HKDF-SHA-256(secret, salt empty, info reconcile/v1/steward-sign, 32 bytes), and the X25519 key reports are sealed to is the RFC 7748 key of the same under reconcile/v1/steward-box. Computed with Python's cryptography package (OpenSSL) by scripts/steward_key.py, none of it @noble. The secret is SHA-256 of reconcile/vector/steward. Each secret and public key is its bytes; the labels are text.",
+  "signInfo": "reconcile/v1/steward-sign",
+  "boxInfo": "reconcile/v1/steward-box",
+  "seed": [
+    246, 154, 96, 14, 252, 213, 253, 55, 254, 161, 247, 159, 143, 18, 36, 30, 193, 181, 255, 146,
+    128, 51, 15, 238, 131, 139, 135, 147, 26, 45, 134, 56
+  ],
+  "signSecret": [
+    151, 86, 63, 130, 90, 223, 44, 185, 94, 93, 237, 151, 85, 137, 17, 48, 43, 196, 212, 50, 53,
+    109, 5, 93, 244, 32, 116, 72, 146, 251, 20, 61
+  ],
+  "signPublic": [
+    98, 222, 78, 89, 80, 224, 172, 150, 236, 211, 140, 132, 9, 98, 210, 226, 239, 27, 61, 186, 141,
+    91, 170, 204, 8, 238, 56, 131, 52, 170, 75, 109
+  ],
+  "boxSecret": [
+    107, 212, 112, 60, 78, 63, 106, 62, 229, 108, 140, 184, 193, 28, 246, 153, 215, 63, 181, 250,
+    113, 25, 143, 255, 172, 21, 92, 125, 69, 93, 87, 201
+  ],
+  "boxPublic": [
+    197, 117, 211, 36, 215, 230, 125, 122, 144, 160, 23, 92, 19, 81, 225, 137, 112, 101, 136, 8,
+    152, 93, 23, 21, 142, 118, 89, 208, 37, 68, 109, 60
+  ]
+}

@@ -157,7 +157,7 @@ export const messages = {
     toDiscover: 'Go to Discover',
     /** Opens the listing's front door (#432, §5.2). */
     askToJoin: 'Ask to join',
-    /** Opens the same door, where a group that may proposes reconciling with it (#426, #432). */
+    /** Opens the same door, where a group that may propose reconciling with it does so (#426, #432). */
     proposeReconciling: 'Propose reconciling',
     /**
      * On Group home (#431, §4.5): an entry under the group's name that its
@@ -1714,6 +1714,40 @@ export const messages = {
     linkHeading: 'Link a new device',
     passkeyHeading: 'Lock with a passkey',
     eraseHeading: 'Erase this device',
+    stewardHeading: 'Steward key',
+  },
+  // The steward's key (#488; docs/spec/listed-doors.md §6.2, §6.4): quiet in
+  // Settings, for the one device of the platform's steward, the founder during
+  // the pilot. The console lists listings waiting for release.
+  shelfSteward: {
+    keyLede:
+      'Only for Reconcile’s steward, who releases groups onto the public shelf. Nobody else needs this.',
+    label: 'Steward secret',
+    import: 'Import',
+    importing: 'Importing…',
+    wrong: 'That isn’t the steward’s secret this app knows.',
+    locked: 'Unlock your keys first, then import it.',
+    failed: 'It wasn’t kept. You can try again.',
+    held: 'This device holds the steward key.',
+    open: 'Open the steward’s console',
+    pageTitle: 'Steward',
+    title: 'Steward’s console',
+    consoleLede:
+      'Listings wait here until you release them. Readers will see the name and the covenant, and nothing else.',
+    waitingHeading: 'Waiting for release',
+    none: 'No listing is waiting.',
+    unavailable: 'The relay has no public shelf.',
+    readFailed: 'The shelf couldn’t be read. Try again later.',
+    covenantCurrent: 'Accepted this app’s covenant',
+    covenantOther: 'Accepted another covenant version',
+    waitingSince: (date: string) => `Waiting since ${date}`,
+    lookalike: 'A live listing holds a name like this one:',
+    lookalikeHint: 'Released, this listing would sit behind it, unseen, with its entries.',
+    willSee: (name: string) => `Readers will see “${name}” on Discover.`,
+    release: 'Release',
+    releasing: 'Releasing…',
+    released: 'Released. Devices show it at their next read of the shelf.',
+    releaseFailed: 'It wasn’t released. You can try again.',
   },
   // Passkey unlock (#95; ADR-0008, ADR-0030): offered once after the pilot
   // notice and always in Settings. iOS allows one passkey request per tap, so

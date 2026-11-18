@@ -32,6 +32,7 @@ import {
   openStore,
   RECOVERY_CHANGED,
   type RecoverRequest,
+  STEWARD_CHANGED,
   type Store,
   VaultLocked,
 } from './db';
@@ -909,5 +910,113 @@ describe('a record missing some of its keys, under a vault (#391)', () => {
     const raw = await rawRequest();
     expect(Object.keys(raw ?? {}).sort()).toEqual(['seed', 'startedAt']);
     expect(local(raw?.seed as Uint8Array)).toEqual(local(REQUEST.seed));
+  });
+});
+
+/** The steward's secret (#488), bytes no other key's are. */
+const STEWARD_SECRET = bytes32(95);
+
+/** Every spelling of the steward's secret. */
+const STEWARD_KEYS = keyCanaries('steward secret', STEWARD_SECRET);
+
+/** The device store's steward key record as IndexedDB holds it. */
+async function rawSteward(): Promise<Record<string, unknown> | undefined> {
+  const db = await openDB(DATABASE_NAME);
+  try {
+    return (await db.get('device', 'steward-key')) as Record<string, unknown> | undefined;
+  } finally {
+    db.close();
+  }
+}
+
+describe('the steward’s key (#488)', () => {
+  it('is absent on a new device, and kept whole on its record on a device with no vault', async () => {
+    const store = await openStore();
+    expect(await store.holdsStewardKey()).toBe(false);
+    expect(await store.getStewardKey()).toBeUndefined();
+    const heard = vi.fn();
+    store.subscribe(heard);
+
+    await store.keepStewardKey(STEWARD_SECRET, 42);
+
+    expect(heard).toHaveBeenCalledWith(STEWARD_CHANGED);
+    expect(await store.holdsStewardKey()).toBe(true);
+    expect(local((await store.getStewardKey()) ?? new Uint8Array(0))).toEqual(
+      local(STEWARD_SECRET),
+    );
+    expect(Object.keys((await rawSteward()) ?? {}).sort()).toEqual(['secret', 'stewardSince']);
+    expect(await labelsFound(STEWARD_KEYS)).toEqual(rawLabels(STEWARD_KEYS));
+  });
+
+  it('goes into the vault on a sealed device: its record keeps only when it was imported', async () => {
+    const store = await offeredDevice();
+
+    await store.keepStewardKey(STEWARD_SECRET, 42);
+
+    expect(await found(STEWARD_KEYS)).toEqual([]);
+    expect(await rawSteward()).toEqual({ stewardSince: 42 });
+    expect(local((await store.getStewardKey()) ?? new Uint8Array(0))).toEqual(
+      local(STEWARD_SECRET),
+    );
+  });
+
+  it('moves into the vault when the device seals its keys', async () => {
+    const store = await openStore();
+    await store.keepStewardKey(STEWARD_SECRET, 42);
+
+    await store.sealKeys(LOCK, KEY);
+
+    expect(await found(STEWARD_KEYS)).toEqual([]);
+    expect(await rawSteward()).toEqual({ stewardSince: 42 });
+  });
+
+  it('is known held on a locked device, but refused to it, read, kept or dropped, writing nothing', async () => {
+    const sealed = await offeredDevice();
+    await sealed.keepStewardKey(STEWARD_SECRET, 42);
+    sealed.close();
+    const store = await openStore();
+    const before = await rawDatabase();
+
+    expect(await store.holdsStewardKey()).toBe(true);
+    await expect(store.getStewardKey()).rejects.toThrow(VaultLocked);
+    await expect(store.keepStewardKey(STEWARD_SECRET, 43)).rejects.toThrow(VaultLocked);
+    await expect(store.dropStewardKey()).rejects.toThrow(VaultLocked);
+    expect(local(await rawDatabase())).toEqual(local(before));
+  });
+
+  it('leaves the vault and its record when dropped', async () => {
+    const store = await offeredDevice();
+    await store.keepStewardKey(STEWARD_SECRET, 42);
+
+    await store.dropStewardKey();
+
+    expect(await rawSteward()).toBeUndefined();
+    expect(await store.holdsStewardKey()).toBe(false);
+    expect(
+      Object.keys((await openedVault()).records.get('device')?.get('steward-key') ?? {}),
+    ).toEqual([]);
+  });
+
+  it('goes with the vault on Restore, and stays when it holds its own secret', async () => {
+    const sealed = await offeredDevice();
+    await sealed.keepStewardKey(STEWARD_SECRET, 42);
+    const heard = vi.fn();
+    sealed.subscribe(heard);
+    await sealed.replaceGroups([], []);
+    expect(await rawSteward()).toBeUndefined();
+    expect(heard).toHaveBeenCalledWith(STEWARD_CHANGED);
+    sealed.close();
+
+    const plain = await openStore();
+    await plain.keepStewardKey(STEWARD_SECRET, 42);
+    await plain.replaceGroups([], []);
+    expect(await plain.holdsStewardKey()).toBe(true);
+  });
+
+  it('never travels in a snapshot', async () => {
+    const store = await openStore();
+    await store.keepStewardKey(STEWARD_SECRET, 42);
+
+    expect(Object.keys(await deviceSnapshot(store)).sort()).toEqual(['groups', 'personal']);
   });
 });

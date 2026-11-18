@@ -121,6 +121,17 @@ To try push against `./scripts/relay.sh`, make a throwaway key and pass both set
 RECONCILE_RELAY_VAPID_KEY=.relay-data/vapid.pem RECONCILE_RELAY_VAPID_SUBJECT=https://<domain> ./scripts/relay.sh
 ```
 
+## The public shelf
+
+The public shelf ([ADR-0081](../docs/adr/0081-listed-doors-and-exception-moderation.md), [`listed-doors.md`](../docs/spec/listed-doors.md)) is off until the founder turns it on, and nothing a person sees changes while it is. Two relay settings govern it:
+
+- **`RECONCILE_RELAY_SHELF_STEWARD_KEY`**: the steward's Ed25519 public key, 43 characters of canonical unpadded base64url. Unset or empty, every shelf route answers `404 shelf_unavailable`; a malformed key stops the relay from starting. It must be the `sign` key the app pins in `client/src/shelf/steward.ts`, or no device will take the steward's releases.
+- **`RECONCILE_RELAY_SHELF_MODE`**: `held`, the only mode built (#488), and what unset or empty means. Every new listing, and whatever its door posts before a release, waits until the steward releases it from the console. Any other value, `open` included, stops the relay: open mode is deferred (`listed-doors.md` §9).
+
+`RECONCILE_RELAY_SHELF_MAX_BYTES` caps the shelf (default 64 MiB). To turn the shelf on, make the steward's key offline with `python -m scripts.steward_key`, which prints the secret once, the two public keys to pin and the relay's line; pin both public keys in the app and deploy it; then add `Environment=RECONCILE_RELAY_SHELF_STEWARD_KEY=<sign key>` to a drop-in of `reconcile-relay.service` (for instance `/etc/systemd/system/reconcile-relay.service.d/shelf.conf`), `systemctl daemon-reload` and restart the relay; and import the secret in Settings › Steward key on the steward's one device. The secret never goes on the VM: the relay holds only the public key.
+
+To try it against `./scripts/relay.sh`: `RECONCILE_RELAY_SHELF_STEWARD_KEY=<sign key> ./scripts/relay.sh`.
+
 ## Checks
 
 - **`deploy/check.sh`** runs in CI whenever `deploy/` or `client/vite.config.ts` changes. It needs `caddy` (`sudo apt-get install -y caddy` on Ubuntu) and `systemd-analyze`, so it runs on Linux only. It verifies our three units alone (`--recursive-errors=no`, in a temp root holding nothing else), so the host's own units can't fail it. Any warning about them fails, because systemd ignores a misspelled setting rather than refusing it. It also holds the Caddyfile's CSP and HSTS header to their values, on the site's routes and on [its error routes](#caddys-own-errors) (see [The CSP](#the-csp) and [HSTS](#hsts)).

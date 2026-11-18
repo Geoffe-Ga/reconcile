@@ -70,7 +70,7 @@ A group can list its front door. A listed group can publish single Dispatches to
 
 The shelf is one public log on the relay. Every device reads the same log and folds it with the same pure function, as it folds a group's log.
 
-**Built so far.** #431 built §4.2's entry rules (`409 not_listed`, 4 live entries and 1 new a relay day, `429 too_many_entries`, one entry per address and id, 30 days; and, decided there, a withdraw names one of its address's entries, else `409 no_entry`, and a repeated withdraw returns its first seq), §4.3's rules 5 to 7 with `vectors/entries.json`, and §4.5's entries and strays; that contract lives in [`phase-1/06-relay-api.md`](phase-1/06-relay-api.md) (Entries), [`phase-1/07-sync.md`](phase-1/07-sync.md) (step 8) and [`phase-1/08-screens.md`](phase-1/08-screens.md) (Group home's stray card). #487 built §4.3's rules 3 and 4 and §4.4, and the listing composer's warning; that contract lives in [`phase-1/06-relay-api.md`](phase-1/06-relay-api.md) (Skeletons and name ownership), [`phase-1/07-sync.md`](phase-1/07-sync.md) (step 8) and [`phase-1/08-screens.md`](phase-1/08-screens.md) (the composer). #486 built §4.2's listing rules (one listing per address, replaced in place, 30 days after its last post, `409 listing_final`, a final listing deleting its entries), §4.3's rule 2 in full, and §4.5's listing and its end; that contract lives in [`phase-1/06-relay-api.md`](phase-1/06-relay-api.md) (Listings) and [`phase-1/07-sync.md`](phase-1/07-sync.md) (step 8 of a pass). #484 built §4.1's records (on the wire, a record is the 64-byte signature, then the JSON; the address travels beside it, not in it), §4.2's `PUT` and `GET /v1/shelf`, its size limits, `shelf_full` and the table, and §4.3's rule 1 and the newest listing per address. That contract now lives in [`phase-1/06-relay-api.md`](phase-1/06-relay-api.md) and [`phase-1/09-privacy-rules.md`](phase-1/09-privacy-rules.md); the rest of this section is still to build.
+**Built so far.** #488 built §4.2's `GET /v1/shelf/held` and held mode, a `release` clearing a hold (a release kept as long as the listing it released, decided there), and §4.3's rule 1 for notices and rule 8 for `release` with `vectors/notices.json`; that contract lives in [`phase-1/06-relay-api.md`](phase-1/06-relay-api.md) (Held mode and the steward's release, The fold's release). #431 built §4.2's entry rules (`409 not_listed`, 4 live entries and 1 new a relay day, `429 too_many_entries`, one entry per address and id, 30 days; and, decided there, a withdraw names one of its address's entries, else `409 no_entry`, and a repeated withdraw returns its first seq), §4.3's rules 5 to 7 with `vectors/entries.json`, and §4.5's entries and strays; that contract lives in [`phase-1/06-relay-api.md`](phase-1/06-relay-api.md) (Entries), [`phase-1/07-sync.md`](phase-1/07-sync.md) (step 8) and [`phase-1/08-screens.md`](phase-1/08-screens.md) (Group home's stray card). #487 built §4.3's rules 3 and 4 and §4.4, and the listing composer's warning; that contract lives in [`phase-1/06-relay-api.md`](phase-1/06-relay-api.md) (Skeletons and name ownership), [`phase-1/07-sync.md`](phase-1/07-sync.md) (step 8) and [`phase-1/08-screens.md`](phase-1/08-screens.md) (the composer). #486 built §4.2's listing rules (one listing per address, replaced in place, 30 days after its last post, `409 listing_final`, a final listing deleting its entries), §4.3's rule 2 in full, and §4.5's listing and its end; that contract lives in [`phase-1/06-relay-api.md`](phase-1/06-relay-api.md) (Listings) and [`phase-1/07-sync.md`](phase-1/07-sync.md) (step 8 of a pass). #484 built §4.1's records (on the wire, a record is the 64-byte signature, then the JSON; the address travels beside it, not in it), §4.2's `PUT` and `GET /v1/shelf`, its size limits, `shelf_full` and the table, and §4.3's rule 1 and the newest listing per address. That contract now lives in [`phase-1/06-relay-api.md`](phase-1/06-relay-api.md) and [`phase-1/09-privacy-rules.md`](phase-1/09-privacy-rules.md); the rest of this section is still to build.
 
 ### 4.1 Records
 
@@ -175,13 +175,15 @@ A listed group's devices keep the shelf in step with the group's own log, as the
 
 ### 5.3 Attached Documents
 
-**Built** (#432) but for holds, which count once the steward's notices fold (#488, #489). The contract lives in [`phase-1/08-screens.md`](phase-1/08-screens.md) (item 16, Front door) and [`phase-1/09-privacy-rules.md`](phase-1/09-privacy-rules.md) (A front door shows no one), with why a device's "first listing" can only err newer.
+**Built** (#432). #488 folds a release, so a listing a device sees with no release counts as held; #489's timed holds count once they fold. The contract lives in [`phase-1/08-screens.md`](phase-1/08-screens.md) (item 16, Front door) and [`phase-1/09-privacy-rules.md`](phase-1/09-privacy-rules.md) (A front door shows no one), with why a device's "first listing" can only err newer.
 
 A door's application form offers no personal Documents when the door is listed and either its first listing is under 43,200 relay minutes old or it is held. One line says why. An unlisted door reached by a link is unchanged: a person chose to hand that link over.
 
 ## 6. Moderation by exception
 
 ### 6.1 Notices
+
+**Built: `release` only** (#488). The relay and every device act on a release, and every later act parses on a device and is ignored until #489, while the relay refuses it (`400 invalid_record`); the contract lives in [`phase-1/06-relay-api.md`](phase-1/06-relay-api.md).
 
 The steward signs each notice. The relay acts on it so that held records aren't downloaded, and every device folds it so that the relay alone is never trusted.
 
@@ -199,6 +201,8 @@ The steward signs each notice. The relay acts on it so that held records aren't 
 
 ### 6.2 The steward's key
 
+**Built** (#488): both keys derive from one 32-byte secret by HKDF (decided there), `scripts/steward_key.py` makes it offline, and the app pins null until the founder pins the real keys; the contract lives in [`phase-1/06-relay-api.md`](phase-1/06-relay-api.md), [`phase-1/08-screens.md`](phase-1/08-screens.md) (item 12) and [`phase-1/09-privacy-rules.md`](phase-1/09-privacy-rules.md).
+
 - **Two public keys ship in the app:** the steward's Ed25519 key, which signs notices, and an X25519 key, which reports are sealed to. The relay holds the first in its settings.
 - **The secret halves** are imported on the steward's device from Settings, kept through `keepKeys`, and sealed in the passkey vault where there is one.
 - **Rotation** is an app release and a relay setting. It is one key on one device during the pilot (ADR-0081, Consequences).
@@ -210,6 +214,8 @@ The steward signs each notice. The relay acts on it so that held records aren't 
 - **Reports never hide anything.** They only fill the steward's queue.
 
 ### 6.4 The steward's console
+
+**Built: the waiting listings and Release** (#488); the rest comes with #489. The contract lives in [`phase-1/08-screens.md`](phase-1/08-screens.md) (item 12).
 
 `#/steward`, shown only on a device that holds the steward's secret key. It lists:
 

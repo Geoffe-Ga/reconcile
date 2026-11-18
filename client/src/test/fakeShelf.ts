@@ -16,10 +16,27 @@
  * the first copy's seq with 200; a withdraw names one of the address's
  * entries (409 `no_entry`); and an address has at most 4 live entries and 1
  * new one a relay day (429 `too_many_entries`).
+ *
+ * And #488's held mode: an address's first listing, and whatever comes under
+ * it before a release, is held, which `GET /v1/shelf` leaves out and
+ * `GET /v1/shelf/held` returns alone. A `release` notice PUT under the
+ * steward's address (the tests' pins, `test/steward.ts`) and signed by it
+ * clears its address's hold; a notice under any other address gets 403
+ * `bad_signature`, and a later notice 400 `invalid_record`. {@link release}
+ * PUTs the tests' steward's release, for a test about a door the steward
+ * already let show.
  */
 import { verifyShelfRecord } from '../crypto/shelf';
 import type { Fetch } from '../net/relay';
-import { type EntryBody, parseShelfBody, type ShelfBody, type WithdrawBody } from '../shelf/record';
+import type { Shelf } from '../net/shelf';
+import {
+  type EntryBody,
+  parseShelfBody,
+  type ShelfBody,
+  signShelfBody,
+  type WithdrawBody,
+} from '../shelf/record';
+import { STEWARD_ADDRESS, TEST_STEWARD } from './steward';
 
 /** A record the fake shelf keeps. */
 export interface FakeShelfRecord {
@@ -29,6 +46,8 @@ export interface FakeShelfRecord {
   readonly data: Uint8Array;
   /** The relay day it expires on: 30 whole days after the day it arrived. */
   readonly expiry: number;
+  /** Whether it waits for the steward's release (#488). */
+  held: boolean;
 }
 
 /** Minutes in a relay day. */
@@ -46,18 +65,30 @@ export interface FakeShelf {
   minute: number;
   /** Whether the shelf is on: off answers 404 `shelf_unavailable`. */
   available: boolean;
+  /** Whether a first listing waits for a release (#488); false as if the steward released each at once. */
+  holds: boolean;
 }
 
 const ORIGIN = 'http://relay.test';
 const PUT_PATH = /^\/v1\/shelf\/([A-Za-z0-9_-]{43})$/;
+
+/** The two GET routes, by whether each serves held records (#488). */
+const GET_PATHS: ReadonlyMap<string, boolean> = new Map([
+  ['/v1/shelf', false],
+  ['/v1/shelf/held', true],
+]);
 
 /** `{"error": code}` with `status`. */
 const refuse = (status: number, code: string): Response =>
   Response.json({ error: code }, { status });
 
 /** A shelf at relay minute `minute`, on unless told otherwise. */
-export function createFakeShelf({ minute = 29_000_000, available = true } = {}): FakeShelf {
-  const shelf: FakeShelf = { fetch: answer, records: [], urls: [], minute, available };
+export function createFakeShelf({
+  minute = 29_000_000,
+  available = true,
+  holds = true,
+} = {}): FakeShelf {
+  const shelf: FakeShelf = { fetch: answer, records: [], urls: [], minute, available, holds };
 
   let lastSeq = 0;
   const today = (): number => Math.floor(shelf.minute / DAY_MINUTES);
@@ -70,7 +101,15 @@ export function createFakeShelf({ minute = 29_000_000, available = true } = {}):
       return refuse(409, 'listing_final');
     }
     const seq = standing?.seq ?? (lastSeq += 1);
-    const record = { seq, received: shelf.minute, address, data, expiry: today() + KEEP_DAYS + 1 };
+    const expiry = today() + KEEP_DAYS + 1;
+    const record = {
+      seq,
+      received: shelf.minute,
+      address,
+      data,
+      expiry,
+      held: standing?.held ?? shelf.holds,
+    };
     if (standing === undefined) shelf.records.push(record);
     else shelf.records[at] = record;
     if (final) {
@@ -117,26 +156,47 @@ export function createFakeShelf({ minute = 29_000_000, available = true } = {}):
     return liveCount >= 4 || todays >= 1 ? refuse(429, 'too_many_entries') : null;
   }
 
-  async function put(address: string, init: RequestInit | undefined): Promise<Response> {
-    const data = new Uint8Array(await new Response(init?.body ?? null).arrayBuffer());
-    const body = bodyOf(data, address);
-    if (verifyShelfRecord(data, address) === null) return refuse(403, 'bad_signature');
-    if (isListing(data, address)) return list(address, data, isFinal(data, address));
-    if (body?.kind === 'entry' || body?.kind === 'withdraw') {
-      const answered = check(address, body);
-      if (answered !== null) return answered;
+  /** Whether `address`'s listing waits for a release. */
+  const listingHeld = (address: string): boolean =>
+    shelf.records.some((r) => r.address === address && r.held && isListing(r.data, address));
+
+  /** Stores a release under the steward's address and clears the hold it names (#488). */
+  function released(address: string, data: Uint8Array, body: ShelfBody | null): Response {
+    if (address !== STEWARD_ADDRESS) return refuse(403, 'bad_signature');
+    if (body?.kind !== 'notice' || body.act !== 'release') return refuse(400, 'invalid_record');
+    for (const record of shelf.records) {
+      if (record.address === body.address) record.held = false;
     }
+    return stored(address, data, false);
+  }
+
+  /** Stores `data` under `address` as a new record. */
+  function stored(address: string, data: Uint8Array, held: boolean): Response {
     lastSeq += 1;
     const expiry = today() + KEEP_DAYS + 1;
-    shelf.records.push({ seq: lastSeq, received: shelf.minute, address, data, expiry });
+    shelf.records.push({ seq: lastSeq, received: shelf.minute, address, data, expiry, held });
     return Response.json({ seq: lastSeq }, { status: 201 });
   }
 
-  function get(url: URL): Response {
+  /** Files a record whose signature verified, by its kind. */
+  function file(address: string, data: Uint8Array, body: ShelfBody | null): Response {
+    if (body?.kind === 'notice') return released(address, data, body);
+    if (body?.kind === 'listing') return list(address, data, !body.open);
+    const answered = body === null ? null : check(address, body);
+    return answered ?? stored(address, data, listingHeld(address));
+  }
+
+  async function put(address: string, init: RequestInit | undefined): Promise<Response> {
+    const data = new Uint8Array(await new Response(init?.body ?? null).arrayBuffer());
+    if (verifyShelfRecord(data, address) === null) return refuse(403, 'bad_signature');
+    return file(address, data, bodyOf(data, address));
+  }
+
+  function get(url: URL, held: boolean): Response {
     const after = Number(url.searchParams.get('after') ?? '0');
     const limit = Number(url.searchParams.get('limit') ?? '100');
     const page = shelf.records
-      .filter((record) => record.seq > after && record.expiry > today())
+      .filter((record) => record.seq > after && record.expiry > today() && record.held === held)
       .sort((a, b) => a.seq - b.seq)
       .slice(0, limit);
     return Response.json({
@@ -158,8 +218,8 @@ export function createFakeShelf({ minute = 29_000_000, available = true } = {}):
     if (!shelf.available) return refuse(404, 'shelf_unavailable');
     const address = PUT_PATH.exec(url.pathname)?.[1];
     if (init?.method === 'PUT' && address !== undefined) return put(address, init);
-    if (init?.method === 'GET' && url.pathname === '/v1/shelf') return get(url);
-    return refuse(404, 'not_found');
+    const held = GET_PATHS.get(url.pathname);
+    return init?.method === 'GET' && held !== undefined ? get(url, held) : refuse(404, 'not_found');
   }
 
   return shelf;
@@ -180,4 +240,10 @@ function isListing(data: Uint8Array, address: string): boolean {
 function isFinal(data: Uint8Array, address: string): boolean {
   const body = bodyOf(data, address);
   return body?.kind === 'listing' && !body.open;
+}
+
+/** PUTs the tests' steward's release of `address` to `shelf`, as the steward's console does (#488). */
+export async function release(shelf: Pick<Shelf, 'put'>, address: string): Promise<void> {
+  const body = { v: 1, kind: 'notice', act: 'release', address } as const;
+  await shelf.put(STEWARD_ADDRESS, signShelfBody(TEST_STEWARD.signing, body));
 }

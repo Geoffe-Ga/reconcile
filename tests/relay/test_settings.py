@@ -186,3 +186,25 @@ def test_a_bad_shelf_cap_is_refused(value: str) -> None:
         Settings.from_env(
             {"RECONCILE_RELAY_DB": "relay.db", "RECONCILE_RELAY_SHELF_MAX_BYTES": value}
         )
+
+
+@pytest.mark.parametrize("value", [None, "", "held"])
+def test_the_shelf_mode_is_held(value: str | None) -> None:
+    """Unset, empty or ``held``: held mode, the only one built (#488, §4.2)."""
+    env = {"RECONCILE_RELAY_DB": "relay.db"}
+    if value is not None:
+        env["RECONCILE_RELAY_SHELF_MODE"] = value
+
+    assert Settings.from_env(env).shelf_mode == "held"
+    assert Settings(db_path=Path("relay.db")).shelf_mode == "held"
+
+
+@pytest.mark.parametrize("value", ["open", "HELD", " held", "live"])
+def test_any_other_shelf_mode_is_refused(value: str) -> None:
+    """Open mode is deferred (listed-doors.md §9), so naming it stops the relay."""
+    with pytest.raises(
+        SettingsError, match=r"^RECONCILE_RELAY_SHELF_MODE must be held"
+    ):
+        Settings.from_env(
+            {"RECONCILE_RELAY_DB": "relay.db", "RECONCILE_RELAY_SHELF_MODE": value}
+        )
