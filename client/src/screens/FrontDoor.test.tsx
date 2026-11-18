@@ -17,6 +17,7 @@ import { axeViolations } from '../test/axe';
 import { DOOR } from '../test/door';
 import { createFakeRelay } from '../test/fakeRelay';
 import { held, pastPressFallback } from '../test/press';
+import type { Clause } from '../shelf/record';
 import { FrontDoor } from './FrontDoor';
 
 const { door } = messages;
@@ -51,6 +52,8 @@ interface Options {
   readonly offline?: boolean;
   /** What the shelf says of the door (#432): it takes Documents, it's newly listed, or it can't be read. */
   readonly takes?: boolean | 'unreadable';
+  /** The clause a suspend of the door's listing names (#489), if the steward removed it. */
+  readonly removed?: Clause | null;
 }
 
 /** The screen over a fake relay holding `page` as the door's only copy. */
@@ -78,6 +81,9 @@ async function setup(options: Options = {}) {
       onApply={onApply}
       documents={options.documents ?? []}
       takesDocuments={takesDocuments}
+      {...(options.removed === undefined
+        ? {}
+        : { listingRemoved: () => Promise.resolve(options.removed ?? null) })}
       cardGroups={[]}
       onMakeCard={() => Promise.reject(new Error('Not on this device.'))}
     />,
@@ -308,6 +314,28 @@ describe('FrontDoor: sending personal Documents with it (#425)', () => {
     await user.click(screen.getByRole('button', { name: door.send }));
     expect(onApply).not.toHaveBeenCalled();
     expect(document.querySelectorAll('.form-error')).toHaveLength(1);
+  });
+});
+
+describe('FrontDoor: a door whose listing the steward removed (#489, listed-doors.md §6.1)', () => {
+  it('says the listing was removed, naming the clause in words, and passes axe', async () => {
+    await setup({ documents: [STATEMENT], takes: false, removed: 'C3' });
+    await screen.findByRole('heading', { level: 1, name: 'Riverside Tenants' });
+
+    expect(
+      screen.getByText(
+        'Reconcile’s steward removed this group’s listing from the public shelf: impersonation of another group or person.',
+      ),
+    ).toBeVisible();
+    expect(screen.queryByRole('checkbox')).toBeNull();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('says nothing of it for a listing that stands', async () => {
+    await setup({ removed: null });
+    await screen.findByRole('heading', { level: 1, name: 'Riverside Tenants' });
+
+    expect(screen.queryByText(/removed this group’s listing/)).toBeNull();
   });
 });
 

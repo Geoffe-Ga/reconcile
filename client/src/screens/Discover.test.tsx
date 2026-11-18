@@ -33,6 +33,7 @@ const shelfOf = (...entries: ShelfEntry[]): ShelfState => ({
   entries,
   withdrawn: [],
   tombstones: [],
+  holds: [],
   paused: false,
 });
 

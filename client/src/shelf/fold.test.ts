@@ -30,9 +30,11 @@ import {
   NEW_LISTING_MINUTES,
   newlyListed,
   type ShelfState,
+  standingHolds,
+  type ShelfTombstone,
   waitingListings,
 } from './fold';
-import { type ShelfBody, signShelfBody } from './record';
+import { type Clause, type NoticeBody, type ShelfBody, signShelfBody } from './record';
 import { nameSkeleton } from './skeleton';
 
 const NOW = 29_000_000;
@@ -68,8 +70,26 @@ function doorListing(
   address: string,
   since?: ReadonlyMap<string, number>,
 ) {
-  return doorListingAsServed([...records, ...releasesOf(records)], address, since);
+  return doorListingAsServed([...records, ...releasesOf(records)], address, NOW, since);
 }
+
+/** A notice the tests' steward signed, served under its address, arriving at `received`. */
+function stewardNotice(
+  fields: DistributiveOmit<NoticeBody, 'v' | 'kind'>,
+  received = NOW - 1441,
+): ShelfRecord {
+  nextSeq += 1;
+  const body = { v: 1, kind: 'notice', ...fields } as NoticeBody;
+  return {
+    seq: nextSeq,
+    received,
+    address: STEWARD_ADDRESS,
+    data: signShelfBody(TEST_STEWARD.signing, body),
+  };
+}
+
+/** `Omit` over each member of a union. */
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 
 /** `body` signed by `keys` and stored under `address` (the signer's own, unless given). */
 function recordOf(
@@ -129,13 +149,23 @@ interface VectorRecord {
   readonly final?: true;
   /** A release naming this door (`vectors/notices.json`). */
   readonly release?: string;
-  /** A later notice naming this door, which #489 folds. */
-  readonly later?: string;
-  /** The door that signs a release in the steward's place, under its own address. */
+  /** A hold, uphold or suspend naming this door (#489), with `clause`, and `id` for one entry. */
+  readonly hold?: string;
+  readonly uphold?: string;
+  readonly suspend?: string;
+  /** An entry's label, which a hold or an uphold names. */
+  readonly id?: string;
+  readonly clause?: Clause;
+  /** A pause, on or off (#489). */
+  readonly pause?: boolean;
+  /** The door that signs a notice in the steward's place, under its own address. */
   readonly signer?: string;
 }
 
-/** `vectors/notices.json`: which listings and entries show, and which are held, under rule 8 (#488). */
+/** A tombstone or a hold as a vector writes it: its door, its entry's label or null, and its clause. */
+type Named = readonly [string, string | null, Clause];
+
+/** `vectors/notices.json`: what shows, and what is held or removed, under rule 8 (#488, #489). */
 interface NoticesFile {
   readonly kind: 'notices';
   readonly cases: readonly {
@@ -144,6 +174,9 @@ interface NoticesFile {
     readonly listings: readonly (readonly [string, string])[];
     readonly entries: readonly (readonly [string, string])[];
     readonly held: readonly string[];
+    readonly tombstones?: readonly Named[];
+    readonly holds?: readonly Named[];
+    readonly paused?: boolean;
   }[];
 }
 
@@ -206,38 +239,67 @@ function bodyFrom(vector: VectorRecord): ShelfBody {
 const addressOf = (label: string): string => base64url(doorKeys(label).publicKey);
 
 /** A vector notice's record: signed by the steward under its address, or by `signer` under its own. */
-function noticeFrom(vector: VectorRecord, body: ShelfBody): ShelfRecord {
+function noticeFrom(vector: VectorRecord, body: NoticeBody): ShelfRecord {
   const keys = vector.signer === undefined ? TEST_STEWARD.signing : doorKeys(vector.signer);
   const address = base64url(keys.publicKey);
-  return { seq: vector.seq, received: NOW - 1441, address, data: signShelfBody(keys, body) };
+  const received = vector.received ?? NOW - 1441;
+  return { seq: vector.seq, received, address, data: signShelfBody(keys, body) };
+}
+
+/** A vector's notice body, or null for a record a door signs as its own. */
+function noticeBodyFrom(vector: VectorRecord): NoticeBody | null {
+  const { clause = 'C1' } = vector;
+  const id = vector.id === undefined ? {} : { id: idOf(vector.id) };
+  if (vector.release !== undefined) {
+    return { v: 1, kind: 'notice', act: 'release', address: addressOf(vector.release) };
+  }
+  if (vector.hold !== undefined) {
+    return { v: 1, kind: 'notice', act: 'hold', address: addressOf(vector.hold), ...id, clause };
+  }
+  if (vector.uphold !== undefined) {
+    const address = addressOf(vector.uphold);
+    return { v: 1, kind: 'notice', act: 'uphold', address, id: idOf(vector.id ?? ''), clause };
+  }
+  if (vector.suspend !== undefined) {
+    return { v: 1, kind: 'notice', act: 'suspend', address: addressOf(vector.suspend), clause };
+  }
+  return vector.pause === undefined
+    ? null
+    : { v: 1, kind: 'notice', act: 'pause', on: vector.pause };
 }
 
 /** A vector's record, signed by its door, or a notice signed by the steward. */
 function recordFrom(vector: VectorRecord): ShelfRecord {
-  if (vector.release !== undefined) {
-    const address = addressOf(vector.release);
-    return noticeFrom(vector, { v: 1, kind: 'notice', act: 'release', address });
-  }
-  if (vector.later !== undefined) {
-    const address = addressOf(vector.later);
-    return noticeFrom(vector, { v: 1, kind: 'notice', act: 'hold', address });
-  }
+  const notice = noticeBodyFrom(vector);
+  if (notice !== null) return noticeFrom(vector, notice);
   const keys = doorKeys(vector.door ?? '');
   const address = base64url(keys.publicKey);
   const received = vector.received ?? NOW - 1441;
   return { seq: vector.seq, received, address, data: signShelfBody(keys, bodyFrom(vector)) };
 }
 
+/** The vectors' door labels, by address. */
+const LABELS = new Map(
+  ['oak', 'birch', 'elm', 'ash'].map((label) => [base64url(doorKeys(label).publicKey), label]),
+);
+
+/** The vectors' entry labels, by id. */
+const ENTRY_LABELS = new Map(['d1', 'd2', 'd3', 'd4', 'd5'].map((label) => [idOf(label), label]));
+
 /** What `state` shows, by the vectors' door labels and entry titles. */
 function shown(state: ShelfState) {
-  const labels = new Map(
-    ['oak', 'birch', 'elm', 'ash'].map((label) => [base64url(doorKeys(label).publicKey), label]),
-  );
   return {
-    listings: state.listings.map((l) => [labels.get(l.address), l.name]),
-    entries: state.entries.map((e) => [labels.get(e.address), e.title]),
+    listings: state.listings.map((l) => [LABELS.get(l.address), l.name]),
+    entries: state.entries.map((e) => [LABELS.get(e.address), e.title]),
   };
 }
+
+/** A tombstone or a hold, by the vectors' labels. */
+const named = ({ address, id, clause }: Pick<ShelfTombstone, 'address' | 'id' | 'clause'>) => [
+  LABELS.get(address),
+  id === null ? null : ENTRY_LABELS.get(id),
+  clause,
+];
 
 describe('foldShelf', () => {
   it('shows an entry under its listing’s name', () => {
@@ -251,12 +313,13 @@ describe('foldShelf', () => {
     });
   });
 
-  it('starts empty, with no withdrawal, no tombstone and no pause', () => {
+  it('starts empty, with no withdrawal, no tombstone, no hold and no pause', () => {
     expect(foldShelf([], NOW)).toEqual({
       listings: [],
       entries: [],
       withdrawn: [],
       tombstones: [],
+      holds: [],
       paused: false,
     });
   });
@@ -335,7 +398,9 @@ describe('foldShelf', () => {
       ];
 
       expect(foldAsServed([listing('Oak St Tenants'), ...forged], NOW).listings).toEqual([]);
-      expect(doorListingAsServed([listing('Oak St Tenants'), ...forged], oak)?.held).toBe(true);
+      expect(doorListingAsServed([listing('Oak St Tenants'), ...forged], oak, NOW)?.held).toBe(
+        true,
+      );
     });
   });
 
@@ -733,7 +798,11 @@ describe('foldShelf', () => {
       const records = [listing('Oak St Tenants')];
       const standing = records[0]?.received ?? 0;
 
-      expect(doorListing(records, oak)).toEqual({ listedSince: standing, held: false });
+      expect(doorListing(records, oak)).toEqual({
+        listedSince: standing,
+        held: false,
+        removed: null,
+      });
       const since = new Map([[oak, standing - 50_000]]);
       expect(doorListing(records, oak, since)?.listedSince).toBe(standing - 50_000);
       const later = new Map([[oak, standing + 5]]);
@@ -742,14 +811,14 @@ describe('foldShelf', () => {
 
     it('is new for 43,200 relay minutes: new at 43,199, no longer at 43,200', () => {
       expect(NEW_LISTING_MINUTES).toBe(43_200);
-      const listed = { listedSince: NOW, held: false };
+      const listed = { listedSince: NOW, held: false, removed: null };
       expect(newlyListed(listed, NOW)).toBe(true);
       expect(newlyListed(listed, NOW + 43_199)).toBe(true);
       expect(newlyListed(listed, NOW + 43_200)).toBe(false);
     });
 
     it('is new while held, however old, and never for an unlisted door', () => {
-      expect(newlyListed({ listedSince: 0, held: true }, NOW)).toBe(true);
+      expect(newlyListed({ listedSince: 0, held: true, removed: null }, NOW)).toBe(true);
       expect(newlyListed(null, NOW)).toBe(false);
     });
 
@@ -757,15 +826,51 @@ describe('foldShelf', () => {
       const oak = base64url(OAK.publicKey);
       const records = [listing('Oak St Tenants')];
 
-      expect(doorListingAsServed(records, oak)?.held).toBe(true);
-      expect(newlyListed(doorListingAsServed(records, oak), NOW + 99_999)).toBe(true);
+      expect(doorListingAsServed(records, oak, NOW)?.held).toBe(true);
+      expect(newlyListed(doorListingAsServed(records, oak, NOW), NOW + 99_999)).toBe(true);
       const released = [...records, releaseRecord(oak, 900, NOW)];
-      expect(doorListingAsServed(released, oak)?.held).toBe(false);
+      expect(doorListingAsServed(released, oak, NOW)?.held).toBe(false);
       const other = [...records, releaseRecord(base64url(BIRCH.publicKey), 900, NOW)];
-      expect(doorListingAsServed(other, oak)?.held).toBe(true);
+      expect(doorListingAsServed(other, oak, NOW)?.held).toBe(true);
     });
 
-    it.todo('is held while a hold notice stands on its address (#489: holds aren’t folded yet)');
+    it('is held while a hold on its listing stands, and not for a hold on one entry (#489)', () => {
+      const records = [listing('Oak St Tenants')];
+      const hold = stewardNotice({ act: 'hold', address: oak, clause: 'C2' }, 5000);
+      const entryHold = stewardNotice({ act: 'hold', address: oak, id: idOf('d1'), clause: 'C2' });
+
+      expect(doorListing([...records, hold], oak)?.held).toBe(false);
+      expect(doorListing([...records, hold], oak)).toEqual(
+        expect.objectContaining({ held: false, removed: null }),
+      );
+      const standing = doorListingAsServed(
+        [...records, releaseRecord(oak, 900, NOW), hold],
+        oak,
+        5000 + 10_079,
+      );
+      expect(standing?.held).toBe(true);
+      expect(newlyListed(standing, 5000 + 10_079 + 99_999)).toBe(true);
+      expect(doorListing([...records, entryHold], oak)?.held).toBe(false);
+    });
+
+    it('is held while a hold stands, though the relay withholds its listing meanwhile (#489)', () => {
+      const hold = stewardNotice({ act: 'hold', address: oak, clause: 'C2' }, 700);
+
+      expect(doorListingAsServed([hold], oak, 700 + 10_079)).toEqual({
+        listedSince: 700,
+        held: true,
+        removed: null,
+      });
+      expect(doorListingAsServed([hold], oak, 700 + 10_080)).toBeNull();
+    });
+
+    it('is removed, and held, once suspended, though the relay deleted its listing (#489)', () => {
+      const suspend = stewardNotice({ act: 'suspend', address: oak, clause: 'C3' }, 4321);
+
+      expect(doorListing([suspend], oak)).toEqual({ listedSince: 4321, held: true, removed: 'C3' });
+      expect(doorListing([listing('Oak St Tenants'), suspend], oak)?.removed).toBe('C3');
+      expect(newlyListed(doorListing([suspend], oak), NOW)).toBe(true);
+    });
   });
 
   describe('vectors/entries.json', () => {
@@ -782,10 +887,13 @@ describe('foldShelf', () => {
       const records = vector.records.map(recordFrom);
       const state = foldAsServed(records, NOW);
       const held = ['oak', 'birch'].filter(
-        (label) => doorListingAsServed(records, addressOf(label))?.held === true,
+        (label) => doorListingAsServed(records, addressOf(label), NOW)?.held === true,
       );
       expect(shown(state)).toEqual({ listings: vector.listings, entries: vector.entries });
       expect(held).toEqual(vector.held);
+      if (vector.tombstones) expect(state.tombstones.map(named)).toEqual(vector.tombstones);
+      if (vector.holds) expect(state.holds.map(named)).toEqual(vector.holds);
+      if (vector.paused !== undefined) expect(state.paused).toBe(vector.paused);
     });
 
     it('folds any order the relay could serve the same', () => {
@@ -801,6 +909,14 @@ describe('foldShelf', () => {
   });
 
   describe('waitingListings: the steward’s console (#488, §6.4)', () => {
+    it('leaves out a listing already released: it waits for a hold to lapse (#489)', () => {
+      const held = [listing('Oak St Tenants')];
+      const live = foldShelf([], NOW);
+
+      expect(waitingListings(held, live)).toHaveLength(1);
+      expect(waitingListings(held, live, new Set([base64url(OAK.publicKey)]))).toEqual([]);
+    });
+
     const oak = base64url(OAK.publicKey);
     const birch = base64url(BIRCH.publicKey);
 
@@ -835,7 +951,91 @@ describe('foldShelf', () => {
     });
   });
 
-  describe('rules to come', () => {
-    it.todo('applies hold, uphold, suspend and pause notices (#489)');
+  describe('rule 8: hold, uphold, suspend and pause (#489)', () => {
+    const oak = base64url(OAK.publicKey);
+    const published = (label: string) => [listing('Oak St Tenants'), entry(label, 'Rent strike')];
+    const ids = (state: ShelfState) => state.entries.map(({ id }) => id);
+
+    it('shows a held entry again when the hold lapses without an uphold', () => {
+      const records = [
+        ...published('d1'),
+        stewardNotice({ act: 'hold', address: oak, id: idOf('d1'), clause: 'C2' }, NOW),
+      ];
+
+      expect(ids(foldShelf(records, NOW + 10_079))).toEqual([]);
+      expect(ids(foldShelf(records, NOW + 10_080))).toEqual([idOf('d1')]);
+    });
+
+    it('counts a held entry toward its address’s 4, as the relay counts it live', () => {
+      const records = [
+        listing('Oak St Tenants'),
+        ...['d1', 'd2', 'd3', 'd4', 'd5'].map((label) => entry(label, label)),
+        stewardNotice({ act: 'hold', address: oak, id: idOf('d1'), clause: 'C2' }),
+      ];
+
+      expect(foldShelf(records, NOW).entries.map(({ title }) => title)).toEqual(['d4', 'd3', 'd2']);
+    });
+
+    it('frees an upheld entry’s place among the 4: the relay deleted it', () => {
+      const records = [
+        listing('Oak St Tenants'),
+        ...['d1', 'd2', 'd3', 'd4', 'd5'].map((label) => entry(label, label)),
+        stewardNotice({ act: 'uphold', address: oak, id: idOf('d1'), clause: 'C2' }),
+      ];
+
+      const state = foldShelf(records, NOW);
+
+      expect(state.entries.map(({ title }) => title)).toEqual(['d5', 'd4', 'd3', 'd2']);
+      expect(state.tombstones).toEqual([
+        { address: oak, id: idOf('d1'), clause: 'C2', seq: records[1]?.seq },
+      ]);
+    });
+
+    it('lists each standing hold for Group home, never a lapsed one', () => {
+      const records = [
+        ...published('d1'),
+        stewardNotice({ act: 'hold', address: oak, clause: 'C3' }, 100),
+      ];
+
+      expect(foldShelf(records, 100 + 10_079).holds).toEqual([
+        expect.objectContaining({ address: oak, id: null, clause: 'C3', until: 100 + 10_080 }),
+      ]);
+      expect(foldShelf(records, 100 + 10_080).holds).toEqual([]);
+    });
+
+    it('folds every notice vector the same in any order the relay could serve', () => {
+      for (const vector of NOTICES.cases) {
+        const records = vector.records.map(recordFrom);
+        const folded = foldAsServed(records, NOW);
+        fc.assert(
+          fc.property(fc.shuffledSubarray(records, { minLength: records.length }), (shuffled) => {
+            expect(foldAsServed(shuffled, NOW)).toEqual(folded);
+          }),
+          { numRuns: 20 },
+        );
+      }
+    });
+  });
+
+  describe('standingHolds: the steward’s console (#489, §6.4)', () => {
+    const oak = base64url(OAK.publicKey);
+
+    it('names each standing hold’s listing and entry from the held records', () => {
+      const held = [listing('Oak St Tenants'), entry('d1', 'Rent strike vote')];
+      const live = [
+        stewardNotice({ act: 'hold', address: oak, id: idOf('d1'), clause: 'C2' }, 10),
+        stewardNotice({ act: 'hold', address: base64url(ELM.publicKey), clause: 'C1' }, 0),
+      ];
+
+      const standing = standingHolds(live, held, 10 + 10_079);
+      expect(standing).toMatchObject([
+        { hold: { address: oak, id: idOf('d1'), clause: 'C2' }, name: 'Oak St Tenants' },
+      ]);
+      expect(standing.map(({ title }) => title)).toEqual(['Rent strike vote']);
+      expect(standingHolds(live, held, 5)).toEqual([
+        expect.objectContaining({ name: 'Oak St Tenants' }),
+        expect.objectContaining({ name: null, title: null }),
+      ]);
+    });
   });
 });

@@ -1,24 +1,26 @@
 /**
- * The steward's side of the shelf (#488; docs/spec/listed-doors.md §6.2,
- * §6.4): importing the steward's secret in Settings, and the console's read
- * and its Release.
+ * The steward's side of the shelf (#488, #489; docs/spec/listed-doors.md
+ * §6.2, §6.4): importing the steward's secret in Settings, and the console's
+ * read and its five notices: release, hold, uphold, suspend and pause.
  *
  * The secret is taken only when both public keys it derives are the ones the
  * app pins (`shelf/steward.ts`), so no other key is ever kept as the
  * steward's, and with no pins none is. It goes into the store through
  * `keepKeys`, sealed in the passkey vault where there is one, and leaves the
- * store only to sign a release on this device; a copy read out is zeroed once
- * the notice is signed.
+ * store only to sign a notice on this device; a copy read out is zeroed once
+ * the notice is signed. A notice names a clause and what it acts on, never
+ * who reported it (ADR-0013).
  */
 import { base64url } from '../crypto/base64url';
 import { stewardKeysOf, stewardSecretFrom } from '../crypto/steward';
 import type { Shelf } from '../net/shelf';
-import { foldShelf, waitingListings } from '../shelf/fold';
-import { signNotice } from '../shelf/notices';
+import { foldShelf, standingHolds, waitingListings } from '../shelf/fold';
+import { foldNotices, signNotice } from '../shelf/notices';
+import type { NoticeBody } from '../shelf/record';
 import { STEWARD_PINS, type StewardPins } from '../shelf/steward';
 import { type StewardKeyStore, VaultLocked } from '../store/db';
 import type { StewardImport } from './StewardKeyCard';
-import type { StewardQueue } from '../screens/Steward';
+import type { StewardQueue, StewardView } from '../screens/Steward';
 
 /** Whether `secret` derives exactly the two keys `pins` holds. */
 export function derivesPins(secret: Uint8Array, pins: StewardPins | null = STEWARD_PINS): boolean {
@@ -52,29 +54,40 @@ export async function importStewardKey(
 }
 
 /**
- * The console's queue: every held listing, beside any live listing that
- * holds its name, read fresh from the relay. `unavailable` while the relay
- * has no shelf, `failed` when either read fails.
+ * The console's view, read fresh from the relay: every held listing beside
+ * any live listing that holds its name, what stands on the shelf (every
+ * entry at once, as its own group sees it) and each hold that stands.
+ * `unavailable` while the relay has no shelf, `failed` when either read fails.
  */
 export async function readQueue(shelf: Pick<Shelf, 'read' | 'readHeld'>): Promise<StewardQueue> {
   try {
     const [live, held] = await Promise.all([shelf.read(), shelf.readHeld()]);
     if (live === null || held === null) return 'unavailable';
-    return waitingListings(held.records, foldShelf(live.records, live.now));
+    const own = new Set(live.records.map(({ address }) => address));
+    const state = foldShelf(live.records, live.now, { own });
+    const { released } = foldNotices(live.records);
+    const view: StewardView = {
+      waiting: waitingListings(held.records, state, released),
+      listings: state.listings,
+      entries: state.entries,
+      holds: standingHolds(live.records, held.records, live.now),
+      paused: state.paused,
+    };
+    return view;
   } catch {
     return 'failed';
   }
 }
 
 /**
- * Signs a release of `address` with the steward's key and PUTs it under the
- * steward's address; true once the relay has it, false when the device holds
- * no key that derives the pins or the relay refused it.
+ * Signs `notice` with the steward's key and PUTs it under the steward's
+ * address; true once the relay has it, false when the device holds no key
+ * that derives the pins or the relay refused it.
  */
-export async function releaseListing(
+export async function sendNotice(
   store: Pick<StewardKeyStore, 'getStewardKey'>,
   shelf: Pick<Shelf, 'put'>,
-  address: string,
+  notice: NoticeBody,
 ): Promise<boolean> {
   const secret = await store.getStewardKey().catch(() => undefined);
   if (secret === undefined) return false;
@@ -82,7 +95,7 @@ export async function releaseListing(
     if (!derivesPins(secret)) return false;
     const { signing, box } = stewardKeysOf(secret);
     box.secretKey.fill(0);
-    const record = signNotice(signing, { v: 1, kind: 'notice', act: 'release', address });
+    const record = signNotice(signing, notice);
     signing.secretKey.fill(0);
     await shelf.put(base64url(signing.publicKey), record);
     return true;
@@ -91,4 +104,13 @@ export async function releaseListing(
   } finally {
     secret.fill(0);
   }
+}
+
+/** Signs and PUTs a release of `address`, as {@link sendNotice} does (#488). */
+export function releaseListing(
+  store: Pick<StewardKeyStore, 'getStewardKey'>,
+  shelf: Pick<Shelf, 'put'>,
+  address: string,
+): Promise<boolean> {
+  return sendNotice(store, shelf, { v: 1, kind: 'notice', act: 'release', address });
 }

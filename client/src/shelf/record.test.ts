@@ -1,8 +1,10 @@
 /**
  * A shelf record's body (#484; docs/spec/listed-doors.md §4.1): compact
  * UTF-8 JSON in a fixed key order, read back only when it is exactly one of
- * the kinds this slice writes. A steward's notice (#488, §6.1) reads back
- * too: a release in full, and every later act as a stub #489 folds.
+ * the kinds this slice writes. A steward's notice (#488, #489, §6.1) reads
+ * back only when it names exactly what its act names: a release an address;
+ * a hold an address, a clause and maybe an entry; an uphold an address, an
+ * entry and a clause; a suspend an address and a clause; and a pause `on`.
  */
 import { describe, expect, it } from 'vitest';
 
@@ -38,6 +40,7 @@ const ENTRY: ShelfBody = { v: 1, kind: 'entry', id: ID, title: 'Rent strike vote
 const WITHDRAW: ShelfBody = { v: 1, kind: 'withdraw', id: ID };
 const ADDRESS = base64url(new Uint8Array(32).fill(3));
 const RELEASE: ShelfBody = { v: 1, kind: 'notice', act: 'release', address: ADDRESS };
+const NOTICE = { v: 1, kind: 'notice' } as const;
 
 describe('encodeShelfBody', () => {
   it('writes each kind as compact JSON with its keys in the spec’s order', () => {
@@ -54,13 +57,17 @@ describe('encodeShelfBody', () => {
     );
   });
 
-  it('writes a later notice’s fields in the spec’s order, leaving out those it lacks', () => {
+  it('writes a notice’s fields in the spec’s order, leaving out those it lacks', () => {
     const uphold = { clause: 'C2', id: ID, address: ADDRESS, act: 'uphold', kind: 'notice', v: 1 };
     expect(text(encodeShelfBody(uphold as ShelfBody))).toBe(
       `{"v":1,"kind":"notice","act":"uphold","address":"${ADDRESS}","id":"${ID}","clause":"C2"}`,
     );
-    expect(text(encodeShelfBody({ v: 1, kind: 'notice', act: 'pause' }))).toBe(
-      '{"v":1,"kind":"notice","act":"pause"}',
+    const hold = { clause: 'C3', address: ADDRESS, act: 'hold', kind: 'notice', v: 1 };
+    expect(text(encodeShelfBody(hold as ShelfBody))).toBe(
+      `{"v":1,"kind":"notice","act":"hold","address":"${ADDRESS}","clause":"C3"}`,
+    );
+    expect(text(encodeShelfBody({ on: false, act: 'pause', kind: 'notice', v: 1 }))).toBe(
+      '{"v":1,"kind":"notice","act":"pause","on":false}',
     );
   });
 
@@ -79,13 +86,15 @@ describe('parseShelfBody', () => {
   );
 
   it.each([
-    ['a hold of an entry', { v: 1, kind: 'notice', act: 'hold', address: ADDRESS, id: ID }],
-    ['a hold of an address', { v: 1, kind: 'notice', act: 'hold', address: ADDRESS }],
-    ['an uphold', { v: 1, kind: 'notice', act: 'uphold', address: ADDRESS, id: ID, clause: 'C1' }],
-    ['a suspend', { v: 1, kind: 'notice', act: 'suspend', address: ADDRESS, clause: 'C3' }],
-    ['a pause', { v: 1, kind: 'notice', act: 'pause' }],
-  ] as const)('reads %s as a later notice, which #489 folds', (_name, body) => {
+    ['a hold of an entry', { ...NOTICE, act: 'hold', address: ADDRESS, id: ID, clause: 'C2' }],
+    ['a hold of an address', { ...NOTICE, act: 'hold', address: ADDRESS, clause: 'C3' }],
+    ['an uphold', { ...NOTICE, act: 'uphold', address: ADDRESS, id: ID, clause: 'C1' }],
+    ['a suspend', { ...NOTICE, act: 'suspend', address: ADDRESS, clause: 'C3' }],
+    ['a pause', { ...NOTICE, act: 'pause', on: true }],
+    ['the end of a pause', { ...NOTICE, act: 'pause', on: false }],
+  ] as const)('reads back %s (#489)', (_name, body) => {
     expect(parseShelfBody(json(body))).toEqual(body);
+    expect(parseShelfBody(encodeShelfBody(body))).toEqual(body);
   });
 
   it('takes a name, title and text at their longest, counted in code points', () => {
@@ -108,10 +117,17 @@ describe('parseShelfBody', () => {
     ['a release naming no address', json({ v: 1, kind: 'notice', act: 'release' })],
     ['a release naming no key', json({ ...RELEASE, address: 'oak' })],
     ['a release with a key too many', json({ ...RELEASE, id: ID })],
-    ['a later notice with a key it doesn’t know', json({ ...RELEASE, act: 'pause', on: true })],
-    ['a later notice naming no key', json({ ...RELEASE, act: 'hold', address: 7 })],
-    ['a later notice with a bad id', json({ ...RELEASE, act: 'hold', id: 'd1' })],
-    ['a later notice with a bad clause', json({ ...RELEASE, act: 'uphold', clause: 'C4' })],
+    ['a hold with no clause', json({ ...RELEASE, act: 'hold' })],
+    ['a hold naming no key', json({ ...NOTICE, act: 'hold', address: 7, clause: 'C1' })],
+    ['a hold with a bad id', json({ ...RELEASE, act: 'hold', id: 'd1', clause: 'C1' })],
+    ['a hold with a key too many', json({ ...RELEASE, act: 'hold', clause: 'C1', on: true })],
+    ['an uphold with a bad clause', json({ ...RELEASE, act: 'uphold', id: ID, clause: 'C4' })],
+    ['an uphold naming no entry', json({ ...RELEASE, act: 'uphold', clause: 'C1' })],
+    ['a suspend naming an entry', json({ ...RELEASE, act: 'suspend', id: ID, clause: 'C1' })],
+    ['a suspend naming no address', json({ ...NOTICE, act: 'suspend', clause: 'C1' })],
+    ['a pause with no on', json({ ...NOTICE, act: 'pause' })],
+    ['a pause whose on isn’t true or false', json({ ...NOTICE, act: 'pause', on: 1 })],
+    ['a pause naming an address', json({ ...RELEASE, act: 'pause', on: true })],
     ['an unknown kind', json({ ...WITHDRAW, kind: 'pitch' })],
     ['a key too many', json({ ...LISTING, author: 'Ana' })],
     ['a key too few', json({ v: 1, kind: 'listing', open: true, name: 'Oak' })],

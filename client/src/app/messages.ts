@@ -146,6 +146,18 @@ export const messages = {
     showsTomorrow: 'Shows publicly tomorrow',
     /** Under an entry: its own page, with Share and Copy for its link (#431). */
     passAlong: 'Share or copy its link',
+    /**
+     * A tombstone (#489; listed-doors.md §6.1): what the steward took down,
+     * in its place, naming the covenant clause in words, never a reporter
+     * or the group (ADR-0013: decisions are public).
+     */
+    removed: (clause: string) => `Removed: ${clause}`,
+    removedEntry: 'Reconcile’s steward took this entry off the public shelf under the covenant.',
+    removedListing:
+      'Reconcile’s steward took a group’s listing, and everything it published, off the public shelf under the covenant.',
+    /** In place of the whole section while the steward's pause stands (#489). */
+    paused:
+      'The public shelf is paused for now. Nothing on it shows until Reconcile’s steward lifts the pause.',
   },
   /** One shelf entry's own page (#431; listed-doors.md §5.2): the link Share and Copy pass along. */
   shelfEntry: {
@@ -166,6 +178,16 @@ export const messages = {
     strayHeading: 'Taken off the public shelf',
     stray:
       'Someone posted this under your group’s name without a vote, using your front door’s key. A member’s device took it down.',
+    /**
+     * On Group home (#489, §6.1): a hold the steward placed on the group's
+     * listing or one of its entries, with the clause it names, which only
+     * the group's own members see.
+     */
+    heldHeading: 'Held off the public shelf',
+    held: (clause: string) => `Held: ${clause}`,
+    heldListing: 'Your group’s listing and everything it published.',
+    heldUntil: (date: string) =>
+      `Reconcile’s steward is looking at this. Unless they remove it, it shows again on ${date}.`,
   },
   start: {
     pageTitle: 'Your groups',
@@ -1448,6 +1470,9 @@ export const messages = {
     documentsTooLong: 'That’s more than one request can carry. Choose fewer or shorter Documents.',
     /** In the picker's place at a door the shelf lists, while it's newly listed or held (#432, §5.3). */
     newlyListed: 'This group is newly listed, so you can’t attach Documents yet.',
+    /** On a door whose listing the steward suspended (#489, §6.1), naming the clause in words. */
+    removedListing: (clause: string) =>
+      `Reconcile’s steward removed this group’s listing from the public shelf: ${clause}.`,
     send: 'Send',
     failed: 'Your request didn’t go. Check your connection, then try again.',
     /** Around the group's name: "Sent. If someone in Riverside Tenants invites you, it shows on Your groups." */
@@ -1718,7 +1743,8 @@ export const messages = {
   },
   // The steward's key (#488; docs/spec/listed-doors.md §6.2, §6.4): quiet in
   // Settings, for the one device of the platform's steward, the founder during
-  // the pilot. The console lists listings waiting for release.
+  // the pilot. The console lists listings waiting for release, holds, what
+  // stands on the shelf and the pause (#489).
   shelfSteward: {
     keyLede:
       'Only for Reconcile’s steward, who releases groups onto the public shelf. Nobody else needs this.',
@@ -1748,6 +1774,43 @@ export const messages = {
     releasing: 'Releasing…',
     released: 'Released. Devices show it at their next read of the shelf.',
     releaseFailed: 'It wasn’t released. You can try again.',
+    /**
+     * The other four notices (#489, §6.1, §6.4): each action says what
+     * readers, and the group, will see before it is sent. A notice names a
+     * clause, never who reported anything.
+     */
+    holdsHeading: 'Holds',
+    noHolds: 'Nothing is held.',
+    heldListing: (name: string) => `The listing “${name}” and its entries`,
+    heldEntry: (title: string) => `The entry “${title}”`,
+    heldUnknown: 'A record this device hasn’t read',
+    heldFor: (clause: string, date: string) =>
+      `Held: ${clause}. It shows again on ${date} unless you act.`,
+    shelfHeading: 'On the shelf',
+    emptyShelf: 'Nothing is on the shelf.',
+    clauseLabel: 'Under which clause',
+    clauseOption: (clause: string, words: string) => `${clause}: ${words}`,
+    hold: 'Hold',
+    uphold: 'Uphold',
+    suspend: 'Suspend',
+    willSeeHoldListing: (clause: string) =>
+      `Hold: readers won’t see this listing or its entries for 7 days, unless you suspend it. Its group sees “Held: ${clause}”.`,
+    willSeeHoldEntry: (clause: string) =>
+      `Hold: readers won’t see this entry for 7 days, unless you uphold it. Its group sees “Held: ${clause}”.`,
+    willSeeUphold: (clause: string) =>
+      `Uphold: readers will see “Removed: ${clause}” in its place until its 30 days end.`,
+    willSeeSuspend: (clause: string) =>
+      `Suspend: readers will see “Removed: ${clause}” in its place, and its door’s page says its listing was removed.`,
+    pauseHeading: 'Pause',
+    pausedNow: 'The shelf is paused.',
+    showingNow: 'The shelf is showing.',
+    pause: 'Pause the shelf',
+    resume: 'Lift the pause',
+    willSeePause: (line: string) => `Readers will see “${line}” in place of the whole shelf.`,
+    willSeeResume: 'Readers will see the shelf again.',
+    sending: 'Sending…',
+    sent: 'Sent. Devices act on it at their next read of the shelf.',
+    sendFailed: 'It wasn’t sent. You can try again.',
   },
   // Passkey unlock (#95; ADR-0008, ADR-0030): offered once after the pilot
   // notice and always in Settings. iOS allows one passkey request per tap, so

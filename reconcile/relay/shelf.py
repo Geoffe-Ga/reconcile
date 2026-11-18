@@ -9,14 +9,25 @@ record doesn't carry it again.
 These are the only bodies the relay can read, and it reads as little as it
 can: the signature, ``v`` and ``kind``, an entry's or withdraw's ``id``,
 which it files the record under, a listing's ``open`` and ``final``, which
-say whether the door has closed for good (#486), and a notice's ``act`` and
-``address`` (#488). It never reads a name, a title or a text.
+say whether the door has closed for good (#486), and a notice's ``act``,
+``address``, ``id``, ``clause`` and ``on`` (#488, #489). It never reads a
+name, a title or a text.
 
-A notice is the steward's (listed-doors.md §6.1). The relay takes one act in
-this slice, ``release``, naming the address whose hold it clears, and files
-it under that address; the route checks that the steward signed it. Every
-later act (``hold``, ``uphold``, ``suspend``, ``pause``) comes with #489,
-and until then is no record.
+A notice is the steward's (listed-doors.md §6.1); the route checks that the
+steward signed it. Each act names what it acts on, and a notice missing any
+of it is no record:
+
+- ``release``: an ``address``, whose hold it clears (#488).
+- ``hold``: an ``address`` and a ``clause``, and an entry's ``id`` when it
+  holds one entry rather than the whole address.
+- ``uphold``: an ``address``, an entry's ``id`` and a ``clause``.
+- ``suspend``: an ``address`` and a ``clause``.
+- ``pause``: ``on``, true or false (#489's encoding of "on or off").
+
+A notice is filed under a ``ref`` that says what it acts on, so the relay
+can find it again: a release under the address it names, as #488 filed it,
+and the others under ``hold:{address}``, ``hold:{address}:{id}``,
+``uphold:{address}:{id}``, ``suspend:{address}`` or ``pause``.
 
 Every device verifies each record again under strict RFC 8032 rules
 (``client/src/crypto/shelf.ts``), so a record this check lets through that a
@@ -28,7 +39,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TypeGuard
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
@@ -53,8 +64,14 @@ _MAX_BYTES = {
 # The kinds filed under the id they name; a listing is filed under none, and a
 # notice under the address it names.
 _REFERS = frozenset({"entry", "withdraw"})
-# The one act a notice takes in this slice (#488); the rest come with #489.
+# The acts a notice takes (§6.1).
 RELEASE = "release"
+HOLD = "hold"
+UPHOLD = "uphold"
+SUSPEND = "suspend"
+PAUSE = "pause"
+# The covenant's clauses a hold, uphold or suspend names (§6.1).
+CLAUSES = frozenset({"C1", "C2", "C3"})
 
 
 @dataclass(frozen=True)
@@ -76,12 +93,30 @@ class ShelfRecord:
 
     ``final`` is true only for a final listing, ``{v: 1, kind: "listing",
     open: false, final: true}``: its door has closed for good (#486). A
-    release notice's ``ref`` is the address it releases (#488).
+    notice's ``ref`` says what it acts on (the module's docstring), and
+    ``notice`` holds what the route acts on.
     """
 
     kind: str
     ref: str
     final: bool = False
+    notice: Notice | None = None
+
+
+@dataclass(frozen=True)
+class Notice:
+    """What a steward's notice acts on: its act, the address and the entry it names."""
+
+    act: str
+    address: str = ""
+    entry: str = ""
+
+    @property
+    def ref(self) -> str:
+        """What the notice is filed under: a release under its address, else by act."""
+        if self.act == RELEASE:
+            return self.address
+        return ":".join(part for part in (self.act, self.address, self.entry) if part)
 
 
 def open_record(key: bytes, body: bytes) -> ShelfRecord | Refusal:
@@ -147,11 +182,43 @@ def _listing(body: dict[str, Any]) -> ShelfRecord | None:
 
 
 def _notice(body: dict[str, Any]) -> ShelfRecord | None:
-    """A release naming a canonical key, filed under it; else ``None``."""
+    """A notice that names all its act names, filed by its ``ref``; else ``None``."""
+    notice = _acts_on(body)
+    return None if notice is None else ShelfRecord("notice", notice.ref, notice=notice)
+
+
+def _acts_on(body: dict[str, Any]) -> Notice | None:
+    """What ``body``'s act acts on, when it names everything that act needs."""
+    act = body.get("act")
+    if act == PAUSE:
+        return Notice(PAUSE) if isinstance(body.get("on"), bool) else None
     address = body.get("address")
-    if body.get("act") != RELEASE or not isinstance(address, str):
+    if not _is_key(address):
         return None
-    return ShelfRecord("notice", address) if key_bytes(address) is not None else None
+    if act == RELEASE:
+        return Notice(RELEASE, address)
+    if act not in {HOLD, UPHOLD, SUSPEND} or not _is_clause(body.get("clause")):
+        return None
+    return _with_entry(str(act), address, body.get("id"))
+
+
+def _with_entry(act: str, address: str, entry: object) -> Notice | None:
+    """A hold, uphold or suspend: an uphold names an entry, a suspend none."""
+    if entry is None:
+        return None if act == UPHOLD else Notice(act, address)
+    if act == SUSPEND or not _is_key(entry):
+        return None
+    return Notice(act, address, entry)
+
+
+def _is_key(value: object) -> TypeGuard[str]:
+    """Whether ``value`` spells 32 bytes in canonical unpadded base64url."""
+    return isinstance(value, str) and key_bytes(value) is not None
+
+
+def _is_clause(value: object) -> bool:
+    """Whether ``value`` names one of the covenant's clauses."""
+    return isinstance(value, str) and value in CLAUSES
 
 
 def is_final(body: bytes) -> bool:

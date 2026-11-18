@@ -42,6 +42,12 @@
  *   drops it; Group home says so (`ShelfState.withdrawn`). The device looks
  *   at most once each {@link UNAVAILABLE_MINUTES}.
  *
+ * The steward's notices (#489) stop the keeper where the relay would refuse
+ * it: once a suspend names the door's address, the device posts nothing
+ * more under it, listing or entry; and an entry the steward upheld is never
+ * posted again. A relay that answers `403 suspended` or `403 upheld` (one
+ * whose notices this app's pins don't verify) stops it the same way.
+ *
  * Before posting, the device reads the whole shelf, as every reader does
  * (ADR-0077 §4), to see the copy that stands. It remembers in memory what it
  * found current, so it reads the shelf once a launch, again only when a
@@ -72,6 +78,7 @@ import { type Shelf, type ShelfPage, type ShelfRecord } from '../net/shelf';
 import type { Group } from '../store/db';
 import { foldGroup } from '../store/expiry';
 import { ENTRY_KEEP_DAYS, entriesPostedAt, type PostedEntry, type ShelfWithdrawn } from './fold';
+import { foldNotices } from './notices';
 import {
   encodeShelfBody,
   type EntryBody,
@@ -96,6 +103,12 @@ export const TOO_MANY_ENTRIES = 'too_many_entries';
 
 /** The code a relay answers with for an entry or withdraw with no live listing (#431). */
 export const NOT_LISTED = 'not_listed';
+
+/** The code a relay answers with for any record under a suspended address (#489). */
+export const SUSPENDED = 'suspended';
+
+/** The code a relay answers with for an entry the steward upheld (#489). */
+export const UPHELD = 'upheld';
 
 /** The final listing: its door has closed for good. */
 export const FINAL_LISTING: FinalListingBody = {
@@ -244,12 +257,36 @@ export function straysOf(
   return withdrawn.filter((item) => item.address === address && !ours.has(item.id));
 }
 
-/** The relay's answers that mean "not now" to an entry: the caps, or no live listing yet. */
-const WAIT_CODES: ReadonlySet<string> = new Set([TOO_MANY_ENTRIES, NOT_LISTED]);
+/** The relay's answers that mean "not now" to an entry: the caps, no live listing yet, or a suspended door. */
+const WAIT_CODES: ReadonlySet<string> = new Set([TOO_MANY_ENTRIES, NOT_LISTED, SUSPENDED]);
+
+/** Whether `error` is the relay's answer `code`. */
+const answered = (error: unknown, code: string): boolean =>
+  error instanceof RelayError && error.code === code;
+
+/** Whether a suspend the pinned steward key signed names `address` on `page` (#489). */
+const suspendedOn = (page: ShelfPage, address: string): boolean =>
+  foldNotices(page.records).suspended.some((removal) => removal.address === address);
+
+/** The ids of `address`'s entries the steward upheld on `page` (#489). */
+const upheldOn = (page: ShelfPage, address: string): string[] =>
+  foldNotices(page.records)
+    .upheld.filter((removal) => removal.address === address)
+    .map(({ id }) => id ?? '');
 
 /** Whether `error` is one of the relay's "not now" answers to an entry. */
 const waitAnswer = (error: unknown): boolean =>
   error instanceof RelayError && WAIT_CODES.has(error.code);
+
+/**
+ * `address`'s live entries on `page`, and the ids it needn't post: each it
+ * posted, withdrawn or not, and each the steward upheld (#489).
+ */
+function onShelf(page: ShelfPage, address: string) {
+  const { live, withdrawn } = entriesPostedAt(page.records, address, page.now);
+  const posted = [...live, ...withdrawn].map(({ body }) => body.id);
+  return { live, held: new Set([...posted, ...upheldOn(page, address)]) };
+}
 
 /** A keeper over `options.store`, posting to `options.shelf`. */
 export function createShelfKeeper(options: ShelfKeeperOptions): ShelfKeeper {
@@ -272,10 +309,8 @@ export function createShelfKeeper(options: ShelfKeeperOptions): ShelfKeeper {
     try {
       await sign(door, body);
     } catch (error) {
-      if (!(error instanceof RelayError) || error.status !== 409 || error.code !== LISTING_FINAL) {
-        throw error;
-      }
-      return Infinity;
+      if (answered(error, LISTING_FINAL) || answered(error, SUSPENDED)) return Infinity;
+      throw error;
     }
     return at + REFRESH_MINUTES;
   }
@@ -287,7 +322,10 @@ export function createShelfKeeper(options: ShelfKeeperOptions): ShelfKeeper {
     at: number,
     page: ShelfPage,
   ): Promise<number> {
-    const standing = standingListing(page.records, base64url(addressOf(door)));
+    const address = base64url(addressOf(door));
+    // A suspended door posts nothing more (#489).
+    if (suspendedOn(page, address)) return Infinity;
+    const standing = standingListing(page.records, address);
     // A final copy stands: no open copy goes over it (§3.3).
     if (standing?.final === true && body.open) return Infinity;
     const fresh = standing !== null && at - standing.received < REFRESH_MINUTES;
@@ -311,7 +349,7 @@ export function createShelfKeeper(options: ShelfKeeperOptions): ShelfKeeper {
           await sign(door, body);
         } catch (error) {
           if (waitAnswer(error)) return false;
-          throw error;
+          if (!answered(error, UPHELD)) throw error;
         }
       }
       posted.add(`${address} ${body.id}`);
@@ -343,6 +381,18 @@ export function createShelfKeeper(options: ShelfKeeperOptions): ShelfKeeper {
     }
   }
 
+  /**
+   * Whether `page` leaves entries to keep at `address`: not while the relay
+   * has no shelf, when it looks again at `later`, nor once the door is
+   * suspended (#489), when it never looks again.
+   */
+  function keepable(page: ShelfPage | null, address: string, later: number): page is ShelfPage {
+    if (page !== null && !suspendedOn(page, address)) return true;
+    const until = page === null ? later : Infinity;
+    looked.set(address, { strays: until, entries: until });
+    return false;
+  }
+
   /** Keeps the entries of the door `state` lists now, reading `read` only when something is due. */
   async function keepEntries(
     state: GroupState,
@@ -357,12 +407,8 @@ export function createShelfKeeper(options: ShelfKeeperOptions): ShelfKeeper {
     if (!posting && state.at < next.strays) return;
     const page = await read();
     const later = state.at + UNAVAILABLE_MINUTES;
-    if (page === null) {
-      looked.set(address, { strays: later, entries: later });
-      return;
-    }
-    const { live, withdrawn } = entriesPostedAt(page.records, address, page.now);
-    const held = new Set([...live, ...withdrawn].map(({ body }) => body.id));
+    if (!keepable(page, address, later)) return;
+    const { live, held } = onShelf(page, address);
     const kept = !posting || (await postEntries(door, due, held));
     looked.set(address, { strays: later, entries: kept ? -Infinity : later });
     await withdrawStrays(door, state, live);

@@ -51,7 +51,9 @@ export function ShelfEntryScreen(props: ShelfEntryScreenProps) {
   const { store, shelf, address, id, origin, copyText, sharing, mayReconcile } = props;
   const state = useShelfState(shelf, useOwnListings(store));
   if (state === undefined) return null;
-  const entry = state?.entries.find((e) => e.address === address && e.id === id) ?? null;
+  // While the steward's pause stands, no entry shows, here as on Discover (#489).
+  const shown = state === null || state.paused ? [] : state.entries;
+  const entry = shown.find((e) => e.address === address && e.id === id) ?? null;
   const link = `${origin}/${routeHref({ name: 'shelfEntry', address, id })}`;
   return (
     <ShelfEntry

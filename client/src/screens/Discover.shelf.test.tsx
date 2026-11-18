@@ -2,35 +2,41 @@
  * Discover's public shelf section (#484; docs/spec/listed-doors.md §5.2): the
  * entries the shelf's fold shows, below the device's own feed, each under
  * its listing's name in `<bdi>`. With no shelf, as on a relay without the
- * steward's key, nothing of it shows.
+ * steward's key, nothing of it shows. A tombstone takes the place of what
+ * the steward removed, naming its clause in words, and a pause hides the
+ * whole section behind one line (#489).
  */
 import { render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
-import type { ShelfEntry, ShelfState } from '../shelf/fold';
+import type { ShelfEntry, ShelfState, ShelfTombstone } from '../shelf/fold';
 import { axeViolations } from '../test/axe';
 import { Discover } from './Discover';
 
 const ADDRESS = 'A'.repeat(43);
 
 /** An entry under `name`. */
-function entry(id: string, name: string, title: string, text: string): ShelfEntry {
+function entry(id: string, name: string, title: string, text: string, seq = 1): ShelfEntry {
   return {
     address: ADDRESS,
     id,
     name,
     title,
     text,
-    seq: 1,
+    seq,
     received: 1,
     early: false,
     listedSince: 1,
   };
 }
 
-/** A shelf showing `entries`. */
-function shelfOf(entries: readonly ShelfEntry[]): ShelfState {
-  return { listings: [], entries, withdrawn: [], tombstones: [], paused: false };
+/** A shelf showing `entries`, and any `tombstones`, paused or not. */
+function shelfOf(
+  entries: readonly ShelfEntry[],
+  tombstones: readonly ShelfTombstone[] = [],
+  paused = false,
+): ShelfState {
+  return { listings: [], entries, withdrawn: [], tombstones, holds: [], paused };
 }
 
 const SHELF = shelfOf([
@@ -96,5 +102,63 @@ describe('Discover’s public shelf', () => {
     render(<Discover feed={[]} />);
 
     expect(screen.queryByText('On the public shelf')).toBeNull();
+  });
+
+  it('shows a tombstone in an upheld entry’s place, naming its clause in words, and passes axe', async () => {
+    const shelf = shelfOf(
+      [
+        entry('d3', 'Oak St Tenants', 'Garden day', '', 3),
+        entry('d1', 'Oak St Tenants', 'Rent', '', 1),
+      ],
+      [{ address: ADDRESS, id: 'd2', clause: 'C3', seq: 2 }],
+    );
+    render(<Discover feed={[]} shelf={shelf} />);
+
+    const list = screen.getByRole('list', { name: 'On the public shelf' });
+    const headings = within(list)
+      .getAllByRole('heading', { level: 3 })
+      .map((heading) => heading.textContent);
+    expect(headings).toEqual([
+      'Garden day',
+      'Removed: impersonation of another group or person',
+      'Rent',
+    ]);
+    expect(
+      within(list).getByText(
+        'Reconcile’s steward took this entry off the public shelf under the covenant.',
+      ),
+    ).toBeVisible();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('shows a suspended listing’s tombstone, with no group’s name, and passes axe', async () => {
+    const shelf = shelfOf([], [{ address: ADDRESS, id: null, clause: 'C2', seq: 4 }]);
+    render(<Discover feed={[]} shelf={shelf} />);
+
+    const list = screen.getByRole('list', { name: 'On the public shelf' });
+    const card = within(list).getByRole('article', { name: 'Removed: spam' });
+    expect(card.textContent).toBe(
+      'Removed: spamReconcile’s steward took a group’s listing, and everything it published, off the public shelf under the covenant.',
+    );
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('hides the whole section behind one line while paused, entries and tombstones too', async () => {
+    const shelf = shelfOf(
+      [entry('d1', 'Oak St Tenants', 'Rent strike vote', '')],
+      [{ address: ADDRESS, id: 'd2', clause: 'C2', seq: 2 }],
+      true,
+    );
+    render(<Discover feed={[]} shelf={shelf} />);
+
+    const section = screen.getByRole('region', { name: 'On the public shelf' });
+    expect(within(section).queryByRole('list')).toBeNull();
+    expect(within(section).queryByText('Rent strike vote')).toBeNull();
+    expect(
+      within(section).getByText(
+        'The public shelf is paused for now. Nothing on it shows until Reconcile’s steward lifts the pause.',
+      ),
+    ).toBeVisible();
+    expect(await axeViolations()).toEqual([]);
   });
 });

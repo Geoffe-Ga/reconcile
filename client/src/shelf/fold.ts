@@ -47,13 +47,27 @@
  *    withdrawn entry that still verifies, so Group home can say a stray was
  *    taken down.
  *
- * 8. **Notices** (#488). A listing stands only once a release the pinned
- *    steward key signed names its address (`notices.ts`): the relay holds
- *    every new listing until the steward releases it, and every device
- *    checks the release itself, so a relay that served an unreleased
+ * 8. **Notices** (#488, #489; `notices.ts`). A listing stands only once a
+ *    release the pinned steward key signed names its address: the relay
+ *    holds every new listing until the steward releases it, and every
+ *    device checks the release itself, so a relay that served an unreleased
  *    listing still couldn't show it. An unreleased listing claims no name
- *    and shows no entries. Every later notice parses and is ignored until
- *    #489 fills `tombstones` and `paused`, which stay empty and false.
+ *    and shows no entries. Then:
+ *    - a **hold** hides its entry, or its listing and every entry under it,
+ *      until {@link HOLD_MINUTES} relay minutes after the notice arrived;
+ *      a held listing keeps its name, so no look-alike shows in its place
+ *      meanwhile, and `holds` lists each hold that stands, for Group home;
+ *    - an **uphold** hides its entry for good, and leaves a tombstone in its
+ *      place until the entry's 30 days end, counted from the entry's own
+ *      receipt when this device read it, else from the notice's (an entry
+ *      always arrives before its uphold, so that can only end sooner);
+ *    - a **suspend** ends its address's listing, with its name and entries,
+ *      and, once its listing had been released, leaves a tombstone for 30
+ *      relay days, as long as a listing that posts nothing more is kept;
+ *    - a **pause** that is on sets `paused`, and every screen that shows
+ *      the shelf to readers then shows one line in its place (Discover, an
+ *      entry's page); the steward's console still lists what stands.
+ *    A tombstone names a clause, never a reporter (ADR-0013).
  *
  * A device reads only what the relay serves, and a held relay serves no
  * record of a listing before its release: on an honest relay every listing
@@ -63,8 +77,22 @@
  */
 import { verifyShelfRecord } from '../crypto/shelf';
 import type { ShelfRecord } from '../net/shelf';
-import { foldNotices } from './notices';
-import { type EntryBody, type OpenListingBody, parseShelfBody, type ShelfBody } from './record';
+import {
+  foldNotices,
+  HOLD_MINUTES,
+  holdOn,
+  holdStands,
+  isHeld,
+  type NoticeHold,
+  type NoticeState,
+} from './notices';
+import {
+  type Clause,
+  type EntryBody,
+  type OpenListingBody,
+  parseShelfBody,
+  type ShelfBody,
+} from './record';
 import { nameSkeleton } from './skeleton';
 
 /** A listing that stands: a listed door's name, as readers see it. */
@@ -111,8 +139,13 @@ export interface ShelfTombstone {
   /** The entry it removed, or null for a whole listing. */
   readonly id: string | null;
   /** The covenant clause it names: `C1`, `C2` or `C3`. */
-  readonly clause: string;
+  readonly clause: Clause;
+  /** Its place in the shelf's order: the entry's seq when this device read it, else the notice's. */
+  readonly seq: number;
 }
+
+/** A hold that stands (#489): what it hides, why, and the relay minute it lapses. */
+export type ShelfHold = NoticeHold;
 
 /** The shelf as a device shows it. */
 export interface ShelfState {
@@ -122,9 +155,11 @@ export interface ShelfState {
   readonly entries: readonly ShelfEntry[];
   /** The entries their own addresses withdrew, in seq order (rule 7). */
   readonly withdrawn: readonly ShelfWithdrawn[];
-  /** What the steward removed, in place of each (#489): none yet. */
+  /** What the steward removed, in place of each, newest first (#489). */
   readonly tombstones: readonly ShelfTombstone[];
-  /** Whether a pause notice stands (#489): never yet. */
+  /** Each hold that stands, in seq order (#489): Group home names its own. */
+  readonly holds: readonly ShelfHold[];
+  /** Whether a pause notice stands (#489): no screen shows a reader an entry or tombstone meanwhile. */
   readonly paused: boolean;
 }
 
@@ -218,12 +253,15 @@ const earlier = (claim: Claim, other: Claim): boolean =>
     ? claim.since < other.since
     : claim.listing.address < other.listing.address;
 
-/** Rule 8: the claims of the addresses a release names; the rest wait unseen. */
+/** Rule 8: the claims of the addresses a release names and no suspend ends; the rest wait unseen. */
 function releasedOnly(
   claims: ReadonlyMap<string, Claim>,
-  released: ReadonlySet<string>,
+  notices: NoticeState,
 ): Map<string, Claim> {
-  return new Map([...claims].filter(([address]) => released.has(address)));
+  const suspended = new Set(notices.suspended.map(({ address }) => address));
+  return new Map(
+    [...claims].filter(([address]) => notices.released.has(address) && !suspended.has(address)),
+  );
 }
 
 /** Rule 4: the listings that hold their skeletons, by address. */
@@ -289,18 +327,23 @@ function firstFourEach(live: readonly Posted[]): Posted[] {
   });
 }
 
-/** Each entry that shows at `now`, under its listing's name, newest first (rules 5 and 6). */
+/**
+ * Each entry that shows at `now`, under its listing's name, newest first
+ * (rules 5 and 6); a held one still counts toward its address's 4, as the
+ * relay counts it, but doesn't show (rule 8).
+ */
 function entriesUnder(
   live: readonly Posted[],
   listings: ReadonlyMap<string, ShelfListing>,
   now: number,
-  { own, since }: FoldShelfOptions,
+  { own, since, notices }: FoldShelfOptions & { readonly notices: NoticeState },
 ): ShelfEntry[] {
   const shown: ShelfEntry[] = [];
   for (const { record, body } of firstFourEach(live)) {
     const listing = listings.get(record.address);
     const early = now - record.received < ENTRY_WAIT_MINUTES;
     if (listing === undefined || (early && own?.has(record.address) !== true)) continue;
+    if (isHeld(notices, record.address, body.id, now)) continue;
     const { address, seq, received } = record;
     const first = Math.min(listing.received, since?.get(address) ?? Infinity);
     shown.push({
@@ -318,23 +361,85 @@ function entriesUnder(
   return shown.reverse();
 }
 
+/** The first copy of each address's entry among `valid`, by address and id. */
+function firstEntries(valid: readonly Verified[]): Map<string, ShelfRecord> {
+  const firsts = new Map<string, ShelfRecord>();
+  for (const { record, body } of valid) {
+    const key = body.kind === 'entry' ? keyOf(record.address, body.id) : null;
+    if (key !== null && !firsts.has(key)) firsts.set(key, record);
+  }
+  return firsts;
+}
+
+/**
+ * Rule 8's tombstones for upheld entries, under a listing that shows, until
+ * each entry's 30 days end: from its own receipt when this device read it,
+ * else from the uphold's.
+ */
+function upheldTombstones(
+  notices: NoticeState,
+  valid: readonly Verified[],
+  listings: ReadonlyMap<string, ShelfListing>,
+  now: number,
+): ShelfTombstone[] {
+  const firsts = firstEntries(valid);
+  return notices.upheld.flatMap(({ address, id, clause, seq, received }) => {
+    const entry = firsts.get(keyOf(address, id ?? ''));
+    const since = entry?.received ?? received;
+    if (!listings.has(address) || entryExpired(since, now)) return [];
+    return [{ address, id, clause, seq: entry?.seq ?? seq }];
+  });
+}
+
+/** Rule 8's tombstones for suspended listings a release had let show, for 30 relay days. */
+function suspendedTombstones(notices: NoticeState, now: number): ShelfTombstone[] {
+  return notices.suspended
+    .filter(
+      ({ address, received }) => notices.released.has(address) && !entryExpired(received, now),
+    )
+    .map(({ address, clause, seq }) => ({ address, id: null, clause, seq }));
+}
+
+/** Rule 8's tombstones, newest first. */
+function tombstonesOf(
+  notices: NoticeState,
+  valid: readonly Verified[],
+  listings: ReadonlyMap<string, ShelfListing>,
+  now: number,
+): ShelfTombstone[] {
+  return [
+    ...upheldTombstones(notices, valid, listings, now),
+    ...suspendedTombstones(notices, now),
+  ].sort((a, b) => b.seq - a.seq);
+}
+
+/** Rule 8: whether an entry is upheld, so gone for good, and no longer counts toward its address's 4. */
+function upheldBy(notices: NoticeState): (posted: Posted) => boolean {
+  const upheld = new Set(notices.upheld.map(({ address, id }) => keyOf(address, id ?? '')));
+  return ({ record, body }) => upheld.has(keyOf(record.address, body.id));
+}
+
 /** The shelf as every device shows it, from the records the relay served (§4.3). */
 export const foldShelf: FoldShelf = (records, now, options = {}) => {
   const inOrder = [...records].sort((a, b) => a.seq - b.seq);
   const valid = inOrder.map(verified).filter((item) => item !== null);
-  const { released } = foldNotices(inOrder);
-  const listings = holders(releasedOnly(standingClaims(valid), released));
+  const notices = foldNotices(inOrder);
+  const named = holders(releasedOnly(standingClaims(valid), notices));
+  const listings = new Map([...named].filter(([address]) => !isHeld(notices, address, null, now)));
   const { live, withdrawn } = entriesAt(valid, now);
+  const upheld = upheldBy(notices);
+  const shown = live.filter((posted) => !upheld(posted));
   return {
     listings: [...listings.values()].sort((a, b) => a.seq - b.seq),
-    entries: entriesUnder(live, listings, now, options),
+    entries: entriesUnder(shown, listings, now, { ...options, notices }),
     withdrawn: withdrawn.map(({ record, body }) => ({
       address: record.address,
       id: body.id,
       title: body.title,
     })),
-    tombstones: [],
-    paused: false,
+    tombstones: tombstonesOf(notices, valid, listings, now),
+    holds: notices.holds.filter((hold) => holdStands(hold, now)),
+    paused: notices.paused,
   };
 };
 
@@ -396,34 +501,57 @@ export interface DoorListing {
   readonly listedSince: number;
   /**
    * Whether it waits for the steward: no release the pinned key signed
-   * names it (rule 8, #488). A held relay serves a listing only after its
-   * release, so a reader sees this only from a relay that misbehaves; #489
-   * adds the steward's timed holds.
+   * names it (rule 8, #488), a hold on its listing stands (#489), or it was
+   * suspended. A held relay serves a listing only after its release, so a
+   * reader sees an unreleased one only from a relay that misbehaves.
    */
   readonly held: boolean;
+  /**
+   * The clause a suspend of it names, once the steward removed it (#489):
+   * the door's page says its listing was removed. Null while it stands.
+   */
+  readonly removed: Clause | null;
 }
 
+/** A suspend of `address` among `notices`, if any. */
+const suspendOf = (notices: NoticeState, address: string) =>
+  notices.suspended.find((removal) => removal.address === address);
+
 /**
- * The listing of the door at `address` among `records`, or null while it has
- * none: its newest open listing that verifies (rules 1 to 3), unless a final
- * one ended it, held unless a release names it (rule 8). A listing shadowed
- * by a look-alike name still counts, so a shadowed door is held to the same
- * rule.
+ * The listing of the door at `address` among `records` at relay minute
+ * `now`, or null while it has none: its newest open listing that verifies
+ * (rules 1 to 3), unless a final one ended it, held unless a release names
+ * it and no hold on it stands (rule 8). A hold that stands lists the door
+ * even when the relay withholds its listing, as an honest relay does. A
+ * suspended door's listing is
+ * removed, whatever the relay still serves: the relay deletes its records,
+ * so it counts from the suspend. A listing shadowed by a look-alike name
+ * still counts, so a shadowed door is held to the same rule.
  */
 export function doorListing(
   records: readonly ShelfRecord[],
   address: string,
+  now: number,
   since?: ReadonlyMap<string, number>,
 ): DoorListing | null {
+  const notices = foldNotices(records);
+  const suspended = suspendOf(notices, address);
+  if (suspended !== undefined) {
+    return { listedSince: suspended.received, held: true, removed: suspended.clause };
+  }
   const valid = records
     .filter((record) => record.address === address)
     .sort((a, b) => a.seq - b.seq)
     .map(verified)
     .filter((item) => item !== null);
   const claim = standingClaims(valid).get(address);
-  if (claim === undefined) return null;
-  const listedSince = Math.min(claim.listing.received, since?.get(address) ?? Infinity);
-  return { listedSince, held: !foldNotices(records).released.has(address) };
+  const hold = holdOn(notices, address, null, now);
+  // The relay withholds a held listing, so a hold that stands lists the door itself.
+  const first = claim?.listing.received ?? (hold === null ? undefined : hold.until - HOLD_MINUTES);
+  if (first === undefined) return null;
+  const listedSince = Math.min(first, since?.get(address) ?? Infinity);
+  const held = hold !== null || !notices.released.has(address);
+  return { listedSince, held, removed: null };
 }
 
 /**
@@ -448,16 +576,60 @@ export interface WaitingListing {
  * The listings among `held`, the records `GET /v1/shelf/held` served, each
  * address's newest open listing that verifies (rules 1 to 3) unless a final
  * one ended it, oldest first, each beside the listing on `live` that holds
- * its name (rule 4), if another does. The steward sees only what readers
- * will: a name and a covenant hash.
+ * its name (rule 4), if another does. A listing whose address `released`
+ * holds is left out: it waits for a hold to lapse (#489), not for a release.
+ * The steward sees only what readers will: a name and a covenant hash.
  */
-export function waitingListings(held: readonly ShelfRecord[], live: ShelfState): WaitingListing[] {
+export function waitingListings(
+  held: readonly ShelfRecord[],
+  live: ShelfState,
+  released: ReadonlySet<string> = new Set(),
+): WaitingListing[] {
   const valid = [...held]
     .sort((a, b) => a.seq - b.seq)
     .map(verified)
     .filter((item) => item !== null);
   return [...standingClaims(valid).values()]
     .map(({ listing }) => listing)
+    .filter(({ address }) => !released.has(address))
     .sort((a, b) => a.seq - b.seq)
     .map((listing) => ({ listing, holder: nameHolder(live, listing.name, listing.address) }));
+}
+
+/** A hold that stands, as the steward's console lists it (§6.4, #489). */
+export interface StandingHold {
+  readonly hold: ShelfHold;
+  /** The held listing's name, when a record this device read names it. */
+  readonly name: string | null;
+  /** The held entry's title, for a hold of one entry this device read. */
+  readonly title: string | null;
+}
+
+/**
+ * Each hold that stands at relay minute `now` among `live`, the records
+ * `GET /v1/shelf` served, with the name and title it hides, read from
+ * `held`, the records `GET /v1/shelf/held` served, or `live`: what the
+ * steward upholds, suspends or lets lapse.
+ */
+export function standingHolds(
+  live: readonly ShelfRecord[],
+  held: readonly ShelfRecord[],
+  now: number,
+): StandingHold[] {
+  const valid = [...live, ...held]
+    .sort((a, b) => a.seq - b.seq)
+    .map(verified)
+    .filter((item) => item !== null);
+  const claims = standingClaims(valid);
+  const titles = new Map<string, string>();
+  for (const { record, body } of valid) {
+    if (body.kind === 'entry') titles.set(keyOf(record.address, body.id), body.title);
+  }
+  return foldNotices(live)
+    .holds.filter((hold) => holdStands(hold, now))
+    .map((hold) => ({
+      hold,
+      name: claims.get(hold.address)?.listing.name ?? null,
+      title: hold.id === null ? null : (titles.get(keyOf(hold.address, hold.id)) ?? null),
+    }));
 }

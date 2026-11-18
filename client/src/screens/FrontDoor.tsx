@@ -40,6 +40,8 @@ import {
 } from '../door/page';
 import type { CardGroup, CardValues } from '../app/reconcile';
 import { base64url } from '../crypto/base64url';
+import { CLAUSE_WORDS } from '../shelf/covenant';
+import type { Clause } from '../shelf/record';
 import { nfcLength } from '../engine/text';
 import type { PersonalText } from '../store/personal';
 import { type DoorCardStep, ReconcileAtDoor } from './ReconcileCard';
@@ -69,6 +71,12 @@ export interface FrontDoorProps {
    * (#432; listed-doors.md §5.3). A rejection counts as no.
    */
   readonly takesDocuments: (address: string) => Promise<boolean>;
+  /**
+   * The clause a suspend of the door's listing names, once the steward
+   * removed it from the public shelf (#489; listed-doors.md §6.1), else
+   * null; the page then says so. None, or a rejection, says nothing.
+   */
+  readonly listingRemoved?: (address: string) => Promise<Clause | null>;
   /**
    * This device's groups that may propose reconciling with the door's group
    * (#426): none for a device in no group, and never the door's own.
@@ -326,6 +334,8 @@ interface OpenProps extends Pick<
   readonly page: OpenPage;
   readonly asked: boolean;
   readonly takesDocuments: boolean;
+  /** The clause the steward removed its listing under, or null (#489). */
+  readonly removed: Clause | null;
 }
 
 /**
@@ -336,6 +346,7 @@ interface OpenProps extends Pick<
 function Open(props: OpenProps) {
   const { address, page, asked, onApply, documents, takesDocuments, cardGroups, onMakeCard } =
     props;
+  const { removed } = props;
   const heading = useId();
   const [sent, setSent] = useState(false);
   const [reconciling, setReconciling] = useState(false);
@@ -360,6 +371,9 @@ function Open(props: OpenProps) {
     <main className="shell" data-scene="sky">
       <PageHeader eyebrow={door.eyebrow} title={page.name} pageTitle={door.pageTitle} />
       <DoorExcerpt page={page} />
+      {removed === null ? null : (
+        <p className="notice">{door.removedListing(CLAUSE_WORDS[removed])}</p>
+      )}
       {cardGroups.length === 0 ? null : (
         <div className="row">
           <Button
@@ -437,13 +451,63 @@ function useTakesDocuments(
   return answer?.key === key ? answer.takes : undefined;
 }
 
+/** No word from the shelf of a removal: what a door without `listingRemoved` hears. */
+const NOT_REMOVED = (): Promise<Clause | null> => Promise.resolve(null);
+
+/**
+ * The clause the steward removed the door's listing under (#489), asked
+ * once per link and attempt; undefined until it answers, null when it can't.
+ */
+function useListingRemoved(
+  address: Uint8Array | null,
+  check: (address: string) => Promise<Clause | null>,
+  key: string,
+): Clause | null | undefined {
+  const [answer, setAnswer] = useState<{
+    readonly key: string;
+    readonly removed: Clause | null;
+  } | null>(null);
+  useEffect(() => {
+    if (address === null) return;
+    let live = true;
+    const settle = (removed: Clause | null) => {
+      if (live) setAnswer({ key, removed });
+    };
+    check(base64url(address)).then(settle, () => {
+      settle(null);
+    });
+    return () => {
+      live = false;
+    };
+  }, [address, check, key]);
+  return answer?.key === key ? answer.removed : undefined;
+}
+
+/**
+ * The shelf's word on the door (#432, #489): whether it takes personal
+ * Documents and the clause its listing was removed under, each undefined
+ * until both answer.
+ */
+function useShelfWord(
+  address: Uint8Array | null,
+  props: Pick<FrontDoorProps, 'takesDocuments' | 'listingRemoved'>,
+  key: string,
+): { readonly takesDocuments: boolean | undefined; readonly removed: Clause | null | undefined } {
+  const takesDocuments = useTakesDocuments(address, props.takesDocuments, key);
+  const removed = useListingRemoved(address, props.listingRemoved ?? NOT_REMOVED, key);
+  return removed === undefined
+    ? { takesDocuments: undefined, removed }
+    : { takesDocuments, removed };
+}
+
 /**
  * A group's front door (`#door/{address}`; ADR-0038, #121): the page its
  * address names, as plain text in `<bdi>`, never a member's name, then the
  * form to ask to join: the name to use, why, a copy of any personal
  * Documents the person checks (#425), and a caution, with no contact
  * field. At a door the public shelf lists that is newly listed or held, one
- * line takes the picker's place (#432). A device in a group that may take a
+ * line takes the picker's place (#432), and at one whose listing the steward
+ * removed, one line says so, naming the clause (#489). A device in a group that may take a
  * card also gets Propose reconciling with this group, which opens the card's form (#426). Its page is only what the group's devices posted under the door's
  * key, read again on each visit; a closed door, or one with no page, reads
  * "This front door is closed." with no form. A device that already asked
@@ -456,7 +520,7 @@ export function FrontDoor(props: FrontDoorProps) {
   const [attempt, setAttempt] = useState(0);
   const key = `${payload} ${String(attempt)}`;
   const read = useDoor(address, reader, key);
-  const takesDocuments = useTakesDocuments(address, props.takesDocuments, key);
+  const { takesDocuments, removed } = useShelfWord(address, props, key);
   // An open door waits for the shelf's word, so the picker never shows and then goes.
   const phase: Phase = takesDocuments === undefined && read.kind === 'open' ? LOADING : read;
   const retry = useCallback(() => {
@@ -483,6 +547,7 @@ export function FrontDoor(props: FrontDoorProps) {
           onApply={onApply}
           documents={documents}
           takesDocuments={takesDocuments ?? false}
+          removed={removed ?? null}
           cardGroups={cardGroups}
           onMakeCard={onMakeCard}
         />

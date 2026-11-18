@@ -1,8 +1,8 @@
 /**
  * The steward's notices (#488; docs/spec/listed-doors.md §4.3 rules 1 and 8,
  * §6.1): signed with the steward's key, and folded only when they verify
- * against the key pinned in `steward.ts`. Only `release` folds here; every
- * later act parses and is ignored until #489.
+ * against the key pinned in `steward.ts`: a release, and #489's hold,
+ * uphold, suspend and pause.
  */
 import { describe, expect, it } from 'vitest';
 
@@ -11,16 +11,19 @@ import { verifyShelfRecord } from '../crypto/shelf';
 import { newSigningKeys } from '../crypto/sign';
 import type { ShelfRecord } from '../net/shelf';
 import { releaseRecord, STEWARD_ADDRESS, TEST_PINS, TEST_STEWARD } from '../test/steward';
-import { foldNotices, LATER_NOTICE_ACTS, signNotice } from './notices';
+import { foldNotices, HOLD_MINUTES, holdStands, isHeld, signNotice } from './notices';
 import { encodeShelfBody, type NoticeBody, parseShelfBody, signShelfBody } from './record';
 import { STEWARD_PINS } from './steward';
 
 const OAK = base64url(newSigningKeys().publicKey);
 const BIRCH = base64url(newSigningKeys().publicKey);
 
+const ID = base64url(new Uint8Array(32).fill(4));
+const OTHER_ID = base64url(new Uint8Array(32).fill(5));
+
 /** `body` signed by the tests' steward and served under its address at `seq`. */
-function notice(body: NoticeBody, seq = 1, address = STEWARD_ADDRESS): ShelfRecord {
-  return { seq, received: 1000, address, data: signNotice(TEST_STEWARD.signing, body) };
+function notice(body: NoticeBody, seq = 1, received = 1000): ShelfRecord {
+  return { seq, received, address: STEWARD_ADDRESS, data: signNotice(TEST_STEWARD.signing, body) };
 }
 
 describe('signNotice', () => {
@@ -73,13 +76,84 @@ describe('foldNotices', () => {
     expect(foldNotices([withdraw, { ...cut, data: cut.data.slice(0, 70) }]).released.size).toBe(0);
   });
 
-  it.each(LATER_NOTICE_ACTS)('parses a %s and ignores it, as a stub until #489', (act) => {
-    const records = [notice({ v: 1, kind: 'notice', act, address: OAK, clause: 'C2' })];
+  it('ignores every act a door signs, under its own address', () => {
+    const thief = newSigningKeys();
+    const address = base64url(thief.publicKey);
+    const bodies: NoticeBody[] = [
+      { v: 1, kind: 'notice', act: 'hold', address: OAK, clause: 'C2' },
+      { v: 1, kind: 'notice', act: 'uphold', address: OAK, id: ID, clause: 'C2' },
+      { v: 1, kind: 'notice', act: 'suspend', address: OAK, clause: 'C2' },
+      { v: 1, kind: 'notice', act: 'pause', on: true },
+    ];
+    const records = bodies.map((body, at) => ({
+      seq: at + 1,
+      received: 1,
+      address,
+      data: signNotice(thief, body),
+    }));
 
-    const state = foldNotices(records);
+    expect(foldNotices(records)).toEqual(foldNotices([]));
+  });
+});
 
-    expect(state.released.size).toBe(0);
-    expect(state.later.map((body) => body.act)).toEqual([act]);
-    expect(LATER_NOTICE_ACTS).toEqual(['hold', 'uphold', 'suspend', 'pause']);
+describe('holds (#489)', () => {
+  it('lasts 10,080 relay minutes from its receipt: held at 10,079, lapsed at 10,080', () => {
+    const state = foldNotices([
+      notice({ v: 1, kind: 'notice', act: 'hold', address: OAK, clause: 'C2' }, 1, 5000),
+    ]);
+    const [hold] = state.holds;
+
+    expect(HOLD_MINUTES).toBe(10_080);
+    expect(hold).toEqual({ address: OAK, id: null, clause: 'C2', seq: 1, until: 5000 + 10_080 });
+    expect(hold && holdStands(hold, 5000 + 10_079)).toBe(true);
+    expect(hold && holdStands(hold, 5000 + 10_080)).toBe(false);
+  });
+
+  it('holds an entry, or a whole listing and so every entry under it', () => {
+    const state = foldNotices([
+      notice({ v: 1, kind: 'notice', act: 'hold', address: OAK, id: ID, clause: 'C2' }, 1, 0),
+      notice({ v: 1, kind: 'notice', act: 'hold', address: BIRCH, clause: 'C3' }, 2, 0),
+    ]);
+
+    expect(isHeld(state, OAK, ID, 10)).toBe(true);
+    expect(isHeld(state, OAK, OTHER_ID, 10)).toBe(false);
+    expect(isHeld(state, OAK, null, 10)).toBe(false);
+    expect(isHeld(state, BIRCH, null, 10)).toBe(true);
+    expect(isHeld(state, BIRCH, ID, 10)).toBe(true);
+    expect(isHeld(state, BIRCH, ID, 10_080)).toBe(false);
+  });
+
+  it('keeps the latest hold on each target, whatever order they come in', () => {
+    const first = notice({ v: 1, kind: 'notice', act: 'hold', address: OAK, clause: 'C1' }, 1, 0);
+    const again = notice({ v: 1, kind: 'notice', act: 'hold', address: OAK, clause: 'C3' }, 2, 900);
+    const expected = [{ address: OAK, id: null, clause: 'C3', seq: 2, until: 900 + 10_080 }];
+
+    expect(foldNotices([first, again]).holds).toEqual(expected);
+    expect(foldNotices([again, first]).holds).toEqual(expected);
+  });
+});
+
+describe('upholds, suspends and pauses (#489)', () => {
+  it('records each upheld entry and suspended address with its clause', () => {
+    const state = foldNotices([
+      notice({ v: 1, kind: 'notice', act: 'uphold', address: OAK, id: ID, clause: 'C2' }, 3, 70),
+      notice({ v: 1, kind: 'notice', act: 'suspend', address: BIRCH, clause: 'C3' }, 4, 80),
+      notice({ v: 1, kind: 'notice', act: 'suspend', address: BIRCH, clause: 'C1' }, 5, 90),
+    ]);
+
+    expect(state.upheld).toEqual([{ address: OAK, id: ID, clause: 'C2', seq: 3, received: 70 }]);
+    expect(state.suspended).toEqual([
+      { address: BIRCH, id: null, clause: 'C3', seq: 4, received: 80 },
+    ]);
+  });
+
+  it('pauses on the newest pause that is on, and shows again after one that is off', () => {
+    const on = notice({ v: 1, kind: 'notice', act: 'pause', on: true }, 1);
+    const off = notice({ v: 1, kind: 'notice', act: 'pause', on: false }, 2);
+
+    expect(foldNotices([]).paused).toBe(false);
+    expect(foldNotices([on]).paused).toBe(true);
+    expect(foldNotices([off, on]).paused).toBe(false);
+    expect(foldNotices([{ ...on, seq: 3 }, off]).paused).toBe(true);
   });
 });
