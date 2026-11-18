@@ -3,8 +3,9 @@
  * with no field, no React and no side effects, so the link bar can say what a
  * link is before anything opens it, and search (#445) can tell a link from
  * words. It reads an invite (spec §3), a reconcile card (#114), a
- * coalition's follow link (#124), a group's front door (#121) and a shared
- * Document (#105), each as the app makes it (`openPasted` opens them).
+ * coalition's follow link (#124), a group's front door (#121), a shared
+ * Document (#105) and a vote (#472), each as the app makes it (`openPasted`
+ * opens them).
  */
 import { CARD_PREFIX, parseCardPayload } from '../coalition/card';
 import { FOLLOW_PREFIX, parseFollowPayload } from '../coalition/follow';
@@ -13,9 +14,10 @@ import { RECOVERY_CODE_PREFIX } from '../crypto/recovery';
 import { DOOR_PREFIX, parseDoorPayload } from '../door/page';
 import { parseSharePayload, SHARE_PREFIX } from '../share/shareLink';
 import { parseInvitePayload } from './invite';
+import { readsAsVoteToken, VOTE_PREFIX } from './voteLink';
 
 /** The kinds of link the link bar opens (#444). */
-export type LinkKindName = 'invite' | 'card' | 'follow' | 'door' | 'shared';
+export type LinkKindName = 'invite' | 'card' | 'follow' | 'door' | 'shared' | 'vote';
 
 /**
  * What a pasted text is (#444): a link of one kind, with what follows its
@@ -63,6 +65,7 @@ const FRAGMENTS: readonly {
     kind: 'shared',
     reads: (payload) => parseSharePayload(payload) !== null,
   },
+  { prefix: VOTE_PREFIX, kind: 'vote', reads: readsAsVoteToken },
 ];
 
 /** What a chat app or a sentence puts before a link, and after it. */

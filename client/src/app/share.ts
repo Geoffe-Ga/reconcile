@@ -8,9 +8,13 @@
  * What's shared goes into third-party chats, so it is one of the fixed
  * messages in ./chatMessages.ts, whose only variables are a deadline,
  * formatted on the device, and a title the person chose to include for that
- * one share, and the app's address, `location.origin + '/'`. It never carries
- * Document text, a group name, a member's name, a link fragment or a secret,
- * and Web Share never gets a `title`, because some apps use it as a subject line.
+ * one share, and the vote's link, `{origin}/#vote/{token}` (#472, ADR-0079).
+ * The token is keyed by the group's secret, so the link names no group and
+ * no Proposal, and to anyone outside the group it's 22 random characters;
+ * before ADR-0079, a share carried the app's bare address. A share never
+ * carries Document text, a group name, a member's name, a group or Proposal
+ * id, any other link fragment or a secret, and Web Share never gets a
+ * `title`, because some apps use it as a subject line.
  * The exceptions are Share link (#105, `personalSharing.ts`), whose whole
  * point is the link's fragment: it goes beside fixed words, never the
  * Document's title or text; and a recovering device's code (#118), whose
@@ -77,14 +81,14 @@ function copyOut(copyText: ShareTargets['copyText'], text: string): Promise<'cop
   );
 }
 
-/** What Tell your group shares at `moment`: its message, and the app's address with nothing after the `/`. */
+/** What Tell your group shares at `moment`: its message, and `link`, the vote's link (#472). */
 export function chatPayload(
   moment: ChatMoment,
   details: ChatDetails,
-  origin: string,
+  link: string,
   timeZone?: string,
 ): SharePayload {
-  return { text: chatMessage(moment, details, timeZone), url: `${origin}/` };
+  return { text: chatMessage(moment, details, timeZone), url: link };
 }
 
 /**

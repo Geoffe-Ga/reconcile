@@ -28,6 +28,7 @@ import { foldCoalitions, foldWithCoalitions, type HeldCoalition } from '../store
 import type { CarryPlan, ClearedArchive, Group, Me, Store } from '../store/db';
 import { type KeyChange, keyChangeOf } from '../store/epochs';
 import { type HeldShare, heldSharesIn } from '../store/recovery';
+import { tokenFor } from './voteLink';
 
 /** What `useGroup` reads: the device's store and the sync loop's reachability. */
 export interface GroupServices {
@@ -117,7 +118,16 @@ export interface GroupView {
   coalitions: readonly HeldCoalition[];
   /** The carried scores this device means to cast in this group (#126): none until the first. */
   carries: readonly CarryPlan[];
+  /**
+   * The token of a Proposal's vote link in this group (#472, ADR-0079), from
+   * the group's secret, which never leaves this hook; null while the group
+   * isn't loaded, or for an id that isn't an event id. Nothing keeps a token.
+   */
+  voteToken: (proposalId: string) => string | null;
 }
+
+/** No token: for a group that isn't on the device, or not yet loaded. */
+const NO_TOKEN = (): null => null;
 
 /** No shares: one shared empty list, so it never looks changed. */
 const NO_SHARES: readonly HeldShare[] = [];
@@ -163,6 +173,11 @@ export function useGroup(groupId: string): GroupView {
   }, [group, coalitions]);
   const pending = useMemo(() => (group === undefined ? [] : parsePending(group.outbox)), [group]);
   const newShares = useMemo(() => newSharesIn(group, state), [group, state]);
+  const secret = group?.secret;
+  const voteToken = useMemo(
+    () => (secret === undefined ? NO_TOKEN : (proposalId: string) => tokenFor(secret, proposalId)),
+    [secret],
+  );
   return {
     state,
     log: group?.log ?? NO_RECORDS,
@@ -177,6 +192,7 @@ export function useGroup(groupId: string): GroupView {
     ...doorOf(group),
     coalitions,
     carries: group?.carries ?? NO_CARRIES,
+    voteToken,
   };
 }
 

@@ -35,6 +35,7 @@ describe('openPasted', () => {
   it.each([
     ['a front door', 'door', '#door/'],
     ['a shared Document', 'shared', '#share/'],
+    ['a vote (#472)', 'vote', '#vote/'],
   ] as const)('opens %s at its own link, holding nothing', (_name, kind, prefix) => {
     const holdSeed = vi.fn();
 

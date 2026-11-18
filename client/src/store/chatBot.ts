@@ -37,6 +37,7 @@
  * what the one before it learned.
  */
 import { newEventNonce } from '../crypto/nonce';
+import { voteToken } from '../crypto/voteLink';
 import { can } from '../engine/capabilities';
 import {
   type BotMoment,
@@ -57,9 +58,16 @@ import { foldGroup } from './expiry';
 
 /**
  * The text the bot posts for `moment` of a Proposal whose voting ends at
- * `deadline`, and whether it goes into the Proposal's thread (#123).
+ * `deadline`, whether it goes into the Proposal's thread (#123), and the
+ * token of the Proposal's vote link (#472, ADR-0079), which the bot's device
+ * derives from the group's secret and keeps nowhere.
  */
-export type Notice = (moment: BotMoment, deadline: number, inThread: boolean) => string;
+export type Notice = (
+  moment: BotMoment,
+  deadline: number,
+  inThread: boolean,
+  token: string,
+) => string;
 
 /** Where a post goes: into a new thread of a name, into a thread by its id, or the channel. */
 export type Place = Pick<PostOptions, 'threadName' | 'threadId'>;
@@ -216,7 +224,7 @@ export function createChatBot(options: ChatBotOptions): ChatBot {
   /** A post for a Proposal with no thread yet: it opens one, unless the webhook takes none. */
   async function openThread(job: Delivery): Promise<void> {
     const { group, webhook, proposal, moment } = job;
-    const content = notice(moment, proposal.deadline, false);
+    const content = notice(moment, proposal.deadline, false, voteToken(group.secret, proposal.id));
     if (learned(await store.getGroup(group.groupId), webhook) === 'text') {
       await post(webhook.url, content, {});
       return;
@@ -238,7 +246,9 @@ export function createChatBot(options: ChatBotOptions): ChatBot {
       await openThread(job);
       return;
     }
-    await post(webhook.url, notice(moment, proposal.deadline, true), { threadId: thread });
+    const { group } = job;
+    const token = voteToken(group.secret, proposal.id);
+    await post(webhook.url, notice(moment, proposal.deadline, true, token), { threadId: thread });
   }
 
   async function settle(group: Group, state: GroupState, webhook: Webhook | null): Promise<void> {

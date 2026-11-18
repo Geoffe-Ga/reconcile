@@ -48,6 +48,9 @@ describe('parseRoute', () => {
     [`#door/${SHARE.slice(0, 43)}`, { name: 'door', payload: SHARE.slice(0, 43) }],
     ['#door/', { name: 'door', payload: '' }],
     ['#door/abc/def', { name: 'door', payload: 'abc/def' }],
+    // Any #vote/ link reaches the vote screen, which reads a damaged token itself (#472).
+    [`#vote/${'A'.repeat(22)}`, { name: 'vote', payload: 'A'.repeat(22) }],
+    ['#vote/', { name: 'vote', payload: '' }],
     [`#/g/${GROUP}`, { name: 'group', groupId: GROUP }],
     [`#/g/${GROUP}/doc`, { name: 'document', groupId: GROUP }],
     [`#/g/${GROUP}/doc/${GROUP}`, { name: 'document', groupId: GROUP, documentId: GROUP }],
@@ -375,6 +378,7 @@ describe('routeHref', () => {
     [{ name: 'join', payload: 'abc-def' }, '#join/abc-def'],
     [{ name: 'shared', payload: SHARE }, `#share/${SHARE}`],
     [{ name: 'door', payload: 'abc' }, '#door/abc'],
+    [{ name: 'vote', payload: 'abc' }, '#vote/abc'],
     [{ name: 'group', groupId: GROUP }, `#/g/${GROUP}`],
     [{ name: 'document', groupId: GROUP }, `#/g/${GROUP}/doc`],
     [{ name: 'document', groupId: GROUP, documentId: SECOND }, `#/g/${GROUP}/doc/${SECOND}`],

@@ -8,14 +8,18 @@
  * within a day, and a result. Each is fixed copy whose only variables are the
  * day voting ends, formatted on the device, and, only when someone ticks
  * Include the title for that one share, the Proposal's title. A group name,
- * Document text, a member's name or a link fragment never goes in, and a
- * steward Proposal's title, which names a member, is never offered.
+ * Document text, a member's name, a group or Proposal id or any link
+ * fragment but a vote link's never goes in, and a steward Proposal's title,
+ * which names a member, is never offered. Since ADR-0079 (#472), a share and
+ * the bot's notices end with the vote's link, whose token is keyed by the
+ * group's secret and so names neither the group nor the Proposal.
  */
 import { type BotMoment, NOTICE_MINUTES } from '../engine/chatPosts';
 import type { Proposal } from '../engine/fold';
 import type { Notice } from '../store/chatBot';
 import { formatDay } from './format';
 import { messages } from './messages';
+import { voteLinkOf } from './voteLink';
 
 /**
  * When a message is for: a new Proposal (`open`), a version someone added
@@ -108,20 +112,22 @@ export function chatDetails(proposal: ChatSource, includeTitle: boolean): ChatDe
 
 /**
  * What the chat bot posts (#119, #123; spec §9, "Shares carry no content"):
- * for each moment, its message with no title, then the app's address on a
- * line of its own. Inside a Proposal's Discord thread, the result reads as
- * the argument concluded. It is made from the moment, the deadline and
- * whether it goes into the thread alone, so no title, name or other word of
- * the group can reach Discord. `origin` is the app's (`location.origin`);
- * `timeZone` dates the deadline, the device's own unless a test names one.
+ * for each moment, its message with no title, then the vote's link on a line
+ * of its own (#472, ADR-0079 §4), in the channel and in the Proposal's
+ * thread alike. Inside the thread, the result reads as the argument
+ * concluded. It is made from the moment, the deadline, whether it goes into
+ * the thread, and the vote link's token alone, so no title, name, id or
+ * other word of the group can reach Discord. `origin` is the app's
+ * (`location.origin`); `timeZone` dates the deadline, the device's own
+ * unless a test names one.
  */
 export function botNotice(origin: string, timeZone?: string): Notice {
-  return (moment: BotMoment, deadline: number, inThread: boolean) => {
+  return (moment: BotMoment, deadline: number, inThread: boolean, token: string) => {
     const line =
       inThread && moment === 'result'
         ? messages.chat.concluded
         : chatMessage(moment, { deadline }, timeZone);
-    return `${line}\n${origin}/`;
+    return `${line}\n${voteLinkOf(origin, token)}`;
   };
 }
 

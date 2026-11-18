@@ -160,7 +160,12 @@ export function PriorityResult(props: ResultViewProps) {
       <Mismatches state={state} proposal={proposal} />
       <Ranking detail={detail} options={options} />
       {props.leaving === true ? null : (
-        <TellYourGroup moment="result" proposal={proposal} onTell={props.onTell} />
+        <TellYourGroup
+          moment="result"
+          proposal={proposal}
+          onTell={props.onTell}
+          {...(props.voteLink === undefined ? {} : { voteLink: props.voteLink })}
+        />
       )}
       <Ballots props={props} versions={options} naming="options" label={detailsLabel(props)}>
         <Totals detail={detail} versions={options} naming="options" level={4} />

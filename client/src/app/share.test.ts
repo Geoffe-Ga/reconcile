@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { voteToken } from '../crypto/voteLink';
 import { testGroup } from '../test/groups';
 import { type ChatMoment, chatDetails, chatMessage } from './chatMessages';
 import {
@@ -16,19 +17,19 @@ import {
   type WebShare,
 } from './share';
 import { MINUTE_MS } from './time';
+import { voteLinkOf } from './voteLink';
 
 /** A relay minute on Friday 14 November 2025 at 12:00 UTC. */
 const FRIDAY_NOON = Date.UTC(2025, 10, 14, 12) / MINUTE_MS;
 const URL_ = 'https://reconcile.test/';
 
 describe('chatPayload', () => {
-  it('is the moment’s message and the app’s origin and a slash, with no path or fragment', () => {
-    expect(chatPayload('open', { deadline: FRIDAY_NOON }, 'https://reconcile.test', 'UTC')).toEqual(
-      {
-        text: 'A new Proposal is open in Reconcile. Voting ends Fri 14 Nov.',
-        url: 'https://reconcile.test/',
-      },
-    );
+  it('is the moment’s message and the vote’s link (#472)', () => {
+    const link = `https://reconcile.test/#vote/${'k9V2'.repeat(5)}xY`;
+    expect(chatPayload('open', { deadline: FRIDAY_NOON }, link, 'UTC')).toEqual({
+      text: 'A new Proposal is open in Reconcile. Voting ends Fri 14 Nov.',
+      url: link,
+    });
   });
 });
 
@@ -41,6 +42,8 @@ describe('what Tell your group shares, at every moment', () => {
   /** What an invite link carries after its `#`, which no share may hold. */
   const CANARY_FRAGMENT = '#/join/';
   const ORIGIN = 'https://reconcile.test';
+  /** The group's secret, which keys the vote link's token (#472). */
+  const SECRET = new Uint8Array(32).fill(5);
   const MOMENTS: readonly ChatMoment[] = ['open', 'version', 'closing', 'result'];
 
   /** Shares `moment`'s payload through Web Share, then copies it where there is none. */
@@ -53,8 +56,9 @@ describe('what Tell your group shares, at every moment', () => {
       proposals: [CANARY_TITLE],
     });
     const [proposal] = state.proposals;
-    if (proposal === undefined) throw new Error('Expected the Proposal.');
+    if (proposal === undefined || state.group === null) throw new Error('Expected the Proposal.');
     const details = chatDetails(proposal, includeTitle);
+    const link = voteLinkOf(ORIGIN, voteToken(SECRET, proposal.id));
     const share = vi.fn<WebShare>(() => Promise.resolve());
     const copied: string[] = [];
     const copyText = vi.fn((text: string) => {
@@ -62,19 +66,29 @@ describe('what Tell your group shares, at every moment', () => {
       return Promise.resolve();
     });
 
-    await shareOrCopy(chatPayload(moment, details, ORIGIN, 'UTC'), { share, copyText });
-    await shareOrCopy(chatPayload(moment, details, ORIGIN, 'UTC'), { share: undefined, copyText });
+    await shareOrCopy(chatPayload(moment, details, link, 'UTC'), { share, copyText });
+    await shareOrCopy(chatPayload(moment, details, link, 'UTC'), { share: undefined, copyText });
 
     const [shared] = share.mock.calls[0] ?? [];
-    expect(shared).toEqual({ text: chatMessage(moment, details, 'UTC'), url: `${ORIGIN}/` });
+    expect(shared).toEqual({ text: chatMessage(moment, details, 'UTC'), url: link });
     // Some apps use Web Share's title as a subject line: it never gets one.
     expect(Object.keys(shared ?? {})).toEqual(['text', 'url']);
-    expect(copied).toEqual([`${chatMessage(moment, details, 'UTC')} ${ORIGIN}/`]);
-    return [JSON.stringify(shared), ...copied];
+    // Where there's no share sheet, the copy ends with the vote's link.
+    expect(copied).toEqual([`${chatMessage(moment, details, 'UTC')} ${link}`]);
+    const sent = [JSON.stringify(shared), ...copied];
+    for (const text of sent) {
+      // The link names no group and no Proposal: neither id is in any share (#472).
+      expect(text).not.toContain(state.group);
+      expect(text).not.toContain(proposal.id);
+      // Its one fragment is the vote link's.
+      expect(text.split('#')).toHaveLength(2);
+      expect(text).toContain('#vote/');
+    }
+    return sent.map((text) => text.replace(link, ''));
   }
 
   it.each(MOMENTS)(
-    'carries no title, group name, Document text, member name or fragment unticked (%s)',
+    'carries no title, group name, Document text, member name or other fragment unticked (%s)',
     async (moment) => {
       for (const sent of await shareBothWays(moment, false)) {
         for (const canary of [
@@ -94,7 +108,7 @@ describe('what Tell your group shares, at every moment', () => {
   );
 
   it.each(MOMENTS)(
-    'carries the title once ticked, and still no group name, text, names or fragment (%s)',
+    'carries the title once ticked, and still no group name, text, names or other fragment (%s)',
     async (moment) => {
       for (const sent of await shareBothWays(moment, true)) {
         expect(sent).toContain(CANARY_TITLE);

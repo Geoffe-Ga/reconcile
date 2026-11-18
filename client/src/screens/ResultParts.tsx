@@ -12,6 +12,7 @@ import { Button, Disclosure, DisclosurePanel, Heading } from 'react-aria-compone
 import { formatAverage, formatDay } from '../app/format';
 import type { ChatDetails, ChatMoment } from '../app/chatMessages';
 import { messages } from '../app/messages';
+import type { VoteLinkPort } from '../app/TellYourGroup';
 import type { ShareOutcome } from '../app/share';
 import { MotionTitle, Named } from '../app/stewards';
 import { formatDate, formatMinute, MINUTE_MS, minuteIso } from '../app/time';
@@ -39,6 +40,8 @@ export interface ResultViewProps {
   readonly onProposeAgain: () => void;
   /** Shares the result message into the group's chat, or copies it (#113). */
   readonly onTell: (moment: ChatMoment, details: ChatDetails) => Promise<ShareOutcome>;
+  /** The vote's link, for Copy link to this vote beside Tell your group (#472). */
+  readonly voteLink?: VoteLinkPort;
   /**
    * Whether this device's leave waits for the relay (#77), or the group has
    * dissolved (#108): then nothing is proposed again, and the result offers

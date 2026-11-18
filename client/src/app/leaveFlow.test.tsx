@@ -1,7 +1,7 @@
 /**
  * Coming back, telling the group, and leaving (#77), through the whole app on
  * devices that share one fake relay: Group home leads with what needs your
- * vote, Tell your group shares fixed words only, and Leave deletes the group
+ * vote, Tell your group shares fixed words and the vote's link only (#472), and Leave deletes the group
  * once the relay has the leave, even when the leave waited offline through a
  * reload.
  */
@@ -9,6 +9,8 @@ import { act, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { voteToken } from '../crypto/voteLink';
+import { eventIdOf } from '../store/eventId';
 import type { TestDevice } from '../test/appServices';
 import { TEST_ORIGIN, testDevice } from '../test/appServices';
 import { createFakeRelay } from '../test/fakeRelay';
@@ -82,7 +84,7 @@ describe('Group home brings people back', () => {
 });
 
 describe('Tell your group', () => {
-  it('shares fixed words, the deadline and the app’s address, with no title, once the Proposal is sent', async () => {
+  it('shares fixed words, the deadline and the vote’s link, with no title, once the Proposal is sent', async () => {
     const user = userEvent.setup();
     const { groupId, devices } = await group(['Ana', 'Ben']);
     const [ana] = devices;
@@ -100,16 +102,19 @@ describe('Tell your group', () => {
 
     const stored = await ana.services.store.getGroup(groupId);
     const proposal = stored?.log.at(-1);
-    expect(proposal).toBeDefined();
+    if (stored === undefined || proposal === undefined) throw new Error('Expected the Proposal.');
+    const proposalId = eventIdOf(proposal.bytes) ?? '';
+    const link = `${TEST_ORIGIN}/#vote/${voteToken(stored.secret, proposalId)}`;
     expect(share).toHaveBeenCalledTimes(1);
     const [data] = share.mock.calls[0] ?? [];
     expect(data).toEqual({
-      text: chatMessage('open', { deadline: (proposal?.received ?? 0) + 7 * 1_440 }),
-      url: `${TEST_ORIGIN}/`,
+      text: chatMessage('open', { deadline: proposal.received + 7 * 1_440 }),
+      url: link,
     });
     expect(data !== undefined && 'title' in data).toBe(false);
     expect(window.location.hash).toContain(groupId);
-    for (const word of [groupId, 'Riverside', 'Quiet', 'House rules', 'Ana', 'Ben', '#']) {
+    // The vote link (#472) names neither the group nor the Proposal.
+    for (const word of [groupId, proposalId, 'Riverside', 'Quiet', 'House rules', 'Ana', 'Ben']) {
       expect(JSON.stringify(data)).not.toContain(word);
     }
     expect(await within(a).findByText('Shared.')).toBeVisible();
@@ -139,9 +144,10 @@ describe('Tell your group', () => {
     expect(data?.text).toMatch(
       /^A new Proposal is open in Reconcile: "Quiet hours"\. Voting ends \w{3} \d{1,2} \w{3}\.$/,
     );
-    for (const word of [groupId, 'Riverside', 'House rules', 'Ana', 'Ben', '#']) {
+    for (const word of [groupId, 'Riverside', 'House rules', 'Ana', 'Ben']) {
       expect(JSON.stringify(data)).not.toContain(word);
     }
+    expect(data?.url).toMatch(/^https:\/\/reconcile\.test\/#vote\/[A-Za-z0-9_-]{22}$/);
     expect(await within(b).findByText('Shared.')).toBeVisible();
     expect(within(b).getByRole('checkbox', { name: 'Include the title' })).not.toBeChecked();
     expect((await ben.services.store.getGroup(groupId))?.outbox).toEqual([]);
@@ -161,7 +167,7 @@ describe('Tell your group', () => {
     expect(await within(a).findByText('Copied. Paste it into your group’s chat.')).toBeVisible();
     expect(ana?.copied).toHaveLength(1);
     expect(ana?.copied[0]).toMatch(
-      /^A new Proposal is open in Reconcile\. Voting ends \w{3} \d{1,2} \w{3}\. https:\/\/reconcile\.test\/$/,
+      /^A new Proposal is open in Reconcile\. Voting ends \w{3} \d{1,2} \w{3}\. https:\/\/reconcile\.test\/#vote\/[A-Za-z0-9_-]{22}$/,
     );
   });
 });

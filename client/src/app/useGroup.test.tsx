@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { xchachaSeal } from '../crypto/seal';
+import { voteToken } from '../crypto/voteLink';
 import type { SignedEvent } from '../engine/event';
 import { createRelay } from '../net/relay';
 import { openStore } from '../store/db';
@@ -242,7 +243,10 @@ describe('useGroup', () => {
       cards: [],
       coalitions: [],
       carries: [],
+      voteToken: expect.any(Function) as unknown,
     });
+    // No group, no secret: no vote link (#472).
+    expect(result.current.voteToken('A'.repeat(43))).toBeNull();
   });
 
   it('says the group is leaving once its leave is queued, with the leave pending', async () => {
@@ -347,6 +351,11 @@ describe('useGroup', () => {
     expect(atFirst).toMatchObject({ me: null, missingHistory: false, loaded: false });
     expect(result.current.me).toEqual({ author: authorOf('ana'), name: 'Ana' });
     expect(Object.values(result.current).some((value) => value instanceof Uint8Array)).toBe(false);
+    // A Proposal's vote link token comes from the secret, which stays inside the hook (#472).
+    const secret = (await store.getGroup(GROUP))?.secret ?? new Uint8Array();
+    const proposal = 'A'.repeat(43);
+    expect(result.current.voteToken(proposal)).toBe(voteToken(secret, proposal));
+    expect(result.current.voteToken('not an id')).toBeNull();
   });
 
   it('says when some history may be missing, until a merge clears it', async () => {

@@ -14,6 +14,8 @@
  *   home. A passes it, and A's profiles read "Your group passed this.
  *   Waiting for 1 more group."; then B passes it, and every profile reads
  *   that the coalition passed it, to take effect a week after its deadline.
+ *   Before B votes, the motion's Copy link to this vote gives a link in A
+ *   and another in B (#472), and Cy, in both, opens each in its own group.
  * - Ana proposes a change to the second section. A passes it and B scores
  *   it 0 (Ben's and Cy's reasons are canaries), so every profile reads "Not
  *   every group passed.". Dee and Ana, in A alone, never see either reason
@@ -280,6 +282,40 @@ test('two groups reconcile, pass one coalition change and fail another', async (
       ),
     );
     await expectAccessible(dee, 'a coalition vote, waiting for 1 more group');
+  });
+
+  await test.step('the motion’s Copy link gives A and B different tokens, and Cy opens each in its own group (#472)', async () => {
+    const linkOn = async (person: Person) => {
+      const field = person.page.getByRole('textbox', { name: 'Link to this vote' });
+      await expect(field).toBeVisible();
+      return field.inputValue();
+    };
+    // Ana is still on the motion's ballot in A, where she voted.
+    const inA = await linkOn(ana);
+    await openVote(ben, homeB, words.passTitle, voteTag);
+    const inB = await linkOn(ben);
+    const token = /#vote\/([A-Za-z0-9_-]{22})$/;
+    expect(inA).toMatch(token);
+    expect(inB).toMatch(token);
+    expect(inB).not.toBe(inA);
+    // The Copy link line, on a phone in both themes.
+    await ben.page.setViewportSize({ width: 390, height: 844 });
+    await expectAccessible(ben, 'a coalition vote’s Copy link, on a phone');
+    await ben.page.emulateMedia({ colorScheme: 'dark' });
+    await expectAccessible(ben, 'a coalition vote’s Copy link, on a dark phone');
+    await ben.page.emulateMedia({ colorScheme: 'light' });
+    await ben.page.setViewportSize({ width: 1280, height: 720 });
+
+    // Cy is in both groups: each link opens the motion's ballot in its own group.
+    const groupOf = (home: string) => /#\/g\/([^/]+)$/.exec(home)?.[1] ?? '';
+    for (const [link, home] of [
+      [inA, homeA],
+      [inB, homeB],
+    ] as const) {
+      await cy.page.goto(link);
+      await expect(heading(cy.page, words.passTitle)).toBeVisible({ timeout: SYNC_MS });
+      await expect.poll(() => cy.page.url()).toContain(`#/g/${groupOf(home)}/p/`);
+    }
   });
 
   await test.step('B scores it 3 and 4, and every profile reads that the coalition passed it', async () => {

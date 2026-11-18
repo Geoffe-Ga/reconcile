@@ -10,7 +10,8 @@
  * closes early. C joins by pasting the invite into the link bar on Personal
  * (#444). Last, C opens Discover from the tab bar on a phone, where the page
  * scrolls between the link bar and the tab bar and never under either, and
- * axe checks it with the link bar open in both themes (#423, #444).
+ * axe checks it with the link bar open in both themes (#423, #444). C opens
+ * A's Proposal from the vote link A copied, pasted into the link bar (#472).
  */
 import { type Locator, type Page } from '@playwright/test';
 
@@ -245,7 +246,22 @@ test('three members propose, vote and see the Update', async ({ openProfile }) =
     await expectAccessible(ana, 'Proposal view');
 
     await openProposal(ben);
-    await openProposal(cal);
+
+    // C opens it from a vote link A copied (#472), pasted into the link bar with words around it.
+    const link = await page.getByRole('textbox', { name: 'Link to this vote' }).inputValue();
+    expect(link).toMatch(/\/#vote\/[A-Za-z0-9_-]{22}$/);
+    const proposalUrl = page.url();
+    const bar = cal.page.getByRole('searchbox', { name: 'Search or paste a link' });
+    await cal.page.keyboard.press('Control+l');
+    await expect(bar).toBeFocused();
+    await bar.fill(`vote today! ${link}`);
+    await expect(cal.page.getByRole('option')).toHaveText(/^A vote/u);
+    await cal.page.keyboard.press('Enter');
+    await expect(heading(cal.page, PROPOSAL)).toBeVisible();
+    await expect(cal.page.getByRole('radiogroup', { name: 'Score for version 1' })).toBeVisible();
+    // The link's own page gave way to the Proposal's, which is A's address for it too.
+    await expect.poll(() => cal.page.url()).toBe(proposalUrl);
+    await expectAccessible(cal, 'Proposal view, from a vote link');
   });
 
   await test.step('C goes offline, scores, and sees its ballot saved on this device', async () => {

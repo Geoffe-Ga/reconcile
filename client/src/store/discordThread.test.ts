@@ -14,6 +14,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { xchachaSeal } from '../crypto/seal';
+import { voteToken } from '../crypto/voteLink';
 import { type EventBodies, type EventType, parseRecord, signEvent } from '../engine/event';
 import { fold, type GroupState } from '../engine/fold';
 import type { Answer, WebhookHome } from '../net/discord';
@@ -40,16 +41,27 @@ const START = 29_375_000;
 /** When the Proposal under test opens, so its deadline is Fri 14 Nov 2025, 12:00 UTC. */
 const PROPOSED = 29_375_280;
 const DEADLINE = PROPOSED + 7 * DAY;
-const ORIGIN = 'https://reconcile.test/';
+const ORIGIN = 'https://reconcile.test';
+/** Where each notice's vote link (#472) stands in what this file compares: its token, read as {@link TOKEN}. */
+const TOKEN = '<token>';
+const LINK = `${ORIGIN}/#vote/${TOKEN}`;
 /** A canary in every field of the Proposal under test. */
 const CANARY = { title: 'CANARY-title', why: 'CANARY-why', text: 'CANARY-atom' };
 
 const NOTICES = {
-  open: `A new Proposal is open in Reconcile. Voting ends Fri 14 Nov.\n${ORIGIN}`,
-  closing: `A vote closes within a day in Reconcile.\n${ORIGIN}`,
-  result: `A vote has finished in Reconcile.\n${ORIGIN}`,
-  concluded: `The argument has concluded. A vote has finished in Reconcile.\n${ORIGIN}`,
+  open: `A new Proposal is open in Reconcile. Voting ends Fri 14 Nov.\n${LINK}`,
+  closing: `A vote closes within a day in Reconcile.\n${LINK}`,
+  result: `A vote has finished in Reconcile.\n${LINK}`,
+  concluded: `The argument has concluded. A vote has finished in Reconcile.\n${LINK}`,
 };
+
+/** A vote link's token in a post (#472): 22 base64url characters after `#vote/`. */
+const POSTED_TOKEN = /#vote\/[A-Za-z0-9_-]{22}$/u;
+
+/** `content` with its vote link's token read as {@link TOKEN}, so posts compare by their words. */
+function tokenRead(content: unknown): unknown {
+  return typeof content === 'string' ? content.replace(POSTED_TOKEN, `#vote/${TOKEN}`) : content;
+}
 
 const opened: TestDevice[] = [];
 
@@ -70,8 +82,18 @@ function body(content: unknown, threadName?: string) {
 function requests(fake: FakeRelay): { readonly sent: string; readonly body: unknown }[] {
   return fake.discord.requests.map((request: DiscordRequest) => ({
     sent: `${request.method} ${request.url}`,
-    body: request.body,
+    body:
+      request.body !== null && typeof request.body === 'object' && 'content' in request.body
+        ? { ...request.body, content: tokenRead(request.body.content) }
+        : request.body,
   }));
+}
+
+/** The vote link `device` makes for `proposal` in `groupId`, from the group's secret (#472). */
+async function linkOf(device: TestDevice, groupId: string, proposal: string): Promise<string> {
+  const group = await device.services.store.getGroup(groupId);
+  if (group === undefined) throw new Error('Expected the group on this device.');
+  return `${ORIGIN}/#vote/${voteToken(group.secret, proposal)}`;
 }
 
 /** An event a test device says: its type and body. */
@@ -210,6 +232,25 @@ describe('a forum channel’s webhook', () => {
       { sent: `POST ${WEBHOOK}?thread_id=${thread}`, body: body(NOTICES.concluded) },
     ]);
     expect(fake.discord.requests.map((request) => request.status)).toEqual([204, 204]);
+  });
+
+  it('ends every notice, in the channel and in the thread, with the Proposal’s own vote link (#472)', async () => {
+    const { fake, groupId, devices, founder } = await botOnWith('forum');
+    const proposal = await proposeCanary(fake, founder, groupId);
+    await syncRounds(devices);
+    fake.minute = DEADLINE;
+    await syncRounds(devices);
+    const link = await linkOf(founder, groupId, proposal);
+
+    const contents = fake.discord.requests
+      .filter((request) => request.method === 'POST')
+      .map((request) => (request.body as { content: string }).content);
+    expect(contents).toHaveLength(2);
+    for (const content of contents) {
+      expect(content.endsWith(`\n${link}`)).toBe(true);
+      expect(content).not.toContain(groupId);
+      expect(content).not.toContain(proposal);
+    }
   });
 
   it('reads the webhook’s server and channel once per group', async () => {

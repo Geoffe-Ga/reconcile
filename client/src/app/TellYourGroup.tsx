@@ -8,6 +8,9 @@
  * title for one share only: it starts unticked every time, clears once the
  * share is done, and is never stored. A steward Proposal offers no title,
  * since its title names a member.
+ *
+ * Beside it, Copy link to this vote (#472, ADR-0079 §4) copies the vote's
+ * link, which only the group's devices can open.
  */
 import { useId, useState } from 'react';
 import { Button, CheckboxButton, CheckboxField } from 'react-aria-components';
@@ -20,6 +23,7 @@ import {
   chatMessage,
   shareableTitle,
 } from './chatMessages';
+import { CopyLink } from './CopyLink';
 import { holdPresses } from './holdPresses';
 import { messages } from './messages';
 import type { ShareOutcome } from './share';
@@ -30,8 +34,17 @@ export interface TellYourGroupProps {
   readonly moment: ChatMoment;
   /** The Proposal it's about: its deadline, and the title the box may add. */
   readonly proposal: ChatSource;
-  /** Shares the message and the app's address, or copies them; says how it went. */
+  /** Shares the message and the vote's link, or copies them; says how it went. */
   readonly onTell: (moment: ChatMoment, details: ChatDetails) => Promise<ShareOutcome>;
+  /** The vote's link and the clipboard, for Copy link to this vote (#472); without it, none shows. */
+  readonly voteLink?: VoteLinkPort;
+}
+
+/** A vote's link (#472), and how to copy it. */
+export interface VoteLinkPort {
+  readonly link: string;
+  /** Puts text on the clipboard; rejects when the browser blocks it. */
+  readonly copyText: (text: string) => Promise<void>;
 }
 
 const STATUS: Readonly<Record<ShareOutcome | 'idle', string>> = {
@@ -43,10 +56,10 @@ const STATUS: Readonly<Record<ShareOutcome | 'idle', string>> = {
 
 /**
  * What Tell your group shares, as it will read, then "Include the title",
- * "Tell your group", and a polite live region, there from the start, that
- * says whether it was shared or copied.
+ * "Tell your group", a polite live region, there from the start, that says
+ * whether it was shared or copied, and Copy link to this vote when there's a link.
  */
-export function TellYourGroup({ moment, proposal, onTell }: TellYourGroupProps) {
+export function TellYourGroup({ moment, proposal, onTell, voteLink }: TellYourGroupProps) {
   const [status, setStatus] = useState<ShareOutcome | 'idle'>('idle');
   const [busy, setBusy] = useState(false);
   const [includeTitle, setIncludeTitle] = useState(false);
@@ -88,6 +101,16 @@ export function TellYourGroup({ moment, proposal, onTell }: TellYourGroupProps) 
       <p role="status" className="status">
         {STATUS[status]}
       </p>
+      {voteLink === undefined ? null : (
+        <CopyLink
+          link={voteLink.link}
+          label={messages.vote.copyLabel}
+          hint={messages.vote.copyHint}
+          button={messages.vote.copy}
+          primary={false}
+          copyText={voteLink.copyText}
+        />
+      )}
     </div>
   );
 }

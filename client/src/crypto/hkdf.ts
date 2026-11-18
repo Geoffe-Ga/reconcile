@@ -6,10 +6,12 @@
  * channels (`link.ts`, #96), a coalition room's entry id (`room.ts`, #125),
  * a seat's encryption key (`room.ts`, #313) and a group's nudge offset for a
  * coalition's motion (`nudgeOffset.ts`, #284, `reconcile/v1/nudge-offset`)
+ * and a vote link's token (`voteLink.ts`, #472, `reconcile/v1/vote-link`)
  * all derive through it, each under a label of its own, so no two ever
  * coincide. Most take an empty salt and 32 bytes of output. A weekly mailbox
  * id's info is bytes, its label then its week (#110), and a nudge offset's,
- * its label, a 0x00 byte, then the motion's id; a nudge offset takes 4 bytes.
+ * its label, a 0x00 byte, then the motion's id, as a vote link's is with the
+ * Proposal's id; a nudge offset takes 4 bytes, and a vote link's token 16.
  * A box's key (`box.ts`, #98) is salted with the two public keys of its
  * X25519 exchange; a link's number and key are salted with the hash of the
  * link's transcript, and its number takes 4 bytes; the key vault's key
