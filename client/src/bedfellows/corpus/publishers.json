@@ -1,0 +1,527 @@
+[
+  {
+    "id": "g001",
+    "name": "Fennick Estate Tenants' Association",
+    "split": "tune"
+  },
+  {
+    "id": "g002",
+    "name": "Harrow Creek Landlords' Circle",
+    "split": "tune"
+  },
+  {
+    "id": "g003",
+    "name": "Friends of the East Side Library",
+    "split": "tune"
+  },
+  {
+    "id": "g004",
+    "name": "Brindlewood Knights Chess Club",
+    "split": "tune"
+  },
+  {
+    "id": "g005",
+    "name": "The Lamb Social Committee",
+    "split": "tune"
+  },
+  {
+    "id": "g006",
+    "name": "Pellow Hill Outdoor Clubs",
+    "split": "tune"
+  },
+  {
+    "id": "g007",
+    "name": "Harrow Creek Singers",
+    "split": "tune"
+  },
+  {
+    "id": "g008",
+    "name": "Ashcombe Wildlife Protection Campaign",
+    "split": "tune"
+  },
+  {
+    "id": "g009",
+    "name": "Ashcombe Field Club",
+    "split": "tune"
+  },
+  {
+    "id": "g010",
+    "name": "Upper Ashcombe Farmers",
+    "split": "tune"
+  },
+  {
+    "id": "g011",
+    "name": "Brindlewood Clubs Noticeboard",
+    "split": "tune"
+  },
+  {
+    "id": "g012",
+    "name": "Ashcombe Woodland Trust",
+    "split": "tune"
+  },
+  {
+    "id": "g013",
+    "name": "Brindlewood Cooperatives Federation",
+    "split": "tune"
+  },
+  {
+    "id": "g014",
+    "name": "Harrow Creek Food Network",
+    "split": "tune"
+  },
+  {
+    "id": "g015",
+    "name": "Harrow Creek Support Groups",
+    "split": "tune"
+  },
+  {
+    "id": "g016",
+    "name": "Friday Youth Club",
+    "split": "tune"
+  },
+  {
+    "id": "g017",
+    "name": "Copse Row Residents' Network",
+    "split": "tune"
+  },
+  {
+    "id": "g018",
+    "name": "Copse Row Infants School",
+    "split": "tune"
+  },
+  {
+    "id": "g019",
+    "name": "Kettle Lane Traders' Association",
+    "split": "tune"
+  },
+  {
+    "id": "g020",
+    "name": "Brindlewood Trades Council",
+    "split": "tune"
+  },
+  {
+    "id": "g021",
+    "name": "Brindlewood Rainbow Association",
+    "split": "tune"
+  },
+  {
+    "id": "g022",
+    "name": "Fennick Plotholders' Association",
+    "split": "tune"
+  },
+  {
+    "id": "g023",
+    "name": "Ferris Lane Chapel",
+    "split": "tune"
+  },
+  {
+    "id": "g024",
+    "name": "Harrow Creek Care Forum",
+    "split": "tune"
+  },
+  {
+    "id": "g025",
+    "name": "Hollin Cross Parish Council",
+    "split": "tune"
+  },
+  {
+    "id": "g026",
+    "name": "Brindlewood Free Thinkers",
+    "split": "tune"
+  },
+  {
+    "id": "g027",
+    "name": "Harrow Creek Temple Committee",
+    "split": "tune"
+  },
+  {
+    "id": "g028",
+    "name": "Hollin Cross Church School Parents",
+    "split": "tune"
+  },
+  {
+    "id": "g029",
+    "name": "Brindlewood Transport Users",
+    "split": "tune"
+  },
+  {
+    "id": "g030",
+    "name": "Hollin Cross Older People's Club",
+    "split": "tune"
+  },
+  {
+    "id": "g031",
+    "name": "Brindlewood Motorists' Forum",
+    "split": "tune"
+  },
+  {
+    "id": "g032",
+    "name": "Brindlewood Chamber of Small Employers",
+    "split": "tune"
+  },
+  {
+    "id": "g033",
+    "name": "Hollin Cross Heritage Society",
+    "split": "tune"
+  },
+  {
+    "id": "g034",
+    "name": "Brindlewood Institute",
+    "split": "tune"
+  },
+  {
+    "id": "g035",
+    "name": "The Okafor-Lindqvist Family",
+    "split": "tune"
+  },
+  {
+    "id": "g036",
+    "name": "Harrow Creek Junior Sports Network",
+    "split": "tune"
+  },
+  {
+    "id": "g037",
+    "name": "Hollin Cross Conservative Association",
+    "split": "tune"
+  },
+  {
+    "id": "g038",
+    "name": "Copse Row Assembly",
+    "split": "tune"
+  },
+  {
+    "id": "g039",
+    "name": "Brindlewood Homes Now",
+    "split": "tune"
+  },
+  {
+    "id": "g040",
+    "name": "Brindlewood Children's Rights Forum",
+    "split": "tune"
+  },
+  {
+    "id": "g041",
+    "name": "Ashcombe Climate Action",
+    "split": "tune"
+  },
+  {
+    "id": "g042",
+    "name": "Ward 6 Nursing Team",
+    "split": "tune"
+  },
+  {
+    "id": "g043",
+    "name": "Harrow Creek Ward 6 Residents",
+    "split": "tune"
+  },
+  {
+    "id": "g044",
+    "name": "Harrow Creek Women's Network",
+    "split": "tune"
+  },
+  {
+    "id": "g045",
+    "name": "Brindlewood End-of-Life Choice Group",
+    "split": "tune"
+  },
+  {
+    "id": "g046",
+    "name": "Ashcombe Pregnancy Support",
+    "split": "tune"
+  },
+  {
+    "id": "g047",
+    "name": "Rovers Fanzine",
+    "split": "tune"
+  },
+  {
+    "id": "g048",
+    "name": "Friends of the Fleece",
+    "split": "tune"
+  },
+  {
+    "id": "g049",
+    "name": "Copse Row Allotment Society",
+    "split": "tune"
+  },
+  {
+    "id": "g050",
+    "name": "Harrow Creek Rovers Supporters' Trust",
+    "split": "tune"
+  },
+  {
+    "id": "g051",
+    "name": "Harrow Creek Welcome Table",
+    "split": "tune"
+  },
+  {
+    "id": "g052",
+    "name": "Harrow Creek First",
+    "split": "tune"
+  },
+  {
+    "id": "g053",
+    "name": "Brindlewood Parents' Rights Group",
+    "split": "tune"
+  },
+  {
+    "id": "g054",
+    "name": "Ashcombe Old Comrades",
+    "split": "tune"
+  },
+  {
+    "id": "g055",
+    "name": "Brindlewood Peace Circle",
+    "split": "tune"
+  },
+  {
+    "id": "g056",
+    "name": "Green Door Mosque",
+    "split": "tune"
+  },
+  {
+    "id": "g057",
+    "name": "Save Fennick Fields",
+    "split": "tune"
+  },
+  {
+    "id": "g058",
+    "name": "Hollin Cross Astronomers",
+    "split": "tune"
+  },
+  {
+    "id": "g059",
+    "name": "Twelve Farms Market Cooperative",
+    "split": "tune"
+  },
+  {
+    "id": "g060",
+    "name": "Ashcombe Way of Life",
+    "split": "tune"
+  },
+  {
+    "id": "g061",
+    "name": "The Brindlewood Truth-Tellers",
+    "split": "tune"
+  },
+  {
+    "id": "g062",
+    "name": "Generation Rent Brindlewood",
+    "split": "tune"
+  },
+  {
+    "id": "g063",
+    "name": "Brindlewood Pagan Circle",
+    "split": "tune"
+  },
+  {
+    "id": "g064",
+    "name": "Glasswater Readers' Server",
+    "split": "tune"
+  },
+  {
+    "id": "g065",
+    "name": "Harrow Creek Gospel Fellowship",
+    "split": "tune"
+  },
+  {
+    "id": "g066",
+    "name": "Marrow Edge Society",
+    "split": "held-out"
+  },
+  {
+    "id": "g067",
+    "name": "Marrow Edge Quarry Workers",
+    "split": "held-out"
+  },
+  {
+    "id": "g068",
+    "name": "Tollby and Wendside Parents' Network",
+    "split": "held-out"
+  },
+  {
+    "id": "g069",
+    "name": "Tollby Town Supporters",
+    "split": "held-out"
+  },
+  {
+    "id": "g070",
+    "name": "Wend Valley Junior Football",
+    "split": "held-out"
+  },
+  {
+    "id": "g071",
+    "name": "Wend Valley Smallholders",
+    "split": "held-out"
+  },
+  {
+    "id": "g072",
+    "name": "Tollby Parish Council",
+    "split": "held-out"
+  },
+  {
+    "id": "g073",
+    "name": "The Late Shift Guild",
+    "split": "held-out"
+  },
+  {
+    "id": "g074",
+    "name": "Tollby Schools Bulletin",
+    "split": "held-out"
+  },
+  {
+    "id": "g075",
+    "name": "Tollby Clubs Noticeboard",
+    "split": "held-out"
+  },
+  {
+    "id": "g076",
+    "name": "Wendside Residents' Association",
+    "split": "held-out"
+  },
+  {
+    "id": "g077",
+    "name": "Lantern Street Parish",
+    "split": "held-out"
+  },
+  {
+    "id": "g078",
+    "name": "Wendside Youth Work Team",
+    "split": "held-out"
+  },
+  {
+    "id": "g079",
+    "name": "Wend River Users",
+    "split": "held-out"
+  },
+  {
+    "id": "g080",
+    "name": "Wend Valley Animal Network",
+    "split": "held-out"
+  },
+  {
+    "id": "g081",
+    "name": "Tollby Food Network",
+    "split": "held-out"
+  },
+  {
+    "id": "g082",
+    "name": "Tollby Events Committee",
+    "split": "held-out"
+  },
+  {
+    "id": "g083",
+    "name": "Tollby Civic Society",
+    "split": "held-out"
+  },
+  {
+    "id": "g084",
+    "name": "Wend Valley Small Landlords",
+    "split": "held-out"
+  },
+  {
+    "id": "g085",
+    "name": "Tollby Housing Action",
+    "split": "held-out"
+  },
+  {
+    "id": "g086",
+    "name": "Tollby Ratepayers' Voice",
+    "split": "held-out"
+  },
+  {
+    "id": "g087",
+    "name": "Tollby Disabled People's Organisation",
+    "split": "held-out"
+  },
+  {
+    "id": "g088",
+    "name": "Wendside Advice Centre",
+    "split": "held-out"
+  },
+  {
+    "id": "g089",
+    "name": "Tollby Disability Trust",
+    "split": "held-out"
+  },
+  {
+    "id": "g090",
+    "name": "Wend Valley Rail and Bus Users",
+    "split": "held-out"
+  },
+  {
+    "id": "g091",
+    "name": "Wend Valley Prison Reform Group",
+    "split": "held-out"
+  },
+  {
+    "id": "g092",
+    "name": "Justice for Victims Tollby",
+    "split": "held-out"
+  },
+  {
+    "id": "g093",
+    "name": "Tollby Skaters",
+    "split": "held-out"
+  },
+  {
+    "id": "g094",
+    "name": "Tollby Shoppers' Association",
+    "split": "held-out"
+  },
+  {
+    "id": "g095",
+    "name": "Tollby Over-Sixties Forum",
+    "split": "held-out"
+  },
+  {
+    "id": "g096",
+    "name": "Tollby Heritage Society",
+    "split": "held-out"
+  },
+  {
+    "id": "g097",
+    "name": "Tollby Sanctuary Network",
+    "split": "held-out"
+  },
+  {
+    "id": "g098",
+    "name": "Wend Valley History Workshop",
+    "split": "held-out"
+  },
+  {
+    "id": "g099",
+    "name": "Wend Valley Co-operative Network",
+    "split": "held-out"
+  },
+  {
+    "id": "g100",
+    "name": "Wend Valley Employers' Group",
+    "split": "held-out"
+  },
+  {
+    "id": "g101",
+    "name": "Wend Valley Health Forum",
+    "split": "held-out"
+  },
+  {
+    "id": "g102",
+    "name": "Tollby Patriots' Network",
+    "split": "held-out"
+  },
+  {
+    "id": "g103",
+    "name": "Wend Valley Free Collective",
+    "split": "held-out"
+  },
+  {
+    "id": "g104",
+    "name": "Wend Valley Way of Life",
+    "split": "held-out"
+  },
+  {
+    "id": "g105",
+    "name": "Friends of Tollby Library",
+    "split": "held-out"
+  }
+]

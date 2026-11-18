@@ -1,0 +1,634 @@
+[
+  {
+    "id": "r01",
+    "split": "tune",
+    "community": "a tenants' association on the invented Fennick estate",
+    "documents": [
+      {
+        "title": "What we stand for",
+        "text": "We are the tenants of the Fennick estate, and we look after each other. Nobody on these landings should face a broken boiler alone in January.\n\nWe want the old laundry block turned back into a reading room, with long tables and a kettle. Kids need somewhere quiet to do homework that isn't a stairwell.\n\nRents should rise no faster than wages. When the management company sends a letter, we read it together before anyone signs anything."
+      },
+      {
+        "title": "Meeting rules",
+        "text": "Meetings start at seven and end by half eight. One person speaks at a time, and the chair keeps a list. Biscuits are a shared responsibility."
+      },
+      {
+        "title": "Repairs pledge",
+        "text": "If a repair has been reported twice and ignored, the whole committee writes about it. We expect the housing board to answer in writing within a month. A damp flat is a health problem, not a lifestyle choice."
+      }
+    ]
+  },
+  {
+    "id": "r02",
+    "split": "tune",
+    "community": "a wildlife protection campaign in an invented valley",
+    "documents": [
+      {
+        "title": "Our aims",
+        "text": "We will end the deer season in the Ashcombe valley within five years. Animals are not targets, and a forest is not a shooting gallery.\n\nWe are not against the people who live here. Many of our volunteers grew up on farms, and we know winter is hard on everyone. We believe the land should be shared with the creatures who were here first.\n\nDraining the wet meadows has done more harm to wildlife than anything else in our lifetime. Where deer numbers are too high, we push for fertility control and for bringing back natural predators, not rifles."
+      },
+      {
+        "title": "Volunteer code",
+        "text": "Be polite at the gate. Never trespass, never film people without asking, and never post anyone's face online. We win by persuading, not by shaming."
+      }
+    ]
+  },
+  {
+    "id": "r03",
+    "split": "tune",
+    "community": "a rural hunting and shooting club",
+    "documents": [
+      {
+        "title": "Club charter",
+        "text": "The Ashcombe Field Club exists so that hunting stays safe, legal and respected. We teach every new member to handle a rifle before they ever carry one into the woods.\n\nWe take only what we will eat or give away. The deer cull keeps the herd healthy and the young trees standing, and we are proud of that work.\n\nLandowners trust us because we close gates, pick up our cartridges and keep our dogs in hand."
+      },
+      {
+        "title": "Youth day",
+        "text": "Once a year we take teenagers out to learn tracking, knots and first aid. Nobody under sixteen fires a shot."
+      },
+      {
+        "title": "Note from the secretary",
+        "text": "Subs are due by the end of March. Yes, the kettle in the hut is fixed."
+      }
+    ]
+  },
+  {
+    "id": "r04",
+    "split": "tune",
+    "community": "a recovery fellowship for people who used to drink",
+    "documents": [
+      {
+        "title": "Who we are",
+        "text": "We are people who used to drink, meeting every Tuesday in the basement of a borrowed hall. Nobody here is a counsellor and nobody here is in charge.\n\nWhat is said in the room stays in the room. We use first names only, and we never ask where someone works.\n\nNewcomers are the most important people at any meeting. If you are not sure you belong, sit at the back and just listen."
+      },
+      {
+        "title": "Coffee rota",
+        "text": "Whoever arrives first puts the urn on. Decaf is in the blue tin."
+      },
+      {
+        "title": "On money",
+        "text": "We pay our own way through what goes in the basket. We don't take money from outside, however kindly it is offered."
+      }
+    ]
+  },
+  {
+    "id": "r05",
+    "split": "tune",
+    "community": "a fan community for an invented fantasy book series",
+    "documents": [
+      {
+        "title": "Server rules",
+        "text": "Spoilers go in the spoiler channel, tagged with the book number. Be kind about other people's favourite characters, even the wrong ones.\n\nFan art is welcome; credit the artist every time. Nobody owes anyone their real name, age or location.\n\nMods are volunteers. If you have a problem with a decision, message the mod team, not the whole server."
+      },
+      {
+        "title": "Why we're here",
+        "text": "We love a story about strangers who end up trusting each other. We'd like this server to be a little like that."
+      },
+      {
+        "title": "Charity stream",
+        "text": "Every winter we read the first book aloud for twelve hours and raise money for a children's hospital ward. Last year we raised enough for two reading chairs."
+      }
+    ]
+  },
+  {
+    "id": "r06",
+    "split": "tune",
+    "community": "a small-business traders' association on an invented high street",
+    "documents": [
+      {
+        "title": "Our purpose",
+        "text": "The Kettle Lane Traders' Association speaks for the forty-odd shops, cafes and workshops between the bridge and the market cross. We are small, we are local, and most of us open the shutters ourselves.\n\nWe want parking that lets people pop in for ten minutes without a fine. A high street dies when nobody can stop.\n\nWe back apprenticeships. Every member who can take on a young person for a year should, and we will help with the paperwork."
+      },
+      {
+        "title": "Statement on the ring road",
+        "text": "We welcome the new ring road; it will take the lorries off our high street. Deliveries will still need a loading bay, and we will keep pressing for one."
+      },
+      {
+        "title": "Shop local week",
+        "text": "For one week in October, every member offers something small: a free coffee, a discount, a demonstration. Spend a fiver on the lane and it stays on the lane."
+      }
+    ]
+  },
+  {
+    "id": "r07",
+    "split": "tune",
+    "community": "a small evangelical congregation in a converted warehouse",
+    "documents": [
+      {
+        "title": "What we believe",
+        "text": "We are a small congregation that meets in a converted warehouse on the east side. We believe every person is made with dignity and loved without condition.\n\nWe are warriors against the devil, and we do not pretend evil is only a metaphor. Prayer is our first resort, not our last.\n\nWe feed whoever comes to the door on Saturday mornings, and we ask nobody about their faith before they eat."
+      },
+      {
+        "title": "Sunday notice",
+        "text": "Service at half ten, children's church in the side room. The car park floods when it rains, so leave space by the drain."
+      },
+      {
+        "title": "On marriage",
+        "text": "We hold that marriage is a lifelong covenant between a man and a woman. We will teach that plainly and treat everyone who disagrees with courtesy."
+      }
+    ]
+  },
+  {
+    "id": "r08",
+    "split": "tune",
+    "community": "a secular humanist society in an invented town",
+    "documents": [
+      {
+        "title": "Aims",
+        "text": "We are a society for people who live without religion and want to live well anyway. We meet monthly for talks, walks and arguments.\n\nWe think public institutions should belong equally to people of every faith and none. Schools, hospitals and councils should not favour any religion.\n\nWe celebrate weddings, namings and funerals with our own ceremonies, written by the families themselves."
+      },
+      {
+        "title": "Volunteering",
+        "text": "Members run a weekly homework club and help at the food bank on Saturdays. Doing good does not require a reason from above."
+      }
+    ]
+  },
+  {
+    "id": "r09",
+    "split": "tune",
+    "community": "a union branch of home care workers in an invented borough",
+    "documents": [
+      {
+        "title": "Branch aims",
+        "text": "We are home care workers, mostly women, mostly on our own in other people's houses for most of the day. We want paid travel time between visits, because driving from one client to the next is work.\n\nFifteen-minute visits are not care. Nobody can help an old man wash, eat and take his tablets in a quarter of an hour.\n\nWe will organise every agency in the borough, union or not, and we will not cross a picket line."
+      },
+      {
+        "title": "Branch meeting",
+        "text": "Second Wednesday, upstairs at the community centre. Childcare provided if you tell Rhona by Monday."
+      },
+      {
+        "title": "Short statement",
+        "text": "If one of us is mistreated, all of us answer."
+      }
+    ]
+  },
+  {
+    "id": "r10",
+    "split": "tune",
+    "community": "an extended family's shared house rules",
+    "documents": [
+      {
+        "title": "Family charter",
+        "text": "Sunday lunch is at Gran's, and phones go in the fruit bowl. If you can't come, say so by Friday so she doesn't cook for twenty.\n\nWe don't do politics at the table. You can believe what you like, but the gravy is neutral ground.\n\nEveryone takes a turn visiting Grandad in the home, even the teenagers. Especially the teenagers."
+      },
+      {
+        "title": "Money",
+        "text": "Nobody lends money inside the family without writing it down. It's not about trust, it's about Christmas."
+      }
+    ]
+  },
+  {
+    "id": "r11",
+    "split": "tune",
+    "community": "a women's amateur rugby club",
+    "documents": [
+      {
+        "title": "About the Herons",
+        "text": "The Herons play rugby for the joy of it. Any woman over eighteen can join, whatever her size, speed or experience.\n\nWe look after each other on and off the pitch. If someone is hurt, the game stops, and nobody is shamed for going off.\n\nWe raise our own money, we wash our own kit, and we would like the council to fix the floodlights."
+      },
+      {
+        "title": "Selection",
+        "text": "Selection is posted on Thursday. If you're not picked, you're still part of the team and still expected at the social."
+      }
+    ]
+  },
+  {
+    "id": "r12",
+    "split": "tune",
+    "community": "a neighbourhood mutual aid network",
+    "documents": [
+      {
+        "title": "About us",
+        "text": "Copse Row Mutual Aid started in a bad winter with a group chat and a borrowed van. We are neighbours helping neighbours, not a charity, and nobody has to prove they deserve help.\n\nWe do shopping runs, prescription pickups and lifts to appointments. If you can give an hour a week, you're one of us.\n\nWe keep as little information about people as we can. A first name and a door number is enough."
+      },
+      {
+        "title": "Asks this week",
+        "text": "We need two drivers for Thursday and someone who can fix a washing machine. Tins of soup are always welcome."
+      },
+      {
+        "title": "Why",
+        "text": "We help each other because tomorrow it might be us."
+      }
+    ]
+  },
+  {
+    "id": "r13",
+    "split": "tune",
+    "community": "a rural conservative association in an invented county",
+    "documents": [
+      {
+        "title": "Our principles",
+        "text": "We believe decisions are best made close to home, by the people who live with them. A parish council knows its lanes better than any ministry.\n\nFamilies, not governments, raise children. We will oppose any scheme that lets officials overrule parents on how their children are brought up.\n\nLow taxes and balanced books are a moral matter: money spent today is borrowed from our grandchildren.\n\nWe honour the farmers, the soldiers and the shopkeepers who built this county."
+      },
+      {
+        "title": "On the village school",
+        "text": "The school at Hollin Cross must not close. Bussing five-year-olds twelve miles is not progress."
+      }
+    ]
+  },
+  {
+    "id": "r14",
+    "split": "tune",
+    "community": "a climate direct-action group in an invented county",
+    "documents": [
+      {
+        "title": "Who we are",
+        "text": "We are ordinary people frightened about the climate and tired of being polite about it. We want our county off coal, oil and gas within ten years.\n\nWe take nonviolent direct action. We block roads only when every other route has failed, and we always let ambulances through.\n\nWe will not shame people who drive to work. The problem is the system that gives them no other way."
+      },
+      {
+        "title": "What to bring",
+        "text": "Bring a flask, warm socks and a charged phone. Write the legal support number on your arm in marker."
+      }
+    ]
+  },
+  {
+    "id": "r15",
+    "split": "tune",
+    "community": "a knitting and crochet circle in a community hall",
+    "documents": [
+      {
+        "title": "About us",
+        "text": "We knit, crochet and gossip in the back room of the Brindlewood Institute every Thursday. Beginners are taught for free, and nobody laughs at a dropped stitch.\n\nTwice a year we make blankets for the night shelter. Any colour, any size, as long as it's warm.\n\nWe're not a sewing circle; we are a coven of yarn. You have been warned."
+      },
+      {
+        "title": "Supplies",
+        "text": "Donated wool goes in the green box. Please don't donate anything that smells of cigarettes."
+      }
+    ]
+  },
+  {
+    "id": "r16",
+    "split": "tune",
+    "community": "a parents' bike-to-school group",
+    "documents": [
+      {
+        "title": "The bike bus",
+        "text": "Every Wednesday we ride to school together, forty children and a dozen parents, ringing our bells down Copse Row. There is safety in numbers.\n\nWe want a twenty limit outside every school in the borough. Cars are welcome; speeding past children is not.\n\nWe are not anti-car. Half of us drive to work after drop-off."
+      },
+      {
+        "title": "Route notes",
+        "text": "Meet at the corner shop at eight. Helmets are encouraged but nobody is turned away without one."
+      }
+    ]
+  },
+  {
+    "id": "r17",
+    "split": "tune",
+    "community": "the nursing team on a ward of an invented hospital",
+    "documents": [
+      {
+        "title": "How Ward 6 works",
+        "text": "On Ward 6 nobody eats lunch alone at their desk. Breaks are taken, not earned.\n\nWe hand over at the bedside, so patients hear what is said about them. If you don't understand a plan, ask, however senior the person who wrote it.\n\nMistakes are reported without blame. We would rather hear about a near miss than read about a disaster."
+      },
+      {
+        "title": "Rota requests",
+        "text": "Put rota requests in the book by the tenth. Swaps are fine if both names are on them."
+      }
+    ]
+  },
+  {
+    "id": "r18",
+    "split": "tune",
+    "community": "a chess club that meets in a pub",
+    "documents": [
+      {
+        "title": "About the club",
+        "text": "We play on Thursday nights in the upstairs room of the Lamb, from seven until the landlord coughs meaningfully. All ages, all ratings, and no one is too good to play a beginner.\n\nWe are short of boards and clocks. If you have an old set, we'll give it a good home.\n\nJuniors play free. Adults pay two pounds a night, which mostly goes on new pieces because people keep taking the knights home. Our oldest member still plays the same pawn opening he learned as a boy."
+      },
+      {
+        "title": "Etiquette",
+        "text": "Shake hands before and after. Touch a piece, move it. Never explain to your opponent why they lost unless they ask."
+      }
+    ]
+  },
+  {
+    "id": "r19",
+    "split": "tune",
+    "community": "a pro-life pregnancy support group in an invented town",
+    "documents": [
+      {
+        "title": "What we believe",
+        "text": "We believe every human life is worth protecting, from conception to natural death. We say that gently and we mean it fiercely.\n\nNo woman should feel she has no choice because she has no money. We give out cots, prams, nappies and, when we can, rent money.\n\nWe want employers to give new mothers proper paid leave and a job to come back to."
+      },
+      {
+        "title": "For volunteers",
+        "text": "Volunteers never pressure anyone. We listen first, and we help whatever a woman decides."
+      }
+    ]
+  },
+  {
+    "id": "r20",
+    "split": "tune",
+    "community": "a football supporters' trust for an invented club",
+    "documents": [
+      {
+        "title": "What the trust wants",
+        "text": "The supporters' trust owns a small share of the club and wants a bigger say. Clubs belong to their towns, not to whoever owns them this year.\n\nTicket prices for under-sixteens should never be more than a fiver. Away fans are guests and should be treated as guests.\n\nWe will never boo our own players. Criticise the board, not the lad in the number nine shirt.\n\nThe youth pitch needs new goalposts and nets, and the trust will pay for half."
+      },
+      {
+        "title": "Matchday",
+        "text": "Coaches leave the Lamb at eleven. No glass on the coach, and the driver's word is final."
+      }
+    ]
+  },
+  {
+    "id": "r21",
+    "split": "tune",
+    "community": "a volunteer group welcoming newcomers and refugees to an invented town",
+    "documents": [
+      {
+        "title": "What we do",
+        "text": "We meet newcomers to Harrow Creek at the station and help them find their feet: a bus pass, a doctor, a school place, a cup of tea.\n\nEveryone who lives here is a neighbour, whatever papers they carry. We teach English on Monday evenings and learn the odd word back.\n\nWe do not keep lists of the people we help, and we never will."
+      },
+      {
+        "title": "Shared dinner",
+        "text": "Last Friday of the month is shared dinner. Bring a dish from home, wherever home is."
+      }
+    ]
+  },
+  {
+    "id": "r22",
+    "split": "tune",
+    "community": "a veterans' association in an invented valley",
+    "documents": [
+      {
+        "title": "Who we are",
+        "text": "The Old Comrades are men and women who served, and the families who waited for them. We meet on the first Saturday of the month in the hut behind the bowls green.\n\nNo one who served should sleep rough. We find beds, fix benefits claims, and sit with the lonely.\n\nWe remember the dead of every side every November, quietly and without speeches."
+      },
+      {
+        "title": "Parade",
+        "text": "Medals on the right breast if they're not your own. Line up at the war memorial by ten forty."
+      }
+    ]
+  },
+  {
+    "id": "r23",
+    "split": "tune",
+    "community": "a social group for LGBT young people",
+    "documents": [
+      {
+        "title": "About the group",
+        "text": "We are a social group for lesbian, gay, bi, trans and questioning young people aged fourteen to twenty-one. We meet on Fridays, we eat too much pizza, and sometimes we talk about serious things.\n\nNobody is outed here. We do not take photos at meetings, and we never share who comes.\n\nWe want every school in the borough to have a teacher a young person can talk to without fear."
+      },
+      {
+        "title": "For parents",
+        "text": "Parents are welcome at the open evening in June. Your child decides whether you come to anything else."
+      }
+    ]
+  },
+  {
+    "id": "r24",
+    "split": "tune",
+    "community": "a collective of app delivery riders",
+    "documents": [
+      {
+        "title": "Who we are",
+        "text": "We ride for the apps in all weathers, and we are tired of being called self-employed by companies that control every minute. We want a minimum per hour, not per drop.\n\nRiders look out for each other. If someone's bike is stolen or they come off in the rain, the group chat lights up and somebody comes.\n\nRestaurants: please let us use your toilet. It is not much to ask."
+      },
+      {
+        "title": "Safety",
+        "text": "Lights on after dusk, every time. If a customer threatens you, leave the order and go."
+      }
+    ]
+  },
+  {
+    "id": "r25",
+    "split": "tune",
+    "community": "a small mosque community in a converted shop",
+    "documents": [
+      {
+        "title": "Welcome",
+        "text": "Our mosque is a converted shop with a green door and a very small car park. Everyone is welcome to visit, and we will happily answer questions over tea.\n\nWe run a food parcel scheme every Friday for anyone in need, Muslim or not. In Ramadan the evening meal is open to all neighbours.\n\nWe ask visitors to dress modestly and take their shoes off at the door. Women and men pray in separate rooms."
+      },
+      {
+        "title": "Parking",
+        "text": "Please do not park across the neighbours' driveways at Friday prayers. They have been very patient."
+      }
+    ]
+  },
+  {
+    "id": "r26",
+    "split": "tune",
+    "community": "a group campaigning for more homes in an invented town",
+    "documents": [
+      {
+        "title": "Why we campaign",
+        "text": "Brindlewood needs homes, and it needs them on the edge of town, in the gaps, above the shops and anywhere else they'll fit. Our children cannot afford to live where they grew up.\n\nWe support the Fennick fields scheme, all four hundred homes of it. Fields are pleasant; families are more important.\n\nWe want planning decisions made in months, not years."
+      },
+      {
+        "title": "Meetups",
+        "text": "We meet monthly in the back of the Lamb. Bring a planning application you love or hate."
+      }
+    ]
+  },
+  {
+    "id": "r27",
+    "split": "tune",
+    "community": "an amateur astronomy society",
+    "documents": [
+      {
+        "title": "About us",
+        "text": "The Hollin Cross Astronomers meet on clear Fridays at the top field, and on cloudy ones in the pub, which is most Fridays. Anyone can look through the big telescope.\n\nWe campaign for darker skies. Street lights should point down, not up, and nobody needs a floodlit car park at three in the morning.\n\nWe are mostly retired, partly obsessed and entirely willing to explain the moons of Jupiter to anyone who asks. Last year one of us found a new variable star."
+      },
+      {
+        "title": "On the field",
+        "text": "Red torches only on the field. White light ruins everyone's night vision for twenty minutes."
+      }
+    ]
+  },
+  {
+    "id": "r28",
+    "split": "tune",
+    "community": "a cooperative of small farms selling at an invented market",
+    "documents": [
+      {
+        "title": "Who we are",
+        "text": "Twelve small farms within twenty miles of Hollin Cross sell together every Saturday under one awning. We split the stall fee and the takings fairly.\n\nWe grow food to be eaten, not to look perfect. A crooked carrot tastes exactly like a straight one.\n\nWe do not use the big supermarkets' contracts, and we never will. We would rather sell less to people we know."
+      },
+      {
+        "title": "Prices",
+        "text": "Prices are on the chalkboard. If you are short this week, pay next week; we know where you live."
+      }
+    ]
+  },
+  {
+    "id": "r29",
+    "split": "held-out",
+    "community": "a village society on an invented hillside opposing a quarry extension",
+    "documents": [
+      {
+        "title": "Our purpose",
+        "text": "The Marrow Edge Society exists to protect the village, its footpaths and the hill above it. We are not against work or industry, but the quarry has taken enough.\n\nBlasting cracks our walls and fills the school playground with dust. The hill is solid rock, and it should stay that way. We want the extension refused and the old workings flooded as a nature reserve.\n\nWe hold our meetings in the chapel schoolroom and minute every decision."
+      },
+      {
+        "title": "Sunday walk",
+        "text": "Sunday walk along the ridge path, three hours, stout boots. Dogs on leads past the sheep."
+      }
+    ]
+  },
+  {
+    "id": "r30",
+    "split": "held-out",
+    "community": "an online video-game guild of adults",
+    "documents": [
+      {
+        "title": "Guild charter",
+        "text": "We are a guild of grown-ups who play after the kids are in bed. Raids start at nine and end at eleven, because some of us have work in the morning.\n\nNo toxicity in voice chat. Losing is fine; blaming the healer is not.\n\nLoot is shared by roll, and nobody gets kicked for being bad at the game. Everyone was new once."
+      },
+      {
+        "title": "Recruitment",
+        "text": "We're recruiting tanks and healers. Message an officer for an invite."
+      }
+    ]
+  },
+  {
+    "id": "r31",
+    "split": "held-out",
+    "community": "an angling club on an invented river",
+    "documents": [
+      {
+        "title": "About the Wend Anglers",
+        "text": "The Wend Anglers have fished this stretch since before anyone can remember. We return every fish over the size limit we don't intend to eat, and most of us return them all.\n\nThe river is sick. Sewage overflows after every heavy rain, and the trout are vanishing.\n\nWe want the water company fined until it is cheaper to fix the pipes than to pay."
+      },
+      {
+        "title": "Work party",
+        "text": "Bank clearing party on the second Sunday. Bring loppers, gloves and a flask."
+      }
+    ]
+  },
+  {
+    "id": "r32",
+    "split": "held-out",
+    "community": "a left-wing housing campaign in an invented town",
+    "documents": [
+      {
+        "title": "Our demands",
+        "text": "Housing is a human right, not an investment. We campaign for council homes, built in numbers, owned by the public and let at rents people can pay.\n\nEmpty homes should be brought back into use within a year, by compulsory purchase if necessary. A house should be somewhere to live, not a chip in someone's portfolio.\n\nWe support tenants who withhold rent when landlords refuse to make homes safe."
+      },
+      {
+        "title": "Saturday stall",
+        "text": "Saturday stall outside the market hall, ten till two. Leaflets, petitions and very strong opinions."
+      }
+    ]
+  },
+  {
+    "id": "r33",
+    "split": "held-out",
+    "community": "a disabled people's organisation in an invented borough",
+    "documents": [
+      {
+        "title": "Who we are",
+        "text": "Decisions about disabled people get made with disabled people in the room, or not at all. We are disabled people running our own organisation, not a charity run on our behalf.\n\nEvery bus, shop and polling station in the borough should be step-free. A ramp is cheaper than a lawsuit.\n\nWe support each other through benefit assessments. No one should face a stranger's form-filling interrogation alone."
+      },
+      {
+        "title": "Access",
+        "text": "Our meetings are in a ground-floor room with a hearing loop. Tell us what else you need and we'll sort it."
+      }
+    ]
+  },
+  {
+    "id": "r34",
+    "split": "held-out",
+    "community": "a church social action group in an invented parish",
+    "documents": [
+      {
+        "title": "Our work",
+        "text": "The Lantern Street parish social action group believes faith shows itself in what you do on a wet Tuesday. We visit the prison, run a debt advice table and cook for the night shelter.\n\nWe oppose the death penalty everywhere and always. Nobody is beyond redemption.\n\nWe will speak up for refugees, for the unborn and for the dying, whether or not it makes us popular."
+      },
+      {
+        "title": "Debt table",
+        "text": "The debt advice table runs after the eleven o'clock Mass. Bring your letters; we will read them with you."
+      }
+    ]
+  },
+  {
+    "id": "r35",
+    "split": "held-out",
+    "community": "a group of young skateboarders asking for a skate park",
+    "documents": [
+      {
+        "title": "What we want",
+        "text": "We skate. We want a proper concrete park instead of being moved on from every car park and bench in Tollby.\n\nWe'll help build it, raise money for it and keep it clean. Skaters are not vandals; we're just young and loud."
+      },
+      {
+        "title": "Session",
+        "text": "Session at the old bus depot Saturday, bring pads, no glass."
+      }
+    ]
+  },
+  {
+    "id": "r36",
+    "split": "held-out",
+    "community": "an over-sixties forum in an invented town",
+    "documents": [
+      {
+        "title": "What we want",
+        "text": "We are the over-sixties of Tollby, and we are not finished yet. We want a bus that runs after six, a bench every few hundred yards on the hill, and public toilets that are actually open.\n\nWe do not want everything moved online. Some of us bank by post, book by phone and like to see a face.\n\nLoneliness kills as surely as smoking. Knock on a neighbour's door this week."
+      },
+      {
+        "title": "Lunch club",
+        "text": "Lunch club is Wednesday at noon. Two courses, three pounds, pudding non-negotiable."
+      }
+    ]
+  },
+  {
+    "id": "r37",
+    "split": "held-out",
+    "community": "a patriotic heritage society in an invented market town",
+    "documents": [
+      {
+        "title": "Who we are",
+        "text": "We love this country and we are not embarrassed to say so. We fly the flag on the town hall on national days. We teach children the history of the place they live.\n\nOur traditions matter: the May fair, the bell ringing, the Boxing Day hunt meet. They are not museum pieces; they are how a town remembers itself.\n\nWe want proper control of the border and a fair, firm immigration system."
+      },
+      {
+        "title": "May fair",
+        "text": "Maypole practice for the children on Tuesday evenings. Ribbons provided."
+      }
+    ]
+  },
+  {
+    "id": "r38",
+    "split": "held-out",
+    "community": "a primary school parents' association",
+    "documents": [
+      {
+        "title": "What we do",
+        "text": "The Wendside Primary parents' association raises money for the things the budget won't cover: coaches for trips, instruments, a new reading corner.\n\nWe want every child to go on every trip, whether their family can pay or not. No child should be the one left behind in the classroom.\n\nPhones are banned in school, and we back the head on that."
+      },
+      {
+        "title": "Uniform swap",
+        "text": "Uniform swap in the hall on Friday. Wash it, bring it, take what fits."
+      }
+    ]
+  },
+  {
+    "id": "r39",
+    "split": "held-out",
+    "community": "a farm animal sanctuary run by vegans",
+    "documents": [
+      {
+        "title": "About the sanctuary",
+        "text": "Copper Hill Sanctuary is home to sixty animals rescued from farms, markets and roadsides. Every one of them will live out its life here.\n\nWe are vegan, and we believe animals are not ours to eat, wear or use. We say that without sneering at anyone; most of us ate meat once.\n\nVisits are on the first Sunday of the month. Please don't feed the goats, whatever they tell you."
+      },
+      {
+        "title": "Wishlist",
+        "text": "We need straw, fencing wire and someone who knows about pig feet."
+      }
+    ]
+  },
+  {
+    "id": "r40",
+    "split": "held-out",
+    "community": "a worker-owned bakery cooperative",
+    "documents": [
+      {
+        "title": "How we work",
+        "text": "We are a bakery owned by the people who bake in it. Each worker has one share and one vote, whatever their job.\n\nWe start at four in the morning so the town has bread by seven. Nobody works more than five early shifts in a row.\n\nUnsold bread goes to the shelter at closing time, every day."
+      },
+      {
+        "title": "Pay",
+        "text": "Everyone earns the same hourly rate. Overtime is shared out before anyone is hired."
+      }
+    ]
+  }
+]
