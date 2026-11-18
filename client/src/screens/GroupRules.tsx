@@ -10,8 +10,9 @@ import { BackLink, PageHeader } from '../app/ui';
 import { addressOf, doorLinkOf } from '../door/page';
 import { can, isSuspended } from '../engine/capabilities';
 import type { GroupState } from '../engine/fold';
+import { listingInEffect } from '../engine/frontDoor';
 import { displayName } from '../engine/names';
-import { isOff, OPT_INS, type OptIn, openRulesProposal } from '../engine/optIns';
+import { isOff, listedUnder, OPT_INS, type OptIn, openRulesProposal } from '../engine/optIns';
 import { mayTurnOffNow } from '../engine/stewards';
 
 /** Props for {@link GroupRules}. */
@@ -129,6 +130,40 @@ function DoorLink({ state, origin, copyText }: GroupRulesProps) {
   );
 }
 
+/** "Listed on the public shelf…" while the front door is listed in effect (#485; ADR-0081). */
+function Listed({ state }: { readonly state: GroupState }) {
+  if (listingInEffect(state) === null) return null;
+  return <p className="caption">{messages.optIns.listing.listed}</p>;
+}
+
+/**
+ * For someone who may propose, while the front door stands open and no
+ * Proposal on it is open, a link to propose listing it or taking it off the
+ * shelf (#485). It never asks a group to list: it is one quiet link here, and
+ * nowhere else.
+ */
+function ListingLink({ state, me }: GroupRulesProps) {
+  const { listing } = messages.optIns;
+  const standing = state.rules.optIns.frontDoor;
+  const offer = can(state, me, 'propose') && openRulesProposal(state, 'frontDoor') === undefined;
+  if (standing === false || !offer) return null;
+  const groupId = state.group ?? '';
+  const route = {
+    name: 'optIn',
+    groupId,
+    optIn: 'frontDoor',
+    narrow: false,
+    listing: true,
+  } as const;
+  return (
+    <div className="row opt-in-actions">
+      <Link className="button button-secondary" href={routeHref(route)}>
+        {listedUnder(standing) === null ? listing.proposeList : listing.proposeUnlist}
+      </Link>
+    </div>
+  );
+}
+
 /**
  * Why the front door is closed, once a member's leave or removal closed it
  * (#288), and that a new Proposal to open it reopens it: until a door opens
@@ -151,8 +186,10 @@ function OptInCard(props: CardProps) {
       <Standing state={state} standing={optInState(state, optIn)} />
       {optIn === 'frontDoor' ? <ClosedByLeave state={state} /> : null}
       {optIn === 'frontDoor' ? <DoorLink {...props} /> : null}
+      {optIn === 'frontDoor' ? <Listed state={state} /> : null}
       <p className="opt-in-warning">{messages.optIns.warnings[optIn]}</p>
       <Actions state={state} me={me} optIn={optIn} />
+      {optIn === 'frontDoor' ? <ListingLink state={state} me={me} /> : null}
     </section>
   );
 }
@@ -163,7 +200,9 @@ function OptInCard(props: CardProps) {
  * warning of what the outside platform would hold, and a link to propose a
  * change. While the front door is open, its card holds its link to copy and
  * says whether its page shows the count (#121); once a member's leave or
- * removal has closed it, why, and how to reopen it (#288). Nothing here changes an opt-in: only a passed Proposal does, and a
+ * removal has closed it, why, and how to reopen it (#288); and under it,
+ * whether it is listed, with a link to propose listing or unlisting it
+ * (#485). Nothing here changes an opt-in: only a passed Proposal does, and a
  * steward's Turn off now goes through its own off-Proposal. The other rules
  * were set at founding and don't change.
  */

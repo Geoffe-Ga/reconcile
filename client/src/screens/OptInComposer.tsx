@@ -1,6 +1,7 @@
 import { type SyntheticEvent, useRef, useState } from 'react';
 import { Button, CheckboxButton, CheckboxField, Form, Text } from 'react-aria-components';
 
+import { CovenantText } from '../app/Covenant';
 import { formatAverageLine, formatZeroLine } from '../app/format';
 import { holdPresses } from '../app/holdPresses';
 import { messages } from '../app/messages';
@@ -13,8 +14,10 @@ import { can, isSuspended } from '../engine/capabilities';
 import { type GroupState, TITLE_MAX, WHY_MAX } from '../engine/fold';
 import {
   type FrontDoor,
+  isFrontDoor,
   isOff,
   isWebhook,
+  listedUnder,
   OFF,
   type OptIn,
   type OptInValue,
@@ -23,6 +26,7 @@ import {
 import { type ProposalClass, targetClass } from '../engine/rules';
 import { mayTurnOffNow } from '../engine/stewards';
 import { nfcLength } from '../engine/text';
+import { COVENANT_HASH } from '../shelf/covenant';
 
 /** How sending went: `proposed` moves on to the Proposal; the others stay on the form. */
 export type OptInOutcome = 'proposed' | 'too-large' | 'failed';
@@ -37,6 +41,11 @@ export interface OptInComposerProps {
   readonly optIn: OptIn;
   /** True for a steward's Turn off now: the off-Proposal, then a `narrow` beside it. */
   readonly narrow: boolean;
+  /**
+   * True to list the open front door, or to unlist a listed one (#485): a
+   * change to its listing alone, from Group rules.
+   */
+  readonly listing?: boolean;
   /** The device clock now, in ms, which the voting time's closing line counts from (#106). */
   readonly now: number;
   /** Queues the rules Proposal (and for Turn off now, the narrowing) from valid entries. */
@@ -75,6 +84,32 @@ function turnsOn(props: Pick<OptInComposerProps, 'state' | 'optIn' | 'narrow'>):
   return !props.narrow && isOff(props.optIn, props.state.rules.optIns[props.optIn]);
 }
 
+/** The front door that stands open, whatever a steward's narrowing holds shut, or null. */
+function standingDoor(state: GroupState): FrontDoor | null {
+  const door = state.rules.optIns.frontDoor;
+  return isFrontDoor(door) ? door : null;
+}
+
+/** `door` listed under the covenant this app carries (#485), or as it is when `listed` is false. */
+function withListing(door: FrontDoor, listed: boolean): FrontDoor {
+  return listed ? { ...door, listed: true, covenant: COVENANT_HASH } : door;
+}
+
+/**
+ * What a listing composer proposes (#485): a listed door unlisted, written as
+ * a door was before #485 so an older build still reads it, or an unlisted
+ * one listed under the covenant this app carries.
+ */
+function listingValue(door: FrontDoor): FrontDoor {
+  const { sign, box, showCount } = door;
+  return withListing({ sign, box, showCount }, door.listed !== true);
+}
+
+/** Whether this composer, a listing composer, lists the door rather than unlisting it. */
+function lists(state: GroupState): boolean {
+  return standingDoor(state)?.listed !== true;
+}
+
 /**
  * The class `targetClass` gives the change, which bounds its voting time
  * (#106): entrenched to turn an opt-in on, ordinary to turn it off. A webhook
@@ -86,9 +121,12 @@ function classOf(state: GroupState, optIn: OptIn, value: OptInValue): ProposalCl
 }
 
 /** The motion this composer proposes, as its ballot will be headed. */
-function motionOf(optIn: OptIn, on: boolean): string {
-  const motion = messages.optIns.motions[optIn];
-  return on ? motion.on : motion.off;
+function motionOf(props: OptInComposerProps): string {
+  const { motions, listing } = messages.optIns;
+  if (props.listing === true)
+    return lists(props.state) ? listing.motions.list : listing.motions.unlist;
+  const motion = motions[props.optIn];
+  return turnsOn(props) ? motion.on : motion.off;
 }
 
 /** Why there's no form here now, or null when there is one. */
@@ -96,6 +134,9 @@ function unavailable(props: OptInComposerProps): string | null {
   const { state, me, optIn, narrow } = props;
   if (!can(state, me, 'propose')) return messages.stewards.notAllowed;
   if (openRulesProposal(state, optIn) !== undefined) return messages.optIns.unavailable;
+  if (props.listing === true && (optIn !== 'frontDoor' || standingDoor(state) === null)) {
+    return messages.optIns.listing.unavailable;
+  }
   return narrow && !mayTurnOffNow(state, me, optIn) ? messages.optIns.nowUnavailable : null;
 }
 
@@ -138,14 +179,20 @@ function useSend(onPropose: OptInComposerProps['onPropose']) {
   return { run, running, failed, refused };
 }
 
+/** Whether the change this composer proposes takes the higher bar: turning on, or listing (#485). */
+function widens(props: OptInComposerProps): boolean {
+  return props.listing === true ? lists(props.state) : turnsOn(props);
+}
+
 /** What goes above the fields: the warning, then the higher bar or Turn off now's line. */
-function Context({ state, optIn, narrow }: Pick<OptInComposerProps, 'state' | 'optIn' | 'narrow'>) {
+function Context(props: OptInComposerProps) {
+  const { state, optIn, narrow } = props;
   const { optIns } = messages;
   const bar = state.rules.bars.entrenched;
   return (
     <div className="stack">
       <p className="opt-in-warning">{optIns.warnings[optIn]}</p>
-      {turnsOn({ state, optIn, narrow }) ? (
+      {widens(props) ? (
         <p className="caption">{optIns.higherBar(formatAverageLine(bar), formatZeroLine(bar))}</p>
       ) : null}
       {narrow ? <p className="opt-in-narrowed">{optIns.nowLine}</p> : null}
@@ -180,22 +227,66 @@ function CountChoice({ value, onChange }: { value: boolean; onChange: (show: boo
 }
 
 /**
- * The form: the webhook when it turns the bot on, a title that starts as the
- * ballot's heading, and a why. Submitting queues one rules Proposal, and for
- * Turn off now a `narrow` after it.
+ * Opening the front door's choice to list it too (#485; ADR-0081), never
+ * ticked for the proposer: a group is never prompted toward listing.
  */
-function OptInForm(props: OptInComposerProps) {
-  const { state, optIn, narrow } = props;
+function ListChoice({ value, onChange }: { value: boolean; onChange: (list: boolean) => void }) {
+  const { listing } = messages.optIns;
+  return (
+    <CheckboxField className="check-option" name="listed" isSelected={value} onChange={onChange}>
+      <CheckboxButton className="checkbox">
+        <span className="checkbox-box" aria-hidden="true" />
+        {listing.choiceLabel}
+      </CheckboxButton>
+      <Text slot="description" className="check-description">
+        {listing.choiceHint}
+      </Text>
+    </CheckboxField>
+  );
+}
+
+/**
+ * The value the form proposes, and the opening's choices (#121, #485): a
+ * listing composer's change to the standing door's listing, else
+ * {@link valueOf} with the door's count and listing as chosen.
+ */
+function useValue(props: OptInComposerProps, webhook: string) {
+  const { state, optIn } = props;
   const on = turnsOn(props);
-  const asksWebhook = on && optIn === 'chatBot';
-  const asksCount = on && optIn === 'frontDoor';
-  const [webhook, setWebhook] = useState('');
   // A new door's secrets, made once on this device when the form opens (#121).
   const [secrets] = useState(() => newFrontDoor(false));
   const [showCount, setShowCount] = useState(false);
-  const [title, setTitle] = useState(motionOf(optIn, on));
+  const [listed, setListed] = useState(false);
+  const standing = standingDoor(state);
+  const opening = withListing({ ...secrets, showCount }, listed);
+  const value =
+    props.listing === true && standing !== null
+      ? listingValue(standing)
+      : valueOf(optIn, on, webhook, opening);
+  const choices =
+    on && optIn === 'frontDoor' ? (
+      <>
+        <CountChoice value={showCount} onChange={setShowCount} />
+        <ListChoice value={listed} onChange={setListed} />
+      </>
+    ) : null;
+  return { value, choices };
+}
+
+/**
+ * The form: the webhook when it turns the bot on, a title that starts as the
+ * ballot's heading, and a why. Submitting queues one rules Proposal, and for
+ * Turn off now a `narrow` after it. A Proposal that lists the door shows the
+ * covenant it accepts (#485).
+ */
+function OptInForm(props: OptInComposerProps) {
+  const { state, optIn, narrow } = props;
+  const asksWebhook = turnsOn(props) && optIn === 'chatBot';
+  const [webhook, setWebhook] = useState('');
+  const [title, setTitle] = useState(motionOf(props));
   const [why, setWhy] = useState('');
-  const value = valueOf(optIn, on, webhook, { ...secrets, showCount });
+  const { value, choices } = useValue(props, webhook);
+  const covenant = listedUnder(value);
   const cls = classOf(state, optIn, value);
   const [days, setDays] = useState<number | null>(null);
   const window = days ?? state.rules.windows[cls].default;
@@ -221,7 +312,8 @@ function OptInForm(props: OptInComposerProps) {
           onChange={setWebhook}
         />
       ) : null}
-      {asksCount ? <CountChoice value={showCount} onChange={setShowCount} /> : null}
+      {choices}
+      {covenant === null ? null : <CovenantText hash={covenant} level={2} />}
       <Field
         name="title"
         label={composer.titleLabel}
@@ -271,7 +363,9 @@ function OptInForm(props: OptInComposerProps) {
  * with the opt-in's warning first. Turning the bot on asks for its Discord
  * webhook, checked by the fold's own validator. Opening the front door makes
  * its two secrets on this device and asks whether its page shows the member
- * count (#121). It shows a form only where
+ * count (#121), and whether to list it too (#485). With `listing`, it lists
+ * the open door, or unlists a listed one, by a change to its listing alone.
+ * A Proposal that lists shows the covenant it accepts. It shows a form only where
  * the fold would accept the Proposal, and Turn off now only where the
  * narrowing beside it would hold too; elsewhere it says why.
  */
@@ -280,7 +374,7 @@ export function OptInComposer(props: OptInComposerProps) {
   const reason = unavailable(props);
   if (reason !== null) return <Unavailable state={state} me={me} text={reason} />;
   const { optIns } = messages;
-  const motion = motionOf(optIn, turnsOn(props));
+  const motion = motionOf(props);
   return (
     <main className="shell">
       <BackLink to={{ name: 'rules', groupId: state.group ?? '' }} label={optIns.pageTitle} />
@@ -289,8 +383,8 @@ export function OptInComposer(props: OptInComposerProps) {
         title={narrow ? optIns.nowTitle(motion) : motion}
         pageTitle={optIns.composerPageTitle}
       />
-      <Context state={state} optIn={optIn} narrow={narrow} />
-      <OptInForm key={`${optIn}-${String(narrow)}`} {...props} />
+      <Context {...props} />
+      <OptInForm key={`${optIn}-${String(narrow)}-${String(props.listing === true)}`} {...props} />
     </main>
   );
 }

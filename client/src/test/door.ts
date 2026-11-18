@@ -25,3 +25,12 @@ export const COUNTED: FrontDoor = { ...DOOR, showCount: true };
 
 /** Another door: new keys, the count hidden, as a rotation would make. */
 export const ROTATED: FrontDoor = doorOf(0x33, 0x44);
+
+/** A covenant hash for tests (#485): 32 bytes of 0x5a, no covenant's real hash. */
+export const COVENANT_HASH = secretOf(0x5a);
+
+/** The open door, listed under {@link COVENANT_HASH} (#485; ADR-0081). */
+export const LISTED: FrontDoor = { ...DOOR, listed: true, covenant: COVENANT_HASH };
+
+/** The listed door, accepting another covenant version. */
+export const RENEWED: FrontDoor = { ...LISTED, covenant: secretOf(0x5b) };

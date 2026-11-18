@@ -1314,10 +1314,12 @@ function RulesScreen({ services, groupId }: GroupScreenProps) {
 interface OptInScreenProps extends GroupScreenProps {
   readonly optIn: OptIn;
   readonly narrow: boolean;
+  /** True to list the open front door, or unlist a listed one (#485). */
+  readonly listing: boolean;
 }
 
 /** The opt-in composer (#117); sending a Proposal replaces it with the Proposal's ballot. */
-function OptInScreen({ services, groupId, optIn, narrow }: OptInScreenProps) {
+function OptInScreen({ services, groupId, optIn, narrow, listing }: OptInScreenProps) {
   const deviceNow = useNow(services.now);
   const onPropose = async (values: RulesValues): Promise<OptInOutcome> => {
     const result = await proposeRules(services, groupId, values);
@@ -1334,6 +1336,7 @@ function OptInScreen({ services, groupId, optIn, narrow }: OptInScreenProps) {
           me={me.author}
           optIn={optIn}
           narrow={narrow}
+          listing={listing}
           now={deviceNow}
           onPropose={onPropose}
         />
@@ -1511,6 +1514,7 @@ function FormRouteScreen({ route, services }: { route: FormRoute; services: AppS
           groupId={groupId}
           optIn={route.optIn}
           narrow={route.narrow}
+          listing={route.listing === true}
         />
       );
     case 'dissolve':

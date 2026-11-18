@@ -4,7 +4,8 @@
  *
  * A group has two opt-ins, both off at founding: the Discord chat bot, which
  * posts content-free nudges through a webhook (ADR-0039, step 1), and the
- * front door, a public page where people can ask to join (ADR-0038). Each
+ * front door, a public page where people can ask to join (ADR-0038), which
+ * the group may also list in the public registry (#485; ADR-0081). Each
  * changes only by a rules Proposal, never by a toggle (ADR-0040). Opening one
  * up is entrenched and closing it is ordinary ({@link isWider}), and a
  * steward can close one at once beside their own off-Proposal, until the
@@ -45,18 +46,28 @@ export interface ChatBot {
  * group. `sign` is the Ed25519 secret key the page is signed with, whose
  * public half is the door's address; `box` is the X25519 secret key that
  * opens the applications sealed to the page's `box` (src/crypto/door.ts).
+ *
+ * A door the group voted to list (#485; ADR-0081) also has `listed: true`
+ * and `covenant`, the SHA-256 of the covenant text its voters read, in
+ * unpadded base64url (src/shelf/covenant.ts). An unlisted door is written as
+ * it was before #485, with neither field, so a build from before then still
+ * reads every change that doesn't list (docs/spec/listed-doors.md §3.1, Older
+ * apps). `listed: false` alone reads as the same unlisted door.
  */
 export interface FrontDoor {
   readonly sign: string;
   readonly box: string;
   readonly showCount: boolean;
+  readonly listed?: boolean;
+  readonly covenant?: string;
 }
 
 /**
  * A value for each opt-in: the chat bot is `null` (off) or `{webhook}`, and
  * the front door is `false` (closed) or a {@link FrontDoor}. {@link isWider}
- * compares only whether the door is open and whether it shows a count
- * (ADR-0075 §5), never its keys.
+ * compares only whether the door is open, whether it shows a count
+ * (ADR-0075 §5) and whether it is listed (#485), never its keys or its
+ * covenant's version.
  */
 export interface OptIns {
   readonly chatBot: ChatBot | null;
@@ -114,28 +125,53 @@ function isChatBot(value: unknown): value is ChatBot {
 }
 
 /** 32 bytes in canonical unpadded base64url: 43 characters, with no spare bit set in the last. */
-const SECRET = /^[A-Za-z0-9_-]{43}$/;
+const BYTES_32 = /^[A-Za-z0-9_-]{43}$/;
 
-/** True when `value` spells a 32-byte secret in its one canonical form. */
-function isSecret(value: unknown): value is string {
+/** True when `value` spells 32 bytes, a secret or a SHA-256, in their one canonical form. */
+function is32Bytes(value: unknown): value is string {
   return (
-    typeof value === 'string' && SECRET.test(value) && base64url(fromBase64url(value)) === value
+    typeof value === 'string' && BYTES_32.test(value) && base64url(fromBase64url(value)) === value
   );
 }
 
-/** The fields of a front door, sorted, as `Object.keys` lists them. */
-const DOOR_KEYS = 'box,showCount,sign';
+/**
+ * The fields a front door may have, sorted, as `Object.keys` lists them:
+ * unlisted as before #485, unlisted with `listed: false`, or listed with its
+ * covenant (#485).
+ */
+const DOOR_KEYS = new Set(['box,showCount,sign', 'box,listed,showCount,sign']);
+const LISTED_KEYS = 'box,covenant,listed,showCount,sign';
+
+/** True when a door's `listed` and `covenant` agree: absent or false with no covenant, or true with one. */
+function listingIsValid(keys: string, listed: unknown, covenant: unknown): boolean {
+  if (keys === LISTED_KEYS) return listed === true && is32Bytes(covenant);
+  return DOOR_KEYS.has(keys) && (listed === undefined || listed === false);
+}
 
 /**
- * True for exactly `{sign, box, showCount}`: two canonical 32-byte secrets
- * and a boolean, with no other field, `__proto__` included. Any 32 bytes are
- * a key of each kind, so nothing else needs checking.
+ * True for exactly `{sign, box, showCount}`, with `listed: false` or with
+ * `listed: true` and a `covenant` (#485): two canonical 32-byte secrets, a
+ * boolean, and a covenant hash of 32 bytes exactly when listed, with no other
+ * field, `__proto__` included. Any 32 bytes are a key of each kind, so
+ * nothing else needs checking, and the covenant is checked for its shape
+ * alone: a build that doesn't carry a covenant's words still folds the vote
+ * on them as every other build does.
  */
 export function isFrontDoor(value: unknown): value is FrontDoor {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
-  if (Object.keys(value).sort().join() !== DOOR_KEYS) return false;
-  const { sign, box, showCount } = value as Record<string, unknown>;
-  return isSecret(sign) && isSecret(box) && typeof showCount === 'boolean';
+  const { sign, box, showCount, listed, covenant } = value as Record<string, unknown>;
+  const keys = Object.keys(value).sort().join();
+  return (
+    listingIsValid(keys, listed, covenant) &&
+    is32Bytes(sign) &&
+    is32Bytes(box) &&
+    typeof showCount === 'boolean'
+  );
+}
+
+/** The covenant a front door value is listed under, or null when it is closed, unlisted or no door. */
+export function listedUnder(value: unknown): string | null {
+  return isFrontDoor(value) && value.covenant !== undefined ? value.covenant : null;
 }
 
 /** Each opt-in's validator: true for a value that opt-in can hold. */
@@ -154,9 +190,14 @@ function webhookOf(value: unknown): string | null {
   return isChatBot(value) ? value.webhook : null;
 }
 
-/** A front door's fields as one text, or null when it is closed or not a door. */
+/**
+ * A front door's fields as one text, or null when it is closed or not a door.
+ * An unlisted door reads the same with or without `listed: false` (#485).
+ */
 function doorText(value: unknown): string | null {
-  return isFrontDoor(value) ? `${value.sign}.${value.box}.${String(value.showCount)}` : null;
+  if (!isFrontDoor(value)) return null;
+  const listing = listedUnder(value) ?? '';
+  return `${value.sign}.${value.box}.${String(value.showCount)}.${listing}`;
 }
 
 /** How two values of each opt-in compare: by what they hold. */
@@ -180,26 +221,30 @@ export function isOff(optIn: OptIn, value: unknown): boolean {
 }
 
 /**
- * How much of the group a value lets outsiders see or reach, as a rank: 0
- * off, then 1 for on. A front door that shows its count ranks 2, and so does
- * a value that is on but no validator accepts, so it can only ever class as
- * wider. A door's keys never count (ADR-0075 §5).
+ * What a value lets outsiders see or reach, as three flags: whether it is on,
+ * whether a front door's page shows the count (#121), and whether the door is
+ * listed in the public registry (#485). A front door that is on but no
+ * validator accepts has all three, so it can only ever class as wider. A
+ * door's keys and its covenant's version never count (ADR-0075 §5).
  */
-function exposure(optIn: OptIn, value: unknown): number {
-  if (isOff(optIn, value)) return 0;
-  if (optIn === 'chatBot') return 1;
-  return isFrontDoor(value) && !value.showCount ? 1 : 2;
+function exposure(optIn: OptIn, value: unknown): readonly [boolean, boolean, boolean] {
+  if (isOff(optIn, value)) return [false, false, false];
+  if (optIn === 'chatBot') return [true, false, false];
+  if (!isFrontDoor(value)) return [true, true, true];
+  return [true, value.showCount, value.listed === true];
 }
 
 /**
  * True when changing `optIn` from `from` to `to` widens what outsiders can
- * see or reach (ADR-0040, ADR-0075 §5): off to on, and a front door that
- * starts showing its count (#121). Closing it, replacing one webhook with
- * another, rotating a door's keys and hiding its count narrow or keep it, so
- * they're ordinary.
+ * see or reach (ADR-0040, ADR-0075 §5): off to on, a front door that starts
+ * showing its count (#121), and one that is listed (#485; ADR-0081), each
+ * whatever else changes. Closing it, replacing one webhook with another,
+ * rotating a door's keys, hiding its count, unlisting it and accepting a new
+ * covenant version narrow or keep it, so they're ordinary.
  */
 export function isWider(optIn: OptIn, from: unknown, to: unknown): boolean {
-  return exposure(optIn, to) > exposure(optIn, from);
+  const before = exposure(optIn, from);
+  return exposure(optIn, to).some((on, i) => on && !before[i]);
 }
 
 /**

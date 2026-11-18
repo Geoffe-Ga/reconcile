@@ -17,6 +17,11 @@
  * invite is sent, no profile's IndexedDB holds it, but Kim's own Document,
  * the control, and no request or stopped-relay file carries it readable.
  *
+ * Then Ana proposes listing the door (#485): her composer and Ben's ballot,
+ * in the dark theme, show the draft covenant and what listing makes public,
+ * the vote passes at the entrenched bar, and Group rules says the door is
+ * listed. Nothing goes to the shelf: posting the listing is a later issue's.
+ *
  * Every request the four browsers send is captured: none carries the
  * group's secret, a member's name or key, the door's secrets, Kim's reply
  * seed or key, or her words, in any spelling, while the door's inbox and the
@@ -189,6 +194,7 @@ test('a group opens its front door by vote, and a stranger asks, is invited and 
   for (const person of [ana, ben, cal]) capture(person.page, requests);
   let rulesUrl = '';
   let link = '';
+  let listingUrl = '';
 
   await test.step('Ana founds the group, and Ben and Cal join', async () => {
     const { page } = ana;
@@ -221,6 +227,10 @@ test('a group opens its front door by vote, and a stranger asks, is invited and 
     await expect(heading(page, 'Open a front door')).toBeVisible();
     const count = page.getByRole('checkbox', { name: 'Show how many people are in the group' });
     await expect(count).not.toBeChecked();
+    // A group is never prompted toward listing (#485): the choice starts unticked.
+    const list = page.getByRole('checkbox', { name: 'Also list it on the public shelf' });
+    await expect(list).not.toBeChecked();
+    await expect(page.getByRole('region', { name: /The covenant/ })).toHaveCount(0);
     await page.getByRole('textbox', { name: 'Why' }).fill('People keep asking how to join.');
     await expectAccessible(ana, 'Opt-in composer, front door');
     await page.getByRole('button', { name: 'Propose this change' }).click();
@@ -374,6 +384,60 @@ test('a group opens its front door by vote, and a stranger asks, is invited and 
     }
     // The control: the scan reads Kim's own copy, in Personal, and nothing else of hers.
     expect(await heldBy(kim)).toEqual(['personal']);
+  });
+
+  await test.step('Ana proposes listing the door, and the composer shows the draft covenant', async () => {
+    const { page } = ana;
+    await page.goto(rulesUrl);
+    await doorCard(page).getByRole('link', { name: 'Propose listing this door' }).click();
+    await expect(heading(page, 'List the front door on the public shelf')).toBeVisible();
+    const covenant = page.getByRole('region', { name: /The covenant/ });
+    await expect(covenant).toContainText('Draft');
+    await expect(covenant).toContainText('A listed group does not post spam.');
+    await expect(covenant).toContainText(
+      'Your group’s name will be public beside the words it votes to publish.',
+    );
+    await page.getByRole('textbox', { name: 'Why' }).fill('We want neighbours to find us.');
+    await expectAccessible(ana, 'Listing composer');
+    await page.getByRole('button', { name: 'Propose this change' }).click();
+    await expect(
+      page.getByRole('region', { name: 'List the front door on the public shelf' }),
+    ).toBeVisible();
+    listingUrl = page.url();
+  });
+
+  await test.step('Ben reads the covenant on the ballot in the dark theme, and everyone votes it through', async () => {
+    const { page } = ben;
+    await page.goto(listingUrl);
+    const card = page.getByRole('region', { name: 'List the front door on the public shelf' });
+    await expect(card.getByRole('region', { name: /The covenant/ })).toContainText(
+      'A listed group does not pretend to be another group or person.',
+    );
+    await expectAccessible(ben, 'Listing ballot on a phone, dark');
+    await vote(ana, listingUrl);
+    await vote(cal, listingUrl);
+    await vote(ben, listingUrl);
+    await expect(
+      page.getByText('This passed. Your group’s front door is listed on the public shelf.'),
+    ).toBeVisible();
+  });
+
+  await test.step('Group rules says the door is listed, in both themes, and nothing went to the shelf', async () => {
+    for (const person of [ana, ben]) {
+      await person.page.goto(rulesUrl);
+      await expect(
+        doorCard(person.page).getByText(
+          'Listed on the public shelf, under the covenant your group accepted.',
+        ),
+      ).toBeVisible();
+      await expectAccessible(person, `Group rules, listed, as ${person.name}`);
+    }
+    // Posting the listing is the keeper's (a later issue): this one sends nothing to the shelf.
+    const posted = requests.filter(
+      (request) =>
+        request.method() === 'PUT' && new URL(request.url()).pathname.startsWith('/v1/shelf'),
+    );
+    expect(posted).toEqual([]);
   });
 
   const address = Buffer.from(new URL(link).hash.slice('#door/'.length), 'base64url');

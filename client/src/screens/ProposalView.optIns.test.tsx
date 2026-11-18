@@ -12,6 +12,7 @@ import { messages } from '../app/messages';
 import { createEvent, type ParsedEvent, parseEvent, type Score } from '../engine/event';
 import type { GroupState } from '../engine/fold';
 import { axeViolations } from '../test/axe';
+import { COVENANT } from '../shelf/covenant';
 import { DOOR } from '../test/door';
 import { authorOf } from '../test/keys';
 import { groupLog } from '../test/votes';
@@ -208,5 +209,41 @@ describe('ProposalView: a rules Proposal still in the outbox (#117)', () => {
     setup(state, parsed.id, 'ana', { pending: [parsed] });
     const ballot = screen.getByRole('region', { name: 'On the ballot' });
     expect(within(ballot).queryByRole('region')).toBeNull();
+  });
+});
+
+describe('ProposalView: a Proposal that lists the front door (#485; ADR-0081)', () => {
+  const { covenant } = messages;
+
+  /** Ana, Ben and Cal's group with the front door open, and Ana's Proposal setting it to `value`. */
+  function listing(value: unknown, title = 'List the front door on the public shelf') {
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    const open = log.rules('Ana', 'frontDoor', DOOR);
+    for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, open, 4);
+    log.minute += 1;
+    const id = log.rules('Ana', 'frontDoor', value, { title });
+    return { log, id };
+  }
+
+  it('shows the covenant on the ballot, marked a draft, with what listing makes public', async () => {
+    const { log, id } = listing({ ...DOOR, listed: true, covenant: COVENANT.hash });
+    setup(log.state(), id, 'ben');
+    const card = screen.getByRole('region', { name: 'List the front door on the public shelf' });
+    const words = within(card).getByRole('region', { name: /The covenant/ });
+    expect(within(words).getByText(covenant.draft)).toBeVisible();
+    expect(within(words).getByText(covenant.draftLine)).toBeVisible();
+    for (const clause of COVENANT.clauses) expect(within(words).getByText(clause)).toBeVisible();
+    expect(within(words).getByText(covenant.exposure)).toBeVisible();
+    expect(screen.getByRole('radiogroup', { name: 'Your score' })).toBeVisible();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('says so when the ballot names a covenant this app doesn’t carry, and shows no words for it', () => {
+    const other = DOOR.sign;
+    const { log, id } = listing({ ...DOOR, listed: true, covenant: other });
+    setup(log.state(), id, 'ben');
+    const words = screen.getByRole('region', { name: /The covenant/ });
+    expect(within(words).getByText(covenant.unknown)).toBeVisible();
+    expect(within(words).queryByText(COVENANT.clauses[0] ?? '')).toBeNull();
   });
 });

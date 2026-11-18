@@ -2,7 +2,7 @@
  * Group rules (#117): each opt-in with where it stands, its warning, and a
  * link to propose a change, never a toggle; Turn off now for a steward only.
  */
-import { render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -12,7 +12,7 @@ import { addressOf } from '../door/page';
 import { LEVELS } from '../engine/capabilities';
 import type { GroupState } from '../engine/fold';
 import { axeViolations } from '../test/axe';
-import { DOOR, doorOf } from '../test/door';
+import { DOOR, doorOf, LISTED } from '../test/door';
 import { authorOf } from '../test/keys';
 import { groupLog } from '../test/votes';
 import { GroupRules } from './GroupRules';
@@ -269,5 +269,60 @@ describe('GroupRules: a door closed because a member left (#288)', () => {
     renderRules(log.state(), 'ben');
     expect(within(door()).getByText('Open')).toBeVisible();
     expect(within(door()).queryByText(messages.optIns.doorClosedByLeave)).toBeNull();
+  });
+});
+
+describe('GroupRules: listing the front door (#485; ADR-0081)', () => {
+  const { listing } = messages.optIns;
+
+  /** Ana, Ben and Cal's group with its front door open as `value`. */
+  function doorOpen(value: unknown) {
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    const open = log.rules('Ana', 'frontDoor', value);
+    for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, open, 4);
+    return log;
+  }
+
+  it('offers listing an open door by a Proposal, under the front door, and says nothing of a listing', async () => {
+    const log = doorOpen(DOOR);
+    renderRules(log.state(), 'ben');
+    expect(within(door()).getByRole('link', { name: listing.proposeList })).toHaveAttribute(
+      'href',
+      `#/g/${log.group}/list/frontDoor`,
+    );
+    expect(within(door()).queryByText(listing.listed)).toBeNull();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('says a listed door is listed, and offers taking it off the shelf', async () => {
+    const log = doorOpen(LISTED);
+    renderRules(log.state(), 'ben');
+    expect(within(door()).getByText(listing.listed)).toBeVisible();
+    expect(within(door()).getByRole('link', { name: listing.proposeUnlist })).toHaveAttribute(
+      'href',
+      `#/g/${log.group}/list/frontDoor`,
+    );
+    expect(within(door()).queryByRole('link', { name: listing.proposeList })).toBeNull();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('offers no listing while the door is closed, nor to someone who doesn’t propose', () => {
+    renderRules(groupLog({ members: ['Ben', 'Cal'] }).state(), 'ben');
+    expect(within(door()).queryByRole('link', { name: listing.proposeList })).toBeNull();
+    const log = groupLog({ members: ['Ben', 'Cal'], levels: { Cal: VOTING } });
+    const open = log.rules('Ana', 'frontDoor', LISTED);
+    for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, open, 4);
+    cleanup();
+    renderRules(log.state(), 'cal');
+    expect(within(door()).getByText(listing.listed)).toBeVisible();
+    expect(within(door()).queryByRole('link', { name: listing.proposeUnlist })).toBeNull();
+  });
+
+  it('says nothing of a listing once a steward’s narrowing holds the door shut', () => {
+    const log = doorOpen(LISTED);
+    const off = log.rules('Ana', 'frontDoor', false);
+    log.narrow('Ana', 'frontDoor', off);
+    renderRules(log.state(), 'ben');
+    expect(within(door()).queryByText(listing.listed)).toBeNull();
   });
 });

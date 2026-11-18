@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { base64url } from '../crypto/base64url';
-import { DOOR, ROTATED } from '../test/door';
+import { COVENANT_HASH, DOOR, LISTED, ROTATED } from '../test/door';
 import { authorOf } from '../test/keys';
 import { groupLog, type LogBuilder } from '../test/votes';
 import { LEVELS } from './capabilities';
@@ -12,6 +12,7 @@ import {
   cardClosedFor,
   inviteFor,
   isApplicationId,
+  listingInEffect,
   mayCloseCard,
   mayRecordInvite,
 } from './frontDoor';
@@ -49,6 +50,35 @@ describe('isApplicationId: a SHA-256 in canonical unpadded base64url', () => {
     ['nothing', undefined],
   ])('refuses %s', (_name, value) => {
     expect(isApplicationId(value)).toBe(false);
+  });
+});
+
+describe('listingInEffect: a listing ends with its door (#485; listed-doors.md §3.3)', () => {
+  it('gives the covenant a door open in effect is listed under', () => {
+    expect(listingInEffect(opened(LISTED).state())).toBe(COVENANT_HASH);
+  });
+
+  it('gives null for a closed door, and for an open one that isn’t listed', () => {
+    expect(listingInEffect(groupLog({ members: ['Ben', 'Cal'] }).state())).toBeNull();
+    expect(listingInEffect(opened(DOOR).state())).toBeNull();
+    expect(listingInEffect(opened({ ...DOOR, listed: false }).state())).toBeNull();
+  });
+
+  it('ends when a membership ends and the fold closes the door (#288)', () => {
+    const log = opened(LISTED);
+    log.leave('Cal');
+    log.minute += 1;
+    const state = log.state();
+    expect(state.optIns.frontDoor).toBe(false);
+    expect(listingInEffect(state)).toBeNull();
+  });
+
+  it('ends while a steward’s narrowing holds the door shut', () => {
+    const log = opened(LISTED);
+    const off = log.rules('Ana', 'frontDoor', false, { title: 'Close the front door' });
+    log.narrow('Ana', 'frontDoor', off);
+    log.minute += 1;
+    expect(listingInEffect(log.state())).toBeNull();
   });
 });
 

@@ -13,7 +13,8 @@ import { LEVELS } from '../engine/capabilities';
 import type { GroupState } from '../engine/fold';
 import { isFrontDoor, isOptInValue, type OptIn } from '../engine/optIns';
 import { axeViolations } from '../test/axe';
-import { DOOR } from '../test/door';
+import { COVENANT, COVENANT_HASH } from '../shelf/covenant';
+import { DOOR, LISTED } from '../test/door';
 import { authorOf } from '../test/keys';
 import { held, pastPressFallback } from '../test/press';
 import { groupLog } from '../test/votes';
@@ -21,12 +22,13 @@ import { OptInComposer, type OptInOutcome } from './OptInComposer';
 
 const [, VOTING] = LEVELS;
 const WEBHOOK = 'https://discord.com/api/webhooks/1199000000000000001/sEcReT-tokenWXYZ';
-const { optIns, door } = messages;
+const { optIns, door, covenant } = messages;
 
 interface Options {
   readonly me?: string;
   readonly optIn?: OptIn;
   readonly narrow?: boolean;
+  readonly listing?: boolean;
   readonly outcome?: OptInOutcome | Promise<OptInOutcome>;
 }
 
@@ -35,6 +37,7 @@ const NOW_MS = 1_762_650_000_000;
 
 function renderComposer(state: GroupState, options: Options = {}) {
   const { me = 'ana', optIn = 'chatBot', narrow = false, outcome = 'proposed' } = options;
+  const { listing = false } = options;
   const onPropose = vi.fn<(values: RulesValues) => Promise<OptInOutcome>>(() =>
     Promise.resolve(outcome),
   );
@@ -44,6 +47,7 @@ function renderComposer(state: GroupState, options: Options = {}) {
       me={authorOf(me)}
       optIn={optIn}
       narrow={narrow}
+      listing={listing}
       now={NOW_MS}
       onPropose={onPropose}
     />,
@@ -336,5 +340,96 @@ describe('OptInComposer: where the fold would refuse it', () => {
     renderComposer(log.state(), { me: 'ben' });
     expect(screen.getByText(messages.stewards.notAllowed)).toBeVisible();
     expect(screen.queryByRole('textbox')).toBeNull();
+  });
+});
+
+/** Ana, Ben and Cal's group, with the front door at `value` by an entrenched pass. */
+function doorAt(value: unknown) {
+  const log = groupLog({ members: ['Ben', 'Cal'] });
+  const open = log.rules('Ana', 'frontDoor', value);
+  for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, open, 4);
+  return log;
+}
+
+/** The covenant's section on screen. */
+const covenantRegion = () => screen.queryByRole('region', { name: /The covenant/ });
+
+/** Checks the covenant shows whole, marked a draft, with the line on what listing exposes. */
+function expectCovenant() {
+  const region = covenantRegion();
+  expect(region).not.toBeNull();
+  expect(region).toHaveTextContent(covenant.draft);
+  expect(region).toHaveTextContent(covenant.draftLine);
+  for (const clause of COVENANT.clauses) expect(region).toHaveTextContent(clause);
+  expect(region).toHaveTextContent(covenant.exposure);
+}
+
+describe('OptInComposer: listing the front door (#485; ADR-0081)', () => {
+  it('offers opening a door listed, unticked, and shows the covenant only once it is ticked', async () => {
+    const { user, onPropose } = renderComposer(groupLog({ members: ['Ben', 'Cal'] }).state(), {
+      optIn: 'frontDoor',
+    });
+    const list = screen.getByRole('checkbox', { name: optIns.listing.choiceLabel });
+    expect(list).not.toBeChecked();
+    expect(covenantRegion()).toBeNull();
+    await user.click(list);
+    expectCovenant();
+    await type(user, 'Why', 'We want to be found.');
+    await user.click(screen.getByRole('button', { name: 'Propose this change' }));
+    const [[values]] = onPropose.mock.calls as [[RulesValues]];
+    expect(values).toMatchObject({ optIn: 'frontDoor', window: 14 });
+    expect(values.value).toMatchObject({ showCount: false, listed: true, covenant: COVENANT_HASH });
+    expect(isOptInValue('frontDoor', values.value)).toBe(true);
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('lists an open door by its own Proposal, at the higher bar, under the covenant', async () => {
+    const { user, onPropose } = renderComposer(doorAt(DOOR).state(), {
+      optIn: 'frontDoor',
+      listing: true,
+    });
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
+      'List the front door on the public shelf',
+    );
+    expect(screen.getByText(/higher bar: an average of 3\.0 or more/)).toBeVisible();
+    expect(screen.queryByRole('checkbox')).toBeNull();
+    expectCovenant();
+    await type(user, 'Why', 'We want to be found.');
+    await user.click(screen.getByRole('button', { name: 'Propose this change' }));
+    expect(onPropose).toHaveBeenCalledWith({
+      optIn: 'frontDoor',
+      value: { ...DOOR, listed: true, covenant: COVENANT_HASH },
+      title: 'List the front door on the public shelf',
+      why: 'We want to be found.',
+      narrow: false,
+      window: 14,
+    });
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('unlists a listed door at the ordinary bar, written as the door before #485', async () => {
+    const { user, onPropose } = renderComposer(doorAt(LISTED).state(), {
+      optIn: 'frontDoor',
+      listing: true,
+    });
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
+      'Take the front door off the public shelf',
+    );
+    expect(screen.queryByText(/higher bar/)).toBeNull();
+    expect(covenantRegion()).toBeNull();
+    await type(user, 'Why', 'We have enough people now.');
+    await user.click(screen.getByRole('button', { name: 'Propose this change' }));
+    const [[values]] = onPropose.mock.calls as [[RulesValues]];
+    expect(values).toMatchObject({ window: 7, title: 'Take the front door off the public shelf' });
+    expect(values.value).toStrictEqual(DOOR);
+  });
+
+  it('offers no listing while the door is closed', () => {
+    renderComposer(groupLog({ members: ['Ben', 'Cal'] }).state(), {
+      optIn: 'frontDoor',
+      listing: true,
+    });
+    expect(screen.getByText(optIns.listing.unavailable)).toBeVisible();
+    expect(screen.queryByRole('button')).toBeNull();
   });
 });

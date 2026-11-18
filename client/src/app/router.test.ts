@@ -115,6 +115,11 @@ describe('parseRoute', () => {
       `#/g/${GROUP}/narrow/chatBot`,
       { name: 'optIn', groupId: GROUP, optIn: 'chatBot', narrow: true },
     ],
+    // Listing the front door (#485): a change to its listing alone.
+    [
+      `#/g/${GROUP}/list/frontDoor`,
+      { name: 'optIn', groupId: GROUP, optIn: 'frontDoor', narrow: false, listing: true },
+    ],
     [`#/g/${GROUP}/dissolve`, { name: 'dissolve', groupId: GROUP }],
     // A member's removal (#115) has its own page: an added section's id is a Proposal's (#75).
     [
@@ -210,6 +215,9 @@ describe('parseRoute', () => {
     `#/g/${GROUP}/rules/chatBot/extra`,
     `#/g/${GROUP}/narrow`,
     `#/g/${GROUP}/narrow/toString`,
+    `#/g/${GROUP}/list`,
+    `#/g/${GROUP}/list/chatBot`,
+    `#/g/${GROUP}/list/frontDoor/extra`,
     `#/g/${GROUP}/dissolve/${PROPOSAL}`,
     `#/g/${GROUP}/dissolve/extra/more`,
     `#/g/${GROUP}/remove-member`,
@@ -420,6 +428,10 @@ describe('routeHref', () => {
     [
       { name: 'optIn', groupId: GROUP, optIn: 'chatBot', narrow: true },
       `#/g/${GROUP}/narrow/chatBot`,
+    ],
+    [
+      { name: 'optIn', groupId: GROUP, optIn: 'frontDoor', narrow: false, listing: true },
+      `#/g/${GROUP}/list/frontDoor`,
     ],
     [{ name: 'dissolve', groupId: GROUP }, `#/g/${GROUP}/dissolve`],
     [
