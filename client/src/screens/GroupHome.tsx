@@ -100,6 +100,11 @@ export interface GroupHomeProps {
    */
   readonly alertCard?: ReactNode;
   /**
+   * The word that a member's device took a stray entry off the public shelf
+   * (#431), first among the quiet cards; none when absent.
+   */
+  readonly shelfNote?: ReactNode;
+  /**
    * The front door's applications (#121), under their own heading before
    * Invite people: given only while the door is open and this member may
    * invite.
@@ -1177,7 +1182,8 @@ function HomeTop({ props, removed, readOnly }: HomeTopProps) {
 
 /**
  * The quiet cards a group that goes on may show, after the last list of open
- * Proposals: the recovery alert while a recovery of this person waits (#118),
+ * Proposals: a stray entry taken off the public shelf (#431), the recovery
+ * alert while a recovery of this person waits (#118),
  * a backup (#78), then the recovery shares this device holds there (#109). No
  * backup card once the group's key changed past this device (#226). None once
  * it has dissolved, nor in a copy back from a backup that hasn't heard from
@@ -1188,6 +1194,7 @@ function QuietCards({ props }: { readonly props: GroupHomeProps }) {
   if (props.state.dissolved !== null || props.unconfirmed === true) return null;
   return (
     <>
+      {props.shelfNote}
       {props.alertCard}
       {backupCardOf(props)}
       {props.recoveryCard}

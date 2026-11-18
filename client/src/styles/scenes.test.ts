@@ -29,6 +29,7 @@ const PAINTED: Readonly<Record<string, string>> = {
   VoteLink: 'sky',
   // Looking out over everything: the treetops, where the crowns meet the sky.
   Discover: 'treetops',
+  ShelfEntry: 'treetops',
   // A group, standing: its canopy, and the trunks that hold its rules.
   GroupHome: 'canopy',
   GroupStatus: 'canopy',

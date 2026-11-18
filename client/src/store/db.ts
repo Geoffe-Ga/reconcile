@@ -121,6 +121,7 @@ import {
   textOf,
 } from './personal';
 import { type RecoverRequest, requestSealing, type StoredRecoverRequest } from './recoverRequest';
+import type { KeptShelf, ShelfKeep } from '../shelf/read';
 import { plainRecords, type Sealing, type Split, wholeRecord } from './sealing';
 
 export type { RecoverRequest } from './recoverRequest';
@@ -852,8 +853,23 @@ export type EventIdOf = (bytes: Uint8Array) => string | null;
  * (#97), its recovery contacts (#109), and the front-door applications it
  * sent (#121).
  */
+/**
+ * The device's copy of its last read of the public shelf (#431,
+ * `shelf/read.ts`): one device-wide record in no group. It is the public
+ * shelf, the same for every device, so it holds no key and stays out of the
+ * vault; no listener hears of it, and no backup file or link carries it.
+ */
+export type ShelfCopyStore = ShelfKeep;
+
 export interface Store
-  extends DraftStore, PersonalStore, RelayBackupStore, RecoveryStore, PushForgetStore, SentStore {
+  extends
+    DraftStore,
+    PersonalStore,
+    RelayBackupStore,
+    RecoveryStore,
+    PushForgetStore,
+    SentStore,
+    ShelfCopyStore {
   /** Every group on the device: never a coalition's entry (#114) or a room (#125). */
   listGroups(): Promise<Group[]>;
   /** Every coalition entry on the device (#114). */
@@ -1157,7 +1173,8 @@ type DeviceRecord =
   | StoredRecoverRequest
   | RecoveredMark
   | RetiredMark
-  | PushForgets;
+  | PushForgets
+  | KeptShelf;
 
 interface Schema extends DBSchema {
   groups: { key: string; value: StoredGroup };
@@ -1190,6 +1207,11 @@ function recoveredAtIn(record: DeviceRecord | undefined): number | undefined {
 /** When the device's backup key was retired, in a device record read from its key, or undefined (#272). */
 function retiredAtIn(record: DeviceRecord | undefined): number | undefined {
   return record !== undefined && 'retiredAt' in record ? record.retiredAt : undefined;
+}
+
+/** The shelf's copy in a device record read from its key, or undefined: only it has a read time (#431). */
+function shelfCopyIn(record: DeviceRecord | undefined): KeptShelf | undefined {
+  return record !== undefined && 'readAt' in record ? record : undefined;
 }
 
 /** The push DELETEs owed in a device record read from their key, or none (#356). */
@@ -1235,6 +1257,8 @@ const RECOVERED = 'recovered';
 const RELAY_BACKUP_RETIRED = 'relay-backup-retired';
 /** The device store's key for the push DELETEs a device owes (#356): a key of its own, so no new version. */
 const PUSH_FORGETS = 'push-forgets';
+/** The device store's key for its copy of the public shelf (#431): a key of its own, so no new version. */
+const SHELF_COPY = 'shelf';
 const VAULT = 'vault';
 const SENT = 'sent';
 
@@ -1613,6 +1637,7 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
       notify(RECOVERY_CHANGED);
     }),
     ...pushForgetStore(db),
+    ...shelfCopyStore(db),
     async readVault() {
       const vault = await db.get(VAULT, VAULT_ID);
       return vault === undefined
@@ -1864,6 +1889,17 @@ function pushForgetStore(db: IDBPDatabase<Schema>): PushForgetStore {
       if (forgets.length === 0) await tx.store.delete(PUSH_FORGETS);
       else await tx.store.put({ forgets }, PUSH_FORGETS);
       await tx.done;
+    },
+  };
+}
+
+/** The shelf's copy, one record in `db`'s device store (#431); no listener hears of a change. */
+function shelfCopyStore(db: IDBPDatabase<Schema>): ShelfCopyStore {
+  return {
+    getShelfCopy: async () => shelfCopyIn(await db.get(DEVICE, SHELF_COPY)),
+    async keepShelfCopy(copy) {
+      if (copy === null) await db.delete(DEVICE, SHELF_COPY);
+      else await db.put(DEVICE, copy, SHELF_COPY);
     },
   };
 }

@@ -11,6 +11,19 @@ const keys = newSigningKeys();
 const ADDRESS = base64url(keys.publicKey);
 const ID = base64url(new Uint8Array(32).fill(3));
 const WITHDRAW = signShelfBody(keys, { v: 1, kind: 'withdraw', id: ID });
+const COVENANT = base64url(new Uint8Array(32).fill(9));
+
+/** An open listing signed by `signer`: a record any shelf takes without another before it (#431). */
+const listingBy = (signer = keys) =>
+  signShelfBody(signer, {
+    v: 1,
+    kind: 'listing',
+    open: true,
+    name: 'Oak',
+    skeleton: 'oak',
+    covenant: COVENANT,
+  });
+const LISTING = listingBy();
 
 /** A fetch that answers every request with `body` as JSON and `status`. */
 function answering(body: unknown, status = 200): Fetch {
@@ -30,11 +43,11 @@ async function rejection(promise: Promise<unknown>): Promise<unknown> {
 describe('put', () => {
   it('PUTs the signed record under its address and returns its seq', async () => {
     const fake = createFakeShelf();
-    const seq = await createShelf({ fetch: fake.fetch }).put(ADDRESS, WITHDRAW);
+    const seq = await createShelf({ fetch: fake.fetch }).put(ADDRESS, LISTING);
 
     expect(seq).toBe(1);
     expect(fake.urls).toEqual([`/v1/shelf/${ADDRESS}`]);
-    expect(Array.from(fake.records[0]?.data ?? [])).toEqual(Array.from(WITHDRAW));
+    expect(Array.from(fake.records[0]?.data ?? [])).toEqual(Array.from(LISTING));
   });
 
   it('sends it as an octet stream with no cookies, referrer or cache', async () => {
@@ -77,7 +90,7 @@ describe('read', () => {
   it('reads every record in seq order, with its address and bytes', async () => {
     const fake = createFakeShelf({ minute: 500 });
     const shelf = createShelf({ fetch: fake.fetch });
-    await shelf.put(ADDRESS, WITHDRAW);
+    await shelf.put(ADDRESS, LISTING);
 
     const page = await shelf.read();
 
@@ -86,14 +99,17 @@ describe('read', () => {
     expect(page?.records.map(({ seq, received, address }) => ({ seq, received, address }))).toEqual(
       [{ seq: 1, received: 500, address: ADDRESS }],
     );
-    expect(Array.from(page?.records[0]?.data ?? [])).toEqual(Array.from(WITHDRAW));
+    expect(Array.from(page?.records[0]?.data ?? [])).toEqual(Array.from(LISTING));
     expect(fake.urls.at(-1)).toBe('/v1/shelf?after=0&limit=100');
   });
 
   it('pages 100 at a time until a page comes back short', async () => {
     const fake = createFakeShelf();
     const shelf = createShelf({ fetch: fake.fetch });
-    for (let i = 0; i < 201; i += 1) await shelf.put(ADDRESS, WITHDRAW);
+    for (let i = 0; i < 201; i += 1) {
+      const door = newSigningKeys();
+      await shelf.put(base64url(door.publicKey), listingBy(door));
+    }
 
     const page = await shelf.read();
 

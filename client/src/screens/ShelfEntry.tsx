@@ -1,0 +1,62 @@
+/**
+ * One entry on the public shelf, on its own page (`#/discover/{address}/{id}`;
+ * #431, listed-doors.md §5.2): the link an entry's Share and Copy pass along.
+ *
+ * Whoever opens it, a device in no group included once past the pilot
+ * notice, reads the entry as Discover shows it, from the same whole read of
+ * the shelf every device makes, so opening a link tells the relay nothing
+ * about which entry was opened. Then the link, with Copy and Share. While the
+ * shelf doesn't show the entry (it came down, its 30 days ended, or the relay
+ * has no shelf) one line says so instead. Nothing records which entry was
+ * opened.
+ */
+import { Link } from 'react-aria-components';
+
+import { CopyLink } from '../app/CopyLink';
+import { messages } from '../app/messages';
+import { routeHref } from '../app/router';
+import type { SharePort } from '../app/share';
+import { ShelfCard } from '../app/ShelfCard';
+import { PageHeader } from '../app/ui';
+import type { ShelfEntry as Entry } from '../shelf/fold';
+
+/** Props for {@link ShelfEntry}. */
+export interface ShelfEntryProps {
+  /** The entry as the shelf shows it, or null when it doesn't. */
+  readonly entry: Entry | null;
+  /** The entry's link: the app's origin, then its route. */
+  readonly link: string;
+  /** Puts text on the clipboard; rejects when the browser blocks it. */
+  readonly copyText: (text: string) => Promise<void>;
+  /** Where Share sends the link; without one, Copy stands alone. */
+  readonly sharing?: SharePort | undefined;
+}
+
+/** The entry and its link with Copy and Share, or the line that it isn't on the shelf. */
+export function ShelfEntry({ entry, link, copyText, sharing }: ShelfEntryProps) {
+  const words = messages.shelfEntry;
+  return (
+    <main className="shell" data-scene="treetops">
+      <PageHeader eyebrow={messages.app.name} title={words.pageTitle} pageTitle={words.pageTitle} />
+      {entry === null ? (
+        <p className="lede">{words.gone}</p>
+      ) : (
+        <>
+          <ShelfCard entry={entry} level={2} />
+          <CopyLink
+            link={link}
+            label={words.linkLabel}
+            hint={words.linkHint}
+            button={words.copy}
+            primary
+            copyText={copyText}
+            {...(sharing === undefined ? {} : { sharing })}
+          />
+        </>
+      )}
+      <p>
+        <Link href={routeHref({ name: 'discover' })}>{words.toDiscover}</Link>
+      </p>
+    </main>
+  );
+}

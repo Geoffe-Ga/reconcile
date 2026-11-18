@@ -4,7 +4,8 @@
  * 0. **The landing page** (ADR-0078). A plain visit in a browser tab, on a
  *    device that hasn't accepted the notice, starts on the landing page. It
  *    stores nothing, and its Start a Group button moves on to the steps below.
- *    An invite link, the installed app and a returning device all skip it.
+ *    An invite link, a shelf entry's link (#431), the installed app and a
+ *    returning device all skip it.
  * 1. **The install gate** (ADR-0029). An iPhone or iPad outside the installed
  *    app sees only the install guide, in every browser. Nothing there creates
  *    keys or stores anything.
@@ -252,7 +253,9 @@ function useWelcome(
   // first run is through, that the vote opens only on a device in its group. Behind the
   // install gate, the guide holds the link to copy at once, as it holds an invite's.
   const plain = arrival.kind === 'plain' || (arrival.kind === 'vote' && canCreateKeys(platform));
-  const visiting = newHere && !isInstalled(platform) && plain;
+  // A shelf entry's link (#431) opens to read one entry, past the notice: it skips the landing page.
+  const [entryLink] = useState(() => parseRoute(window.location.hash).name === 'shelfEntry');
+  const visiting = newHere && !isInstalled(platform) && plain && !entryLink;
   const [welcomed, setWelcomed] = useState(false);
   const start = () => {
     // The next screen opens at its top, wherever on the page Start a Group was pressed.

@@ -13,6 +13,9 @@ const SECOND_ATOM = `${SECOND}.0`;
 const PERSONAL = 'Q2FuYXJ5IHN0YXRlbWVudA';
 /** A share link's payload (#105): its seed and public key, 43 base64url characters each. */
 const SHARE = `${'s'.repeat(43)}.${'k'.repeat(43)}`;
+/** A shelf entry's link (#431): a listed door's address and a Dispatch's id, 43 base64url characters each. */
+const KEY = 'a-_'.repeat(14) + 'Z';
+const ENTRY = 'e'.repeat(43);
 
 afterEach(() => {
   window.history.replaceState(null, '', '#/');
@@ -27,6 +30,7 @@ describe('parseRoute', () => {
     ['#/settings', { name: 'settings' }],
     ['#/me', { name: 'personal' }],
     ['#/discover', { name: 'discover' }],
+    [`#/discover/${KEY}/${ENTRY}`, { name: 'shelfEntry', address: KEY, id: ENTRY }],
     ['#/about', { name: 'about' }],
     [`#/me/${PERSONAL}`, { name: 'personalDocument', id: PERSONAL }],
     ['#/me/A-_aAAAAAAAAAAAAAAAAAA', { name: 'personalDocument', id: 'A-_aAAAAAAAAAAAAAAAAAA' }],
@@ -137,6 +141,11 @@ describe('parseRoute', () => {
     '#/create/extra',
     '#/settings/extra',
     '#/discover/extra',
+    `#/discover/${KEY}`,
+    `#/discover/${KEY}/${ENTRY}/extra`,
+    `#/discover/${KEY}A/${ENTRY}`,
+    `#/discover/${KEY}/${ENTRY.slice(1)}`,
+    `#/discover/${KEY}/${'%2e'.repeat(14)}a`,
     '#/about/extra',
     '#/me/',
     `#/me/${PERSONAL}/extra`,
@@ -375,6 +384,7 @@ describe('routeHref', () => {
     [{ name: 'settings' }, '#/settings'],
     [{ name: 'personal' }, '#/me'],
     [{ name: 'discover' }, '#/discover'],
+    [{ name: 'shelfEntry', address: KEY, id: ENTRY }, `#/discover/${KEY}/${ENTRY}`],
     [{ name: 'about' }, '#/about'],
     [{ name: 'personalDocument', id: PERSONAL }, `#/me/${PERSONAL}`],
     [{ name: 'linkNew' }, '#/link-new'],

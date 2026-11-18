@@ -219,6 +219,7 @@ describe('FirstRunGate on a plain visit in a browser tab', () => {
 
   it.each([
     ['an invite link', { hash: `#join/${invitePayload(newInvite())}` }],
+    ['a shelf entry’s link (#431)', { hash: `#/discover/${'A'.repeat(43)}/${'d'.repeat(43)}` }],
     ['the installed app', { platform: IPHONE_INSTALLED }],
     ['a device that accepted the notice', { accepted: true }],
     ['a device whose keys are locked', { locked: true }],

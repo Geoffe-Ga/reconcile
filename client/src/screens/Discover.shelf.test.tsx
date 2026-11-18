@@ -15,12 +15,22 @@ const ADDRESS = 'A'.repeat(43);
 
 /** An entry under `name`. */
 function entry(id: string, name: string, title: string, text: string): ShelfEntry {
-  return { address: ADDRESS, id, name, title, text, seq: 1, received: 1 };
+  return {
+    address: ADDRESS,
+    id,
+    name,
+    title,
+    text,
+    seq: 1,
+    received: 1,
+    early: false,
+    listedSince: 1,
+  };
 }
 
 /** A shelf showing `entries`. */
 function shelfOf(entries: readonly ShelfEntry[]): ShelfState {
-  return { listings: [], entries, tombstones: [], paused: false };
+  return { listings: [], entries, withdrawn: [], tombstones: [], paused: false };
 }
 
 const SHELF = shelfOf([

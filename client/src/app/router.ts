@@ -27,6 +27,11 @@ export type Route =
   | { readonly name: 'personal' }
   /** Discover (#423; ADR-0077): reading across groups, and the field that opens a card or link. */
   | { readonly name: 'discover' }
+  /**
+   * One entry on the public shelf (#431; listed-doors.md §5.2), by its
+   * listing's address and its Dispatch's id: the link an entry's Share and Copy pass along.
+   */
+  | { readonly name: 'shelfEntry'; readonly address: string; readonly id: string }
   /** The landing page again (ADR-0078), from the Reconcile mark at the link bar's start. */
   | { readonly name: 'about' }
   /** One personal Document, by its id, to read and edit (#93). */
@@ -144,6 +149,9 @@ const DOCUMENT_ID = /^[A-Za-z0-9_-]+(:[0-9]+)?$/;
 const ATOM_ID = /^[A-Za-z0-9_-]+(:[0-9]+)?(\.[0-9]+)?$/;
 /** A personal Document's id (#93): 16 bytes in canonical unpadded base64url, 22 characters. */
 const PERSONAL_ID = /^[A-Za-z0-9_-]{21}[AQgw]$/;
+
+/** A shelf address or a Dispatch's id (#431): 32 bytes in unpadded base64url, 43 characters. */
+const KEY = /^[A-Za-z0-9_-]{43}$/;
 
 const START: Route = { name: 'start' };
 
@@ -354,6 +362,15 @@ function personalRoute(rest: readonly string[]): Route {
     : START;
 }
 
+/** `#/discover`, or one shelf entry's `#/discover/{address}/{id}` (#431). */
+function discoverRoute(rest: readonly string[]): Route {
+  if (rest.length === 0) return { name: 'discover' };
+  const [address = '', id = ''] = rest;
+  return rest.length === 2 && KEY.test(address) && KEY.test(id)
+    ? { name: 'shelfEntry', address, id }
+    : START;
+}
+
 function joinRoute(rest: readonly string[]): Route {
   if (rest.length === 0) return { name: 'join', payload: null };
   const [payload] = rest;
@@ -404,7 +421,6 @@ export type BareRoute = Extract<
 const PAGES: ReadonlyMap<string, Route> = new Map<string, Route>([
   ['create', { name: 'create' }],
   ['settings', { name: 'settings' }],
-  ['discover', { name: 'discover' }],
   ['about', { name: 'about' }],
   ['link-new', { name: 'linkNew' }],
   ['link-this', { name: 'linkThis' }],
@@ -433,9 +449,13 @@ export function isBare(route: Route): route is BareRoute {
   return BARE_NAMES.has(route.name);
 }
 
-/** The pages after `#/` that read what follows them: Join, a group, Personal (#93) and a coalition (#120). */
+/**
+ * The pages after `#/` that read what follows them: Join, a group, Personal
+ * (#93), a coalition (#120) and Discover, which may name a shelf entry (#431).
+ */
 const NESTED: ReadonlyMap<string, (rest: readonly string[]) => Route> = new Map([
   ['join', joinRoute],
+  ['discover', discoverRoute],
   ['g', groupRoute],
   ['me', personalRoute],
   ['c', coalitionRoute],
@@ -656,8 +676,22 @@ const TOP_HREFS: Readonly<Record<FixedTop['name'], string>> = {
   helpRecover: '#/help-recover',
 };
 
+/** The routes whose `href` is a prefix and their payload, nothing else. */
+type PrefixedTop = Extract<Route, { name: 'shared' | 'door' | 'vote' }>;
+
+const TOP_PREFIXES: Readonly<Record<PrefixedTop['name'], string>> = {
+  shared: SHARE_PREFIX,
+  door: DOOR_PREFIX,
+  vote: VOTE_PREFIX,
+};
+
+function isPrefixedTop(route: Route): route is PrefixedTop {
+  return Object.hasOwn(TOP_PREFIXES, route.name);
+}
+
 /** The `href` of a route outside any group or coalition. */
 function topHref(route: Exclude<Route, GroupRoute | CoalitionRoute>): string {
+  if (isPrefixedTop(route)) return `${TOP_PREFIXES[route.name]}${route.payload}`;
   switch (route.name) {
     case 'personalDocument':
       return `#/me/${route.id}`;
@@ -667,12 +701,8 @@ function topHref(route: Exclude<Route, GroupRoute | CoalitionRoute>): string {
       return route.payload === null ? '#/card' : `${CARD_PREFIX}${route.payload}`;
     case 'follow':
       return route.payload === null ? '#/follow' : `${FOLLOW_PREFIX}${route.payload}`;
-    case 'shared':
-      return `${SHARE_PREFIX}${route.payload}`;
-    case 'door':
-      return `${DOOR_PREFIX}${route.payload}`;
-    case 'vote':
-      return `${VOTE_PREFIX}${route.payload}`;
+    case 'shelfEntry':
+      return `#/discover/${route.address}/${route.id}`;
     default:
       return TOP_HREFS[route.name];
   }

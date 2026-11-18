@@ -1,0 +1,112 @@
+{
+  "kind": "entries",
+  "about": "Entries on the shelf (#431, shelf/fold.ts rules 5 to 7, docs/spec/listed-doors.md §4.3). Each record is signed by its door's key, made from the door's label (fold.test.ts): an open listing under `listing`, an entry under `entry` or a withdraw under `withdraw`, each an id's label, or a final listing, under `final`, received at `received` (else 1,441 minutes before 29,000,000). `now` is the relay minute the fold reads, and `own` the doors whose group the device is in. `entries` are the doors and ids that show, newest first, each with whether it shows early, to its own group, before a relay day has passed.",
+  "cases": [
+    {
+      "about": "an address's first 4 entries by seq show, and a fifth waits for a place",
+      "now": 29000000,
+      "own": [],
+      "records": [
+        { "seq": 1, "door": "oak", "listing": "Oak St Tenants" },
+        { "seq": 2, "door": "oak", "entry": "d1" },
+        { "seq": 3, "door": "oak", "entry": "d2" },
+        { "seq": 4, "door": "oak", "entry": "d3" },
+        { "seq": 5, "door": "oak", "entry": "d4" },
+        { "seq": 6, "door": "oak", "entry": "d5" }
+      ],
+      "entries": [
+        ["oak", "d4", false],
+        ["oak", "d3", false],
+        ["oak", "d2", false],
+        ["oak", "d1", false]
+      ]
+    },
+    {
+      "about": "an entry 1,439 minutes old waits",
+      "now": 29000000,
+      "own": [],
+      "records": [
+        { "seq": 1, "door": "oak", "listing": "Oak St Tenants" },
+        { "seq": 2, "door": "oak", "entry": "d1", "received": 28998561 }
+      ],
+      "entries": []
+    },
+    {
+      "about": "an entry 1,440 minutes old shows",
+      "now": 29000000,
+      "own": [],
+      "records": [
+        { "seq": 1, "door": "oak", "listing": "Oak St Tenants" },
+        { "seq": 2, "door": "oak", "entry": "d1", "received": 28998560 }
+      ],
+      "entries": [["oak", "d1", false]]
+    },
+    {
+      "about": "the group's own members see a waiting entry at once, marked early",
+      "now": 29000000,
+      "own": ["oak"],
+      "records": [
+        { "seq": 1, "door": "oak", "listing": "Oak St Tenants" },
+        { "seq": 2, "door": "oak", "entry": "d1", "received": 29000000 },
+        { "seq": 3, "door": "birch", "listing": "Birch Ave" },
+        { "seq": 4, "door": "birch", "entry": "d2", "received": 29000000 }
+      ],
+      "entries": [["oak", "d1", true]]
+    },
+    {
+      "about": "a withdraw removes its own address's entry and no other's",
+      "now": 29000000,
+      "own": [],
+      "records": [
+        { "seq": 1, "door": "oak", "listing": "Oak St Tenants" },
+        { "seq": 2, "door": "birch", "listing": "Birch Ave" },
+        { "seq": 3, "door": "oak", "entry": "d1" },
+        { "seq": 4, "door": "birch", "entry": "d1" },
+        { "seq": 5, "door": "birch", "withdraw": "d1" }
+      ],
+      "entries": [["oak", "d1", false]]
+    },
+    {
+      "about": "a withdrawn entry frees its place among the first 4",
+      "now": 29000000,
+      "own": [],
+      "records": [
+        { "seq": 1, "door": "oak", "listing": "Oak St Tenants" },
+        { "seq": 2, "door": "oak", "entry": "d1" },
+        { "seq": 3, "door": "oak", "entry": "d2" },
+        { "seq": 4, "door": "oak", "entry": "d3" },
+        { "seq": 5, "door": "oak", "entry": "d4" },
+        { "seq": 6, "door": "oak", "entry": "d5" },
+        { "seq": 7, "door": "oak", "withdraw": "d2" }
+      ],
+      "entries": [
+        ["oak", "d5", false],
+        ["oak", "d4", false],
+        ["oak", "d3", false],
+        ["oak", "d1", false]
+      ]
+    },
+    {
+      "about": "a shadowed listing's entries show to no one, its own group included",
+      "now": 29000000,
+      "own": ["birch"],
+      "records": [
+        { "seq": 1, "door": "oak", "listing": "Eastside Tenants Union" },
+        { "seq": 2, "door": "birch", "listing": "EASTSIDE TENANTS UNI0N" },
+        { "seq": 3, "door": "birch", "entry": "d1", "received": 29000000 }
+      ],
+      "entries": []
+    },
+    {
+      "about": "a final listing takes its entries off, for its own group too",
+      "now": 29000000,
+      "own": ["oak"],
+      "records": [
+        { "seq": 1, "door": "oak", "listing": "Oak St Tenants" },
+        { "seq": 2, "door": "oak", "entry": "d1" },
+        { "seq": 3, "door": "oak", "final": true }
+      ],
+      "entries": []
+    }
+  ]
+}

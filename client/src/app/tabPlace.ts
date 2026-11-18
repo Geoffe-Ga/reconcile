@@ -1,6 +1,6 @@
 /**
  * Which of the tab bar's three places a page belongs to (#423; ADR-0077 §7):
- * Start is Groups', Discover its own, and Personal and Settings are Me's.
+ * Start is Groups', Discover and a shelf entry's page (#431) its own, and Personal and Settings are Me's.
  * Every other page has none, so the bar stays off it (`TabBar.tsx`).
  */
 import type { Route } from './router';
@@ -14,6 +14,7 @@ export function tabPlaceOf(route: Route): TabPlace | null {
     case 'start':
       return 'groups';
     case 'discover':
+    case 'shelfEntry':
       return 'discover';
     case 'personal':
     case 'settings':

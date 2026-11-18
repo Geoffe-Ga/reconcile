@@ -10,6 +10,7 @@ import { base64url, fromBase64url } from '../crypto/base64url';
 import { doorKeysOf } from '../crypto/door';
 import { verifyShelfRecord } from '../crypto/shelf';
 import { addressOf, REFRESH_MINUTES } from '../door/page';
+import { shelfLineId } from '../engine/dispatches';
 import type { FrontDoor } from '../engine/optIns';
 import { createShelf, type Shelf } from '../net/shelf';
 import { RelayError } from '../net/relay';
@@ -17,7 +18,7 @@ import { COVENANT_HASH, DOOR, LISTED, RENEWED, ROTATED, secretOf } from '../test
 import { createFakeShelf, type FakeShelf } from '../test/fakeShelf';
 import { authorOf } from '../test/keys';
 import { groupLog, type LogBuilder } from '../test/votes';
-import { createShelfKeeper, type KeptGroup, listingsDue } from './keeper';
+import { createShelfKeeper, entriesDue, type KeptGroup, listingsDue } from './keeper';
 import { parseShelfBody, type ShelfBody, signShelfBody } from './record';
 
 const GROUP = 'group-1';
@@ -414,5 +415,245 @@ describe('createShelfKeeper: the final listing (§4.2, §4.5)', () => {
 
     await expect(keeper.run(GROUP)).rejects.toThrow(RelayError);
     await expect(keeper.run(GROUP)).rejects.toThrow(RelayError);
+  });
+});
+
+/** Ana's Dispatch put to the vote with a shelf line, which everyone scores 4 on both lines. */
+function publish(log: LogBuilder, title = 'Rally Saturday', shelfScore: 0 | 4 = 4): string {
+  const id = log.rising('Ana', 0, { title, text: 'Meet at the river at ten.' }, undefined, true);
+  log.minute += 1;
+  for (const name of ['Ana', 'Ben', 'Cal']) {
+    const note = shelfScore === 0 ? 'Not on the shelf.' : undefined;
+    log.ballot(name, id, { [id]: 4, [shelfLineId(id)]: shelfScore }, note);
+  }
+  log.minute += 1;
+  return id;
+}
+
+/** The entry body the keeper posts for the Dispatch `id` titled `title`. */
+const entryOf = (id: string, title = 'Rally Saturday'): ShelfBody => ({
+  v: 1,
+  kind: 'entry',
+  id,
+  title,
+  text: 'Meet at the river at ten.',
+});
+
+/** A stray: an entry signed with the door's key that the group's log never made. */
+async function postStray(fake: FakeShelf, label: number): Promise<string> {
+  const id = secretOf(label);
+  const stray = { v: 1, kind: 'entry', id, title: 'Not ours', text: 'Spam.' } as const;
+  await createShelf({ fetch: fake.fetch }).put(
+    addressOfDoor(LISTED),
+    signShelfBody(keysOf(LISTED), stray),
+  );
+  return id;
+}
+
+describe('entriesDue: the Dispatches a listed group keeps on the shelf (§4.5)', () => {
+  it('keeps each Dispatch whose shelf line passed, with its title and text', () => {
+    const log = opened();
+    const id = publish(log);
+    publish(log, 'Not on the shelf', 0);
+
+    expect(entriesDue(log.state())).toEqual([entryOf(id)]);
+  });
+
+  it('keeps a Dispatch until 30 days after its vote closed, so its entry is never posted twice', () => {
+    const log = opened();
+    const id = publish(log);
+    const closed = log.minute - 1;
+
+    expect(entriesDue(log.state(closed + 30 * 1440 - 1))).toEqual([entryOf(id)]);
+    expect(entriesDue(log.state(closed + 30 * 1440))).toEqual([]);
+  });
+});
+
+describe('createShelfKeeper: entries (§4.2, §4.5)', () => {
+  it('posts an entry once the shelf line has passed, after the listing', async () => {
+    const log = opened();
+    const fake = shelfAt(log);
+    await device(fake, log).run();
+    const id = publish(log);
+    fake.minute = log.minute;
+
+    await device(fake, log).run();
+
+    expect(bodiesAt(fake, LISTED)).toEqual([OPEN, entryOf(id)]);
+  });
+
+  it('posts no entry for a Dispatch whose shelf line failed', async () => {
+    const log = opened();
+    publish(log, 'Not on the shelf', 0);
+    const fake = shelfAt(log);
+
+    await device(fake, log).run();
+
+    expect(bodiesAt(fake, LISTED)).toEqual([OPEN]);
+  });
+
+  it('posts an entry once across the group’s devices: one that finds it posts nothing', async () => {
+    const log = opened();
+    const id = publish(log);
+    const fake = shelfAt(log);
+    const ana = device(fake, log);
+    await ana.run();
+    inStep(fake, log, 1);
+
+    await ana.run();
+    await device(fake, log).run();
+
+    expect(bodiesAt(fake, LISTED)).toEqual([OPEN, entryOf(id)]);
+    expect(puts(fake)).toBe(2);
+  });
+
+  it('waits for the next relay day when the relay has taken one today', async () => {
+    const log = opened();
+    const first = publish(log, 'First');
+    const second = publish(log, 'Second');
+    const fake = shelfAt(log);
+    const ana = device(fake, log);
+    fake.minute = log.minute = 1440 * Math.ceil(log.minute / 1440) - 120;
+
+    await ana.run();
+    expect(bodiesAt(fake, LISTED)).toEqual([OPEN, entryOf(first, 'First')]);
+    inStep(fake, log, 59);
+    await ana.run();
+    expect(puts(fake)).toBe(3);
+
+    inStep(fake, log, 61);
+    await ana.run();
+    expect(bodiesAt(fake, LISTED)).toEqual([
+      OPEN,
+      entryOf(first, 'First'),
+      entryOf(second, 'Second'),
+    ]);
+  });
+
+  it('posts no entry for a door that isn’t listed', async () => {
+    const log = opened(DOOR);
+    publish(log);
+    const fake = shelfAt(log);
+
+    await device(fake, log).run();
+
+    expect(fake.records).toEqual([]);
+  });
+
+  it('lets any other refusal of an entry through, so the next pass tries again', async () => {
+    const log = opened();
+    publish(log);
+    const shelf: Shelf = {
+      read: () => Promise.resolve({ records: [], now: log.minute, instance: 'i' }),
+      put: (_address, record) => {
+        const body = parseShelfBody(record.slice(64));
+        return body?.kind === 'entry'
+          ? Promise.reject(new RelayError(507, 'shelf_full'))
+          : Promise.resolve(1);
+      },
+    };
+    const keeper = createShelfKeeper({
+      store: { getGroup: () => Promise.resolve(copyOf(log)) },
+      shelf,
+    });
+
+    await expect(keeper.run(GROUP)).rejects.toThrow(RelayError);
+  });
+});
+
+describe('createShelfKeeper: a stray entry (§4.5)', () => {
+  it('withdraws an entry under the group’s address that its log didn’t make', async () => {
+    const log = opened();
+    const fake = shelfAt(log);
+    await device(fake, log).run();
+    const stray = await postStray(fake, 0x51);
+    inStep(fake, log, 60);
+
+    await device(fake, log).run();
+
+    expect(bodiesAt(fake, LISTED)).toEqual([
+      OPEN,
+      { v: 1, kind: 'entry', id: stray, title: 'Not ours', text: 'Spam.' },
+      { v: 1, kind: 'withdraw', id: stray },
+    ]);
+  });
+
+  it('leaves an entry that came after its own log was read, until a later read', async () => {
+    const log = opened();
+    const fake = shelfAt(log);
+    const ana = device(fake, log);
+    await ana.run();
+    inStep(fake, log, 60);
+    const stray = await postStray(fake, 0x54);
+
+    // It came in the minute the log was read, maybe after: a vote that closed since may have made it.
+    await ana.run();
+    expect(fake.urls.filter((url) => url.includes('?'))).toHaveLength(2);
+    expect(bodiesAt(fake, LISTED)).not.toContainEqual({ v: 1, kind: 'withdraw', id: stray });
+
+    inStep(fake, log, 60);
+    await ana.run();
+    expect(bodiesAt(fake, LISTED)).toContainEqual({ v: 1, kind: 'withdraw', id: stray });
+  });
+
+  it('withdraws no entry the group published, and a stray only once', async () => {
+    const log = opened();
+    const id = publish(log);
+    const fake = shelfAt(log);
+    await device(fake, log).run();
+    inStep(fake, log, 1440);
+    await postStray(fake, 0x52);
+    inStep(fake, log, 1);
+
+    await device(fake, log).run();
+    await device(fake, log).run();
+
+    const withdrawn = bodiesAt(fake, LISTED).filter((body) => body?.kind === 'withdraw');
+    expect(withdrawn).toEqual([{ v: 1, kind: 'withdraw', id: secretOf(0x52) }]);
+    expect(bodiesAt(fake, LISTED)).toContainEqual(entryOf(id));
+  });
+
+  it.each([
+    [409, 'no_entry', 'resolves'],
+    [409, 'not_listed', 'resolves'],
+    [507, 'shelf_full', 'rejects'],
+  ] as const)('meets %s %s on a withdraw and %s', async (status, code, outcome) => {
+    const log = opened();
+    const fake = shelfAt(log);
+    await device(fake, log).run();
+    await postStray(fake, 0x53);
+    log.minute += 1;
+    const { records } = (await createShelf({ fetch: fake.fetch }).read()) ?? { records: [] };
+    const shelf: Shelf = {
+      read: () => Promise.resolve({ records, now: log.minute, instance: 'i' }),
+      put: (_address, record) =>
+        parseShelfBody(record.slice(64))?.kind === 'withdraw'
+          ? Promise.reject(new RelayError(status, code))
+          : Promise.resolve(1),
+    };
+    const keeper = createShelfKeeper({
+      store: { getGroup: () => Promise.resolve(copyOf(log)) },
+      shelf,
+    });
+
+    if (outcome === 'resolves') await expect(keeper.run(GROUP)).resolves.toBeUndefined();
+    else await expect(keeper.run(GROUP)).rejects.toThrow(RelayError);
+  });
+
+  it('looks for strays at most once an hour on one device', async () => {
+    const log = opened();
+    const fake = shelfAt(log);
+    const ana = device(fake, log);
+    await ana.run();
+    const reads = (): number => fake.urls.filter((url) => url.includes('?')).length;
+    expect(reads()).toBe(1);
+
+    inStep(fake, log, 59);
+    await ana.run();
+    expect(reads()).toBe(1);
+
+    inStep(fake, log, 1);
+    await ana.run();
+    expect(reads()).toBe(2);
   });
 });

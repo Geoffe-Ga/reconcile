@@ -28,7 +28,6 @@ import { Root } from './app/Root';
 import { afterEveryPass } from './recovery/holder';
 import { parseRoute } from './app/router';
 import { copyToClipboard } from './app/services';
-import { createShelfFeed } from './app/shelfFeed';
 import { browserFileTargets, browserShare } from './app/share';
 import { SharedRoot } from './app/SharedRoot';
 import { xchachaSeal } from './crypto/seal';
@@ -45,6 +44,7 @@ import { browserPushPort, closeWhenVisible } from './platform/pushPort';
 import { plainText } from './app/text/markdown';
 import { createDoorKeeper } from './door/keeper';
 import { createShelfKeeper } from './shelf/keeper';
+import { createShelfReader } from './shelf/read';
 import { browserCredentials, webAuthn } from './platform/webauthn';
 import { createChatBot } from './store/chatBot';
 import { openStore } from './store/db';
@@ -139,7 +139,7 @@ async function start(container: HTMLElement): Promise<void> {
     push,
     guide: guideRecord(),
     passkey: passkeyOn(keys),
-    shelf: createShelfFeed({ shelf: shelfClient, now }),
+    shelf: createShelfReader({ shelf: shelfClient, keep: store, now }),
   };
   const firstRun = {
     platform,

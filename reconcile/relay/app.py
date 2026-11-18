@@ -47,7 +47,12 @@ that would take the shelf's unexpired records past ``max_shelf_bytes`` gets
 insert. A record is kept 30 days. An address has one listing (#486): a later
 copy takes the earlier one's row and seq and renews its 30 days, an open copy
 after a final one gets 409 ``listing_final``, and a final copy deletes the
-address's entries.
+address's entries. An entry or a withdraw needs a live listing at its address
+(409 ``not_listed``, #431); a repeat with the same address and id stores
+nothing and returns the first copy's seq with 200; a withdraw names one of
+the address's entries (409 ``no_entry``); and an address keeps at most 4 live
+entries, a withdrawn one no longer live, and posts at most 1 new one each UTC
+day (429 ``too_many_entries``).
 
 Nothing here logs. Error bodies are a constant ``{"error": "<code>"}`` that
 never echoes the request. The privacy middleware wraps everything.
@@ -100,6 +105,9 @@ BACKUP_SIZES = frozenset({1 << 16, 1 << 18, 1 << 20, 1 << 22, 1 << 24})
 BACKUP_KEEP_DAYS = 180
 # A shelf record is kept 30 whole days after the day it arrived (§4.2, proposed).
 SHELF_KEEP_DAYS = 30
+# An address's entries (#431, §4.2, proposed): at most 4 live, 1 new a relay day.
+MAX_LIVE_ENTRIES = 4
+MAX_NEW_ENTRIES_A_DAY = 1
 OCTET_STREAM = "application/octet-stream"
 JSON_MEDIA_TYPE = "application/json"
 MAX_JSON_BYTES = 2048
@@ -404,8 +412,36 @@ class _Shelf:
         if record.kind == "listing":
             seq = self._list(address, record, body, when)
         else:
+            first = self._first_of(address, record, day_of(now))
+            if first is not None:
+                return JSONResponse({"seq": first}, status_code=200)
             seq = self.store.add_shelf(address, record.kind, record.ref, body, when)
         return JSONResponse({"seq": seq}, status_code=201)
+
+    def _first_of(
+        self, address: str, record: shelf.ShelfRecord, today: int
+    ) -> int | None:
+        """The seq of an entry's or withdraw's first copy, or ``None`` for a new one.
+
+        Either needs a live listing at ``address`` (409 ``not_listed``). A
+        repeat stores nothing; a withdrawn entry repeats as the entry it was.
+        A withdraw names an entry at ``address`` (409 ``no_entry``), and a new
+        entry fits the caps (429 ``too_many_entries``).
+        """
+        listed = self.store.unexpired_listing(address, today=today)
+        if listed is None or shelf.is_final(listed):
+            raise RelayError(409, "not_listed")
+        first = self.store.shelf_seq(address, record.kind, record.ref, today=today)
+        if first is not None:
+            return first
+        if record.kind == "withdraw":
+            if self.store.shelf_seq(address, "entry", record.ref, today=today) is None:
+                raise RelayError(409, "no_entry")
+            return None
+        counts = self.store.entry_counts(address, today=today)
+        if counts.live >= MAX_LIVE_ENTRIES or counts.today >= MAX_NEW_ENTRIES_A_DAY:
+            raise RelayError(429, "too_many_entries")
+        return None
 
     def _list(
         self, address: str, record: shelf.ShelfRecord, body: bytes, when: ShelfWhen

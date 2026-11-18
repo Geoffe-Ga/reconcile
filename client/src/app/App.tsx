@@ -163,7 +163,8 @@ import { useNow } from './useNow';
 import { usePasskeyState } from './usePasskeyState';
 import { usePublicShelf } from './usePublicShelf';
 import { useHeardRelay, usePersonalList } from './usePersonalList';
-import { DiscoverScreen } from './DiscoverScreen';
+import { DiscoverScreen, ShelfEntryScreen } from './DiscoverScreen';
+import { ShelfStrays } from './ShelfStrays';
 import { chooseContacts } from '../store/recovery';
 import { approveRecovery, holdViews, resendRelease } from '../recovery/holder';
 import { recoverSession, startRecovery, stopRecovery } from '../recovery/request';
@@ -793,6 +794,7 @@ function GroupScreen({ services, groupId }: GroupScreenProps) {
             ) : null
           }
           alertCard={alert === null ? null : <div className="backup-slot">{alert}</div>}
+          shelfNote={<ShelfStrays state={group.state} shelf={services.shelf} />}
           recoveryCard={
             <HeldShareCard
               held={group.newShares}
@@ -1609,6 +1611,18 @@ function PlainScreen(props: PlainScreenProps) {
       return <PersonalScreen services={services} />;
     case 'discover':
       return <DiscoverScreen store={services.store} shelf={services.shelf} />;
+    case 'shelfEntry':
+      return (
+        <ShelfEntryScreen
+          store={services.store}
+          shelf={services.shelf}
+          address={route.address}
+          id={route.id}
+          origin={services.origin}
+          copyText={services.copyText}
+          sharing={services}
+        />
+      );
     case 'personalDocument':
       // Keyed by id, so another Document starts its editor afresh.
       return <PersonalDocumentScreen key={route.id} services={services} id={route.id} />;

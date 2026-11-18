@@ -70,6 +70,13 @@ export function formatDate(minute: number, timeZone?: string): string {
   return format(minute * MINUTE_MS, FULL_DATE, timeZone);
 }
 
+const MONTH: Intl.DateTimeFormatOptions = { month: 'long', year: 'numeric' };
+
+/** A relay minute as a month and year, such as "November 2026": a shelf listing's "Listed since" (#431). */
+export function formatMonth(minute: number, timeZone?: string): string {
+  return format(minute * MINUTE_MS, MONTH, timeZone);
+}
+
 /** A relay minute as an ISO 8601 date, for a `<time>` element's `dateTime`. */
 export function minuteIso(minute: number): string {
   return new Date(minute * MINUTE_MS).toISOString();
