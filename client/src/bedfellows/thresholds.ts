@@ -34,6 +34,11 @@ export interface Thresholds {
    * whose centroids' cosine is below `unlikeBelow` are unlike each other.
    */
   readonly bridge: { readonly unlikeBelow: number };
+  /**
+   * The shared-enemy check (`hostility.ts`, #481): a claim is mainly hostile
+   * when a stance model's entailment of the zero-shot question reaches `entails`.
+   */
+  readonly hostility: { readonly entails: number };
   /** Term overlap (`fallback.ts`): content words a pair must share to be a candidate. */
   readonly fallback: { readonly shared: number };
   /** What the model covers (`fallback.ts`'s `covers`). */
@@ -126,6 +131,22 @@ export const THRESHOLDS: Thresholds = {
    * reader's Documents bridges.
    */
   bridge: { unlikeBelow: 0.5 },
+  /**
+   * Set on `tune` (#481) for the best candidate, MobileBERT-MNLI, asked
+   * #481's question with each entry claim as premise; the check ships off
+   * (`SHARED_ENEMY_CHECK`), so this holds for whichever model is tried next.
+   * An entry is caught when any of its claims is flagged. At 0.1 MobileBERT
+   * catches 7 of 16 hostile entries and wrongly flags 2 of 204 others and
+   * none of the 9 angry at the powerful; at 0.05, 10/16 and 6/204; at 0.2,
+   * 6/16 and 1/204; at 0.5, 3/16. Entailment this low is a ranking, not a
+   * belief: no candidate's entailment reaches 0.5 on more than 3 hostile
+   * entries. xtremedistil's and DeBERTa's best bars, 0.05, catch 4/16 each
+   * for 1/204 wrongly flagged. On `held-out` at these bars: MobileBERT 3/9
+   * caught, 2/100 wrongly flagged, one of them angry at the police;
+   * DeBERTa 3/9 and 1/100; xtremedistil, the one candidate inside the budget
+   * and ADR-0024, 0/9 and 0/100 (ADR-0080 §6).
+   */
+  hostility: { entails: 0.1 },
   /**
    * Two shared content words, #474's baseline's line for common ground. Term
    * overlap alone on `tune` at 2: shared claims 11/33, traps 3/31, idioms
