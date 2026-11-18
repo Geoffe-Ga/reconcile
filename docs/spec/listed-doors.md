@@ -246,7 +246,11 @@ Its actions are the six notices, and Dismiss on a report or appeal. Each asks fo
 - **It only flags.** A flag puts an entry in the console's queue. It hides nothing, and no reader sees it.
 - **It reads only shelf entries**, which are public, and only on the steward's device. It never runs on a group's sealed content (ADR-0020, as ADR-0081 clarifies).
 - **It makes no network call** beyond fetching its own model file from the app's origin.
-- **A spike decides the rest:** which model, how it runs under a CSP with no WebAssembly, which languages, and its measured error rate on political speech. The spike's ADR must exist before the classifier is built.
+- **Pending: [ADR-0082](../adr/0082-shelf-classifier.md)** (Proposed; the founder decides). The spike (#492) measured three options on a 188-item written sample: a pure-TypeScript model, a WebAssembly model on #476's runtime, and a program on the steward's own machine. None catches most calls for violence or veiled threats, and the ones that catch more flag counter-speech. The ADR leans toward these rules:
+  - **Build nothing until the trigger:** before any group beyond the founder's is released (ADR-0081 §5). Until then the covenant gate leaves nothing to watch.
+  - **Then the WebAssembly model with a narrow rule** (`threat` or `identity_hate` ≥ 0.5), after a re-measure against the covenant's final clauses. Only the steward's device fetches it.
+  - **A flag names the rule that fired and never reorders the queue.**
+- **What would make it client-side scanning** (ADR-0082): running on any other device, the author's included; reading anything sealed; sending a result off the device; acting with no person deciding; or matching a list supplied by someone outside Reconcile's governance.
 
 ## 7. Privacy rules
 
