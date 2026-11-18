@@ -5,10 +5,12 @@
 # no deploy key in GitHub (ADR-0041, ADR-0073). It reads
 # RECONCILE_DEPLOY_HOST (an SSH destination, such as deploy@<vm>) and
 # RECONCILE_SITE (the domain) from the environment, or else from the
-# gitignored deploy/.env. Then it:
+# gitignored deploy/.env, which may also set the steward's two public keys,
+# RECONCILE_STEWARD_PIN_SIGN and RECONCILE_STEWARD_PIN_BOX (#505). Then it:
 #   1. builds the client (npm ci, client/scripts/models.sh, which fetches the
 #      Bedfellows model's files by their pinned SHA-256, and npm run build,
-#      which fails without them);
+#      which fails without them) with those pins, if set, and refuses a build
+#      that holds the tests' steward key;
 #   2. syncs client/dist to /srv/reconcile/app/, and the relay (reconcile/,
 #      requirements.txt, the units and the Caddyfile) to /opt/reconcile/src/.
 #      It never touches /var/lib/reconcile, where the database lives;
@@ -41,7 +43,7 @@ READY_SECONDS=120
 
 case "${1:-}" in
     "") ;;
-    --help) sed -n '2,29p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --help) sed -n '2,31p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "Error: Unknown option: $1" >&2; exit 2 ;;
 esac
 
@@ -50,7 +52,7 @@ die() {
     exit 1
 }
 
-# Read the two settings from deploy/.env, for any the environment didn't set.
+# Read the settings from deploy/.env, for any the environment didn't set.
 # The file is parsed, never sourced, so it can't run anything.
 load_env_file() {
     local file="$DEPLOY_DIR/.env" line key value
@@ -69,6 +71,13 @@ load_env_file() {
             RECONCILE_DEPLOY_HOST | RECONCILE_SITE)
                 if [[ -z "${!key:-}" ]]; then
                     printf -v "$key" '%s' "$value"
+                fi
+                ;;
+            # The build reads these two (client/plugins/stewardPins.ts),
+            # and fails on a malformed one.
+            RECONCILE_STEWARD_PIN_SIGN | RECONCILE_STEWARD_PIN_BOX)
+                if [[ -z "${!key:-}" ]]; then
+                    export "$key=$value"
                 fi
                 ;;
             *) die "deploy/.env: unknown setting $key" ;;
@@ -90,7 +99,28 @@ check_settings() {
         die "RECONCILE_SITE must be a domain name, without a scheme, port or path."
 }
 
-for tool in git npm rsync ssh curl base64; do
+# refuse_test_pins DIST: fail unless the build in DIST is free of both of the
+# tests' steward pins (#505). Their secret is public (client/src/test/steward.ts),
+# so a device that honoured them would take anyone's releases and holds.
+# client/scripts/stewardTestPins.mjs derives them; without both, it fails
+# closed rather than pass a build it couldn't check.
+refuse_test_pins() {
+    local dist=$1 pins line count=0
+    pins="$(node "$PROJECT_ROOT/client/scripts/stewardTestPins.mjs")" ||
+        die "couldn't derive the tests' steward pins to check the build."
+    while IFS= read -r line; do
+        [[ "$line" =~ ^RECONCILE_STEWARD_PIN_(SIGN|BOX)=(.+)$ ]] || continue
+        count=$((count + 1))
+        if grep -rqF -- "${BASH_REMATCH[2]}" "$dist"; then
+            die "the build pins the tests' steward key, whose secret anyone can derive." \
+                "Set RECONCILE_STEWARD_PIN_SIGN and RECONCILE_STEWARD_PIN_BOX to the real" \
+                "steward's keys, or leave both unset (deploy/README.md)."
+        fi
+    done <<< "$pins"
+    ((count == 2)) || die "couldn't derive the tests' steward pins to check the build."
+}
+
+for tool in git npm node rsync ssh curl base64; do
     command -v "$tool" >/dev/null 2>&1 || die "$tool isn't on PATH."
 done
 load_env_file
@@ -187,6 +217,7 @@ npm --prefix "$PROJECT_ROOT/client" ci --no-audit --no-fund --loglevel=error
 "$PROJECT_ROOT/client/scripts/models.sh" || die "couldn't fetch the model's files."
 RECONCILE_MODELS=required npm --prefix "$PROJECT_ROOT/client" run build --silent
 [[ -f "$PROJECT_ROOT/client/dist/index.html" ]] || die "the build left no client/dist/index.html."
+refuse_test_pins "$PROJECT_ROOT/client/dist"
 summary="built client"
 
 # 2. Sync. Caddy and the reconcile user only read these, so make them readable

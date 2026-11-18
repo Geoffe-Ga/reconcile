@@ -204,7 +204,7 @@ The steward signs each notice. The relay acts on it so that held records aren't 
 
 ### 6.2 The steward's key
 
-**Built** (#488): both keys derive from one 32-byte secret by HKDF (decided there), `scripts/steward_key.py` makes it offline, and the app pins null until the founder pins the real keys; the contract lives in [`phase-1/06-relay-api.md`](phase-1/06-relay-api.md), [`phase-1/08-screens.md`](phase-1/08-screens.md) (item 12) and [`phase-1/09-privacy-rules.md`](phase-1/09-privacy-rules.md).
+**Built** (#488): both keys derive from one 32-byte secret by HKDF (decided there), `scripts/steward_key.py` makes it offline, and the app pins null until the founder sets the real keys as the deploy build's two settings (#505, `RECONCILE_STEWARD_PIN_SIGN` and `RECONCILE_STEWARD_PIN_BOX`); the contract lives in [`phase-1/06-relay-api.md`](phase-1/06-relay-api.md), [`phase-1/08-screens.md`](phase-1/08-screens.md) (item 12) and [`phase-1/09-privacy-rules.md`](phase-1/09-privacy-rules.md).
 
 - **Two public keys ship in the app:** the steward's Ed25519 key, which signs notices, and an X25519 key, which reports are sealed to. The relay holds the first in its settings.
 - **The secret halves** are imported on the steward's device from Settings, kept through `keepKeys`, and sealed in the passkey vault where there is one.

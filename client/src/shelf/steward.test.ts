@@ -1,28 +1,40 @@
 /**
- * The steward's pins (#488; listed-doors.md §6.2). Every other test runs
- * against the tests' own key (`test-setup.ts`); this one reads the app's.
+ * The steward's pins (#488, #505; listed-doors.md §6.2). Every other test
+ * runs against the tests' own key (`test-setup.ts`); this one reads the
+ * app's, which the build defines from its settings (`plugins/stewardPins.ts`).
  */
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { canonicalBytes } from '../crypto/base64url';
-import { isUsableKxKey } from '../crypto/box';
-import { TEST_PINS } from '../test/steward';
+import { TEST_PINS, TEST_PIN_SETTINGS } from '../test/steward';
 import type * as Pinned from './steward';
 
-/** Whether `text` is a 32-byte key in canonical unpadded base64url. */
-const isKey = (text: string): boolean => canonicalBytes(text)?.length === 32;
+/** The app's own `steward.ts`, read afresh. */
+async function actualPins(): Promise<Pinned.StewardPins | null> {
+  vi.resetModules();
+  const { STEWARD_PINS } = await vi.importActual<typeof Pinned>('./steward');
+  return STEWARD_PINS;
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.resetModules();
+});
 
 describe('STEWARD_PINS', () => {
-  it('is null until the founder pins two keys, and then never the tests’ key', async () => {
-    const { STEWARD_PINS: pins } = await vi.importActual<typeof Pinned>('./steward');
+  it('is null when the build sets no pins, as this test run does', async () => {
+    expect(await actualPins()).toBeNull();
+  });
 
-    const pinned =
-      pins !== null &&
-      isKey(pins.sign) &&
-      isKey(pins.box) &&
-      isUsableKxKey(canonicalBytes(pins.box) ?? new Uint8Array(0)) &&
-      pins.sign !== TEST_PINS.sign &&
-      pins.box !== TEST_PINS.box;
-    expect(pins === null || pinned).toBe(true);
+  it('is the tests’ pins under the settings the e2e build uses (#505)', () => {
+    expect(TEST_PIN_SETTINGS).toEqual({
+      RECONCILE_STEWARD_PIN_SIGN: TEST_PINS.sign,
+      RECONCILE_STEWARD_PIN_BOX: TEST_PINS.box,
+    });
+  });
+
+  it('is what the build defines', async () => {
+    vi.stubGlobal('__RECONCILE_STEWARD_PINS__', TEST_PINS);
+
+    expect(await actualPins()).toEqual(TEST_PINS);
   });
 });

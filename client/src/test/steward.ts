@@ -29,6 +29,16 @@ export const TEST_PINS: StewardPins = {
   box: base64url(TEST_STEWARD.box.publicKey),
 };
 
+/**
+ * The build settings that pin the tests' key (#505): what `scripts/e2e.sh`
+ * builds the app with, through `scripts/stewardTestPins.mjs`, and what
+ * `deploy/deploy.sh` refuses to ship. `plugins/stewardPins.ts` reads them.
+ */
+export const TEST_PIN_SETTINGS: Readonly<Record<string, string>> = {
+  RECONCILE_STEWARD_PIN_SIGN: TEST_PINS.sign,
+  RECONCILE_STEWARD_PIN_BOX: TEST_PINS.box,
+};
+
 /** The steward's address in tests: its signing key, in unpadded base64url. */
 export const STEWARD_ADDRESS = TEST_PINS.sign;
 

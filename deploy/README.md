@@ -88,6 +88,8 @@ RECONCILE_DEPLOY_HOST=deploy@<vm>
 RECONCILE_SITE=<domain>
 ```
 
+`deploy/.env` may also hold the steward's two public keys, `RECONCILE_STEWARD_PIN_SIGN` and `RECONCILE_STEWARD_PIN_BOX`, once the shelf is on (see [The public shelf](#the-public-shelf)).
+
 ## Deploying
 
 ```
@@ -125,10 +127,19 @@ RECONCILE_RELAY_VAPID_KEY=.relay-data/vapid.pem RECONCILE_RELAY_VAPID_SUBJECT=ht
 
 The public shelf ([ADR-0081](../docs/adr/0081-listed-doors-and-exception-moderation.md), [`listed-doors.md`](../docs/spec/listed-doors.md)) is off until the founder turns it on, and nothing a person sees changes while it is. Two relay settings govern it:
 
-- **`RECONCILE_RELAY_SHELF_STEWARD_KEY`**: the steward's Ed25519 public key, 43 characters of canonical unpadded base64url. Unset or empty, every shelf route answers `404 shelf_unavailable`; a malformed key stops the relay from starting. It must be the `sign` key the app pins in `client/src/shelf/steward.ts`, or no device will take the steward's releases.
+- **`RECONCILE_RELAY_SHELF_STEWARD_KEY`**: the steward's Ed25519 public key, 43 characters of canonical unpadded base64url. Unset or empty, every shelf route answers `404 shelf_unavailable`; a malformed key stops the relay from starting. It must be the `sign` key the app is built with (`RECONCILE_STEWARD_PIN_SIGN`, below), or no device will take the steward's releases.
 - **`RECONCILE_RELAY_SHELF_MODE`**: `held`, the only mode built (#488), and what unset or empty means. Every new listing, and whatever its door posts before a release, waits until the steward releases it from the console. Any other value, `open` included, stops the relay: open mode is deferred (`listed-doors.md` §9).
 
-`RECONCILE_RELAY_SHELF_MAX_BYTES` caps the shelf (default 64 MiB). To turn the shelf on, make the steward's key offline with `python -m scripts.steward_key`, which prints the secret once, the two public keys to pin and the relay's line; pin both public keys in the app and deploy it; then add `Environment=RECONCILE_RELAY_SHELF_STEWARD_KEY=<sign key>` to a drop-in of `reconcile-relay.service` (for instance `/etc/systemd/system/reconcile-relay.service.d/shelf.conf`), `systemctl daemon-reload` and restart the relay; and import the secret in Settings › Steward key on the steward's one device. The secret never goes on the VM: the relay holds only the public key.
+`RECONCILE_RELAY_SHELF_MAX_BYTES` caps the shelf (default 64 MiB).
+
+**The app's pins are a build setting** (#505, [ADR-0081's amendment](../docs/adr/0081-listed-doors-and-exception-moderation.md#amendment-2026-11-18-the-stewards-pins-are-a-build-setting)). The build reads the steward's two public keys from `RECONCILE_STEWARD_PIN_SIGN` and `RECONCILE_STEWARD_PIN_BOX` (`client/plugins/stewardPins.ts`). With neither set the app pins nothing, so no device takes a release and nothing a person sees changes; one without the other, or a malformed key, fails the build. `client/scripts/e2e.sh` builds with the tests' key, whose secret anyone can derive, so `deploy/deploy.sh` checks the finished build and refuses one that holds either of its keys.
+
+To turn the shelf on (HUMAN ACTION):
+
+1. Make the steward's key offline with `python -m scripts.steward_key`. It prints the secret once, the two lines for the deploy build and the relay's line.
+2. Put `RECONCILE_STEWARD_PIN_SIGN=…` and `RECONCILE_STEWARD_PIN_BOX=…` in `deploy/.env` (or export them) and run `deploy/deploy.sh`. Keep them there: a deploy without them builds an app that pins nothing.
+3. Add `Environment=RECONCILE_RELAY_SHELF_STEWARD_KEY=<sign key>` to a drop-in of `reconcile-relay.service` (for instance `/etc/systemd/system/reconcile-relay.service.d/shelf.conf`), `systemctl daemon-reload` and restart the relay.
+4. Import the secret in Settings › Steward key on the steward's one device. The secret never goes on the VM or in `deploy/.env`: the relay and the build hold only the public keys.
 
 To try it against `./scripts/relay.sh`: `RECONCILE_RELAY_SHELF_STEWARD_KEY=<sign key> ./scripts/relay.sh`.
 

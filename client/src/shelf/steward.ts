@@ -13,11 +13,16 @@
  * Settings takes a steward secret only when it derives exactly these two
  * keys. Rotating them is an app release and a relay setting (§6.2).
  *
- * **Not pinned yet (HUMAN ACTION).** The founder makes the key offline and
- * pins its two public halves here. Until then this is null: no notice
- * verifies on any device, so no listing shows on the shelf, Settings offers
- * no steward key and there is no console. A relay without the steward key
- * has no shelf either, so with neither set nothing a person sees changes.
+ * **Set by the build (#505; HUMAN ACTION).** The pins are a build setting,
+ * not source: the build reads `RECONCILE_STEWARD_PIN_SIGN` and
+ * `RECONCILE_STEWARD_PIN_BOX` (`plugins/stewardPins.ts`, through
+ * `vite.config.ts`'s `define`), and fails on a malformed one. The founder makes the key offline
+ * and sets both for the deploy build (`deploy/README.md`). With neither set
+ * the pins are null: no notice verifies on any device, so no listing shows on
+ * the shelf, Settings offers no steward key and there is no console. A relay
+ * without the steward key has no shelf either, so with neither set nothing a
+ * person sees changes. `scripts/e2e.sh` builds with the tests' key, which
+ * `deploy/deploy.sh` refuses to ship.
  * Tests run against a key of their own (`src/test/steward.ts`).
  */
 
@@ -29,5 +34,8 @@ export interface StewardPins {
   readonly box: string;
 }
 
-/** The pinned keys, or null until the founder pins them (HUMAN ACTION, #488). */
-export const STEWARD_PINS: StewardPins | null = null;
+/** What the build defines from its settings (`plugins/stewardPins.ts`). */
+declare const __RECONCILE_STEWARD_PINS__: StewardPins | null;
+
+/** The pinned keys, or null when the build sets none (HUMAN ACTION, #488, #505). */
+export const STEWARD_PINS: StewardPins | null = __RECONCILE_STEWARD_PINS__;
