@@ -64,3 +64,18 @@ def test_e2e_keeps_no_browser_cache() -> None:
     paths = [str(step.get("with", {}).get("path", "")) for step in _e2e()["steps"]]
     assert not any("ms-playwright" in path for path in paths)
     assert uses.count("actions/cache@v4") == 0
+
+
+def test_e2e_sets_up_python_without_a_pip_cache() -> None:
+    """setup-python names a pip cache with ``lsb_release``, which the image lacks.
+
+    The relay's runtime install takes seconds, so the job keeps no pip cache
+    rather than installing ``lsb-release`` from the apt mirror it left behind.
+    """
+    setups = [
+        step
+        for step in _e2e()["steps"]
+        if str(step.get("uses", "")).startswith("actions/setup-python")
+    ]
+    assert len(setups) == 1
+    assert "cache" not in setups[0].get("with", {})
