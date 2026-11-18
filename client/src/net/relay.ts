@@ -198,7 +198,7 @@ async function refusal(response: Response): Promise<RelayError> {
 }
 
 /** The JSON body of a 2xx answer; any other answer becomes a RelayError. */
-async function readJson(response: Response): Promise<unknown> {
+export async function readJson(response: Response): Promise<unknown> {
   const body: unknown = await response.json().catch(() => undefined);
   if (!response.ok) {
     throw new RelayError(response.status, errorCode(body, response.status));
@@ -252,7 +252,7 @@ function parseRecord(item: unknown): RelayRecord | null {
 }
 
 /** Standard base64 decoded, or `null` when it isn't base64. */
-function fromBase64(text: string): Uint8Array<ArrayBuffer> | null {
+export function fromBase64(text: string): Uint8Array<ArrayBuffer> | null {
   let binary: string;
   try {
     binary = atob(text);
@@ -262,10 +262,12 @@ function fromBase64(text: string): Uint8Array<ArrayBuffer> | null {
   return Uint8Array.from(binary, (char) => char.charCodeAt(0));
 }
 
-function isObject(value: unknown): value is Record<string, unknown> {
+/** Whether `value` is a JSON object: not null, not an array. */
+export function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function isWhole(value: unknown): value is number {
+/** Whether `value` is a whole number from 0 up, as a seq or a relay minute is. */
+export function isWhole(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 }

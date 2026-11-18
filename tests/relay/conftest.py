@@ -1,7 +1,9 @@
 """Fixtures for the relay tests: a fake clock, settings, an app and a client.
 
 The ``push_*`` fixtures build the same relay with push on: a VAPID key made
-for the test, the subject deploy.sh would set, and a fake sender.
+for the test, the subject deploy.sh would set, and a fake sender. The
+``shelf_*`` fixtures build it with the shelf on: a steward key made for the
+test (#484).
 """
 
 from __future__ import annotations
@@ -18,6 +20,7 @@ from tests.relay.helpers import (
     SUBJECT,
     FakeClock,
     FakeSender,
+    ShelfSigner,
     store_of,
     write_vapid_key,
 )
@@ -101,3 +104,36 @@ def push_client(push_app: ASGIApp) -> Iterator[TestClient]:
     """A test client for the push-on relay, with lifespan startup and shutdown."""
     with TestClient(push_app) as test_client:
         yield test_client
+
+
+@pytest.fixture
+def steward() -> ShelfSigner:
+    """The steward's key for this test, made at run time."""
+    return ShelfSigner.fresh()
+
+
+@pytest.fixture
+def shelf_settings(db_path: Path, steward: ShelfSigner) -> Settings:
+    """Settings with the shelf on: the steward's public key is set."""
+    return Settings(db_path=db_path, shelf_steward_key=steward.address)
+
+
+@pytest.fixture
+def shelf_app(shelf_settings: Settings, clock: FakeClock) -> Iterator[ASGIApp]:
+    """A relay with the shelf on, on the fake clock."""
+    relay = create_app(shelf_settings, clock)
+    yield relay
+    store_of(relay).close()
+
+
+@pytest.fixture
+def shelf_client(shelf_app: ASGIApp) -> Iterator[TestClient]:
+    """A test client for the shelf-on relay."""
+    with TestClient(shelf_app) as test_client:
+        yield test_client
+
+
+@pytest.fixture
+def door() -> ShelfSigner:
+    """A listed door's ``sign`` key, made at run time."""
+    return ShelfSigner.fresh()

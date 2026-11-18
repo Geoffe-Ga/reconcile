@@ -114,3 +114,75 @@ def test_the_vapid_key_and_subject_are_read() -> None:
 
     assert settings.vapid_key == Path("/var/lib/reconcile/vapid.pem")
     assert settings.vapid_subject == "https://relay.example.org"
+
+
+def test_the_shelf_is_off_without_a_steward_key() -> None:
+    """With no RECONCILE_RELAY_SHELF_STEWARD_KEY the shelf routes are off (#484)."""
+    settings = Settings.from_env({"RECONCILE_RELAY_DB": "relay.db"})
+
+    assert settings.shelf_steward_key is None
+    assert Settings(db_path=Path("relay.db")).shelf_steward_key is None
+
+
+def test_an_empty_steward_key_leaves_the_shelf_off() -> None:
+    """An empty key is as good as none."""
+    settings = Settings.from_env(
+        {"RECONCILE_RELAY_DB": "relay.db", "RECONCILE_RELAY_SHELF_STEWARD_KEY": ""}
+    )
+
+    assert settings.shelf_steward_key is None
+
+
+def test_the_steward_key_is_read() -> None:
+    """The steward's Ed25519 public key, in unpadded base64url, is kept as given."""
+    key = "Ag" + "A" * 40 + "E"
+    settings = Settings.from_env(
+        {"RECONCILE_RELAY_DB": "relay.db", "RECONCILE_RELAY_SHELF_STEWARD_KEY": key}
+    )
+
+    assert settings.shelf_steward_key == key
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["A" * 42, "A" * 44, "A" * 42 + "B", "A" * 42 + "+", "A" * 42 + "=", " " * 43],
+)
+def test_a_bad_steward_key_is_refused(value: str) -> None:
+    """Anything but a canonical 32-byte key stops the relay from starting."""
+    with pytest.raises(
+        SettingsError, match=r"^RECONCILE_RELAY_SHELF_STEWARD_KEY must be an Ed25519"
+    ):
+        Settings.from_env(
+            {
+                "RECONCILE_RELAY_DB": "relay.db",
+                "RECONCILE_RELAY_SHELF_STEWARD_KEY": value,
+            }
+        )
+
+
+def test_the_shelf_cap_defaults_to_sixty_four_mebibytes() -> None:
+    """Without RECONCILE_RELAY_SHELF_MAX_BYTES the shelf holds 64 MiB."""
+    settings = Settings.from_env({"RECONCILE_RELAY_DB": "relay.db"})
+
+    assert settings.max_shelf_bytes == 67_108_864
+    assert Settings(db_path=Path("relay.db")).max_shelf_bytes == 67_108_864
+
+
+def test_the_shelf_cap_can_be_set() -> None:
+    """RECONCILE_RELAY_SHELF_MAX_BYTES sets it in bytes."""
+    settings = Settings.from_env(
+        {"RECONCILE_RELAY_DB": "relay.db", "RECONCILE_RELAY_SHELF_MAX_BYTES": "2048"}
+    )
+
+    assert settings.max_shelf_bytes == 2048
+
+
+@pytest.mark.parametrize("value", ["", "0", "-1", "lots"])
+def test_a_bad_shelf_cap_is_refused(value: str) -> None:
+    """The shelf cap must be a positive whole number of bytes."""
+    with pytest.raises(
+        SettingsError, match=r"^RECONCILE_RELAY_SHELF_MAX_BYTES must be a positive"
+    ):
+        Settings.from_env(
+            {"RECONCILE_RELAY_DB": "relay.db", "RECONCILE_RELAY_SHELF_MAX_BYTES": value}
+        )

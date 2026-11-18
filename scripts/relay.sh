@@ -28,6 +28,15 @@ ENVIRONMENT:
     RECONCILE_RELAY_VAPID_KEY     A PEM P-256 key that turns Web Push on (#89);
                                   unset, push is off (deploy/README.md)
     RECONCILE_RELAY_VAPID_SUBJECT With a key: https://<domain> or mailto:<address>
+    RECONCILE_RELAY_SHELF_STEWARD_KEY
+                                  The steward's Ed25519 public key, 43 base64url
+                                  characters, that turns the public shelf on
+                                  (#484, docs/spec/listed-doors.md); unset, its
+                                  routes answer 404 shelf_unavailable
+    RECONCILE_RELAY_SHELF_MAX_BYTES
+                                  Refuse a shelf PUT that would take the
+                                  shelf's unexpired records past this many
+                                  bytes (default 64 MiB)
 
 --no-proxy-headers matters: Uvicorn otherwise trusts X-Forwarded-For from
 127.0.0.1, which is where a reverse proxy on the same host connects from.

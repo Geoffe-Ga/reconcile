@@ -46,13 +46,17 @@ export const SHARE_CONTEXT = 'reconcile/v1/share';
 /** The tag on a front door's page (#121): the door's own signature over the page. */
 export const DOOR_PAGE_CONTEXT = 'reconcile/v1/door-page';
 
+/** The tag on a public shelf record (#484): a listed door's, or the steward's, signature over it. */
+export const SHELF_CONTEXT = 'reconcile/v1/shelf';
+
 /** What a signature is for. */
 export type SignContext =
   | typeof EVENT_CONTEXT
   | typeof INVITE_TOKEN_CONTEXT
   | typeof SEAT_CONTEXT
   | typeof SHARE_CONTEXT
-  | typeof DOOR_PAGE_CONTEXT;
+  | typeof DOOR_PAGE_CONTEXT
+  | typeof SHELF_CONTEXT;
 
 /** An Ed25519 public key's length in bytes. */
 export const PUBLIC_KEY_BYTES = 32;

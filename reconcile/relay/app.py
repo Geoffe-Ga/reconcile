@@ -36,6 +36,16 @@ Without a key every push route answers 404 ``push_unavailable`` and ``wake``
 does nothing. The push routes take closed JSON bodies of at most 2,048 bytes,
 declared before a byte is read.
 
+The public shelf (#484, ``reconcile.relay.shelf``, listed-doors.md §4.2). With
+the steward's public key set, ``PUT /v1/shelf/{address}`` stores one record
+that ``address``'s key signed, and ``GET /v1/shelf`` pages every record that
+isn't held, from every address, in seq order. These are the only bodies the
+relay can read. Without the key both answer 404 ``shelf_unavailable``. A
+record is at most 4,096 bytes, declared before a byte is read, and a PUT
+that would take the shelf's unexpired records past ``max_shelf_bytes`` gets
+507 ``shelf_full``, checked on the declared length and again just before the
+insert. A record is kept 30 days.
+
 Nothing here logs. Error bodies are a constant ``{"error": "<code>"}`` that
 never echoes the request. The privacy middleware wraps everything.
 """
@@ -59,10 +69,17 @@ from fastapi.responses import JSONResponse, Response
 from starlette.exceptions import HTTPException
 from starlette.requests import ClientDisconnect
 
-from reconcile.relay import push
+from reconcile.relay import push, shelf
 from reconcile.relay.privacy import PrivacyMiddleware
-from reconcile.relay.settings import Settings
-from reconcile.relay.store import BlobStore, Record, day_of, minute_of
+from reconcile.relay.settings import Settings, key_bytes
+from reconcile.relay.store import (
+    BlobStore,
+    Record,
+    ShelfRow,
+    ShelfWhen,
+    day_of,
+    minute_of,
+)
 
 if TYPE_CHECKING:
     from fastapi.telemetry import TelemetryConfig
@@ -78,6 +95,8 @@ BLOB_SIZES = frozenset({1024, 4096, 16384, 65536})
 BACKUP_SIZES = frozenset({1 << 16, 1 << 18, 1 << 20, 1 << 22, 1 << 24})
 # A backup is kept 180 whole days after the day of its last write (ADR-0057).
 BACKUP_KEEP_DAYS = 180
+# A shelf record is kept 30 whole days after the day it arrived (§4.2, proposed).
+SHELF_KEEP_DAYS = 30
 OCTET_STREAM = "application/octet-stream"
 JSON_MEDIA_TYPE = "application/json"
 MAX_JSON_BYTES = 2048
@@ -167,6 +186,9 @@ def create_app(
     api.add_api_route("/v1/push/{mailbox}", pushes.subscribe, methods=["PUT"])
     api.add_api_route("/v1/push/{mailbox}", pushes.unsubscribe, methods=["DELETE"])
     api.add_api_route("/v1/push/{mailbox}/nudge", pushes.nudge, methods=["POST"])
+    shelves = _Shelf(store, settings, clock)
+    api.add_api_route("/v1/shelf", shelves.get, methods=["GET"])
+    api.add_api_route("/v1/shelf/{address}", shelves.put, methods=["PUT"])
     api.add_api_route("/v1/health", health, methods=["GET"])
     return PrivacyMiddleware(api)
 
@@ -341,6 +363,76 @@ class _Push:
     def _space(self) -> None:
         """Refuse a push write once the database and its WAL pass the cap."""
         _check_space(self.store, self.settings)
+
+
+class _Shelf:
+    """The shelf's routes (#484), bound to one store, its settings and a clock."""
+
+    def __init__(self, store: BlobStore, settings: Settings, clock: Clock) -> None:
+        """Bind the routes; with no steward key in ``settings`` they are off."""
+        self.store = store
+        self.settings = settings
+        self.clock = clock
+
+    def _on(self) -> None:
+        """404 ``shelf_unavailable`` before anything else, while the key is unset."""
+        if self.settings.shelf_steward_key is None:
+            raise RelayError(404, "shelf_unavailable")
+
+    async def put(self, address: str, request: Request) -> JSONResponse:
+        """Store one record ``address`` signed, kept 30 days; 201 with its seq."""
+        self._on()
+        key = key_bytes(address)
+        if key is None:
+            raise RelayError(400, "invalid_address")
+        _check_media_type(request.headers, OCTET_STREAM)
+        length = _declared_length(request.headers, shelf.MAX_RECORD_BYTES)
+        _check_space(self.store, self.settings)
+        self._check_room(length, self.clock())
+        body = await _read_body(request, length)
+        record = shelf.open_record(key, body)
+        if isinstance(record, shelf.Refusal):
+            raise RelayError(record.status, record.code)
+        now = self.clock()  # only after the body, as for a blob
+        self._check_room(length, now)  # another PUT may have landed
+        when = ShelfWhen(
+            received=minute_of(now), expiry=day_of(now) + SHELF_KEEP_DAYS + 1
+        )
+        seq = self.store.add_shelf(address, record.kind, record.ref, body, when)
+        return JSONResponse({"seq": seq}, status_code=201)
+
+    def _check_room(self, length: int, now: float) -> None:
+        """507 ``shelf_full`` if ``length`` more bytes would pass the shelf's cap."""
+        used = self.store.shelf_bytes(today=day_of(now))
+        if used + length > self.settings.max_shelf_bytes:
+            raise RelayError(507, "shelf_full")
+
+    async def get(self, request: Request) -> JSONResponse:
+        """Every record that isn't held, after a seq, ascending, with ``now``."""
+        self._on()
+        after = _query_int(request.query_params, AFTER)
+        limit = _query_int(request.query_params, LIMIT)
+        now = self.clock()  # before the select, as for a mailbox
+        rows = self.store.read_shelf(
+            after=after, limit=limit, today=day_of(now), minute=minute_of(now)
+        )
+        return JSONResponse(
+            {
+                "records": [_shelf_json(row) for row in rows],
+                "now": minute_of(now),
+                "instance": self.store.instance,
+            }
+        )
+
+
+def _shelf_json(row: ShelfRow) -> dict[str, Any]:
+    """A shelf record as JSON: a blob's fields, and the address it was PUT under."""
+    return {
+        "seq": row.seq,
+        "received": row.received,
+        "address": row.address,
+        "data": base64.b64encode(row.body).decode("ascii"),
+    }
 
 
 def _check_space(store: BlobStore, settings: Settings) -> None:

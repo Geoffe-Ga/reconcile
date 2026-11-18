@@ -16,6 +16,14 @@ module.exports = {
       to: { path: ['^src/(app|ui|screens)/', 'node_modules/(react|react-dom|react-aria-components)/'] },
     },
     {
+      name: 'shelf-stays-framework-free',
+      comment:
+        'src/shelf (#484) folds the public shelf the same way on every device, so it stays plain TypeScript, tested against vectors, with no React or UI code.',
+      severity: 'error',
+      from: { path: '^src/shelf/' },
+      to: { path: ['^src/(app|ui|screens)/', 'node_modules/(react|react-dom|react-aria-components)/'] },
+    },
+    {
       name: 'engine-does-no-io',
       comment:
         'The engine is pure: it folds the records sync hands it and never reaches the network itself (spec §2, #63).',

@@ -28,12 +28,14 @@ import { Root } from './app/Root';
 import { afterEveryPass } from './recovery/holder';
 import { parseRoute } from './app/router';
 import { copyToClipboard } from './app/services';
+import { createShelfFeed } from './app/shelfFeed';
 import { browserFileTargets, browserShare } from './app/share';
 import { SharedRoot } from './app/SharedRoot';
 import { xchachaSeal } from './crypto/seal';
 import { getWebhook, postWebhook } from './net/discord';
 import { createPushRelay } from './net/push';
 import { createRelay } from './net/relay';
+import { createShelf } from './net/shelf';
 import { guideRecord } from './platform/guide';
 import { readPlatform } from './platform/installGate';
 import { noticeRecord } from './platform/notice';
@@ -125,6 +127,7 @@ async function start(container: HTMLElement): Promise<void> {
     push,
     guide: guideRecord(),
     passkey: passkeyOn(keys),
+    shelf: createShelfFeed({ shelf: createShelf(), now }),
   };
   const firstRun = {
     platform,
