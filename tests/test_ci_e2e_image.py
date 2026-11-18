@@ -79,3 +79,12 @@ def test_e2e_sets_up_python_without_a_pip_cache() -> None:
     ]
     assert len(setups) == 1
     assert "cache" not in setups[0].get("with", {})
+
+
+def test_e2e_calls_pip_through_python() -> None:
+    """In the image, setup-python's ``python`` is on PATH but no bare ``pip``."""
+    lines = [line.strip() for line in _runs(_e2e()).splitlines()]
+    assert not [line for line in lines if line.startswith(("pip ", "pip3 "))]
+    assert any(
+        line.startswith("python -m pip install -r requirements.txt") for line in lines
+    )

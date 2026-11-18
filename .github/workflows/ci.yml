@@ -160,7 +160,7 @@ jobs:
       - name: Install the relay
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt -e .
+          python -m pip install -r requirements.txt -e .
 
       - uses: actions/setup-node@v4
         with:
