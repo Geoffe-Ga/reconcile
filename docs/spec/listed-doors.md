@@ -45,7 +45,7 @@ A group can list its front door. A listed group can publish single Dispatches to
 - **The front door's value gains two fields:** `{sign, box, showCount, listed, covenant}`. `listed` is a boolean. `covenant` is present only when `listed` is true: the SHA-256 of the covenant text the group read, in unpadded base64url.
 - **Widening.** `isWider` is true from unlisted to listed, so listing takes the entrenched bar and a 14 to 28 day window. Unlisting is ordinary.
 - **One Proposal can open and list** a door, or list a door that is already open.
-- **The composer and the ballot show the covenant's text** and one plain line: "Your group's name will be public beside the words it votes to publish. Anyone can read them, and copy them before they come down."
+- **The composer and the ballot show the covenant's text** and one plain line: "Your group's name will be public beside the words it votes to publish. Anyone can read them, and copy them before they come down." #486 added "Members' devices post the listing, so whoever runs the relay can tell which devices are in your group." (§7).
 - **A group is never prompted toward listing.** It appears only in Group rules, under the front door.
 - **Older apps (decided in #485).** A build from before #485 refuses a front door value with fields it doesn't know (see #459), so it ignores a Proposal carrying one and every vote on it. The decision:
   - **An unlisted door is written as before #485,** `{sign, box, showCount}`, never with `listed: false` (which every build from #485 reads as the same door). So opening, rotating, counting and closing a door that isn't listed fold the same on every build. Only a Proposal that lists a door, accepts a new covenant or unlists one is new to an older build.
@@ -70,7 +70,7 @@ A group can list its front door. A listed group can publish single Dispatches to
 
 The shelf is one public log on the relay. Every device reads the same log and folds it with the same pure function, as it folds a group's log.
 
-**Built so far.** #484 built §4.1's records (on the wire, a record is the 64-byte signature, then the JSON; the address travels beside it, not in it), §4.2's `PUT` and `GET /v1/shelf`, its size limits, `shelf_full` and the table, and §4.3's rule 1 and the newest listing per address. That contract now lives in [`phase-1/06-relay-api.md`](phase-1/06-relay-api.md) and [`phase-1/09-privacy-rules.md`](phase-1/09-privacy-rules.md); the rest of this section is still to build.
+**Built so far.** #486 built §4.2's listing rules (one listing per address, replaced in place, 30 days after its last post, `409 listing_final`, a final listing deleting its entries), §4.3's rule 2 in full, and §4.5's listing and its end; that contract lives in [`phase-1/06-relay-api.md`](phase-1/06-relay-api.md) (Listings) and [`phase-1/07-sync.md`](phase-1/07-sync.md) (step 8 of a pass). #484 built §4.1's records (on the wire, a record is the 64-byte signature, then the JSON; the address travels beside it, not in it), §4.2's `PUT` and `GET /v1/shelf`, its size limits, `shelf_full` and the table, and §4.3's rule 1 and the newest listing per address. That contract now lives in [`phase-1/06-relay-api.md`](phase-1/06-relay-api.md) and [`phase-1/09-privacy-rules.md`](phase-1/09-privacy-rules.md); the rest of this section is still to build.
 
 ### 4.1 Records
 
@@ -233,7 +233,7 @@ These add to §9 of the MVP spec.
 - **Shelf records are the only readable bytes the relay holds.** The end-to-end scan proves it: every canary outside a published entry is absent from the stopped relay's files.
 - **A record names no person.** No member's name, key or id, no author, no count, no ballot.
 - **Only listed groups are watched,** and only their public records.
-- **A live observer of the relay can tie a listed group's name to its sealed mailboxes and to its members' IP addresses,** because a member's device posts the listing. The pilot notice and the listing composer both say so. Accepted for the pilot; it goes to the outside review (ADR-0058).
+- **A live observer of the relay can tie a listed group's name to its sealed mailboxes and to its members' IP addresses,** because a member's device posts the listing from the same IP address as its group syncs. The pilot notice and the listing composer both say so (#486). Accepted for the pilot; it goes to the outside review (ADR-0058), and §9 lists it.
 - **Reading a door's page** still shows the relay that an address asked for it, as today.
 - **A report carries no reporter.** It comes from the reporter's IP address, as any request does.
 - **The registry can be enumerated.** That is its purpose, and the composer says so before the vote.
@@ -259,6 +259,7 @@ Each waits for its trigger and returns through an ADR.
 | Open mode: listings live at once, a burst trip into held mode, window rollback, youngest-first eviction | Held mode | The covenant gate opens |
 | A name that survives a membership's end | The steward resolves collisions by hand | The same |
 | A listing key held apart from the door's secrets | The door's `sign` key | The outside review, or the first forged listing |
+| Posting a listing from somewhere a live observer can't tie to the group's mailboxes | Members' devices post it from the IP addresses they sync from; the pilot notice and the covenant say so (§7) | The outside review (ADR-0058) |
 | Coalitions as listed levels, and a shelf line on promote motions | Groups only | ADR-0077's open question on a coalition's front door |
 | Pass-along as a button inside a group | The entry's link | Pilot feedback |
 | Taking one entry down by vote | Unlisting, or the entry's 30 days | A pilot group asks |

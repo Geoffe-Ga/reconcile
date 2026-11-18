@@ -37,7 +37,11 @@
  *    page when it's due and reads its inbox while the door is open, closes
  *    the page of a door no longer open, a dissolved group's included (#108),
  *    and never fails the pass;
- * 7. posts the push nudges due for this device's own open Proposals (#99,
+ * 7. keeps the group's listing on the public shelf (#486,
+ *    src/shelf/keeper.ts): posts it while its door is listed and the copy
+ *    that stands is missing, different or 7 days old, and the final listing
+ *    once that door has closed, and never fails the pass;
+ * 8. posts the push nudges due for this device's own open Proposals (#99,
  *    ./push.ts), and for the coalitions' open motions its member may vote on
  *    (#284), each once, which likewise never fails the pass. A read-only
  *    archive (#108) posts none.
@@ -233,6 +237,16 @@ export interface DoorUpkeep {
   replies(): Promise<void>;
 }
 
+/**
+ * The public shelf's work in a pass (#486): `createShelfKeeper` in
+ * src/shelf/, kept apart from this module so sync needs nothing of the
+ * shelf's.
+ */
+export interface ShelfUpkeep {
+  /** Keeps `groupId`'s listing on the shelf after the group synced. */
+  run(groupId: string): Promise<void>;
+}
+
 /** The timer functions the poller uses; tests hand in ones they control. */
 export interface Timers {
   /** Call `callback` after `ms`, returning a handle for `clearTimeout`. */
@@ -369,6 +383,8 @@ export interface SyncOptions {
   push?: PushUpkeep;
   /** The front door's keeper (#121); without it, no page is kept and no inbox or reply read. */
   door?: DoorUpkeep;
+  /** The shelf's keeper (#486); without it, no listing is posted. */
+  shelf?: ShelfUpkeep;
   /**
    * Run after each pass in which every group synced, unless halted, once the
    * pass's key changes (#98) and push upkeep (#99) are done: the relay
@@ -403,7 +419,7 @@ export interface Sync extends Poller {
 export function createSync(options: SyncOptions): Sync {
   const { store, relay = createRelay(), seal, idOf = eventIdOf, clock = Date.now } = options;
   const random = options.random ?? randomBytes;
-  const { chatBot, push, door, afterPass } = options;
+  const { chatBot, push, door, shelf, afterPass } = options;
   const listeners = new Set<() => void>();
   let reachable = true;
   let halted = false;
@@ -629,6 +645,7 @@ export function createSync(options: SyncOptions): Sync {
     if (halted) return true;
     await chatBot?.run(group.groupId).catch(() => undefined);
     await door?.run(group.groupId).catch(() => undefined);
+    await shelf?.run(group.groupId).catch(() => undefined);
     await push?.nudge(group.groupId).catch(() => undefined);
     return true;
   }
@@ -1090,11 +1107,11 @@ function readsFor(group: Group): boolean {
 
 /**
  * Whether a pass runs anything more for `group` once it has synced: a `kx`,
- * the chat bot, the front door and nudges. A coalition or a room has no key
+ * the chat bot, the front door, its shelf listing (#486) and nudges. A coalition or a room has no key
  * of its own to post, no chat bot and no nudges (#114, #120, #125), and a
  * copy that hasn't heard from its group (#231) posts nothing. A group the
  * pass just archived still runs them once, so its front door's page closes
- * (#121); each posts nothing else for a dissolved group or a removed
+ * (#121) and its listing's final copy goes (#486); each posts nothing else for a dissolved group or a removed
  * member's copy.
  */
 function postsFor(group: Group): boolean {

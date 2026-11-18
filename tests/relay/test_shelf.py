@@ -32,6 +32,7 @@ from tests.relay.helpers import (
     call,
     compact,
     entry,
+    final_listing,
     listing,
     put_shelf,
     shelf_rows,
@@ -46,6 +47,7 @@ if TYPE_CHECKING:
 
 TODAY = int(NOON // DAY)
 NOW_MINUTE = int(NOON // MINUTE)
+WEEK = 7 * 1440  # minutes
 WITHDRAW = {"v": 1, "kind": "withdraw", "id": "d" * 43}
 
 
@@ -284,6 +286,11 @@ def _run(
         compact({"v": 1, "kind": "entry", "title": "t", "text": ""}),
         compact({**entry(), "id": 7}),
         compact({"v": 1, "kind": "withdraw"}),
+        compact({**listing(), "open": "yes"}),
+        compact({**listing(), "open": None}),
+        compact({"v": 1, "kind": "listing", "open": False}),
+        compact({"v": 1, "kind": "listing", "open": False, "final": False}),
+        compact({"v": 1, "kind": "listing", "open": False, "final": 1}),
         b'{"v":1,"kind":"listing","kind":"entry","id":"x"}',
     ],
 )
@@ -305,6 +312,112 @@ def test_put_refuses_a_body_too_short_to_hold_a_signature_and_a_message(
     response = put_shelf(shelf_client, door.address, b"\x00" * size)
 
     assert (response.status_code, response.json()) == (400, {"error": "invalid_record"})
+
+
+# --- One listing per address (#486, listed-doors.md §4.2) -------------------
+
+
+def test_a_later_listing_replaces_the_address_earlier_one_in_its_place(
+    shelf_client: TestClient, door: ShelfSigner, clock: FakeClock, db_path: Path
+) -> None:
+    """One row per address: a new copy keeps the first one's seq, with its own times."""
+    put_shelf(shelf_client, door.address, door.record(listing()))
+    clock.advance(7 * DAY)
+    renamed = door.record(listing("Oak Street Tenants Union"))
+
+    response = put_shelf(shelf_client, door.address, renamed)
+
+    assert (response.status_code, response.json()) == (201, {"seq": 1})
+    assert shelf_rows(db_path) == [
+        (1, door.address, "listing", "", len(renamed), NOW_MINUTE + WEEK, TODAY + 38, 0)
+    ]
+    [served] = shelf_client.get("/v1/shelf").json()["records"]
+    assert base64.b64decode(served["data"]) == renamed
+
+
+def test_a_listing_never_replaces_another_address_listing(
+    shelf_client: TestClient, door: ShelfSigner
+) -> None:
+    """Each address keeps its own listing."""
+    other = ShelfSigner.fresh()
+    put_shelf(shelf_client, door.address, door.record(listing()))
+
+    response = put_shelf(shelf_client, other.address, other.record(listing("Birch")))
+
+    assert response.json() == {"seq": 2}
+    assert _seqs(shelf_client.get("/v1/shelf")) == [1, 2]
+
+
+def test_a_listing_lapses_thirty_days_after_its_last_post(
+    shelf_client: TestClient, door: ShelfSigner, clock: FakeClock, db_path: Path
+) -> None:
+    """Each post renews the 30 days; without one the listing lapses and is purged."""
+    put_shelf(shelf_client, door.address, door.record(listing()))
+    clock.advance(20 * DAY)
+    put_shelf(shelf_client, door.address, door.record(listing()))
+    clock.advance(30 * DAY)
+
+    assert _seqs(shelf_client.get("/v1/shelf")) == [1]
+    clock.advance(DAY)
+    assert _seqs(shelf_client.get("/v1/shelf")) == []
+    purge(store_of(shelf_client.app), clock())
+    assert shelf_rows(db_path) == []
+
+
+def test_a_final_listing_deletes_the_address_entries_and_stands(
+    shelf_client: TestClient, door: ShelfSigner, db_path: Path
+) -> None:
+    """The final copy takes the listing's row; the entries and withdraws go."""
+    other = ShelfSigner.fresh()
+    put_shelf(shelf_client, door.address, door.record(listing()))
+    put_shelf(shelf_client, door.address, door.record(entry("e" * 43)))
+    put_shelf(shelf_client, door.address, door.record({**WITHDRAW, "id": "e" * 43}))
+    put_shelf(shelf_client, other.address, other.record(listing("Birch")))
+    put_shelf(shelf_client, other.address, other.record(entry("e" * 43)))
+    final = door.record(final_listing())
+
+    response = put_shelf(shelf_client, door.address, final)
+
+    assert (response.status_code, response.json()) == (201, {"seq": 1})
+    assert [row[:3] for row in shelf_rows(db_path)] == [
+        (1, door.address, "listing"),
+        (4, other.address, "listing"),
+        (5, other.address, "entry"),
+    ]
+    served = shelf_client.get("/v1/shelf").json()["records"]
+    assert base64.b64decode(served[0]["data"]) == final
+
+
+def test_a_final_listing_with_none_before_it_stands_alone(
+    shelf_client: TestClient, door: ShelfSigner, db_path: Path
+) -> None:
+    """A door that closes before any listing reached the relay still posts its end."""
+    response = put_shelf(shelf_client, door.address, door.record(final_listing()))
+
+    assert response.status_code == 201
+    assert [row[2] for row in shelf_rows(db_path)] == ["listing"]
+
+
+def test_no_open_listing_follows_a_final_one(
+    shelf_client: TestClient, door: ShelfSigner, clock: FakeClock, db_path: Path
+) -> None:
+    """409 listing_final, and the final copy stays; a final copy again renews it."""
+    final = door.record(final_listing())
+    put_shelf(shelf_client, door.address, door.record(listing()))
+    put_shelf(shelf_client, door.address, final)
+
+    reopened = put_shelf(shelf_client, door.address, door.record(listing()))
+    clock.advance(7 * DAY)
+    renewed = put_shelf(shelf_client, door.address, final)
+
+    assert (reopened.status_code, reopened.json()) == (
+        409,
+        {"error": "listing_final"},
+    )
+    assert renewed.status_code == 201
+    assert shelf_rows(db_path) == [
+        (1, door.address, "listing", "", len(final), NOW_MINUTE + WEEK, TODAY + 38, 0)
+    ]
 
 
 # --- Caps -------------------------------------------------------------------
@@ -405,8 +518,9 @@ def test_get_returns_every_record_in_seq_order_with_its_address(
 
 def test_get_pages_after_a_seq(shelf_client: TestClient, door: ShelfSigner) -> None:
     """``after`` and ``limit`` page the shelf as they page a mailbox."""
-    for _ in range(5):
-        put_shelf(shelf_client, door.address, door.record(listing()))
+    put_shelf(shelf_client, door.address, door.record(listing()))
+    for label in "abcd":
+        put_shelf(shelf_client, door.address, door.record(entry(label * 43)))
 
     assert _seqs(shelf_client.get("/v1/shelf", params={"after": 1, "limit": 2})) == [
         2,

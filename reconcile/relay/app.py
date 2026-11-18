@@ -44,7 +44,10 @@ relay can read. Without the key both answer 404 ``shelf_unavailable``. A
 record is at most 4,096 bytes, declared before a byte is read, and a PUT
 that would take the shelf's unexpired records past ``max_shelf_bytes`` gets
 507 ``shelf_full``, checked on the declared length and again just before the
-insert. A record is kept 30 days.
+insert. A record is kept 30 days. An address has one listing (#486): a later
+copy takes the earlier one's row and seq and renews its 30 days, an open copy
+after a final one gets 409 ``listing_final``, and a final copy deletes the
+address's entries.
 
 Nothing here logs. Error bodies are a constant ``{"error": "<code>"}`` that
 never echoes the request. The privacy middleware wraps everything.
@@ -398,8 +401,27 @@ class _Shelf:
         when = ShelfWhen(
             received=minute_of(now), expiry=day_of(now) + SHELF_KEEP_DAYS + 1
         )
-        seq = self.store.add_shelf(address, record.kind, record.ref, body, when)
+        if record.kind == "listing":
+            seq = self._list(address, record, body, when)
+        else:
+            seq = self.store.add_shelf(address, record.kind, record.ref, body, when)
         return JSONResponse({"seq": seq}, status_code=201)
+
+    def _list(
+        self, address: str, record: shelf.ShelfRecord, body: bytes, when: ShelfWhen
+    ) -> int:
+        """Store ``address``'s listing in place of its earlier one (#486).
+
+        An open copy after a final one gets 409 ``listing_final``: the door
+        has closed for good. A final copy deletes the address's entries.
+        """
+        standing = self.store.listing_body(address)
+        if standing is not None and shelf.is_final(standing) and not record.final:
+            raise RelayError(409, "listing_final")
+        seq = self.store.put_listing(address, body, when)
+        if record.final:
+            self.store.drop_entries(address)
+        return seq
 
     def _check_room(self, length: int, now: float) -> None:
         """507 ``shelf_full`` if ``length`` more bytes would pass the shelf's cap."""

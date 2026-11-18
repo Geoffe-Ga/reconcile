@@ -1,8 +1,7 @@
 /**
- * The shelf's fold (#484; docs/spec/listed-doors.md §4.3). This issue builds
- * rule 1, the signature, and the part of rule 2 that takes the newest listing
- * per address. Every other rule is a named `it.todo` in the issue that builds
- * it.
+ * The shelf's fold (#484, #486; docs/spec/listed-doors.md §4.3): rule 1, the
+ * signature, and rule 2, the newest listing per address, which a final one
+ * outranks. Every other rule is a named `it.todo` in the issue that builds it.
  */
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
@@ -175,7 +174,21 @@ describe('foldShelf', () => {
       ).toEqual([]);
     });
 
-    it.todo('keeps a final listing above every later open copy of the same address (#486)');
+    it('never reopens a listing after its final copy (#486)', () => {
+      const state = foldShelf(
+        [listing('Oak St Tenants'), final(), listing('Oak St Tenants'), entry('d1', 'Back again')],
+        NOW,
+      );
+
+      expect(state.listings).toEqual([]);
+      expect(state.entries).toEqual([]);
+    });
+
+    it('keeps another address listed when one door’s listing is final (#486)', () => {
+      const state = foldShelf([final(), listing('Birch Ave', BIRCH), listing('Oak St')], NOW);
+
+      expect(state.listings.map((l) => l.name)).toEqual(['Birch Ave']);
+    });
   });
 
   it('shows entries newest first, each once per address and id', () => {

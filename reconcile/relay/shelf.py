@@ -7,8 +7,10 @@ for a group's records (ADR-0081). The address travels in the path, so the
 record doesn't carry it again.
 
 These are the only bodies the relay can read, and it reads as little as it
-can: the signature, ``v`` and ``kind``, and an entry's or withdraw's ``id``,
-which it files the record under. It never reads a name, a title or a text.
+can: the signature, ``v`` and ``kind``, an entry's or withdraw's ``id``,
+which it files the record under, and a listing's ``open`` and ``final``,
+which say whether the door has closed for good (#486). It never reads a
+name, a title or a text.
 
 Every device verifies each record again under strict RFC 8032 rules
 (``client/src/crypto/shelf.ts``), so a record this check lets through that a
@@ -39,7 +41,8 @@ _MAX_BYTES = {
     "entry": MAX_ENTRY_BYTES,
     "withdraw": MAX_SMALL_BYTES,
 }
-# The kinds filed under the id they name. A notice is the steward's (#488).
+# The kinds filed under the id they name; the third, a listing, under none. A
+# notice is the steward's (#488).
 _REFERS = frozenset({"entry", "withdraw"})
 
 
@@ -58,10 +61,15 @@ TOO_LARGE = Refusal(413, "too_large")
 
 @dataclass(frozen=True)
 class ShelfRecord:
-    """What the relay files a record under: its kind, and the id it names or ``""``."""
+    """What the relay files a record under: its kind, and the id it names or ``""``.
+
+    ``final`` is true only for a final listing, ``{v: 1, kind: "listing",
+    open: false, final: true}``: its door has closed for good (#486).
+    """
 
     kind: str
     ref: str
+    final: bool = False
 
 
 def open_record(key: bytes, body: bytes) -> ShelfRecord | Refusal:
@@ -70,7 +78,9 @@ def open_record(key: bytes, body: bytes) -> ShelfRecord | Refusal:
     In order: a signature and at least one byte of message (else
     ``invalid_record``), the signature (else ``bad_signature``), a v1
     listing, entry or withdraw (else ``invalid_record``), then the kind's
-    size (else ``too_large``). Unsigned bytes are never parsed.
+    size (else ``too_large``). Unsigned bytes are never parsed. A listing is
+    open (``open`` is ``true``) or final (``open`` is ``false`` and ``final``
+    is ``true``); any other is no record.
     """
     if len(body) <= SIGNATURE_BYTES:
         return INVALID_RECORD
@@ -108,9 +118,24 @@ def _parse(message: bytes) -> ShelfRecord | None:
     if not isinstance(kind, str) or kind not in _MAX_BYTES:
         return None
     if kind not in _REFERS:
-        return ShelfRecord(kind, "")
+        return _listing(body)
     ref = body.get("id")
     return ShelfRecord(kind, ref) if isinstance(ref, str) else None
+
+
+def _listing(body: dict[str, Any]) -> ShelfRecord | None:
+    """An open or final listing, or ``None`` for a listing that is neither."""
+    if body.get("open") is True:
+        return ShelfRecord("listing", "")
+    if body.get("open") is False and body.get("final") is True:
+        return ShelfRecord("listing", "", final=True)
+    return None
+
+
+def is_final(body: bytes) -> bool:
+    """Whether the stored record ``body`` (checked when it came) is a final listing."""
+    record = _parse(body[SIGNATURE_BYTES:])
+    return record is not None and record.final
 
 
 def _is_v1(value: object) -> bool:

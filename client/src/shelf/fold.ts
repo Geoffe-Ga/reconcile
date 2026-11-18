@@ -12,14 +12,17 @@
  *    address it came under, or whose body isn't exactly a listing, entry or
  *    withdraw (`record.ts`), is ignored.
  * 2. **Listings.** Per address, the newest valid listing (highest seq)
- *    stands. When that one is final, the address has no listing.
+ *    stands, and a final one outranks every later copy, as a door's page
+ *    does (#486): once a door's listing is final, the address has none, and
+ *    no open copy after it, replayed or forged with a key someone kept,
+ *    reopens it.
  *
  * An entry shows under its address's standing listing, with that listing's
  * name, newest first, once per address and id. Without a standing listing
  * it shows nowhere: an entry carries no name of its own.
  *
- * Still to come, each with the issue that builds it: a final listing that
- * outranks every later copy (#486); skeletons and name ownership (#487); the
+ * Still to come, each with the issue that builds it: skeletons and name
+ * ownership (#487); the
  * caps, the day's wait and withdrawals (#431); and the steward's notices,
  * which fill `tombstones` and `paused` (#488, #489). Until then those two
  * stay empty and false, and `now`, the relay minute those rules read, is
@@ -96,16 +99,16 @@ function verified(record: ShelfRecord): Verified | null {
   return body === null ? null : { record, body };
 }
 
-/** Rule 2: each address's newest listing, when it is open. */
+/** Rule 2: each address's newest listing, unless any of its listings is final. */
 function standingListings(records: readonly Verified[]): Map<string, ShelfListing> {
-  const newest = new Map<string, Verified>();
-  for (const item of records) {
-    if (item.body.kind === 'listing') newest.set(item.record.address, item);
-  }
   const standing = new Map<string, ShelfListing>();
-  for (const [address, { record, body }] of newest) {
-    if (body.kind === 'listing' && body.open) standing.set(address, listingOf(record, body));
+  const ended = new Set<string>();
+  for (const { record, body } of records) {
+    if (body.kind !== 'listing') continue;
+    if (body.open) standing.set(record.address, listingOf(record, body));
+    else ended.add(record.address);
   }
+  for (const address of ended) standing.delete(address);
   return standing;
 }
 
