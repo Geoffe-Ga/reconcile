@@ -19,13 +19,13 @@ import type { Level } from '../engine/capabilities';
 import {
   type AddTarget,
   base64url,
-  type Ceiling,
   type ClassTarget,
   type EventDraft,
   type MoveTarget,
   type NewDocumentTarget,
   type ProposalBody,
   type ProposalEventBody,
+  type Reach,
   type Score,
   type SignedEvent,
   signEvent,
@@ -635,9 +635,14 @@ export interface DispatchValues extends DispatchWords {
   readonly doc: string | null;
 }
 
-/** A Dispatch put to a vote so it can rise (#126): its entries, and how far it can go. */
+/**
+ * A Dispatch put to a vote (#126): its entries, how far it can go, and
+ * whether it asks for the public shelf too (#430), which only that lets it
+ * stay in the group.
+ */
 export interface RisingValues extends DispatchValues {
-  readonly ceiling: Ceiling;
+  readonly ceiling: Reach;
+  readonly shelf?: true;
 }
 
 /**
@@ -647,16 +652,22 @@ export interface RisingValues extends DispatchValues {
  * Dispatch, with no why: the Dispatch says it. Signing NFC-normalizes every
  * string (createEvent). Within its limits it always fits a blob. Once it
  * passes it goes out to the group, and each coalition above it votes in
- * turn, up to its ceiling.
+ * turn, up to its ceiling. Asking for the public shelf (#430) puts the
+ * shelf line on its ballot too.
  */
 export async function proposeDispatch(
   services: ProposalServices,
   groupId: string,
   values: RisingValues,
 ): Promise<ProposeResult> {
-  const { title, text, doc, ceiling } = values;
+  const { title, text, doc, ceiling, shelf } = values;
   const body = {
-    target: { kind: 'dispatch', ceiling, ...(doc === null ? {} : { doc }) } as const,
+    target: {
+      kind: 'dispatch',
+      ceiling,
+      ...(doc === null ? {} : { doc }),
+      ...(shelf === undefined ? {} : { shelf }),
+    } as const,
     title,
     why: '',
     dispatch: { title, text },

@@ -1778,6 +1778,7 @@ export const messages = {
     /** How far it can go, with the form's label for its ceiling. */
     ceiling: (label: string) => `How far it can go: ${label}`,
     groupLine: {
+      0: 'If your group passes it, it goes out to everyone here.',
       1: 'If your group passes it, it goes out to everyone here. Then the coalition your group is in votes on it.',
       2: 'If your group passes it, it goes out to everyone here. Then the coalition your group is in votes on it, and then the coalition above that.',
       coalitions:
@@ -1785,6 +1786,8 @@ export const messages = {
     },
     passed:
       'This passed. It went out to everyone in your group, and the coalition your group is in votes on it next.',
+    /** The pass of a Dispatch put to the vote for this group only, to ask for the public shelf (#430). */
+    passedHere: 'This passed. It went out to everyone in your group.',
     /** Before the seat that passed it, which follows in `<bdi>`: "Passed by Riverside Tenants". */
     passedBy: { before: 'Passed by' },
     motionLine: (coalition: string) =>
@@ -1795,6 +1798,25 @@ export const messages = {
     change: 'Change',
     dontCast: 'Don’t cast',
     freshReason: 'You gave this a 0 elsewhere. Write a fresh reason for this group.',
+  },
+  /**
+   * The shelf line (#430; ADR-0081; listed-doors.md §5.1): the second line on
+   * a listed group's Dispatch ballot, and its result. Nothing here says it is
+   * posted yet: the group's devices post it (§4.5).
+   */
+  shelfLine: {
+    /** The line's card, the group's name inside: "Put Riverside Tenants to this on the public shelf". */
+    ballotTitle: (name: string) => `Put ${name} to this on the public shelf`,
+    line: 'If your group passes this line and the Dispatch, anyone with the app can read its title and text on the public shelf, under your group’s name, but never who wrote it or how anyone voted. This line can’t pass unless the Dispatch does.',
+    /** What each of the two lines is called in its score and meter labels. */
+    names: { dispatch: 'sending it', shelf: 'the public shelf' },
+    scoreFor: (line: string) => `Score for ${line}`,
+    meterLabel: (line: string) => `How ${line} stands so far`,
+    published: 'Your group put its name to this on the public shelf.',
+    failed: 'The public shelf line didn’t pass, so this stays in your group.',
+    dispatchFailed: 'Nothing goes on the public shelf, because the Dispatch didn’t pass.',
+    unlisted:
+      'Your group’s front door wasn’t listed when voting closed, so nothing goes on the public shelf.',
   },
   sendDispatch: {
     pageTitle: 'Send a Dispatch',
@@ -1830,6 +1852,15 @@ export const messages = {
       coalitions:
         'Your group votes first, then the coalition your group is in, then any coalition above that, in turn.',
     },
+    /**
+     * The shelf line (#430; ADR-0081), offered only while the group's front
+     * door is listed: asking for it puts the Dispatch to a vote.
+     */
+    shelfLabel: 'Also ask to put it on the public shelf',
+    shelfHint:
+      'Your group votes on it first, with a second line: putting your group’s name to it on the public shelf, where anyone with the app can read it. It stays in this group, rising to no coalition.',
+    visibilityShelf:
+      'Everyone in your group sees this Proposal and that you made it. If your group passes both lines, anyone with the app can read its title and text under your group’s name, but never who wrote it or how anyone voted.',
     submitVote: 'Put it to a vote',
     visibilityVote:
       'Everyone in your group sees this Proposal and that you made it. Each coalition it reaches sees only its title and text, never who wrote it or how anyone voted.',

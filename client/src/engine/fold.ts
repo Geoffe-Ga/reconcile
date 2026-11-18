@@ -44,7 +44,10 @@
  * the key changes once. A Dispatch rises only by vote (#126): a group puts one
  * to its vote with a ceiling, and once a level passes it, a promotion record
  * opens it as a motion in the coalition above, which sends it out once that
- * pass is final. A priority vote changes no Atom: the top option of the
+ * pass is final. While the front door is listed, a Dispatch put to the vote
+ * may carry a shelf line (#430), a second version tallied on its own that
+ * neither ranks nor wins: `published` lists each one whose two lines passed
+ * while the door stood listed at its close. A priority vote changes no Atom: the top option of the
  * latest one to pass is the group's focus (#107). A `result` records a decided
  * Proposal's counts and a commitment to its ballots (#111): with the ballots
  * held, the fold checks it against them, and once a device has cleared them,
@@ -97,7 +100,7 @@ import {
 } from './coalition';
 import { ballotCommit, commitEntries, scoreCounts, scoresOf } from './commit';
 import { optionFor } from './composeOption';
-import { type Dispatch, dispatchFits, maySendDispatch } from './dispatches';
+import { type Dispatch, dispatchFits, maySendDispatch, shelfLineOf } from './dispatches';
 import { type Dissolution, mayProposeDissolve } from './dissolve';
 import { documentOf, documentSections, documentTitleFits, type GroupDocument } from './documents';
 import {
@@ -168,7 +171,13 @@ import {
   type VoteBody,
   type VouchBody,
 } from './event';
-import { type DoorCardClosed, type DoorInvite, mayCloseCard, mayRecordInvite } from './frontDoor';
+import {
+  type DoorCardClosed,
+  type DoorInvite,
+  listingInEffect,
+  mayCloseCard,
+  mayRecordInvite,
+} from './frontDoor';
 import { isRefused, type KeyChecks, keyChecksOf } from './keyChecks';
 import { isOpenAt } from './open';
 import {
@@ -178,6 +187,7 @@ import {
   type FrontDoor,
   isFrontDoor,
   isOptIn,
+  listedUnder,
   mayProposeRules,
   type Narrowing,
   type OptIns,
@@ -535,7 +545,10 @@ export interface Focus {
  * `dispatches` holds the group's Dispatches in the order they went out
  * (#112): each valid `dispatch` at its receipt, and each passed Proposal's at
  * its close, in close order, ahead of any record received from that minute
- * on. `doorInvites` holds each invite a member sent from the front door, the
+ * on. `published` holds the ids of the Dispatches the group published
+ * (#430): each one whose vote passed both its Dispatch line and its shelf
+ * line while the door was listed in effect at its close, in close order.
+ * `doorInvites` holds each invite a member sent from the front door, the
  * first valid `door-invited` per application, in relay order (#121), and
  * `doorCardsClosed` each reconcile card from it a member brought to a vote
  * or dismissed, the first valid `door-card-closed` per card (#426).
@@ -595,6 +608,7 @@ export interface GroupState {
   readonly chatPosts: readonly ChatPost[];
   readonly chatThreads: readonly ChatThread[];
   readonly dispatches: readonly Dispatch[];
+  readonly published: readonly string[];
   readonly doorInvites: readonly DoorInvite[];
   readonly doorCardsClosed: readonly DoorCardClosed[];
   readonly doorClosure: DoorClosure | null;
@@ -716,6 +730,7 @@ interface Draft {
   readonly chatPosts: ChatPost[];
   readonly chatThreads: ChatThread[];
   readonly dispatches: Dispatch[];
+  readonly published: string[];
   readonly doorInvites: DoorInvite[];
   readonly doorCardsClosed: DoorCardClosed[];
   doorClosure: DoorClosure | null;
@@ -737,6 +752,8 @@ interface Draft {
   readonly ruled: Set<string>;
   readonly judged: Set<string>;
   readonly dispatched: Set<string>;
+  /** The closed Proposals with a shelf line that `published` already reflects (#430). */
+  readonly shelved: Set<string>;
   dissolved: Dissolution | null;
   readonly recoveryShares: SealedShare[];
   readonly recoveryAlerts: SealedAlert[];
@@ -1199,11 +1216,17 @@ function sameOutcome(tallied: TallyOutcome, recorded: RecordedOutcome): boolean 
   return tallied.version === recorded.version;
 }
 
-/** True when the outcome a result names is what its own counts give at `bar`. */
-function outcomeFollows(body: ResultBody, bar: Bar): boolean {
+/**
+ * True when the outcome a result names is what its own counts give at `bar`,
+ * leaving out the Proposal's shelf line, `shelf`, if it has one, which
+ * decides no version (#430).
+ */
+function outcomeFollows(body: ResultBody, bar: Bar, shelf: string | null): boolean {
   const { outcome } = tallyDetail({
     eligible: body.eligible,
-    versions: body.versions.map((v) => ({ id: v.id, scores: scoresOf(v.counts) })),
+    versions: body.versions
+      .filter((v) => v.id !== shelf)
+      .map((v) => ({ id: v.id, scores: scoresOf(v.counts) })),
     bar,
   });
   return sameOutcome(outcome, body.outcome);
@@ -1252,7 +1275,7 @@ function recordFits(found: ReadAhead, opened: Opening, bar: Bar): boolean {
     body.eligible === opened.eligible.length &&
     body.versions[0]?.id === opened.versions[0]?.id &&
     closeIsPossible(body, deadline) &&
-    outcomeFollows(body, bar)
+    outcomeFollows(body, bar, shelfLineOf(opened))
   );
 }
 
@@ -1916,7 +1939,10 @@ function applyDocumentChange(
  * default, with one version that has no text, under its own id, which is
  * the Dispatch's id at every level. Its ceiling is fixed here. Once its pass
  * is final it goes out to the group as any carried Dispatch does, pointing
- * to its Document ({@link advanceDispatches}).
+ * to its Document ({@link advanceDispatches}). One that asks for the public
+ * shelf (#430) opens only while the front door is listed in effect, and its
+ * ballot has a second version with no text, the shelf line, under
+ * `${id}.shelf` ({@link decideShelves}).
  */
 function applyDispatchProposal(
   draft: Draft,
@@ -1928,16 +1954,19 @@ function applyDispatchProposal(
   const sent = { ...body.dispatch, ...(doc === undefined ? {} : { doc }) };
   const state = { ...draft, documents: documentsAt(draft, at.received) };
   if (!fieldsAreValid(body) || !maySendDispatch(state, author, sent)) return false;
+  const shelf = shelfLineOf({ id: at.id, target: body.target });
+  if (shelf !== null && listingInEffect(draft) === null) return false;
   const cls = classAt(draft, body, at.received);
   const window = chosenWindow(draft.rules, cls, body.window);
   if (window === null) return false;
+  const line = { author, text: '' };
   openProposal(draft, {
     ...opening(draft, body, author, at, { cls, window }),
     atom: '',
     target: body.target,
     text: '',
     eligible: eligibleNow(draft, null),
-    versions: [{ id: at.id, author, text: '' }],
+    versions: [{ id: at.id, ...line }, ...(shelf === null ? [] : [{ id: shelf, ...line }])],
   });
   return true;
 }
@@ -2314,7 +2343,7 @@ function matchesBallots(draft: Draft, proposal: OpenProposal, body: ResultBody):
     closesAsHeld(body, own) &&
     body.commit === own.commit &&
     sameList(lines(body.versions), lines(own.versions)) &&
-    outcomeFollows(body, barOf(proposal, draft.rules))
+    outcomeFollows(body, barOf(proposal, draft.rules), shelfLineOf(proposal))
   );
 }
 
@@ -2726,7 +2755,7 @@ function scoresFor(ballots: readonly Ballot[], id: string): Score[] {
  */
 export type TalliedProposal = Pick<
   Proposal,
-  'eligible' | 'versions' | 'ballots' | 'outcome' | 'cleared' | 'result'
+  'id' | 'target' | 'eligible' | 'versions' | 'ballots' | 'outcome' | 'cleared' | 'result'
 >;
 
 /**
@@ -2744,14 +2773,39 @@ function versionScores(
   });
 }
 
-/** A Proposal's scores so far, tallied version by version at `bar`. */
+/**
+ * A Proposal's scores so far, tallied version by version at `bar`. A shelf
+ * line (#430) is measured beside the versions, last, at the same bar, the
+ * ordinary one a Dispatch put to a vote takes, but it neither ranks nor wins:
+ * the outcome is the Dispatch line's alone.
+ */
 function tallyAt(
-  proposal: Pick<Proposal, 'eligible' | 'versions' | 'ballots'>,
+  proposal: Pick<Proposal, 'id' | 'target' | 'eligible' | 'versions' | 'ballots'>,
   counts: readonly ResultVersion[] | null,
   bar: Bar,
 ): TallyDetail {
-  const versions = versionScores(proposal, counts);
-  return tallyDetail({ eligible: proposal.eligible.length, versions, bar });
+  const lines = versionScores(proposal, counts);
+  const eligible = proposal.eligible.length;
+  const shelf = shelfLineOf(proposal);
+  const decided = tallyDetail({ eligible, versions: lines.filter((l) => l.id !== shelf), bar });
+  if (shelf === null) return decided;
+  return { ...decided, versions: tallyDetail({ eligible, versions: lines, bar }).versions };
+}
+
+/**
+ * True when a settled Proposal's shelf line passed (#430): it has one, its
+ * outcome is a pass, which is the Dispatch line's, and the shelf line meets
+ * the bar on its own. Whether the group published the Dispatch also asks
+ * whether it was listed at the close ({@link decideShelves}).
+ */
+export function shelfPassed(proposal: TalliedProposal): boolean {
+  return shelfMet(proposalTally(proposal), shelfLineOf(proposal));
+}
+
+/** True when a tally's outcome is a pass and its shelf line `shelf`, when there is one, meets the bar. */
+function shelfMet(detail: TallyDetail, shelf: string | null): boolean {
+  if (shelf === null || detail.outcome.kind !== 'pass') return false;
+  return detail.versions.some((line) => line.id === shelf && line.passes);
 }
 
 /**
@@ -2870,11 +2924,14 @@ function advanceSeats(draft: Draft): void {
  * time and then relay order, except one a membership end exposed while it was
  * open, which opens no door (#288). A door that opens ends any closure by a
  * membership end. A narrowing needs nothing here: it ends when its
- * off-Proposal closes. Runs before each event, beside {@link advanceSeats}.
+ * off-Proposal closes. Each shelf line that closed before a rules Proposal
+ * is decided first, so it reads the door as it stood at its own close
+ * (#430). Runs before each event, beside {@link advanceSeats}.
  */
 function advanceOptIns(draft: Draft): void {
   const rules = (proposal: OpenProposal) => proposal.target.kind === 'rules';
   for (const { proposal, passed } of newlyClosed(draft, draft.ruled, rules)) {
+    decideShelves(draft, closeTime(proposal));
     const change = rulesChangeOf(proposal);
     if (change === null || !passed || draft.exposedDoors.includes(proposal.id)) continue;
     draft.rules = { ...draft.rules, optIns: withChange(draft.rules.optIns, change) };
@@ -3019,6 +3076,48 @@ function advanceDispatches(draft: Draft): void {
       doc,
       received: closeTime(proposal),
     });
+  }
+  decideShelves(draft, Infinity);
+}
+
+/**
+ * True when a steward's narrowing held the front door shut at relay minute
+ * `at` (#117): it had arrived, and its off-Proposal hadn't closed.
+ */
+function doorNarrowedAt(draft: Draft, at: number): boolean {
+  return draft.narrowings.some((narrowing) => {
+    if (narrowing.optIn !== 'frontDoor' || narrowing.received > at) return false;
+    const off = draft.proposals.find((p) => p.id === narrowing.proposal);
+    return off !== undefined && at < closeTime(off);
+  });
+}
+
+/**
+ * Decides, once each, the shelf lines (#430) on the Proposals that have closed
+ * by `draft.at` and before relay minute `before`, in order of close time and
+ * then relay order: the Dispatch is published when its vote passed both
+ * lines and the front door was listed in effect at its close. A listing that
+ * ended before the close, by a vote, a narrowing or a membership's end,
+ * publishes nothing. The fold calls this before each rules Proposal it
+ * applies, at that Proposal's close, so the standing door is the one each
+ * vote closed under however late the fold reaches it.
+ */
+function decideShelves(draft: Draft, before: number): void {
+  const due = draft.proposals.filter(
+    (p) =>
+      shelfLineOf(p) !== null &&
+      !draft.shelved.has(p.id) &&
+      !isOpenAt(p, draft.at) &&
+      closeTime(p) < before,
+  );
+  // `proposals` is in relay order and sort is stable, so equal close times keep relay order.
+  for (const proposal of due.sort((a, b) => closeTime(a) - closeTime(b))) {
+    draft.shelved.add(proposal.id);
+    const listed = listedUnder(draft.rules.optIns.frontDoor) !== null;
+    const open = listed && !doorNarrowedAt(draft, closeTime(proposal));
+    const counts = proposal.cleared ? (proposal.readAhead?.body.versions ?? []) : null;
+    const detail = tallyAt(proposal, counts, barOf(proposal, draft.rules));
+    if (open && shelfMet(detail, shelfLineOf(proposal))) draft.published.push(proposal.id);
   }
 }
 
@@ -3265,6 +3364,7 @@ function foldPass(pass: Pass): { state: GroupState; distrusted: string[] } {
     chatPosts: [],
     chatThreads: [],
     dispatches: [],
+    published: [],
     doorInvites: [],
     doorCardsClosed: [],
     doorClosure: null,
@@ -3281,6 +3381,7 @@ function foldPass(pass: Pass): { state: GroupState; distrusted: string[] } {
     ruled: new Set(),
     judged: new Set(),
     dispatched: new Set(),
+    shelved: new Set(),
     dissolved: null,
     recoveryShares: [],
     recoveryAlerts: [],
@@ -3334,6 +3435,7 @@ function foldPass(pass: Pass): { state: GroupState; distrusted: string[] } {
     chatPosts,
     chatThreads,
     dispatches,
+    published: draft.published,
     doorInvites,
     doorCardsClosed,
     doorClosure,

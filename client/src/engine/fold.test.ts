@@ -111,6 +111,7 @@ describe('fold', () => {
       exposedDoors: [],
       chatThreads: [],
       dispatches: [],
+      published: [],
       epoch: 0,
       nextEpoch: 1,
       rotations: [],

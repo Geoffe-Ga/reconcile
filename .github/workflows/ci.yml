@@ -136,23 +136,31 @@ jobs:
   e2e:
     name: End-to-end loop (Playwright)
     runs-on: ubuntu-latest
-    timeout-minutes: 55  # slowest successful run: 26.6 min, apart from apt stalls (below)
+    timeout-minutes: 55  # slowest successful run: 26.6 min
     needs: changes
     if: needs.changes.outputs.e2e == 'true'
+    # Playwright's own image for the locked version (tests/test_ci_e2e_image.py
+    # holds the tag to client/package-lock.json). It already has Chromium,
+    # WebKit and their system packages, so no step fetches from Ubuntu's apt
+    # mirror, which stalled `playwright install --with-deps` for 26, 46 and 96
+    # minutes, and twice in a row on 2026-11-18. `resolute` is ubuntu-latest's
+    # own Ubuntu, which WebKit is built for.
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-resolute
     steps:
       - uses: actions/checkout@v4
 
       # The relay runs as on a laptop: ./scripts/relay.sh, runtime deps only.
+      # No pip cache: setup-python keys it with lsb_release, which the image
+      # lacks, and the relay's install takes seconds.
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
-          cache: pip
-          cache-dependency-path: requirements*.txt
 
       - name: Install the relay
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt -e .
+          python -m pip install -r requirements.txt -e .
 
       - uses: actions/setup-node@v4
         with:
@@ -160,30 +168,9 @@ jobs:
           cache: npm
           cache-dependency-path: client/package-lock.json
 
-      # Playwright's browsers, restored so the install below downloads none.
-      # The key names the locked Playwright, the runner's Ubuntu (WebKit is
-      # built for each release) and the browsers. On a hit the install still
-      # runs: it adds the system packages the browsers need.
-      - name: Name the browser cache
-        id: browsers
-        run: |
-          version="$(python3 -c "import json; print(json.load(open('client/package-lock.json'))['packages']['node_modules/playwright-core']['version'])")"
-          echo "key=playwright-${version}-${ImageOS}-chromium-webkit" >> "$GITHUB_OUTPUT"
-
-      - name: Restore the browsers
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: ${{ steps.browsers.outputs.key }}
-
-      # Usually 1-2 min. Ubuntu's mirror has stalled --with-deps for 26, 46 and
-      # 96 minutes; a stall now fails here, and a re-run gets a fresh runner.
-      - name: Install locked dependencies and both browsers
+      - name: Install locked dependencies
         working-directory: client
-        timeout-minutes: 10
-        run: |
-          npm ci
-          npx playwright install --with-deps chromium webkit
+        run: npm ci
 
       - name: ./scripts/check-all.sh --e2e
         run: ./scripts/check-all.sh --e2e

@@ -207,10 +207,12 @@ function BallotNote({ note, ask, isDisabled, onChange, refused }: BallotNoteProp
 
 /**
  * "Score for version N", a steward, rules, dissolve, member removal, coalition
- * or move ballot's own label (#102, #117, #108, #115, #114, #103), or for a
- * priority option, "Score for <option>" with the option in `<bdi>` (#107).
+ * or move ballot's own label (#102, #117, #108, #115, #114, #103), for a
+ * priority option, "Score for <option>" with the option in `<bdi>` (#107),
+ * or a two-line ballot's line by name: "Score for the public shelf" (#430).
  */
 function scoreLabel(version: VersionView, layout: BallotProps['layout']): ReactNode {
+  if (version.line !== undefined) return messages.shelfLine.scoreFor(version.line);
   if (layout === 'options') {
     return (
       <>

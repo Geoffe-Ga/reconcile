@@ -7,10 +7,10 @@
 import { type Capability, type Level, LEVEL_CAPABILITIES, LEVELS } from '../engine/capabilities';
 import type {
   CarriedDispatch,
-  Ceiling,
   DispatchBody,
   EventDraft,
   FoundingDocument,
+  Reach,
   ResultBody,
   Score,
 } from '../engine/event';
@@ -140,8 +140,17 @@ export interface LogBuilder {
   chatThread(name: string, proposal: string, url: string): string;
   /** Adds `name`'s Dispatch (#112), returning its id. */
   dispatch(name: string, body: DispatchBody): string;
-  /** Adds `name`'s Dispatch put to the group's vote with `ceiling` (#126), titled as the Dispatch. */
-  rising(name: string, ceiling: Ceiling, body: CarriedDispatch, doc?: string): string;
+  /**
+   * Adds `name`'s Dispatch put to the group's vote with `ceiling` (#126), titled as the
+   * Dispatch, asking for the public shelf too when `shelf` is true (#430).
+   */
+  rising(
+    name: string,
+    ceiling: Reach,
+    body: CarriedDispatch,
+    doc?: string,
+    shelf?: boolean,
+  ): string;
   /** The records so far, in relay order. */
   readonly records: readonly LogRecord[];
   /**
@@ -410,8 +419,13 @@ export function groupLog(start: GroupStart = {}): LogBuilder {
     dispatch(name: string, body: DispatchBody) {
       return add(name, { type: 'dispatch', group, ts: 0, body });
     },
-    rising(name: string, ceiling: Ceiling, dispatch: CarriedDispatch, doc?: string) {
-      const target = { kind: 'dispatch' as const, ceiling, ...(doc === undefined ? {} : { doc }) };
+    rising(name: string, ceiling: Reach, dispatch: CarriedDispatch, doc?: string, shelf = false) {
+      const target = {
+        kind: 'dispatch' as const,
+        ceiling,
+        ...(doc === undefined ? {} : { doc }),
+        ...(shelf ? { shelf } : {}),
+      };
       const body = { target, title: dispatch.title, why: '', dispatch };
       return add(name, { type: 'proposal', group, ts: 0, body });
     },

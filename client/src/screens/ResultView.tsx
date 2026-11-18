@@ -35,7 +35,8 @@ import {
   versionViews,
 } from '../app/versionViews';
 import type { CoalitionProgress } from '../engine/coalitionProgress';
-import { type Proposal, proposalTally } from '../engine/fold';
+import { publishedBy, shelfLineOf } from '../engine/dispatches';
+import { type GroupState, type Proposal, proposalTally } from '../engine/fold';
 import { isPriority } from '../engine/priority';
 import { removalTarget } from '../engine/removal';
 import type { Bar } from '../engine/rules';
@@ -242,16 +243,25 @@ function RemovalPassed({ removal, you }: { readonly removal: RemovalView; readon
 }
 
 /**
+ * A Dispatch put to the vote's pass: it went out, and the coalition votes
+ * next (#126), unless it was put to the vote only for the public shelf (#430).
+ */
+function dispatchPassed(target: Proposal['target']): string {
+  const { rising } = messages;
+  return target.kind === 'dispatch' && target.ceiling === 0 ? rising.passedHere : rising.passed;
+}
+
+/**
  * A reconcile Proposal's or a coalition motion's pass (#114): only the
  * group's pass goes to the coalition, which decides with every group's. A
  * Dispatch put to the group's vote went out, and the coalition votes next (#126).
  */
 function DecisionPassed({ proposal }: { readonly proposal: OutcomeProps['props']['proposal'] }) {
-  const { coalitions, rising } = messages;
+  const { coalitions } = messages;
   const { kind } = proposal.target;
   const sentence =
     kind === 'dispatch'
-      ? rising.passed
+      ? dispatchPassed(proposal.target)
       : kind === 'reconcile'
         ? coalitions.reconcilePassed
         : coalitions.motionPassed;
@@ -300,18 +310,65 @@ function Outcome(props: OutcomeProps) {
   return outcome.kind === 'fail' ? <Failed {...props} /> : <Lapsed {...props} />;
 }
 
+/** The Dispatch line alone of a ballot with a shelf line (#430), which decides the outcome. */
+function withoutShelf(detail: TallyDetail, versions: readonly VersionView[], shelf: string | null) {
+  if (shelf === null) return { detail, versions };
+  return {
+    detail: { ...detail, versions: detail.versions.filter((line) => line.id !== shelf) },
+    versions: versions.filter((version) => version.id !== shelf),
+  };
+}
+
+interface ShelfOutcomeProps {
+  readonly state: GroupState;
+  readonly proposal: Proposal;
+  readonly detail: TallyDetail;
+}
+
+/**
+ * What the shelf line decided (#430): the group put its name to the Dispatch
+ * on the public shelf; or not, because the Dispatch failed, the door wasn't
+ * listed at the close, or the line itself fell short, with what it missed.
+ */
+function ShelfOutcome({ state, proposal, detail }: ShelfOutcomeProps) {
+  const shelf = shelfLineOf(proposal);
+  const line = detail.versions.find((version) => version.id === shelf);
+  if (line === undefined) return null;
+  const { shelfLine } = messages;
+  const sentence = publishedBy(state).includes(proposal.id)
+    ? shelfLine.published
+    : detail.outcome.kind !== 'pass'
+      ? shelfLine.dispatchFailed
+      : line.passes
+        ? shelfLine.unlisted
+        : shelfLine.failed;
+  const missed = sentence === shelfLine.failed ? unmet(line, detail.bar) : [];
+  return (
+    <div className="result-outcome">
+      <p className="outcome-sentence">{sentence}</p>
+      {missed.map((reason) => (
+        <p key={reason} className="result-reason">
+          {reason}
+        </p>
+      ))}
+    </div>
+  );
+}
+
 /** A closed edit's result, from the engine's tally of its ballots, or the tally a cleared archive kept. */
 function EditResult(props: ResultViewProps) {
   const { state, proposal, own, cleared } = props;
   const heading = useId();
   const detail = cleared?.tally ?? proposalTally(proposal);
   const versions = versionViews(state, proposal, props.names ?? state);
+  const decided = withoutShelf(detail, versions, shelfLineOf(proposal));
   return (
     <section className="result" aria-labelledby={heading}>
       <h2 id={heading} className="eyebrow">
         {messages.result.title}
       </h2>
-      <Outcome props={props} detail={detail} versions={versions} />
+      <Outcome props={props} detail={decided.detail} versions={decided.versions} />
+      <ShelfOutcome state={state} proposal={proposal} detail={detail} />
       {detail.outcome.kind === 'lapse' ? null : <LateNotice own={own} />}
       <Mismatches state={state} proposal={proposal} />
       {props.leaving === true ? null : (

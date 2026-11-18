@@ -103,6 +103,39 @@ describe('a Dispatch put to a vote (#126)', () => {
   });
 });
 
+describe('a shelf line on a Dispatch put to a vote (#430)', () => {
+  it('reads shelf: true with a reach of 0, for this group only', () => {
+    const target = { kind: 'dispatch', ceiling: 0, doc: 'g1', shelf: true };
+    expect(bodyOf({ ...DISPATCH, target })).toEqual({ ...DISPATCH, target });
+  });
+
+  // A build from before #430 would read a rising Dispatch with a shelf line as a plain rising
+  // Dispatch and ignore the shelf line's ballots, splitting its outcome (listed-doors.md §5.1).
+  it.each(CEILINGS.map((c) => [c] as const))(
+    'refuses shelf: true beside a ceiling of %s: a shelf line stays in the group',
+    (ceiling) => {
+      expect(
+        parseEvent(proposal({ ...DISPATCH, target: { kind: 'dispatch', ceiling, shelf: true } })),
+      ).toBeNull();
+    },
+  );
+
+  it.each([
+    ['shelf: false', { kind: 'dispatch', ceiling: 1, shelf: false }],
+    ['shelf as text', { kind: 'dispatch', ceiling: 1, shelf: 'true' }],
+    ['shelf as 1', { kind: 'dispatch', ceiling: 0, shelf: 1 }],
+    ['a reach of 0 and shelf: false', { kind: 'dispatch', ceiling: 0, shelf: false }],
+    ['a reach of "0" beside the shelf', { kind: 'dispatch', ceiling: '0', shelf: true }],
+  ])('refuses one with %s', (_label, target) => {
+    expect(parseEvent(proposal({ ...DISPATCH, target }))).toBeNull();
+  });
+
+  it('drops a shelf line from a promotion record: a coalition has no door', () => {
+    const body = bodyOf({ ...PROMOTE, target: { ...PROMOTE.target, shelf: true } });
+    expect(body).toEqual(PROMOTE);
+  });
+});
+
 describe('a promotion record (#126)', () => {
   it('reads its Dispatch, ceiling, level and seat, dropping unknown keys', () => {
     const body = bodyOf({

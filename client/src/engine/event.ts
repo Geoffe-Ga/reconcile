@@ -495,8 +495,8 @@ export interface AdmitProposalBody {
 /**
  * How far a Dispatch may rise above the group it starts in (#126; ADR-0037,
  * ADR-0071): one level up, two, or as far as the coalitions go. This group
- * only is a plain `dispatch`, so no target carries 0, and there is no
- * Reconcile-wide broadcast.
+ * only is a plain `dispatch`, so no ceiling is 0 ({@link Reach} is, for a
+ * shelf line's vote, #430), and there is no Reconcile-wide broadcast.
  */
 export type Ceiling = 1 | 2 | 'coalitions';
 
@@ -504,14 +504,25 @@ export type Ceiling = 1 | 2 | 'coalitions';
 export const CEILINGS: readonly Ceiling[] = [1, 2, 'coalitions'];
 
 /**
- * A Dispatch put to the group's vote so it can rise (#126): how far it may
- * go, fixed once it opens, and the Document in this group it points to, if
- * any, which no level above sees.
+ * How far a Dispatch put to the group's vote may rise (#126, #430): a
+ * ceiling, or 0 for this group only, which only a Dispatch that also asks
+ * for the public shelf carries, since without that it would simply be sent.
+ */
+export type Reach = 0 | Ceiling;
+
+/**
+ * A Dispatch put to the group's vote (#126): how far it may go, fixed once it
+ * opens, and the Document in this group it points to, if any, which no level
+ * above sees. `shelf: true` (#430) puts a second line on its ballot, asking to
+ * put the group's name to it on the public shelf; only a listed group takes
+ * one, and a Dispatch with one has a reach of 0, and only it: it stays in
+ * this group.
  */
 export interface DispatchTarget {
   readonly kind: 'dispatch';
-  readonly ceiling: Ceiling;
+  readonly ceiling: Reach;
   readonly doc?: string;
+  readonly shelf?: true;
 }
 
 /**
@@ -520,7 +531,8 @@ export interface DispatchTarget {
  * voting window in whole days, whose target is its ceiling, and the
  * Dispatch it sends when it passes. It changes no Document, and its ballot
  * has one version, under its own id, which is the Dispatch's id at every
- * level it reaches.
+ * level it reaches, and with a shelf line (#430) a second, the shelf line,
+ * under `${id}.shelf`.
  */
 export interface DispatchProposalBody {
   readonly target: DispatchTarget;
@@ -1462,11 +1474,35 @@ function isCeiling(value: unknown): value is Ceiling {
   return CEILINGS.some((ceiling) => ceiling === value);
 }
 
-/** A rising Dispatch's target: its ceiling and any Document, or null for any other shape (#126). */
+/**
+ * A Dispatch's reach: a ceiling, or 0 beside a shelf line (#430); null for
+ * anything else. A shelf line takes only a reach of 0: a build from before
+ * #430 reads a rising Dispatch with one as a plain rising Dispatch and ignores
+ * the shelf line's ballots, which would split its outcome, where a reach of 0
+ * it ignores whole and only lags (listed-doors.md §5.1).
+ */
+function reachOf(ceiling: unknown, shelf: boolean): Reach | null {
+  if (shelf) return ceiling === 0 ? 0 : null;
+  return isCeiling(ceiling) ? ceiling : null;
+}
+
+/**
+ * A Dispatch put to a vote: its reach, any Document and any shelf line, or
+ * null for any other shape (#126, #430). `shelf` is absent or `true`, and a
+ * reach of 0 goes with it and only with it.
+ */
 function parseDispatchTarget(value: Json): DispatchTarget | null {
-  const { ceiling, doc } = value;
-  if (value.kind !== 'dispatch' || !isCeiling(ceiling) || !isOptionalString(doc)) return null;
-  return { kind: 'dispatch', ceiling, ...(doc === undefined ? {} : { doc }) };
+  const { doc, shelf } = value;
+  if (value.kind !== 'dispatch' || !isOptionalString(doc)) return null;
+  if (shelf !== undefined && shelf !== true) return null;
+  const reach = reachOf(value.ceiling, shelf === true);
+  if (reach === null) return null;
+  return {
+    kind: 'dispatch',
+    ceiling: reach,
+    ...(doc === undefined ? {} : { doc }),
+    ...(shelf === undefined ? {} : { shelf }),
+  };
 }
 
 /** A promoted Dispatch's id, title and text, any other key dropped, or null (#126). */
