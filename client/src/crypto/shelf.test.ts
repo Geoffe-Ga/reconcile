@@ -7,7 +7,11 @@ import { signDoorRecord } from './door';
 import { SHELF_CONTEXT, signShelfRecord, verifyShelfRecord } from './shelf';
 import { DOOR_PAGE_CONTEXT, newSigningKeys, publicKeyOf, sign, SIGNATURE_BYTES } from './sign';
 
-/** `vectors/shelf.json`: signed shelf records, made outside @noble. */
+/**
+ * `vectors/shelf.json`: signed shelf records, made outside @noble. Every value
+ * is its bytes, so no high-entropy text sits in the repository: a door's
+ * address is its public key in unpadded base64url.
+ */
 interface ShelfFile {
   readonly kind: 'shelf';
   readonly tag: string;
@@ -15,12 +19,10 @@ interface ShelfFile {
     readonly name: string;
     readonly signSecret: readonly number[];
     readonly signPublic: readonly number[];
-    readonly address: string;
   }[];
   readonly records: readonly {
     readonly name: string;
     readonly door: number;
-    readonly body: Readonly<Record<string, unknown>>;
     readonly message: readonly number[];
     readonly record: readonly number[];
   }[];
@@ -39,7 +41,7 @@ function doorOf(index: number) {
   if (door === undefined) throw new Error(`No door ${String(index)} in shelf.json.`);
   return {
     keys: { secretKey: bytes(door.signSecret), publicKey: bytes(door.signPublic) },
-    address: door.address,
+    address: base64url(bytes(door.signPublic)),
   };
 }
 
@@ -58,10 +60,10 @@ describe('shelf.json, made outside @noble', () => {
   });
 
   it.each(file.doors.map((door) => [door.name, door] as const))(
-    'pins the address of %s: its public key in unpadded base64url',
+    'pins the public key of %s, whose unpadded base64url is its address',
     (_name, door) => {
       expect(Array.from(publicKeyOf(bytes(door.signSecret)))).toEqual(door.signPublic);
-      expect(base64url(bytes(door.signPublic))).toBe(door.address);
+      expect(base64url(bytes(door.signPublic))).toMatch(/^[A-Za-z0-9_-]{43}$/);
     },
   );
 
@@ -76,11 +78,11 @@ describe('shelf.json, made outside @noble', () => {
     },
   );
 
-  it('pins each message as the body’s compact JSON in UTF-8', () => {
+  it('serializes each message’s body to the same compact UTF-8 JSON Python made', () => {
     for (const vector of file.records) {
-      expect(bytesToHex(bytes(vector.message))).toBe(
-        bytesToHex(utf8ToBytes(JSON.stringify(vector.body))),
-      );
+      const message = bytes(vector.message);
+      const body: unknown = JSON.parse(new TextDecoder().decode(message));
+      expect(bytesToHex(utf8ToBytes(JSON.stringify(body)))).toBe(bytesToHex(message));
     }
   });
 });

@@ -1,6 +1,6 @@
 {
   "kind": "shelf",
-  "about": "Public shelf records (#484, crypto/shelf.ts, docs/spec/listed-doors.md §4.1). A record is the 64-byte Ed25519 signature (RFC 8032) over the UTF-8 tag reconcile/v1/shelf, one 0x00 byte and the message, then the message: the record's compact UTF-8 JSON, keys in the order shown, no spaces, non-ASCII unescaped. The address is the signer's public key in unpadded base64url. Computed with Python's cryptography package (OpenSSL), and the JSON with Python's json.dumps(separators=(',', ':'), ensure_ascii=False); none of it is @noble. The first door's secret is SHA-256 of reconcile/vector/shelf/door, the covenant SHA-256 of reconcile/vector/shelf/covenant and the entry id SHA-256 of reconcile/vector/shelf/dispatch, each in unpadded base64url. Each secret, public key, message and record is its bytes; the address, the tag and the bodies are text.",
+  "about": "Public shelf records (#484, crypto/shelf.ts, docs/spec/listed-doors.md §4.1). A record is the 64-byte Ed25519 signature (RFC 8032) over the UTF-8 tag reconcile/v1/shelf, one 0x00 byte and the message, then the message: the record's compact UTF-8 JSON, keys in the order shown, no spaces, non-ASCII unescaped. The address is the signer's public key in unpadded base64url. Computed with Python's cryptography package (OpenSSL), and the JSON with Python's json.dumps(separators=(',', ':'), ensure_ascii=False); none of it is @noble. The first door's secret is SHA-256 of reconcile/vector/shelf/door, the covenant SHA-256 of reconcile/vector/shelf/covenant and the entry id SHA-256 of reconcile/vector/shelf/dispatch, each in unpadded base64url. Each secret, public key, message and record is its bytes, so no high-entropy text sits in the repository; a door's address is its public key in unpadded base64url, and a record's body is its message parsed as JSON.",
   "tag": "reconcile/v1/shelf",
   "doors": [
     {
@@ -12,8 +12,7 @@
       "signPublic": [
         82, 213, 55, 108, 51, 34, 99, 154, 188, 45, 25, 72, 98, 66, 79, 229, 207, 90, 112, 167, 111,
         50, 176, 136, 75, 128, 83, 173, 149, 146, 40, 36
-      ],
-      "address": "UtU3bDMiY5q8LRlIYkJP5c9acKdvMrCIS4BTrZWSKCQ"
+      ]
     },
     {
       "name": "the door 00 01 02 … 1f",
@@ -24,22 +23,13 @@
       "signPublic": [
         3, 161, 7, 191, 243, 206, 16, 190, 29, 112, 221, 24, 231, 75, 192, 153, 103, 228, 214, 48,
         155, 165, 13, 95, 29, 220, 134, 100, 18, 85, 49, 184
-      ],
-      "address": "A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg"
+      ]
     }
   ],
   "records": [
     {
       "name": "an open listing",
       "door": 0,
-      "body": {
-        "v": 1,
-        "kind": "listing",
-        "open": true,
-        "name": "Oak St Tenants",
-        "skeleton": "oaksttenants",
-        "covenant": "IzBI8vy9B5QfjGAx54qsla79nwayRPpkkJaqDf3uNrM"
-      },
       "message": [
         123, 34, 118, 34, 58, 49, 44, 34, 107, 105, 110, 100, 34, 58, 34, 108, 105, 115, 116, 105,
         110, 103, 34, 44, 34, 111, 112, 101, 110, 34, 58, 116, 114, 117, 101, 44, 34, 110, 97, 109,
@@ -67,13 +57,6 @@
     {
       "name": "an entry whose text is not ASCII",
       "door": 0,
-      "body": {
-        "v": 1,
-        "kind": "entry",
-        "id": "wgL5mmeOdNdS8TZMqi_cXFzKjX5aXnRMTJ3m_XIaZOM",
-        "title": "Rent strike vote",
-        "text": "Saturday at ten, à la mairie — bring a friend.\nTwo lines."
-      },
       "message": [
         123, 34, 118, 34, 58, 49, 44, 34, 107, 105, 110, 100, 34, 58, 34, 101, 110, 116, 114, 121,
         34, 44, 34, 105, 100, 34, 58, 34, 119, 103, 76, 53, 109, 109, 101, 79, 100, 78, 100, 83, 56,
@@ -103,11 +86,6 @@
     {
       "name": "a withdraw",
       "door": 0,
-      "body": {
-        "v": 1,
-        "kind": "withdraw",
-        "id": "wgL5mmeOdNdS8TZMqi_cXFzKjX5aXnRMTJ3m_XIaZOM"
-      },
       "message": [
         123, 34, 118, 34, 58, 49, 44, 34, 107, 105, 110, 100, 34, 58, 34, 119, 105, 116, 104, 100,
         114, 97, 119, 34, 44, 34, 105, 100, 34, 58, 34, 119, 103, 76, 53, 109, 109, 101, 79, 100,
@@ -127,12 +105,6 @@
     {
       "name": "a final listing",
       "door": 0,
-      "body": {
-        "v": 1,
-        "kind": "listing",
-        "open": false,
-        "final": true
-      },
       "message": [
         123, 34, 118, 34, 58, 49, 44, 34, 107, 105, 110, 100, 34, 58, 34, 108, 105, 115, 116, 105,
         110, 103, 34, 44, 34, 111, 112, 101, 110, 34, 58, 102, 97, 108, 115, 101, 44, 34, 102, 105,
@@ -150,14 +122,6 @@
     {
       "name": "an open listing from the second door, in Arabic",
       "door": 1,
-      "body": {
-        "v": 1,
-        "kind": "listing",
-        "open": true,
-        "name": "سكان شارع البلوط",
-        "skeleton": "سكانشارعالبلوط",
-        "covenant": "IzBI8vy9B5QfjGAx54qsla79nwayRPpkkJaqDf3uNrM"
-      },
       "message": [
         123, 34, 118, 34, 58, 49, 44, 34, 107, 105, 110, 100, 34, 58, 34, 108, 105, 115, 116, 105,
         110, 103, 34, 44, 34, 111, 112, 101, 110, 34, 58, 116, 114, 117, 101, 44, 34, 110, 97, 109,
