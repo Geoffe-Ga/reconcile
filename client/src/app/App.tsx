@@ -6,7 +6,7 @@
  */
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { apply, type ApplyValues, forgetJoined } from '../door/apply';
+import { apply, type ApplyValues, forgetJoined, takesDocuments } from '../door/apply';
 import { sendInvite } from '../door/inbox';
 import { type OpenPage, parseDoorPayload } from '../door/page';
 import { can, type Level } from '../engine/capabilities';
@@ -294,7 +294,8 @@ async function makeCardAt(
 /**
  * A group's front door (#121): its page, and Send, which keeps its reply key
  * on this device, offering a copy of any of this device's personal
- * Documents (#425), which it reads without a key, and Propose reconciling
+ * Documents (#425), which it reads without a key, unless the public shelf
+ * says the door is newly listed or held (#432), and Propose reconciling
  * with this group for a device in a group that may (#426).
  */
 function DoorScreen({
@@ -321,6 +322,10 @@ function DoorScreen({
       apply(services, address, page, values),
     [services],
   );
+  const takes = useCallback(
+    (address: string) => takesDocuments(services.shelf, address),
+    [services],
+  );
   return sent === null || documents === null ? null : (
     <FrontDoor
       payload={payload}
@@ -328,8 +333,35 @@ function DoorScreen({
       asked={asked}
       onApply={onApply}
       documents={documents}
+      takesDocuments={takes}
       cardGroups={cardGroups}
       onMakeCard={onMakeCard}
+    />
+  );
+}
+
+/**
+ * A shelf entry's own page (#431), with Propose reconciling offered where
+ * #426's rule lets one of this device's groups propose it at the entry's
+ * door (#432).
+ */
+function ShelfEntryRoute(props: {
+  readonly services: AppServices;
+  readonly address: string;
+  readonly id: string;
+}) {
+  const { services, address, id } = props;
+  const cardGroups = useCardGroups(services, address);
+  return (
+    <ShelfEntryScreen
+      store={services.store}
+      shelf={services.shelf}
+      address={address}
+      id={id}
+      origin={services.origin}
+      copyText={services.copyText}
+      sharing={services}
+      mayReconcile={cardGroups.length > 0}
     />
   );
 }
@@ -1612,17 +1644,7 @@ function PlainScreen(props: PlainScreenProps) {
     case 'discover':
       return <DiscoverScreen store={services.store} shelf={services.shelf} />;
     case 'shelfEntry':
-      return (
-        <ShelfEntryScreen
-          store={services.store}
-          shelf={services.shelf}
-          address={route.address}
-          id={route.id}
-          origin={services.origin}
-          copyText={services.copyText}
-          sharing={services}
-        />
-      );
+      return <ShelfEntryRoute services={services} address={route.address} id={route.id} />;
     case 'personalDocument':
       // Keyed by id, so another Document starts its editor afresh.
       return <PersonalDocumentScreen key={route.id} services={services} id={route.id} />;

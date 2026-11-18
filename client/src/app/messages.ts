@@ -155,6 +155,10 @@ export const messages = {
     copy: 'Copy link',
     gone: 'This entry isn’t on the public shelf. It may have come down, or its 30 days ended.',
     toDiscover: 'Go to Discover',
+    /** Opens the listing's front door (#432, §5.2). */
+    askToJoin: 'Ask to join',
+    /** Opens the same door, where a group that may proposes reconciling with it (#426, #432). */
+    proposeReconciling: 'Propose reconciling',
     /**
      * On Group home (#431, §4.5): an entry under the group's name that its
      * log didn't make, which a member's device withdrew.
@@ -1442,6 +1446,8 @@ export const messages = {
       'This group’s members will read the ones you check. Another group you send them to could recognize the same words.',
     documentsTooMany: (max: number) => `Send up to ${count(max)} Documents with one request.`,
     documentsTooLong: 'That’s more than one request can carry. Choose fewer or shorter Documents.',
+    /** In the picker's place at a door the shelf lists, while it's newly listed or held (#432, §5.3). */
+    newlyListed: 'This group is newly listed, so you can’t attach Documents yet.',
     send: 'Send',
     failed: 'Your request didn’t go. Check your connection, then try again.',
     /** Around the group's name: "Sent. If someone in Riverside Tenants invites you, it shows on Your groups." */

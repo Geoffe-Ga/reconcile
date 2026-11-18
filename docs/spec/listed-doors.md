@@ -163,7 +163,7 @@ A listed group's devices keep the shelf in step with the group's own log, as the
 
 ### 5.2 Discover
 
-**Built** but for Ask to join and Propose reconciling (issue 7) and the pause (#489). #431 built the section, "Listed since", the day's wait and "Shows publicly tomorrow", fetching, and the entry's link with Share and Copy; that contract lives in [`phase-1/08-screens.md`](phase-1/08-screens.md) (item 19, Discover) and [`phase-1/09-privacy-rules.md`](phase-1/09-privacy-rules.md). "Listed since" is the earliest relay minute the device read at the listing's address, since the relay renews a listing in place and keeps no first time.
+**Built** but for the pause (#489). #432 built Ask to join and Propose reconciling on an entry's own page, where #431 put Share and Copy; that contract lives in [`phase-1/08-screens.md`](phase-1/08-screens.md) (item 19, an entry's page). #431 built the section, "Listed since", the day's wait and "Shows publicly tomorrow", fetching, and the entry's link with Share and Copy; that contract lives in [`phase-1/08-screens.md`](phase-1/08-screens.md) (item 19, Discover) and [`phase-1/09-privacy-rules.md`](phase-1/09-privacy-rules.md). "Listed since" is the earliest relay minute the device read at the listing's address, since the relay renews a listing in place and keeps no first time.
 
 - **A second section, "On the public shelf",** below the feed of the person's own groups. Each card shows the title, the text, the listing's name in `<bdi>`, and "Listed since {month year}".
 - **A device in no group reads it** once past the pilot notice.
@@ -174,6 +174,8 @@ A listed group's devices keep the shelf in step with the group's own log, as the
 - The shelf sends no notification and no push.
 
 ### 5.3 Attached Documents
+
+**Built** (#432) but for holds, which count once the steward's notices fold (#488, #489). The contract lives in [`phase-1/08-screens.md`](phase-1/08-screens.md) (item 16, Front door) and [`phase-1/09-privacy-rules.md`](phase-1/09-privacy-rules.md) (A front door shows no one), with why a device's "first listing" can only err newer.
 
 A door's application form offers no personal Documents when the door is listed and either its first listing is under 43,200 relay minutes old or it is held. One line says why. An unlisted door reached by a link is unchanged: a person chose to hand that link over.
 

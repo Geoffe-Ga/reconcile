@@ -8,7 +8,8 @@
  *
  * A shelf entry's own page (`#/discover/{address}/{id}`, #431) reads the
  * same shelf, the same way, so its link opens on any device past the pilot
- * notice, one in no group included.
+ * notice, one in no group included. Its Ask to join and Propose reconciling
+ * open the listing's front door (#432).
  */
 import { Discover } from '../screens/Discover';
 import { ShelfEntry } from '../screens/ShelfEntry';
@@ -41,14 +42,24 @@ export interface ShelfEntryScreenProps extends DiscoverScreenProps {
   readonly origin: string;
   readonly copyText: (text: string) => Promise<void>;
   readonly sharing?: SharePort | undefined;
+  /** Whether this device has a group that may propose reconciling with the entry's group (#426, #432). */
+  readonly mayReconcile: boolean;
 }
 
 /** One entry's page, once the shelf has answered, so "not on the shelf" never flashes first. */
 export function ShelfEntryScreen(props: ShelfEntryScreenProps) {
-  const { store, shelf, address, id, origin, copyText, sharing } = props;
+  const { store, shelf, address, id, origin, copyText, sharing, mayReconcile } = props;
   const state = useShelfState(shelf, useOwnListings(store));
   if (state === undefined) return null;
   const entry = state?.entries.find((e) => e.address === address && e.id === id) ?? null;
   const link = `${origin}/${routeHref({ name: 'shelfEntry', address, id })}`;
-  return <ShelfEntry entry={entry} link={link} copyText={copyText} sharing={sharing} />;
+  return (
+    <ShelfEntry
+      entry={entry}
+      link={link}
+      copyText={copyText}
+      sharing={sharing}
+      mayReconcile={mayReconcile}
+    />
+  );
 }

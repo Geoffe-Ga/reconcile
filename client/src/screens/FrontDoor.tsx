@@ -39,6 +39,7 @@ import {
   readDoor,
 } from '../door/page';
 import type { CardGroup, CardValues } from '../app/reconcile';
+import { base64url } from '../crypto/base64url';
 import { nfcLength } from '../engine/text';
 import type { PersonalText } from '../store/personal';
 import { type DoorCardStep, ReconcileAtDoor } from './ReconcileCard';
@@ -63,6 +64,12 @@ export interface FrontDoorProps {
   /** This device's personal Documents, oldest first, which the form offers to send a copy of (#425). */
   readonly documents: readonly PersonalChoice[];
   /**
+   * Whether the door `address` names, in base64url, may be sent personal
+   * Documents: not while the shelf lists it and it's newly listed or held
+   * (#432; listed-doors.md §5.3). A rejection counts as no.
+   */
+  readonly takesDocuments: (address: string) => Promise<boolean>;
+  /**
    * This device's groups that may propose reconciling with the door's group
    * (#426): none for a device in no group, and never the door's own.
    */
@@ -78,6 +85,9 @@ export interface FrontDoorProps {
 
 /** Where the page has got to: reading it, what it shows, or unable to reach the relay. */
 type Phase = { readonly kind: 'loading' } | DoorView | { readonly kind: 'offline' };
+
+/** Still reading. */
+const LOADING: Phase = { kind: 'loading' };
 
 /** Limits count code points after NFC, as the application's parser does. */
 function required(missing: string, max: number, tooLong: string) {
@@ -145,6 +155,8 @@ function Sent(props: {
 interface ApplyFormProps {
   readonly onSend: (values: ApplyValues) => Promise<'sent' | 'failed'>;
   readonly documents: readonly PersonalChoice[];
+  /** False at a door the shelf says is newly listed or held: no picker, and the line why (#432). */
+  readonly takesDocuments: boolean;
 }
 
 /** The form-error line a choice of Documents gets, by what's wrong with it. */
@@ -203,13 +215,27 @@ function DocumentPicker({ documents, chosen, onChange, problem }: DocumentPicker
   );
 }
 
+/** No personal Documents: what a door that takes none yet is offered (#432). */
+const NO_DOCUMENTS: readonly PersonalChoice[] = [];
+
 /** The copy the chosen Documents send, in the order Personal lists them, as Send seals it. */
 function chosenCopies(documents: readonly PersonalChoice[], chosen: readonly string[]) {
   return documentCopies(documents.filter(({ id }) => chosen.includes(id)));
 }
 
+/**
+ * The picker, or at a door that takes no Documents yet (#432) the one line
+ * why, in its place; nothing for someone with no personal Documents.
+ */
+function DocumentsOrWhyNot(props: DocumentPickerProps & { readonly takesDocuments: boolean }) {
+  const { takesDocuments, ...picker } = props;
+  if (takesDocuments) return <DocumentPicker {...picker} />;
+  return picker.documents.length === 0 ? null : <p className="door-careful">{door.newlyListed}</p>;
+}
+
 /** The form: the name to use, why, any Documents to send, the caution, and Send. One send at a time. */
-function ApplyForm({ onSend, documents }: ApplyFormProps) {
+function ApplyForm({ onSend, documents: offered, takesDocuments }: ApplyFormProps) {
+  const documents = takesDocuments ? offered : NO_DOCUMENTS;
   const [name, setName] = useState('');
   const [message, setMessage] = useState('');
   const [chosen, setChosen] = useState<readonly string[]>([]);
@@ -255,11 +281,12 @@ function ApplyForm({ onSend, documents }: ApplyFormProps) {
         value={message}
         onChange={setMessage}
       />
-      <DocumentPicker
-        documents={documents}
+      <DocumentsOrWhyNot
+        documents={offered}
         chosen={chosen}
         onChange={setChosen}
         problem={problem}
+        takesDocuments={takesDocuments}
       />
       <p className="door-careful">{door.careful}</p>
       {failed ? (
@@ -298,6 +325,7 @@ interface OpenProps extends Pick<
   readonly address: Uint8Array;
   readonly page: OpenPage;
   readonly asked: boolean;
+  readonly takesDocuments: boolean;
 }
 
 /**
@@ -306,7 +334,8 @@ interface OpenProps extends Pick<
  * this device already sent.
  */
 function Open(props: OpenProps) {
-  const { address, page, asked, onApply, documents, cardGroups, onMakeCard } = props;
+  const { address, page, asked, onApply, documents, takesDocuments, cardGroups, onMakeCard } =
+    props;
   const heading = useId();
   const [sent, setSent] = useState(false);
   const [reconciling, setReconciling] = useState(false);
@@ -352,7 +381,7 @@ function Open(props: OpenProps) {
         ) : asked ? (
           <Sent name={page.name} parts={door.asked} />
         ) : (
-          <ApplyForm onSend={onSend} documents={documents} />
+          <ApplyForm onSend={onSend} documents={documents} takesDocuments={takesDocuments} />
         )}
       </section>
     </main>
@@ -381,12 +410,41 @@ function useDoor(address: Uint8Array | null, reader: DoorReader, key: string): P
 }
 
 /**
+ * Whether the door may be sent personal Documents (#432), asked once per
+ * link and attempt; undefined until it answers, false when it can't.
+ */
+function useTakesDocuments(
+  address: Uint8Array | null,
+  check: FrontDoorProps['takesDocuments'],
+  key: string,
+): boolean | undefined {
+  const [answer, setAnswer] = useState<{ readonly key: string; readonly takes: boolean } | null>(
+    null,
+  );
+  useEffect(() => {
+    if (address === null) return;
+    let live = true;
+    const settle = (takes: boolean) => {
+      if (live) setAnswer({ key, takes });
+    };
+    check(base64url(address)).then(settle, () => {
+      settle(false);
+    });
+    return () => {
+      live = false;
+    };
+  }, [address, check, key]);
+  return answer?.key === key ? answer.takes : undefined;
+}
+
+/**
  * A group's front door (`#door/{address}`; ADR-0038, #121): the page its
  * address names, as plain text in `<bdi>`, never a member's name, then the
  * form to ask to join: the name to use, why, a copy of any personal
  * Documents the person checks (#425), and a caution, with no contact
- * field. A device in a group that may take a card also gets Propose
- * reconciling with this group, which opens the card's form (#426). Its page is only what the group's devices posted under the door's
+ * field. At a door the public shelf lists that is newly listed or held, one
+ * line takes the picker's place (#432). A device in a group that may take a
+ * card also gets Propose reconciling with this group, which opens the card's form (#426). Its page is only what the group's devices posted under the door's
  * key, read again on each visit; a closed door, or one with no page, reads
  * "This front door is closed." with no form. A device that already asked
  * here says so instead of the form. The tab's title never carries the
@@ -396,7 +454,11 @@ export function FrontDoor(props: FrontDoorProps) {
   const { payload, reader, asked, onApply, documents, cardGroups, onMakeCard } = props;
   const address = useMemo(() => parseDoorPayload(payload), [payload]);
   const [attempt, setAttempt] = useState(0);
-  const phase = useDoor(address, reader, `${payload} ${String(attempt)}`);
+  const key = `${payload} ${String(attempt)}`;
+  const read = useDoor(address, reader, key);
+  const takesDocuments = useTakesDocuments(address, props.takesDocuments, key);
+  // An open door waits for the shelf's word, so the picker never shows and then goes.
+  const phase: Phase = takesDocuments === undefined && read.kind === 'open' ? LOADING : read;
   const retry = useCallback(() => {
     setAttempt((count) => count + 1);
   }, []);
@@ -420,6 +482,7 @@ export function FrontDoor(props: FrontDoorProps) {
           asked={asked(payload)}
           onApply={onApply}
           documents={documents}
+          takesDocuments={takesDocuments ?? false}
           cardGroups={cardGroups}
           onMakeCard={onMakeCard}
         />
