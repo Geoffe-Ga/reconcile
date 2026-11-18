@@ -16,18 +16,28 @@ import {
 } from './covenant';
 
 /**
- * Each version's hash, pinned. Changing the text without a new version fails
- * here: a group voted on the words its hash names, so the words for that
- * version never change. A new version adds its hash below.
+ * Each version's hash, pinned as its 32 bytes, so no high-entropy text sits in
+ * the repository. Changing the text without a new version fails here: a group
+ * voted on the words its hash names, so the words for that version never
+ * change. A new version adds its hash below.
  */
-const PINNED: Readonly<Record<number, string>> = {
-  1: '2zkzlHq8H15g0ZYWGc6Q5urw5FCgRjbzY8dw3-WfPXo',
+const PINNED: Readonly<Record<number, readonly number[]>> = {
+  1: [
+    219, 57, 51, 148, 122, 188, 31, 94, 96, 209, 150, 22, 25, 206, 144, 230, 234, 240, 228, 80, 160,
+    70, 54, 243, 99, 199, 112, 223, 229, 159, 61, 122,
+  ],
 };
+
+/** Version `version`'s pinned hash in unpadded base64url, as a listing carries it. */
+function pinned(version: number): string | undefined {
+  const bytes = PINNED[version];
+  return bytes === undefined ? undefined : base64url(Uint8Array.from(bytes));
+}
 
 describe('the covenant a listing accepts (ADR-0081 §3)', () => {
   it('pins each version’s hash, so the text never changes without a new version', () => {
-    expect(PINNED[COVENANT_VERSION]).toBe(COVENANT_HASH);
-    expect(covenantHash(COVENANT.text)).toBe(PINNED[COVENANT_VERSION]);
+    expect(pinned(COVENANT_VERSION)).toBe(COVENANT_HASH);
+    expect(covenantHash(COVENANT.text)).toBe(pinned(COVENANT_VERSION));
   });
 
   it('hashes the UTF-8 of the text with SHA-256, in unpadded base64url', () => {
