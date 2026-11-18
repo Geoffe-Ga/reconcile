@@ -46,6 +46,7 @@ const KEY_WRITERS = [
 /** Methods that write records, but never a key: no group's, no share's, reply's or request's. */
 const RECORD_WRITERS = [
   'claimChat',
+  'dismissRemoval',
   'clearArchive',
   'clearBallots',
   'endHold',
@@ -63,7 +64,9 @@ const RECORD_WRITERS = [
   'keepStewardInbox',
   'mergeLog',
   'noteChatChannel',
+  'noteSentCard',
   'planCoalition',
+  'removalsAt',
   'savePersonal',
   'setPush',
   'setHoldNumber',

@@ -234,6 +234,8 @@ Its actions are the six notices, and Dismiss on a report or appeal. Each asks fo
 
 ### 6.5 Telling affected devices
 
+**Built** (#491). The contract lives in [`phase-1/08-screens.md`](phase-1/08-screens.md) (item 19, A door this device sent to, removed; item 2) and [`phase-1/09-privacy-rules.md`](phase-1/09-privacy-rules.md) (A device that sent to a removed door finds out alone). Decided in #491: both tombstones count, a suspended listing's and an upheld entry's, each with its own words ("A Dispatch from a group you asked to join…" for an entry, since the group itself stays listed); a reconcile card reads "A group you proposed reconciling with on {date}…"; the device notes a card's door once its seed is in the door's inbox and keeps it 30 days, as an application; Dismiss keeps the tombstone's key in the device store, in no backup or link, so one line shows once per tombstone, however many things were sent to its door; and nothing shows while the steward's pause stands.
+
 - After each shelf read, the device matches tombstones against two things it already holds: applications it sent (`sent`) and reconcile cards it sent, by door address.
 - A match shows one line on Start and on Discover: "A group you asked to join on {date} was removed from the shelf: {clause}."
 - Nothing is sent. The platform never learns which devices matched.

@@ -11,6 +11,10 @@
  * notice, one in no group included. Its Ask to join and Propose reconciling
  * open the listing's front door (#432), and its Report this entry goes to
  * the steward (#490).
+ *
+ * Above Discover's feed, a device that sent an application or a reconcile
+ * card to a door the steward removed reads one line saying so, matched on
+ * the device from the same read of the shelf (#491, `ShelfRemovals`).
  */
 import { Discover } from '../screens/Discover';
 import type { ShelfEntryProps } from '../screens/ShelfEntry';
@@ -18,26 +22,35 @@ import { ShelfEntry } from '../screens/ShelfEntry';
 import type { ShelfReader } from '../shelf/read';
 import { routeHref } from './router';
 import type { SharePort } from './share';
+import { type RemovalsStore, ShelfRemovals } from './ShelfRemovals';
 import { type FeedStore, useDiscoverFeed } from './useDiscoverFeed';
 import { useOwnListings } from './useOwnListings';
 import { usePublicShelf, useShelfState } from './usePublicShelf';
 
-/** Props for {@link DiscoverScreen}. */
-export interface DiscoverScreenProps {
+/** What Discover and an entry's page read: the store's places, and the public shelf. */
+interface ShelfScreenProps {
   readonly store: FeedStore;
   /** The public shelf; without one, none shows (#484). */
   readonly shelf?: ShelfReader | undefined;
 }
 
+/** Props for {@link DiscoverScreen}. */
+export interface DiscoverScreenProps extends ShelfScreenProps {
+  readonly store: FeedStore & RemovalsStore;
+  /** The device clock in milliseconds, for the removal lines (#491). */
+  readonly now: () => number;
+}
+
 /** Discover, once the store has answered, so the empty state never flashes before the feed. */
-export function DiscoverScreen({ store, shelf }: DiscoverScreenProps) {
+export function DiscoverScreen({ store, shelf, now }: DiscoverScreenProps) {
   const feed = useDiscoverFeed(store);
   const shelved = usePublicShelf(shelf, useOwnListings(store));
-  return feed === null ? null : <Discover feed={feed} shelf={shelved} />;
+  const removals = <ShelfRemovals store={store} shelf={shelf} now={now} />;
+  return feed === null ? null : <Discover feed={feed} shelf={shelved} removals={removals} />;
 }
 
 /** Props for {@link ShelfEntryScreen}. */
-export interface ShelfEntryScreenProps extends DiscoverScreenProps {
+export interface ShelfEntryScreenProps extends ShelfScreenProps {
   readonly address: string;
   readonly id: string;
   /** The app's origin, for the entry's link. */

@@ -85,6 +85,23 @@ describe('Discover’s public shelf', () => {
     expect(rest).toEqual([]);
   });
 
+  it('shows the shelf’s removal lines under the heading, above the feed and the shelf (#491)', () => {
+    render(
+      <Discover
+        feed={[]}
+        shelf={SHELF}
+        removals={<p data-testid="removals">A group you asked to join was removed.</p>}
+      />,
+    );
+    const removals = screen.getByTestId('removals');
+    const heading = screen.getByRole('heading', { level: 1 });
+    const shelf = screen.getByRole('heading', { name: 'On the public shelf' });
+    expect(
+      heading.compareDocumentPosition(removals) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(removals.compareDocumentPosition(shelf) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it('shows nothing of the shelf without one, as on a relay without the steward’s key', () => {
     render(<Discover feed={[]} shelf={null} />);
 

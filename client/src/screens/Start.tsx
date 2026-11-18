@@ -51,6 +51,8 @@ export interface StartProps {
   readonly onRestore?: RestoreBackupProps['onRestore'];
   /** The recovery alert (#118), first on the page while a recovery of this person waits; none when absent. */
   readonly alert?: ReactNode;
+  /** The shelf's word that a door this device sent to was removed (#491), after the alert; none when absent. */
+  readonly removals?: ReactNode;
 }
 
 function GroupItem({ group }: { readonly group: StartGroup }) {
@@ -252,12 +254,13 @@ function RecoverSection() {
  * Reconcile link opens (#444), Restore a backup (#78), Link to my other
  * device (#96), Recover with my contacts (#118), and a quiet link to
  * Settings. While a recovery of this person waits, its alert comes first
- * (#118). When the browser may clear the app's data, one quiet line says so
- * (ADR-0029).
+ * (#118), then any word that a door this device sent to was removed from
+ * the public shelf (#491). When the browser may clear the app's data, one
+ * quiet line says so (ADR-0029).
  */
 export function Start(props: StartProps) {
   const { groups, requests = [], onOpenInvite } = props;
-  const { persistence = null, onRestore, alert } = props;
+  const { persistence = null, onRestore, alert, removals } = props;
 
   return (
     <main className="shell" data-scene="sky">
@@ -268,6 +271,7 @@ export function Start(props: StartProps) {
       />
       <div className="stack">
         {alert}
+        {removals}
         {groups.length === 0 ? (
           <p className="lede">{messages.start.empty}</p>
         ) : (

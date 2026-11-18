@@ -122,6 +122,14 @@ import {
 } from './personal';
 import { type RecoverRequest, requestSealing, type StoredRecoverRequest } from './recoverRequest';
 import { type StewardKey, stewardSealing, type StoredStewardKey } from './stewardKey';
+import {
+  type KeptRemovals,
+  prunedRemovals,
+  type RemovalKeep,
+  type SentToDoor,
+  withDismissed,
+  withSentCard,
+} from '../shelf/affected';
 import type { InboxKeep, KeptInbox } from '../shelf/inbox';
 import type { KeptShelf, ShelfKeep } from '../shelf/read';
 import { plainRecords, type Sealing, type Split, wholeRecord } from './sealing';
@@ -765,6 +773,12 @@ export const RECOVERY_CHANGED = 'recovery';
  */
 export const STEWARD_CHANGED = 'steward';
 
+/**
+ * What {@link Store.subscribe}'s listeners hear when a card is noted or a
+ * removal dismissed (#491): never a group id either.
+ */
+export const REMOVALS_CHANGED = 'shelf-removals';
+
 /** The steward's secret, on the one device that holds it (#488, `./stewardKey.ts`). */
 export interface StewardKeyStore {
   /** Whether this device holds the steward's key: read without opening the vault. */
@@ -894,6 +908,15 @@ export type ShelfCopyStore = ShelfKeep;
  */
 export type StewardInboxStore = InboxKeep;
 
+/**
+ * What a device keeps to tell its reader a door it sent to was removed from
+ * the shelf (#491, `shelf/affected.ts`): the doors it left reconcile cards
+ * at and the lines its reader dismissed, one device-wide record, read beside
+ * the doors of the applications it sent. They name only public doors, so no
+ * key: it stays out of the vault, and no backup file or link carries it.
+ */
+export type RemovalStore = RemovalKeep;
+
 export interface Store
   extends
     DraftStore,
@@ -904,7 +927,8 @@ export interface Store
     SentStore,
     ShelfCopyStore,
     StewardInboxStore,
-    StewardKeyStore {
+    StewardKeyStore,
+    RemovalStore {
   /** Every group on the device: never a coalition's entry (#114) or a room (#125). */
   listGroups(): Promise<Group[]>;
   /** Every coalition entry on the device (#114). */
@@ -1211,7 +1235,8 @@ type DeviceRecord =
   | PushForgets
   | KeptShelf
   | StoredStewardKey
-  | KeptInbox;
+  | KeptInbox
+  | KeptRemovals;
 
 interface Schema extends DBSchema {
   groups: { key: string; value: StoredGroup };
@@ -1259,6 +1284,11 @@ function shelfCopyIn(record: DeviceRecord | undefined): KeptShelf | undefined {
 /** The steward's inbox in a device record read from its key, or undefined: only it has items (#490). */
 function stewardInboxIn(record: DeviceRecord | undefined): KeptInbox | undefined {
   return record !== undefined && 'items' in record ? record : undefined;
+}
+
+/** The removals record in a device record read from its key, or none yet: only it has dismissals (#491). */
+function removalsIn(record: DeviceRecord | undefined): KeptRemovals {
+  return record !== undefined && 'dismissed' in record ? record : { cards: [], dismissed: [] };
 }
 
 /** The push DELETEs owed in a device record read from their key, or none (#356). */
@@ -1310,6 +1340,8 @@ const PUSH_FORGETS = 'push-forgets';
 const SHELF_COPY = 'shelf';
 /** The device store's key for the steward's inbox (#490): a key of its own, so no new version. */
 const STEWARD_INBOX = 'steward-inbox';
+/** The device store's key for the removals record (#491): a key of its own, so no new version. */
+const REMOVALS = 'shelf-removals';
 const VAULT = 'vault';
 const SENT = 'sent';
 
@@ -1690,6 +1722,9 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
     ...pushForgetStore(db),
     ...shelfCopyStore(db),
     ...stewardInboxStore(db),
+    ...removalStore(db, () => {
+      notify(REMOVALS_CHANGED);
+    }),
     ...stewardKeyStore(db, session, () => {
       notify(STEWARD_CHANGED);
     }),
@@ -1969,6 +2004,47 @@ function stewardInboxStore(db: IDBPDatabase<Schema>): StewardInboxStore {
       if (kept === null) await db.delete(DEVICE, STEWARD_INBOX);
       else await db.put(DEVICE, kept, STEWARD_INBOX);
     },
+  };
+}
+
+/**
+ * The removals record, one record in `db`'s device store (#491), read with
+ * the doors of the applications in the sent store, whose records keep their
+ * door and time outside the vault (#265), so no vault is opened. Each write
+ * tells `changed`.
+ */
+function removalStore(db: IDBPDatabase<Schema>, changed: () => void): RemovalStore {
+  /** Applies `edit` to the record in one change. */
+  async function edit(change: (kept: KeptRemovals) => KeptRemovals): Promise<void> {
+    const tx = db.transaction(DEVICE, 'readwrite');
+    const devices = tx.objectStore(DEVICE);
+    await devices.put(change(removalsIn(await devices.get(REMOVALS))), REMOVALS);
+    await tx.done;
+    changed();
+  }
+  return {
+    async removalsAt(now) {
+      const tx = db.transaction([SENT, DEVICE], 'readwrite');
+      const applications = (await tx.objectStore(SENT).getAll()).map(
+        ({ door, sentAt }): SentToDoor => ({ door, sentAt, kind: 'application' }),
+      );
+      const devices = tx.objectStore(DEVICE);
+      const held = await devices.get(REMOVALS);
+      const kept = prunedRemovals(removalsIn(held), applications, now);
+      if (held !== undefined) await devices.put(kept, REMOVALS);
+      await tx.done;
+      const cards = kept.cards.map(({ door, sentAt }): SentToDoor => ({
+        door,
+        sentAt,
+        kind: 'card',
+      }));
+      return {
+        sent: [...applications, ...cards].sort((a, b) => a.sentAt - b.sentAt),
+        dismissed: kept.dismissed.map(({ key }) => key),
+      };
+    },
+    noteSentCard: (card) => edit((kept) => withSentCard(kept, card)),
+    dismissRemoval: (dismissal) => edit((kept) => withDismissed(kept, dismissal)),
   };
 }
 

@@ -14,7 +14,11 @@
  * dismisses it ({@link closeDoorCard}); either records `door-card-closed`,
  * so every member's device stops showing it after its next sync. Nothing
  * here sends anything readable: events go sealed through the outbox, the
- * card through its envelope, and its seed sealed to the door's key.
+ * card through its envelope, and its seed sealed to the door's key. Once
+ * the card is at the door, the device notes the door's address and the time
+ * in its own store, in no group, backup or link, for 30 days (#491), so it
+ * can tell its reader if the steward removes that group from the shelf
+ * (`shelf/affected.ts`).
  */
 import { parseRecord, signEvent } from '../engine/event';
 import { can } from '../engine/capabilities';
@@ -78,8 +82,9 @@ export async function cardGroupsAt(services: Services, address: Uint8Array): Pro
 /**
  * Propose reconciling with this group's Submit (#426): `makeCard` for
  * `groupId`, then a post that sends the card and leaves its seed in `door`'s
- * inbox, which only the door's members open. A Proposal too large to send is
- * refused before anything is kept.
+ * inbox, which only the door's members open, and notes the door on this
+ * device (#491). A Proposal too large to send is refused before anything is
+ * kept.
  *
  * @throws {Error} when the device isn't in the group.
  */
@@ -94,6 +99,9 @@ export async function makeDoorCard(
   const post = async () => {
     const seed = await postCardSeed(services, made.card);
     await leaveCard(services, door.address, door.page, seed);
+    // Only this device keeps where it left the card, so it can tell its
+    // reader if the shelf's steward removes that group (#491).
+    await services.store.noteSentCard({ door: base64url(door.address), sentAt: services.now() });
   };
   return { outcome: 'queued', proposalId: made.proposalId, post };
 }

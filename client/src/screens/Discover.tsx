@@ -24,8 +24,12 @@
  * section shows one line and nothing else. The section shows only while the
  * shelf holds an entry or a tombstone, or is paused, so on a relay without
  * the steward's key nothing of it appears.
+ *
+ * First, under the heading, any word that a door this device sent an
+ * application or a reconcile card to was removed from the shelf (#491,
+ * `app/ShelfRemovals.tsx`), as on Start.
  */
-import { useId } from 'react';
+import { type ReactNode, useId } from 'react';
 import { Link } from 'react-aria-components';
 
 import { DispatchCard } from '../app/DispatchCard';
@@ -43,6 +47,8 @@ export interface DiscoverProps {
   readonly feed: readonly FeedItem[];
   /** The public shelf as folded, or null while there is none to show (#484). */
   readonly shelf?: ShelfState | null;
+  /** The shelf's word that a door this device sent to was removed (#491), first; none when absent. */
+  readonly removals?: ReactNode;
 }
 
 /** The home of the group or coalition a Dispatch is shown from. */
@@ -167,15 +173,17 @@ const showsShelf = (shelf: ShelfState | null): shelf is ShelfState =>
   shelf !== null && (shelf.paused || shelf.entries.length > 0 || shelf.tombstones.length > 0);
 
 /**
- * The eyebrow and heading, then the feed; or, with none, the empty state's
- * one sentence and where a card or link opens: the link bar (#444). Then the
- * public shelf, while it holds an entry or a tombstone, or is paused (#484, #489).
+ * The eyebrow and heading, then any removal lines (#491), then the feed;
+ * or, with none, the empty state's one sentence and where a card or link
+ * opens: the link bar (#444). Then the public shelf, while it holds an entry
+ * or a tombstone, or is paused (#484, #489).
  */
-export function Discover({ feed, shelf = null }: DiscoverProps) {
+export function Discover({ feed, shelf = null, removals }: DiscoverProps) {
   const words = messages.discover;
   return (
     <main className="shell" data-scene="treetops">
       <PageHeader eyebrow={messages.app.name} title={words.title} pageTitle={words.pageTitle} />
+      {removals}
       {feed.length === 0 ? (
         <>
           <p className="lede">{words.empty}</p>
