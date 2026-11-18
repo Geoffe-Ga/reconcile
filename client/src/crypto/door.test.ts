@@ -283,6 +283,19 @@ describe('padded boxes', () => {
     }
   });
 
+  it('can be held to one size whatever their length, and still grow past it (#490)', () => {
+    for (const [length, size] of [
+      [0, 4096],
+      [4096 - BOX_OVERHEAD - 4, 4096],
+      [4096 - BOX_OVERHEAD - 3, 16384],
+    ] as const) {
+      const plaintext = new Uint8Array(length).fill(7);
+      const blob = sealPadded(publicKey, plaintext, APPLICATION_INFO, INBOX, 4096);
+      expect(blob).toHaveLength(size);
+      expect(hex(openPadded(secret, blob, APPLICATION_INFO, INBOX))).toBe(bytesToHex(plaintext));
+    }
+  });
+
   it('carry at most 65,460 bytes: the largest blob less the box and the length (#425)', () => {
     expect(MAX_PADDED_PLAINTEXT).toBe(65_460);
     expect(MAX_PADDED_PLAINTEXT).toBe(Math.max(...BLOB_SIZES) - BOX_OVERHEAD - 4);

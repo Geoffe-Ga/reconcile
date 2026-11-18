@@ -10,11 +10,17 @@
  * store only to sign a notice on this device; a copy read out is zeroed once
  * the notice is signed. A notice names a clause and what it acts on, never
  * who reported it (ADR-0013).
+ *
+ * The console also reads the steward's inbox (#490, `shelf/inbox.ts`): the
+ * box secret is derived from the steward's secret for the read and zeroed
+ * after, as a notice's signing key is.
  */
 import { base64url } from '../crypto/base64url';
 import { stewardKeysOf, stewardSecretFrom } from '../crypto/steward';
+import type { Relay } from '../net/relay';
 import type { Shelf } from '../net/shelf';
 import { foldShelf, standingHolds, waitingListings } from '../shelf/fold';
+import { type InboxItem, type InboxKeep, readStewardInbox } from '../shelf/inbox';
 import { foldNotices, signNotice } from '../shelf/notices';
 import type { NoticeBody } from '../shelf/record';
 import { STEWARD_PINS, type StewardPins } from '../shelf/steward';
@@ -53,15 +59,46 @@ export async function importStewardKey(
   }
 }
 
+/** No reports or appeals: the inbox of a console with nothing to read it with. */
+const NO_INBOX = (): Promise<InboxItem[]> => Promise.resolve([]);
+
+/**
+ * The reports and appeals in the steward's inbox (#490), newest first, read
+ * after the cursor `store` keeps, with the box secret derived from the
+ * steward's secret on this device; none on a device without one. The
+ * secret and the box secret are zeroed once read.
+ *
+ * @throws {Error} when the relay or the store fails.
+ */
+export async function readInbox(
+  store: Pick<StewardKeyStore, 'getStewardKey'> & InboxKeep,
+  relay: Pick<Relay, 'getBlobs'>,
+): Promise<InboxItem[]> {
+  const secret = await store.getStewardKey();
+  if (secret === undefined) return [];
+  const { signing, box } = stewardKeysOf(secret);
+  secret.fill(0);
+  signing.secretKey.fill(0);
+  try {
+    return await readStewardInbox({ relay, keep: store }, box.secretKey);
+  } finally {
+    box.secretKey.fill(0);
+  }
+}
+
 /**
  * The console's view, read fresh from the relay: every held listing beside
  * any live listing that holds its name, what stands on the shelf (every
- * entry at once, as its own group sees it) and each hold that stands.
- * `unavailable` while the relay has no shelf, `failed` when either read fails.
+ * entry at once, as its own group sees it), each hold that stands, and the
+ * reports and appeals `inbox` reads (#490). `unavailable` while the relay
+ * has no shelf, `failed` when any read fails.
  */
-export async function readQueue(shelf: Pick<Shelf, 'read' | 'readHeld'>): Promise<StewardQueue> {
+export async function readQueue(
+  shelf: Pick<Shelf, 'read' | 'readHeld'>,
+  inbox: () => Promise<readonly InboxItem[]> = NO_INBOX,
+): Promise<StewardQueue> {
   try {
-    const [live, held] = await Promise.all([shelf.read(), shelf.readHeld()]);
+    const [live, held, items] = await Promise.all([shelf.read(), shelf.readHeld(), inbox()]);
     if (live === null || held === null) return 'unavailable';
     const own = new Set(live.records.map(({ address }) => address));
     const state = foldShelf(live.records, live.now, { own });
@@ -72,6 +109,7 @@ export async function readQueue(shelf: Pick<Shelf, 'read' | 'readHeld'>): Promis
       entries: state.entries,
       holds: standingHolds(live.records, held.records, live.now),
       paused: state.paused,
+      inbox: items,
     };
     return view;
   } catch {

@@ -4,9 +4,16 @@
  * listed door, or on one of its entries, stands, with the day it lapses.
  * Nothing shows once it lapses, for another door's hold, for a group that
  * isn't listed, or with no shelf.
+ *
+ * A removed listing shows "Removed: {clause in words}" (#490), and while a
+ * hold stands or the listing is removed, a member who may propose can ask
+ * the steward to look again (§6.3): about the held entry, or about the whole
+ * listing.
  */
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { LEVELS } from '../engine/capabilities';
+import { describe, expect, it, vi } from 'vitest';
 
 import { base64url, fromBase64url } from '../crypto/base64url';
 import { doorKeysOf } from '../crypto/door';
@@ -17,10 +24,15 @@ import type { ShelfReader } from '../shelf/read';
 import type { NoticeBody } from '../shelf/record';
 import { axeViolations } from '../test/axe';
 import { DOOR, LISTED } from '../test/door';
+import { authorOf } from '../test/keys';
 import { STEWARD_ADDRESS, TEST_STEWARD } from '../test/steward';
 import { groupLog, type LogBuilder } from '../test/votes';
 import { formatDate } from './time';
+import { messages } from './messages';
 import { ShelfHolds } from './ShelfHolds';
+
+/** The level that votes but doesn't propose. */
+const [, VOTING] = LEVELS;
 
 const KEYS = doorKeysOf(fromBase64url(LISTED.sign), fromBase64url(LISTED.box)).signing;
 const ADDRESS = base64url(KEYS.publicKey);
@@ -116,5 +128,94 @@ describe('ShelfHolds', () => {
 
     rerender(<ShelfHolds state={opened().state()} />);
     expect(screen.queryByRole('region')).toBeNull();
+  });
+});
+
+describe('ShelfHolds: Ask the steward to look again (#490)', () => {
+  const words = messages.shelfEntry;
+  const SUSPEND: NoticeBody = {
+    v: 1,
+    kind: 'notice',
+    act: 'suspend',
+    address: ADDRESS,
+    clause: 'C3',
+  };
+
+  it('lets a member who may propose appeal a held entry, naming it, and passes axe', async () => {
+    const user = userEvent.setup();
+    const log = opened();
+    const id = publish(log, 'Rally Saturday');
+    const onAppeal = vi.fn(() => Promise.resolve('sent' as const));
+    render(
+      <main>
+        <h1>Riverside Tenants</h1>
+        <ShelfHolds
+          state={log.state()}
+          shelf={readerOf(served([{ ...HOLD, id }]))}
+          me={authorOf('ana')}
+          onAppeal={onAppeal}
+        />
+      </main>,
+    );
+
+    const card = await screen.findByRole('region', { name: words.heldHeading });
+    await user.click(within(card).getByRole('button', { name: words.appeal }));
+    const dialog = await screen.findByRole('dialog', { name: words.appealTitle });
+    document.title = 'Riverside Tenants';
+    expect(await axeViolations()).toEqual([]);
+    await user.click(within(dialog).getByRole('button', { name: words.send }));
+    expect(onAppeal).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole('textbox', { name: words.appealLabel }));
+    await user.paste('It was our own rally.');
+    await user.click(within(dialog).getByRole('button', { name: words.send }));
+
+    expect(await within(card).findByText(words.appealSent)).toBeVisible();
+    expect(onAppeal).toHaveBeenCalledWith(id, 'It was our own rally.');
+  });
+
+  it('shows a removed listing’s clause, and an appeal about the whole listing', async () => {
+    const user = userEvent.setup();
+    const onAppeal = vi.fn(() => Promise.resolve('sent' as const));
+    render(
+      <ShelfHolds
+        state={opened().state()}
+        shelf={readerOf(served([SUSPEND]))}
+        me={authorOf('ana')}
+        onAppeal={onAppeal}
+      />,
+    );
+
+    const card = await screen.findByRole('region', { name: words.removedHeading });
+    expect(card.textContent).toContain('Removed: impersonation of another group or person');
+    expect(card.textContent).toContain(words.removedListing);
+    await user.click(within(card).getByRole('button', { name: words.appeal }));
+    const dialog = await screen.findByRole('dialog', { name: words.appealTitle });
+    await user.click(within(dialog).getByRole('textbox', { name: words.appealLabel }));
+    await user.paste('We are the union.');
+    await user.click(within(dialog).getByRole('button', { name: words.send }));
+
+    await within(card).findByText(words.appealSent);
+    expect(onAppeal).toHaveBeenCalledWith(null, 'We are the union.');
+  });
+
+  it('offers no appeal to a member who can’t propose, or without a steward to send to', async () => {
+    const log = opened();
+    log.level('Ben', VOTING);
+    const { rerender } = render(
+      <ShelfHolds
+        state={log.state()}
+        shelf={readerOf(served([HOLD]))}
+        me={authorOf('ben')}
+        onAppeal={() => Promise.resolve('sent')}
+      />,
+    );
+    await screen.findByRole('region', { name: words.heldHeading });
+    expect(screen.queryByRole('button', { name: words.appeal })).toBeNull();
+
+    rerender(
+      <ShelfHolds state={log.state()} shelf={readerOf(served([HOLD]))} me={authorOf('ana')} />,
+    );
+    await screen.findByRole('region', { name: words.heldHeading });
+    expect(screen.queryByRole('button', { name: words.appeal })).toBeNull();
   });
 });

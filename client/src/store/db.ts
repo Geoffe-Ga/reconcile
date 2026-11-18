@@ -122,6 +122,7 @@ import {
 } from './personal';
 import { type RecoverRequest, requestSealing, type StoredRecoverRequest } from './recoverRequest';
 import { type StewardKey, stewardSealing, type StoredStewardKey } from './stewardKey';
+import type { InboxKeep, KeptInbox } from '../shelf/inbox';
 import type { KeptShelf, ShelfKeep } from '../shelf/read';
 import { plainRecords, type Sealing, type Split, wholeRecord } from './sealing';
 
@@ -884,6 +885,15 @@ export type EventIdOf = (bytes: Uint8Array) => string | null;
  */
 export type ShelfCopyStore = ShelfKeep;
 
+/**
+ * What the steward's device keeps of the steward's inbox (#490,
+ * `shelf/inbox.ts`): its cursor and the reports and appeals it opened, one
+ * device-wide record. They name only public listings and entries, a clause
+ * and a note, so no key: it stays out of the vault, no listener hears of it,
+ * and no backup file or link carries it.
+ */
+export type StewardInboxStore = InboxKeep;
+
 export interface Store
   extends
     DraftStore,
@@ -893,6 +903,7 @@ export interface Store
     PushForgetStore,
     SentStore,
     ShelfCopyStore,
+    StewardInboxStore,
     StewardKeyStore {
   /** Every group on the device: never a coalition's entry (#114) or a room (#125). */
   listGroups(): Promise<Group[]>;
@@ -1199,7 +1210,8 @@ type DeviceRecord =
   | RetiredMark
   | PushForgets
   | KeptShelf
-  | StoredStewardKey;
+  | StoredStewardKey
+  | KeptInbox;
 
 interface Schema extends DBSchema {
   groups: { key: string; value: StoredGroup };
@@ -1242,6 +1254,11 @@ function retiredAtIn(record: DeviceRecord | undefined): number | undefined {
 /** The shelf's copy in a device record read from its key, or undefined: only it has a read time (#431). */
 function shelfCopyIn(record: DeviceRecord | undefined): KeptShelf | undefined {
   return record !== undefined && 'readAt' in record ? record : undefined;
+}
+
+/** The steward's inbox in a device record read from its key, or undefined: only it has items (#490). */
+function stewardInboxIn(record: DeviceRecord | undefined): KeptInbox | undefined {
+  return record !== undefined && 'items' in record ? record : undefined;
 }
 
 /** The push DELETEs owed in a device record read from their key, or none (#356). */
@@ -1291,6 +1308,8 @@ const RELAY_BACKUP_RETIRED = 'relay-backup-retired';
 const PUSH_FORGETS = 'push-forgets';
 /** The device store's key for its copy of the public shelf (#431): a key of its own, so no new version. */
 const SHELF_COPY = 'shelf';
+/** The device store's key for the steward's inbox (#490): a key of its own, so no new version. */
+const STEWARD_INBOX = 'steward-inbox';
 const VAULT = 'vault';
 const SENT = 'sent';
 
@@ -1670,6 +1689,7 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
     }),
     ...pushForgetStore(db),
     ...shelfCopyStore(db),
+    ...stewardInboxStore(db),
     ...stewardKeyStore(db, session, () => {
       notify(STEWARD_CHANGED);
     }),
@@ -1937,6 +1957,17 @@ function shelfCopyStore(db: IDBPDatabase<Schema>): ShelfCopyStore {
     async keepShelfCopy(copy) {
       if (copy === null) await db.delete(DEVICE, SHELF_COPY);
       else await db.put(DEVICE, copy, SHELF_COPY);
+    },
+  };
+}
+
+/** The steward's inbox, one record in `db`'s device store (#490). */
+function stewardInboxStore(db: IDBPDatabase<Schema>): StewardInboxStore {
+  return {
+    getStewardInbox: async () => stewardInboxIn(await db.get(DEVICE, STEWARD_INBOX)),
+    async keepStewardInbox(kept) {
+      if (kept === null) await db.delete(DEVICE, STEWARD_INBOX);
+      else await db.put(DEVICE, kept, STEWARD_INBOX);
     },
   };
 }

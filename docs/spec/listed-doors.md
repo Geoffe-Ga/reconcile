@@ -209,13 +209,15 @@ The steward signs each notice. The relay acts on it so that held records aren't 
 
 ### 6.3 Reports and appeals
 
+**Built** (#490). The contract lives in [`phase-1/06-relay-api.md`](phase-1/06-relay-api.md) (The steward's inbox), [`phase-1/08-screens.md`](phase-1/08-screens.md) (Group home's hold, item 12's console, item 19's entry page) and [`phase-1/09-privacy-rules.md`](phase-1/09-privacy-rules.md) (A report carries no reporter). Decided in #490: the inbox derives from the steward's box key under `reconcile/v1/steward-inbox`; reports and appeals are sealed under labels of their own, and an appeal is signed under a tag of its own, `reconcile/v1/steward-appeal`, so none passes for a shelf record; every one is padded to 4,096 bytes, not the smallest blob that fits, so the relay can't tell a report from an appeal or a note's length; an appeal's note is 1 to 500 code points, as a report's is at most; "Report this entry" sits on the entry's own page (#431), where each entry's actions are; the appeal sits on Group home's hold card, and on a new card for a removed listing; and neither shows while the app pins no steward.
+
 - **Report.** Every entry has a quiet "Report this entry". It asks for a clause and takes a note of up to 500 code points. The device seals `{address, id, clause, note?}` to the steward's box key, padded to a blob size, and PUTs it to the steward's inbox, an ordinary mailbox derived from the steward's key. It carries nothing about the reporter and has no reply path.
 - **Appeal.** A member of a held or suspended group who holds `propose` sees "Ask the steward to look again". It sends `{address, id?, note}`, signed with the door's key, the same way.
 - **Reports never hide anything.** They only fill the steward's queue.
 
 ### 6.4 The steward's console
 
-**Built: the waiting listings and Release** (#488), and standing holds and the four other notices (#489); reports, appeals and flagged entries wait for §6.3 and §6.6. The contract lives in [`phase-1/08-screens.md`](phase-1/08-screens.md) (item 12).
+**Built: the waiting listings and Release** (#488), standing holds and the four other notices (#489), and reports and appeals (#490); flagged entries wait for §6.6. The contract lives in [`phase-1/08-screens.md`](phase-1/08-screens.md) (item 12).
 
 `#/steward`, shown only on a device that holds the steward's secret key. It lists:
 

@@ -12,11 +12,14 @@
  *   for an entry and Suspend for a listing (#489);
  * - what stands on the shelf: each listing, with Hold and Suspend, and each
  *   entry under it, with Hold and Uphold (#489);
- * - the pause, with Pause the shelf or Lift the pause (#489).
+ * - the pause, with Pause the shelf or Lift the pause (#489);
+ * - reports and appeals (#490, §6.3), newest first, each beside the entry or
+ *   listing it names, with the same actions on it, a report's clause
+ *   chosen. Neither says who sent it.
  *
  * Every action that names a clause asks which, and each says what readers,
- * and the group, will see once it is sent. Reports, appeals and flagged
- * entries wait for later issues (§6.3, §6.6).
+ * and the group, will see once it is sent. Flagged entries wait for the
+ * classifier (§6.6).
  */
 import { useState } from 'react';
 import { Button, Label, RadioButton, RadioField, RadioGroup } from 'react-aria-components';
@@ -27,6 +30,7 @@ import { formatDate } from '../app/time';
 import { BackLink, PageHeader, Section } from '../app/ui';
 import { CLAUSE_WORDS, COVENANT_HASH } from '../shelf/covenant';
 import type { ShelfEntry, ShelfListing, StandingHold, WaitingListing } from '../shelf/fold';
+import type { InboxItem } from '../shelf/inbox';
 import type { Clause, NoticeBody } from '../shelf/record';
 
 /** What the console shows (§6.4): what waits, what stands, what's held, and the pause. */
@@ -41,6 +45,8 @@ export interface StewardView {
   readonly holds: readonly StandingHold[];
   /** Whether the steward's pause stands. */
   readonly paused: boolean;
+  /** Reports and appeals, newest first (#490). */
+  readonly inbox: readonly InboxItem[];
 }
 
 /** What the console shows (`app/steward.ts`), or why it has nothing to show. */
@@ -348,13 +354,102 @@ function OnShelf({ view, onNotice }: StewardSectionProps) {
   );
 }
 
+/** What a report or appeal names, as the console found it, and what the steward may do to it. */
+interface About {
+  readonly line: string;
+  /** The entry's text, when the console holds it. */
+  readonly text: string;
+  readonly acts: readonly ClauseAct[];
+}
+
+/** The title of entry `id` at `address`, from what stands or what's held, or null. */
+function entryTitle(view: StewardView, address: string, id: string) {
+  const entry = view.entries.find((e) => e.address === address && e.id === id);
+  if (entry !== undefined) return { title: entry.title, text: entry.text };
+  const held = view.holds.find((h) => h.hold.address === address && h.hold.id === id);
+  return held === undefined || held.title === null ? null : { title: held.title, text: '' };
+}
+
+/** The name of the listing at `address`, from what stands, what's held or what waits, or null. */
+function listingName(view: StewardView, address: string): string | null {
+  const live = view.listings.find((l) => l.address === address)?.name;
+  const held = view.holds.find((h) => h.hold.address === address && h.hold.id === null)?.name;
+  const waiting = view.waiting.find((w) => w.listing.address === address)?.listing.name;
+  return live ?? held ?? waiting ?? null;
+}
+
+/** What `item` names, or null when the console holds neither the entry nor the listing. */
+function aboutOf(view: StewardView, item: InboxItem): About | null {
+  if (item.id !== null) {
+    const entry = entryTitle(view, item.address, item.id);
+    if (entry === null) return null;
+    return { line: words.aboutEntry(entry.title), text: entry.text, acts: ['hold', 'uphold'] };
+  }
+  const name = listingName(view, item.address);
+  return name === null
+    ? null
+    : { line: words.aboutListing(name), text: '', acts: ['hold', 'suspend'] };
+}
+
+/** One report or appeal: what it is, when it came, its note, and what it names with its actions. */
+function InboxCard(props: {
+  readonly item: InboxItem;
+  readonly view: StewardView;
+  readonly onNotice: StewardProps['onNotice'];
+}) {
+  const { item, view, onNotice } = props;
+  const about = aboutOf(view, item);
+  return (
+    <li className="card stack">
+      <h3 className="heading-3">
+        {item.clause === null ? words.appealOf : words.reportOf(CLAUSE_WORDS[item.clause])}
+      </h3>
+      <p className="meta">{words.receivedOn(formatDate(item.received))}</p>
+      {item.note === null ? null : (
+        <p className="dispatch-text" dir="auto">
+          {item.note}
+        </p>
+      )}
+      <p>
+        <bdi>{about === null ? words.aboutGone : about.line}</bdi>
+      </p>
+      {about === null || about.text === '' ? null : (
+        <p className="dispatch-text" dir="auto">
+          {about.text}
+        </p>
+      )}
+      {about === null ? null : (
+        <Actions
+          address={item.address}
+          id={item.id}
+          acts={about.acts}
+          {...(item.clause === null ? {} : { clause: item.clause })}
+          onNotice={onNotice}
+        />
+      )}
+    </li>
+  );
+}
+
+/** Reports and appeals, newest first, or one line saying there are none. */
+function Inbox({ view, onNotice }: StewardSectionProps) {
+  if (view.inbox.length === 0) return <p>{words.noInbox}</p>;
+  return (
+    <ul className="stack">
+      {view.inbox.map((item) => (
+        <InboxCard key={item.key} item={item} view={view} onNotice={onNotice} />
+      ))}
+    </ul>
+  );
+}
+
 /** Props for each of the console's sections. */
 interface StewardSectionProps {
   readonly view: StewardView;
   readonly onNotice: StewardProps['onNotice'];
 }
 
-/** The steward's console: what waits, what's held, what stands, and the pause. */
+/** The steward's console: what waits, reports and appeals, what's held, what stands, and the pause. */
 export function Steward({ queue, onNotice }: StewardProps) {
   return (
     <main className="shell">
@@ -367,6 +462,9 @@ export function Steward({ queue, onNotice }: StewardProps) {
         <div className="sections">
           <Section title={words.waitingHeading}>
             <Waiting view={queue} onNotice={onNotice} />
+          </Section>
+          <Section title={words.inboxHeading}>
+            <Inbox view={queue} onNotice={onNotice} />
           </Section>
           <Section title={words.holdsHeading}>
             <Holds view={queue} onNotice={onNotice} />

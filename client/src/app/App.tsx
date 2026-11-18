@@ -56,7 +56,8 @@ import { AddSection, RemoveSection } from '../screens/SectionComposer';
 import { SendDispatch } from '../screens/SendDispatch';
 import { type NotifyGroup, Settings } from '../screens/Settings';
 import { Steward } from '../screens/Steward';
-import { importStewardKey, sendNotice } from './steward';
+import { appealFrom, reportEntry, stewardPinned } from './reports';
+import { importStewardKey, readInbox, sendNotice } from './steward';
 import { useHoldsStewardKey, useOffersStewardKey, useStewardQueue } from './useSteward';
 import { SharedPage } from '../screens/SharedPage';
 import type { SeatNumber } from '../engine/stewards';
@@ -358,7 +359,7 @@ function DoorScreen({
 /**
  * A shelf entry's own page (#431), with Propose reconciling offered where
  * #426's rule lets one of this device's groups propose it at the entry's
- * door (#432).
+ * door (#432), and Report this entry where the app pins a steward (#490).
  */
 function ShelfEntryRoute(props: {
   readonly services: AppServices;
@@ -377,6 +378,11 @@ function ShelfEntryRoute(props: {
       copyText={services.copyText}
       sharing={services}
       mayReconcile={cardGroups.length > 0}
+      onReport={
+        stewardPinned()
+          ? (clause, note) => reportEntry(services, { address, id, clause }, note)
+          : undefined
+      }
     />
   );
 }
@@ -449,12 +455,14 @@ function SettingsScreen({ services }: { readonly services: AppServices }) {
 
 /**
  * The steward's console (#488, `#/steward`): only on a device that holds the
- * steward's key; any other device goes to Start, as for an unknown page.
+ * steward's key; any other device goes to Start, as for an unknown page. It
+ * reads the steward's inbox too (#490).
  */
 function ConsoleScreen({ services }: { readonly services: AppServices }) {
   const held = useHoldsStewardKey(services.store);
   const { stewardShelf } = services;
-  const { queue } = useStewardQueue(held === true ? stewardShelf : undefined);
+  const inbox = useCallback(() => readInbox(services.store, services.relay), [services]);
+  const { queue } = useStewardQueue(held === true ? stewardShelf : undefined, inbox);
   useEffect(() => {
     if (held === false) replaceRoute({ name: 'start' });
   }, [held]);
@@ -877,7 +885,16 @@ function GroupScreen({ services, groupId }: GroupScreenProps) {
           alertCard={alert === null ? null : <div className="backup-slot">{alert}</div>}
           shelfNote={
             <>
-              <ShelfHolds state={group.state} shelf={services.shelf} />
+              <ShelfHolds
+                state={group.state}
+                shelf={services.shelf}
+                me={group.me.author}
+                onAppeal={
+                  stewardPinned()
+                    ? (id, note) => appealFrom(services, groupId, id, note)
+                    : undefined
+                }
+              />
               <ShelfStrays state={group.state} shelf={services.shelf} />
             </>
           }

@@ -9,9 +9,11 @@
  * A shelf entry's own page (`#/discover/{address}/{id}`, #431) reads the
  * same shelf, the same way, so its link opens on any device past the pilot
  * notice, one in no group included. Its Ask to join and Propose reconciling
- * open the listing's front door (#432).
+ * open the listing's front door (#432), and its Report this entry goes to
+ * the steward (#490).
  */
 import { Discover } from '../screens/Discover';
+import type { ShelfEntryProps } from '../screens/ShelfEntry';
 import { ShelfEntry } from '../screens/ShelfEntry';
 import type { ShelfReader } from '../shelf/read';
 import { routeHref } from './router';
@@ -44,11 +46,13 @@ export interface ShelfEntryScreenProps extends DiscoverScreenProps {
   readonly sharing?: SharePort | undefined;
   /** Whether this device has a group that may propose reconciling with the entry's group (#426, #432). */
   readonly mayReconcile: boolean;
+  /** Sends a report of the entry to the steward (#490); none where the app pins no steward. */
+  readonly onReport?: ShelfEntryProps['onReport'];
 }
 
 /** One entry's page, once the shelf has answered, so "not on the shelf" never flashes first. */
 export function ShelfEntryScreen(props: ShelfEntryScreenProps) {
-  const { store, shelf, address, id, origin, copyText, sharing, mayReconcile } = props;
+  const { store, shelf, address, id, origin, copyText, sharing, mayReconcile, onReport } = props;
   const state = useShelfState(shelf, useOwnListings(store));
   if (state === undefined) return null;
   // While the steward's pause stands, no entry shows, here as on Discover (#489).
@@ -62,6 +66,7 @@ export function ShelfEntryScreen(props: ShelfEntryScreenProps) {
       copyText={copyText}
       sharing={sharing}
       mayReconcile={mayReconcile}
+      onReport={onReport}
     />
   );
 }

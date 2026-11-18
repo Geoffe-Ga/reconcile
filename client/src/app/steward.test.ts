@@ -12,7 +12,18 @@ import { nameSkeleton } from '../shelf/skeleton';
 import { VaultLocked } from '../store/db';
 import { createFakeShelf, release } from '../test/fakeShelf';
 import { STEWARD_ADDRESS, TEST_PINS, TEST_STEWARD_SECRET } from '../test/steward';
-import { derivesPins, importStewardKey, readQueue, releaseListing, sendNotice } from './steward';
+import { createRelay } from '../net/relay';
+import type { InboxKeep, KeptInbox } from '../shelf/inbox';
+import { sendReport } from '../shelf/report';
+import { createFakeRelay } from '../test/fakeRelay';
+import {
+  derivesPins,
+  importStewardKey,
+  readInbox,
+  readQueue,
+  releaseListing,
+  sendNotice,
+} from './steward';
 
 const COVENANT = base64url(new Uint8Array(32).fill(9));
 
@@ -183,5 +194,48 @@ describe('readQueue and releaseListing', () => {
     expect(await releaseListing(keyStore(new Uint8Array(32).fill(1)), shelf, address)).toBe(false);
     expect(await releaseListing(keyStore(TEST_STEWARD_SECRET), refusing, address)).toBe(false);
     expect(fake.records).toEqual([]);
+  });
+});
+
+describe('readInbox and the console’s reports (#490)', () => {
+  /** A keep in memory. */
+  function keepIn(): InboxKeep {
+    let held: KeptInbox | undefined;
+    return {
+      getStewardInbox: () => Promise.resolve(held),
+      keepStewardInbox: (kept) => {
+        held = kept ?? undefined;
+        return Promise.resolve();
+      },
+    };
+  }
+
+  it('opens the inbox with the steward’s key, and the console lists what it found', async () => {
+    const fake = createFakeRelay();
+    const relay = createRelay({ fetch: fake.fetch });
+    const address = base64url(newSigningKeys().publicKey);
+    const id = base64url(new Uint8Array(32).fill(4));
+    await sendReport({ relay }, { address, id, clause: 'C2', note: 'Spam' });
+    const store = { ...keyStore(TEST_STEWARD_SECRET), ...keepIn() };
+    const shelf = createShelf({ fetch: createFakeShelf().fetch });
+
+    const queue = await readQueue(shelf, () => readInbox(store, relay));
+
+    const inbox = typeof queue === 'string' ? [] : queue.inbox;
+    expect(inbox).toMatchObject([{ kind: 'report', address, id, clause: 'C2', note: 'Spam' }]);
+    expect(store.secret).toEqual(TEST_STEWARD_SECRET);
+  });
+
+  it('reads nothing on a device without the key, and fails the console when the inbox can’t be read', async () => {
+    const fake = createFakeRelay();
+    const relay = createRelay({ fetch: fake.fetch });
+    const store = { ...keyStore(), ...keepIn() };
+    expect(await readInbox(store, relay)).toEqual([]);
+    expect(fake.requests).toEqual([]);
+
+    fake.offline = true;
+    const keyed = { ...keyStore(TEST_STEWARD_SECRET), ...keepIn() };
+    const shelf = createShelf({ fetch: createFakeShelf().fetch });
+    expect(await readQueue(shelf, () => readInbox(keyed, relay))).toBe('failed');
   });
 });

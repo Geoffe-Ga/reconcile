@@ -1,4 +1,4 @@
-/** The steward's console (#488, #489; listed-doors.md §6.4). */
+/** The steward's console (#488, #489, #490; listed-doors.md §6.4). */
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { messages } from '../app/messages';
 import { COVENANT_HASH } from '../shelf/covenant';
 import type { ShelfEntry, ShelfListing, StandingHold, WaitingListing } from '../shelf/fold';
+import type { InboxItem } from '../shelf/inbox';
 import type { NoticeBody } from '../shelf/record';
 import { axeViolations } from '../test/axe';
 import { Steward, type StewardQueue, type StewardView } from './Steward';
@@ -57,6 +58,7 @@ const viewOf = (fields: Partial<StewardView> = {}): StewardView => ({
   entries: [],
   holds: [],
   paused: false,
+  inbox: [],
   ...fields,
 });
 
@@ -249,5 +251,91 @@ describe('Steward: hold, uphold, suspend and pause (#489)', () => {
 
     await user.click(within(pause).getByRole('button', { name: words.resume }));
     expect(onNotice).toHaveBeenCalledWith({ v: 1, kind: 'notice', act: 'pause', on: false });
+  });
+});
+
+describe('Steward: reports and appeals (#490)', () => {
+  const report: InboxItem = {
+    key: 'r',
+    kind: 'report',
+    seq: 5,
+    received: 29_000_010,
+    address: ELM,
+    id: ID,
+    clause: 'C3',
+    note: 'Not the real co-op',
+  };
+  const appeal: InboxItem = {
+    key: 'a',
+    kind: 'appeal',
+    seq: 6,
+    received: 29_000_020,
+    address: OAK,
+    id: null,
+    clause: null,
+    note: 'We are Oak St.',
+  };
+  const gone: InboxItem = {
+    ...report,
+    key: 'g',
+    seq: 4,
+    received: 29_000_000,
+    id: 'G'.repeat(43),
+    note: null,
+  };
+
+  it('lists each beside what it names, in the order given, newest first, and passes axe', async () => {
+    setup(
+      viewOf({
+        listings: [listingOf('Elm Co-op', ELM)],
+        entries: [ENTRY],
+        holds: [HOLD],
+        inbox: [appeal, report, gone],
+      }),
+    );
+
+    const items = within(section(words.inboxHeading)).getAllByRole('listitem');
+    const [first, second, third] = items;
+    if (first === undefined || second === undefined || third === undefined) {
+      throw new Error('three items');
+    }
+    expect(within(first).getByRole('heading', { name: words.appealOf })).toBeVisible();
+    expect(within(first).getByText(words.aboutListing('Oak St Tenants'))).toBeVisible();
+    expect(within(first).getByText('We are Oak St.')).toBeVisible();
+    expect(within(first).getByRole('button', { name: words.suspend })).toBeVisible();
+    expect(
+      within(second).getByRole('heading', {
+        name: words.reportOf('impersonation of another group or person'),
+      }),
+    ).toBeVisible();
+    expect(within(second).getByText(words.aboutEntry('Rent strike vote'))).toBeVisible();
+    expect(within(second).getByText('Thursday.')).toBeVisible();
+    expect(within(second).getByText('Not the real co-op')).toBeVisible();
+    expect(within(second).getByRole('button', { name: words.uphold })).toBeVisible();
+    expect(within(third).getByText(words.aboutGone)).toBeVisible();
+    expect(within(third).queryByRole('button')).toBeNull();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('holds the entry a report names, under the clause it names', async () => {
+    const { user, onNotice } = setup(viewOf({ entries: [ENTRY], inbox: [report] }));
+    const [item] = within(section(words.inboxHeading)).getAllByRole('listitem');
+    if (item === undefined) throw new Error('one item');
+
+    await user.click(within(item).getByRole('button', { name: words.hold }));
+
+    expect(onNotice).toHaveBeenCalledWith({
+      v: 1,
+      kind: 'notice',
+      act: 'hold',
+      address: ELM,
+      id: ID,
+      clause: 'C3',
+    });
+  });
+
+  it('says when there are none', () => {
+    setup(viewOf());
+    expect(within(section(words.inboxHeading)).getByText(words.noInbox)).toBeVisible();
   });
 });

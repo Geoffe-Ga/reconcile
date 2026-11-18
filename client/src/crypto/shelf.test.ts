@@ -3,9 +3,27 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import { base64url } from './base64url';
+import { kxPublicKeyOf, newKxKey } from './box';
 import { signDoorRecord } from './door';
-import { SHELF_CONTEXT, signShelfRecord, verifyShelfRecord } from './shelf';
-import { DOOR_PAGE_CONTEXT, newSigningKeys, publicKeyOf, sign, SIGNATURE_BYTES } from './sign';
+import {
+  APPEAL_INFO,
+  REPORT_INFO,
+  SHELF_CONTEXT,
+  signAppeal,
+  signShelfRecord,
+  STEWARD_INBOX_INFO,
+  stewardInboxOf,
+  verifyAppeal,
+  verifyShelfRecord,
+} from './shelf';
+import {
+  APPEAL_CONTEXT,
+  DOOR_PAGE_CONTEXT,
+  newSigningKeys,
+  publicKeyOf,
+  sign,
+  SIGNATURE_BYTES,
+} from './sign';
 
 /**
  * `vectors/shelf.json`: signed shelf records, made outside @noble. Every value
@@ -144,5 +162,60 @@ describe('verifyShelfRecord', () => {
         expect(opened).toEqual(message);
       }),
     );
+  });
+});
+
+describe('the steward’s inbox (#490)', () => {
+  it('names each label, so none coincides with another', () => {
+    expect(STEWARD_INBOX_INFO).toBe('reconcile/v1/steward-inbox');
+    expect(REPORT_INFO).toBe('reconcile/v1/steward-report');
+    expect(APPEAL_INFO).toBe('reconcile/v1/steward-appeal-box');
+    expect(APPEAL_CONTEXT).toBe('reconcile/v1/steward-appeal');
+  });
+
+  it('derives the inbox from the steward’s box key as WebCrypto’s HKDF does', async () => {
+    const box = kxPublicKeyOf(newKxKey());
+    const key = await crypto.subtle.importKey('raw', box, 'HKDF', false, ['deriveBits']);
+    const bits = await crypto.subtle.deriveBits(
+      {
+        name: 'HKDF',
+        hash: 'SHA-256',
+        salt: new Uint8Array(0),
+        info: utf8ToBytes('reconcile/v1/steward-inbox'),
+      },
+      key,
+      256,
+    );
+    expect(stewardInboxOf(box)).toBe(base64url(new Uint8Array(bits)));
+    expect(stewardInboxOf(box)).toMatch(/^[A-Za-z0-9_-]{43}$/);
+  });
+
+  it('refuses a box key that isn’t 32 bytes', () => {
+    expect(() => stewardInboxOf(new Uint8Array(31))).toThrow(RangeError);
+  });
+});
+
+describe('appeals (#490)', () => {
+  const keys = newSigningKeys();
+  const address = base64url(keys.publicKey);
+  const message = utf8ToBytes('{"address":"x","note":"Please look again"}');
+
+  it('verify under the address that signed them, and return the message', () => {
+    const signed = signAppeal(keys, message);
+    expect(signed).toHaveLength(SIGNATURE_BYTES + message.length);
+    expect(verifyAppeal(signed, address)).toEqual(message);
+  });
+
+  it('refuse any other address, a changed byte, or nothing signed', () => {
+    const signed = signAppeal(keys, message);
+    expect(verifyAppeal(signed, base64url(newSigningKeys().publicKey))).toBeNull();
+    expect(verifyAppeal(flipped(signed, SIGNATURE_BYTES + 3), address)).toBeNull();
+    expect(verifyAppeal(signAppeal(keys, new Uint8Array(0)), address)).toBeNull();
+    expect(verifyAppeal(signed, 'not a key')).toBeNull();
+  });
+
+  it('never pass for a shelf record, nor a shelf record for an appeal', () => {
+    expect(verifyShelfRecord(signAppeal(keys, message), address)).toBeNull();
+    expect(verifyAppeal(signShelfRecord(keys, message), address)).toBeNull();
   });
 });

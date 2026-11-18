@@ -49,6 +49,12 @@ export const DOOR_PAGE_CONTEXT = 'reconcile/v1/door-page';
 /** The tag on a public shelf record (#484): a listed door's, or the steward's, signature over it. */
 export const SHELF_CONTEXT = 'reconcile/v1/shelf';
 
+/**
+ * The tag on an appeal to the steward (#490): a listed door's signature
+ * over it, so no appeal ever passes for a shelf record, nor one for it.
+ */
+export const APPEAL_CONTEXT = 'reconcile/v1/steward-appeal';
+
 /** What a signature is for. */
 export type SignContext =
   | typeof EVENT_CONTEXT
@@ -56,7 +62,8 @@ export type SignContext =
   | typeof SEAT_CONTEXT
   | typeof SHARE_CONTEXT
   | typeof DOOR_PAGE_CONTEXT
-  | typeof SHELF_CONTEXT;
+  | typeof SHELF_CONTEXT
+  | typeof APPEAL_CONTEXT;
 
 /** An Ed25519 public key's length in bytes. */
 export const PUBLIC_KEY_BYTES = 32;
