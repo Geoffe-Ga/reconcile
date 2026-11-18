@@ -6,15 +6,19 @@
  *
  * The public shelf (#484): a listing and an entry hand-signed with a door's
  * key and PUT to a fake shelf show on Discover on a device in no group, and
- * nothing of the shelf shows while the relay has none.
+ * nothing of the shelf shows while the relay has none. The listing composer
+ * reads the same shelf, and warns when a listed group holds a name like the
+ * group's own (#487).
  */
 import { waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { base64url } from '../crypto/base64url';
 import { newSigningKeys } from '../crypto/sign';
 import { createShelf } from '../net/shelf';
 import { signShelfBody } from '../shelf/record';
+import { nameSkeleton } from '../shelf/skeleton';
 import { type TestDevice, testDevice } from '../test/appServices';
 import { axeViolations } from '../test/axe';
 import { createFakeRelay } from '../test/fakeRelay';
@@ -78,8 +82,8 @@ describe('Discover’s feed through the app (#429)', { timeout: 60_000 }, () => 
 });
 
 describe('The public shelf on Discover through the app (#484)', { timeout: 60_000 }, () => {
-  /** Oak St Tenants' listing and one entry, hand-signed with a door's key and PUT to the shelf. */
-  async function stockedShelf(available = true) {
+  /** A listing (Oak St Tenants' unless named) and one entry, hand-signed with a door's key and PUT to the shelf. */
+  async function stockedShelf(available = true, name = 'Oak St Tenants') {
     const fake = createFakeShelf({ available });
     const shelf = createShelf({ fetch: fake.fetch });
     if (!available) return { fake, shelf };
@@ -87,10 +91,10 @@ describe('The public shelf on Discover through the app (#484)', { timeout: 60_00
     const address = base64url(door.publicKey);
     const covenant = base64url(new Uint8Array(32).fill(9));
     const id = base64url(new Uint8Array(32).fill(4));
-    const listing = { v: 1, kind: 'listing', open: true, name: 'Oak St Tenants' } as const;
+    const listing = { v: 1, kind: 'listing', open: true, name } as const;
     await shelf.put(
       address,
-      signShelfBody(door, { ...listing, skeleton: 'oaksttenants', covenant }),
+      signShelfBody(door, { ...listing, skeleton: nameSkeleton(name), covenant }),
     );
     await shelf.put(
       address,
@@ -141,5 +145,24 @@ describe('The public shelf on Discover through the app (#484)', { timeout: 60_00
     });
 
     expect(view.queryByText(messages.discover.shelfHeading)).toBeNull();
+  });
+
+  it('warns a listing composer that a listed group holds a name like its group’s (#487)', async () => {
+    const { shelf } = await stockedShelf(true, 'RIVERSIDE TENANTS');
+    const made = await members(createFakeRelay(), ['Ana']);
+    opened.push(...made.devices);
+    const [ana] = made.devices;
+    if (ana === undefined) throw new Error('Expected Ana’s device.');
+    const services = { ...ana.services, shelf: createShelfFeed({ shelf, now: () => 0 }) };
+
+    go(`#/g/${made.groupId}/rules/frontDoor`);
+    const app = mountApp(services, 'w');
+    mounted.push(app);
+    const view = within(app.container);
+    const list = await view.findByRole('checkbox', { name: messages.optIns.listing.choiceLabel });
+    expect(view.queryByText(messages.optIns.listing.lookAlike)).toBeNull();
+    await userEvent.setup().click(list);
+
+    expect(await view.findByText(messages.optIns.listing.lookAlike)).toBeVisible();
   });
 });

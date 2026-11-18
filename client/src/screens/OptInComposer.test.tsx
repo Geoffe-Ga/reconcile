@@ -13,8 +13,11 @@ import { LEVELS } from '../engine/capabilities';
 import type { GroupState } from '../engine/fold';
 import { isFrontDoor, isOptInValue, type OptIn } from '../engine/optIns';
 import { axeViolations } from '../test/axe';
+import { base64url } from '../crypto/base64url';
+import { addressOf } from '../door/page';
 import { COVENANT, COVENANT_HASH } from '../shelf/covenant';
-import { DOOR, LISTED } from '../test/door';
+import type { ShelfState } from '../shelf/fold';
+import { DOOR, LISTED, secretOf } from '../test/door';
 import { authorOf } from '../test/keys';
 import { held, pastPressFallback } from '../test/press';
 import { groupLog } from '../test/votes';
@@ -30,6 +33,8 @@ interface Options {
   readonly narrow?: boolean;
   readonly listing?: boolean;
   readonly outcome?: OptInOutcome | Promise<OptInOutcome>;
+  /** The public shelf the device holds (#487). */
+  readonly shelf?: ShelfState | null;
 }
 
 /** The device clock in tests, in ms. */
@@ -37,7 +42,7 @@ const NOW_MS = 1_762_650_000_000;
 
 function renderComposer(state: GroupState, options: Options = {}) {
   const { me = 'ana', optIn = 'chatBot', narrow = false, outcome = 'proposed' } = options;
-  const { listing = false } = options;
+  const { listing = false, shelf } = options;
   const onPropose = vi.fn<(values: RulesValues) => Promise<OptInOutcome>>(() =>
     Promise.resolve(outcome),
   );
@@ -50,6 +55,7 @@ function renderComposer(state: GroupState, options: Options = {}) {
       listing={listing}
       now={NOW_MS}
       onPropose={onPropose}
+      shelf={shelf}
     />,
   );
   return { user: userEvent.setup(), onPropose };
@@ -431,5 +437,65 @@ describe('OptInComposer: listing the front door (#485; ADR-0081)', () => {
     });
     expect(screen.getByText(optIns.listing.unavailable)).toBeVisible();
     expect(screen.queryByRole('button')).toBeNull();
+  });
+});
+
+/** A shelf holding one listing, `name`, at `address`. */
+function shelfWith(name: string, address = secretOf(0x66)): ShelfState {
+  const listing = { address, name, covenant: COVENANT_HASH, seq: 3, received: 100 };
+  return { listings: [listing], entries: [], tombstones: [], paused: false };
+}
+
+/** The line warning that another listed group already holds a name like this one. */
+const lookAlike = () => screen.queryByText(optIns.listing.lookAlike);
+
+describe('OptInComposer: a name like a listed group’s (#487; ADR-0081)', () => {
+  it('warns before listing under a name a listed group already holds', async () => {
+    renderComposer(doorAt(DOOR).state(), {
+      optIn: 'frontDoor',
+      listing: true,
+      shelf: shelfWith('RIVERSIDE TENANTS'),
+    });
+    expect(optIns.listing.lookAlike).toBe(
+      'A listed group already uses a name like this. Yours won’t be shown while theirs is.',
+    );
+    expect(lookAlike()).toBeVisible();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('warns once opening a door is ticked to list it too', async () => {
+    const { user } = renderComposer(groupLog({ members: ['Ben', 'Cal'] }).state(), {
+      optIn: 'frontDoor',
+      // A Cyrillic і, spaced and with a full stop.
+      shelf: shelfWith('Rіverside  Tenants.'),
+    });
+    expect(lookAlike()).toBeNull();
+    await user.click(screen.getByRole('checkbox', { name: optIns.listing.choiceLabel }));
+    expect(lookAlike()).toBeVisible();
+  });
+
+  it('says nothing for a name no listing holds, or with no shelf read', () => {
+    renderComposer(doorAt(DOOR).state(), {
+      optIn: 'frontDoor',
+      listing: true,
+      shelf: shelfWith('Riverside Neighbors'),
+    });
+    expect(lookAlike()).toBeNull();
+    cleanup();
+    renderComposer(doorAt(DOOR).state(), { optIn: 'frontDoor', listing: true, shelf: null });
+    expect(lookAlike()).toBeNull();
+  });
+
+  it('says nothing of the door’s own listing, or when unlisting', () => {
+    const own = shelfWith('Riverside Tenants', base64url(addressOf(DOOR)));
+    renderComposer(doorAt(DOOR).state(), { optIn: 'frontDoor', listing: true, shelf: own });
+    expect(lookAlike()).toBeNull();
+    cleanup();
+    renderComposer(doorAt(LISTED).state(), {
+      optIn: 'frontDoor',
+      listing: true,
+      shelf: shelfWith('Riverside Tenants'),
+    });
+    expect(lookAlike()).toBeNull();
   });
 });

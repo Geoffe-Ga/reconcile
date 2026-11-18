@@ -1,0 +1,112 @@
+{
+  "kind": "ownership",
+  "about": "Name ownership on the shelf (#487, shelf/fold.ts rules 3 and 4, docs/spec/listed-doors.md §4.3). Each record is signed by its door's key, made from the door's label (fold.test.ts): an open listing under `listing`, with `skeleton` when it posts one other than its name's; an entry under `entry`, an id's label; or a final listing, under `final`. `listings` are the doors whose listings show, each with its name, oldest standing copy first; `entries` are the doors and ids that show, newest first. A door's claim to its skeleton starts at the first copy of its newest unbroken run of listings under that skeleton; the lowest claim holds the name, and every other listing that shares the skeleton is shadowed, entries included.",
+  "cases": [
+    {
+      "about": "a look-alike listed later is shadowed, entries included",
+      "records": [
+        { "seq": 1, "door": "oak", "listing": "Eastside Tenants Union" },
+        { "seq": 2, "door": "oak", "entry": "d1" },
+        { "seq": 3, "door": "birch", "listing": "Еastside Tenants Union" },
+        { "seq": 4, "door": "birch", "entry": "d2" }
+      ],
+      "listings": [["oak", "Eastside Tenants Union"]],
+      "entries": [["oak", "d1"]]
+    },
+    {
+      "about": "digit-for-letter, spacing and punctuation look-alikes are all shadowed",
+      "records": [
+        { "seq": 1, "door": "oak", "listing": "Mill Creek Tenants" },
+        { "seq": 2, "door": "birch", "listing": "MI11 CREEK TENANTS" },
+        { "seq": 3, "door": "elm", "listing": "Mill-Creek  Tenants." },
+        { "seq": 4, "door": "ash", "listing": "Mill Creek Neighbors" }
+      ],
+      "listings": [
+        ["oak", "Mill Creek Tenants"],
+        ["ash", "Mill Creek Neighbors"]
+      ],
+      "entries": []
+    },
+    {
+      "about": "a listing whose skeleton isn't its name's is ignored, so it holds no name",
+      "records": [
+        { "seq": 1, "door": "oak", "listing": "Eastside Tenants Union", "skeleton": "eastside" },
+        { "seq": 2, "door": "oak", "entry": "d1" },
+        { "seq": 3, "door": "birch", "listing": "Eastside Tenants Union" }
+      ],
+      "listings": [["birch", "Eastside Tenants Union"]],
+      "entries": []
+    },
+    {
+      "about": "a later copy with a wrong skeleton is ignored, and the copy before it stands",
+      "records": [
+        { "seq": 1, "door": "oak", "listing": "Oak St Tenants" },
+        {
+          "seq": 2,
+          "door": "oak",
+          "listing": "Oak Street Tenants",
+          "skeleton": "Oak Street Tenants"
+        }
+      ],
+      "listings": [["oak", "Oak St Tenants"]],
+      "entries": []
+    },
+    {
+      "about": "a final listing frees the name for the look-alike it shadowed",
+      "records": [
+        { "seq": 1, "door": "oak", "listing": "Oak St Tenants" },
+        { "seq": 2, "door": "birch", "listing": "0ak St Tenants" },
+        { "seq": 3, "door": "birch", "entry": "d2" },
+        { "seq": 4, "door": "oak", "final": true }
+      ],
+      "listings": [["birch", "0ak St Tenants"]],
+      "entries": [["birch", "d2"]]
+    },
+    {
+      "about": "a refresh under the same skeleton keeps the claim, under a new spelling too",
+      "records": [
+        { "seq": 1, "door": "oak", "listing": "Oak St Tenants" },
+        { "seq": 2, "door": "birch", "listing": "Oak St Tenants" },
+        { "seq": 3, "door": "oak", "listing": "OAK ST. TENANTS" }
+      ],
+      "listings": [["oak", "OAK ST. TENANTS"]],
+      "entries": []
+    },
+    {
+      "about": "renaming into a name another door holds claims it only from the rename",
+      "records": [
+        { "seq": 1, "door": "oak", "listing": "Oak St Tenants" },
+        { "seq": 2, "door": "birch", "listing": "Birch Ave Tenants" },
+        { "seq": 3, "door": "oak", "listing": "Birch Ave Tenants" },
+        { "seq": 4, "door": "oak", "entry": "d1" }
+      ],
+      "listings": [["birch", "Birch Ave Tenants"]],
+      "entries": []
+    },
+    {
+      "about": "renaming away and back starts a new claim",
+      "records": [
+        { "seq": 1, "door": "oak", "listing": "Oak St Tenants" },
+        { "seq": 2, "door": "oak", "listing": "Oak Street Tenants" },
+        { "seq": 3, "door": "birch", "listing": "Oak St Tenants" },
+        { "seq": 4, "door": "oak", "listing": "Oak St Tenants" }
+      ],
+      "listings": [["birch", "Oak St Tenants"]],
+      "entries": []
+    },
+    {
+      "about": "a shadowed door that renames to a free name shows again, with its entries",
+      "records": [
+        { "seq": 1, "door": "oak", "listing": "Oak St Tenants" },
+        { "seq": 2, "door": "birch", "listing": "Oak St Tenants" },
+        { "seq": 3, "door": "birch", "entry": "d2" },
+        { "seq": 4, "door": "birch", "listing": "Birch Ave Tenants" }
+      ],
+      "listings": [
+        ["oak", "Oak St Tenants"],
+        ["birch", "Birch Ave Tenants"]
+      ],
+      "entries": [["birch", "d2"]]
+    }
+  ]
+}

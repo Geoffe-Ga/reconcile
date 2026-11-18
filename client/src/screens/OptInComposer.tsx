@@ -9,7 +9,8 @@ import type { RulesValues } from '../app/proposals';
 import { SuspendedNote } from '../app/stewards';
 import { BackLink, Field, PageHeader } from '../app/ui';
 import { WindowField } from '../app/WindowField';
-import { newFrontDoor } from '../door/page';
+import { base64url } from '../crypto/base64url';
+import { addressOf, newFrontDoor } from '../door/page';
 import { can, isSuspended } from '../engine/capabilities';
 import { type GroupState, TITLE_MAX, WHY_MAX } from '../engine/fold';
 import {
@@ -27,6 +28,8 @@ import { type ProposalClass, targetClass } from '../engine/rules';
 import { mayTurnOffNow } from '../engine/stewards';
 import { nfcLength } from '../engine/text';
 import { COVENANT_HASH } from '../shelf/covenant';
+import { nameHolder, type ShelfState } from '../shelf/fold';
+import { listedName } from '../shelf/keeper';
 
 /** How sending went: `proposed` moves on to the Proposal; the others stay on the form. */
 export type OptInOutcome = 'proposed' | 'too-large' | 'failed';
@@ -50,6 +53,12 @@ export interface OptInComposerProps {
   readonly now: number;
   /** Queues the rules Proposal (and for Turn off now, the narrowing) from valid entries. */
   readonly onPropose: (values: RulesValues) => Promise<OptInOutcome>;
+  /**
+   * The public shelf as this device last read it (#487), or null or absent
+   * while it has none: a Proposal that lists warns when a listed group
+   * already holds a name like this group's.
+   */
+  readonly shelf?: ShelfState | null | undefined;
 }
 
 /** Limits count code points after NFC (spec §4), never UTF-16 units. */
@@ -246,6 +255,16 @@ function ListChoice({ value, onChange }: { value: boolean; onChange: (list: bool
 }
 
 /**
+ * Whether listing `value` would put the group's name behind another
+ * listing's on `shelf` (#487): one that isn't this door's holds a name like it.
+ */
+function behindAnother(shelf: ShelfState | null | undefined, name: string, value: OptInValue) {
+  if (shelf === null || shelf === undefined || listedUnder(value) === null) return false;
+  const own = isFrontDoor(value) ? base64url(addressOf(value)) : null;
+  return nameHolder(shelf, listedName(name), own) !== null;
+}
+
+/**
  * The value the form proposes, and the opening's choices (#121, #485): a
  * listing composer's change to the standing door's listing, else
  * {@link valueOf} with the door's count and listing as chosen.
@@ -314,6 +333,9 @@ function OptInForm(props: OptInComposerProps) {
       ) : null}
       {choices}
       {covenant === null ? null : <CovenantText hash={covenant} level={2} />}
+      {behindAnother(props.shelf, state.name, value) ? (
+        <p className="opt-in-warning">{optIns.listing.lookAlike}</p>
+      ) : null}
       <Field
         name="title"
         label={composer.titleLabel}

@@ -59,6 +59,7 @@ import {
   type ShelfBody,
   signShelfBody,
 } from './record';
+import { nameSkeleton } from './skeleton';
 
 /** Relay minutes to wait before asking a relay with no shelf again: an hour, as Discover does. */
 export const UNAVAILABLE_MINUTES = 60;
@@ -112,7 +113,8 @@ function listedDoors(state: GroupState): FrontDoor[] {
  * The listings to keep now: for each door the group ever listed, the open
  * listing while that door is open in effect and listed, else the final one.
  * The open listing names the group (cut to 120 code points) and the covenant
- * the door is listed under. Its skeleton is the name until #487 reduces it.
+ * the door is listed under, with the name's skeleton (#487), which every
+ * reader's fold checks.
  */
 export function listingsDue(state: GroupState): (readonly [FrontDoor, ListingBody])[] {
   const open = openDoor(state);
@@ -127,7 +129,7 @@ export function listingsDue(state: GroupState): (readonly [FrontDoor, ListingBod
       kind: 'listing',
       open: true,
       name,
-      skeleton: name,
+      skeleton: nameSkeleton(name),
       covenant,
     };
     return [open, body] as const;

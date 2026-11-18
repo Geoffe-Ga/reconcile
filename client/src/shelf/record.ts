@@ -45,7 +45,7 @@ export interface OpenListingBody {
   readonly open: true;
   /** The group's name. */
   readonly name: string;
-  /** The name reduced so that look-alikes compare equal; checked from #487. */
+  /** The name reduced so that look-alikes compare equal (`skeleton.ts`); every fold checks it (#487). */
   readonly skeleton: string;
   /** The SHA-256 of the covenant text the group accepted, in unpadded base64url. */
   readonly covenant: string;

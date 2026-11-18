@@ -1,0 +1,66 @@
+{
+  "kind": "skeleton",
+  "about": "Listed names' skeletons (#487, shelf/skeleton.ts, docs/spec/listed-doors.md §4.4): NFKC, case folding, whitespace, punctuation and default-ignorable code points removed, then Unicode's confusables mapping (UTS #39) from the version below, repeated until nothing changes. Every name in a `same` group has that group's skeleton; the names in an `apart` group have different ones. Names with invisible code points are in skeleton.test.ts, as \\u escapes.",
+  "unicode": "18.0.0",
+  "same": [
+    {
+      "about": "the issue's example: case, a zero for an O, spacing and a hyphen, and a Cyrillic Е",
+      "names": [
+        "Eastside Tenants Union",
+        "EASTSIDE TENANTS UNI0N",
+        "Eastside  Tenants-Union",
+        "Еastside Tenants Union"
+      ],
+      "skeleton": "eastsidetenantsunion"
+    },
+    {
+      "about": "mixed scripts: a Greek omicron, Cyrillic а twice, and full-width letters",
+      "names": ["Oak St Tenants", "Οak St Tenants", "Oаk St Tenаnts", "Ｏａｋ Ｓｔ Ｔｅｎａｎｔｓ"],
+      "skeleton": "oaksttenants"
+    },
+    {
+      "about": "digits for letters: a one for an l, in any case",
+      "names": ["Mill Creek", "Mi11 Creek", "MILL CREEK"],
+      "skeleton": "rnillcreek"
+    },
+    {
+      "about": "letters for letters: rn for m, and an Old Italic letter whose prototype M lowers to m",
+      "names": ["Elm Street", "Elrn Street", "El𐌑 Street"],
+      "skeleton": "elrnstreet"
+    },
+    {
+      "about": "punctuation: dots, an exclamation mark, slashes and a Unicode hyphen",
+      "names": ["Oak St. Tenants!", "Oak/St/Tenants", "Oak‐St‐Tenants"],
+      "skeleton": "oaksttenants"
+    },
+    {
+      "about": "case folding: ß and ss",
+      "names": ["Straße Mieter", "STRASSE MIETER", "strasse mieter"],
+      "skeleton": "strassernieter"
+    },
+    {
+      "about": "a Greek sigma at a word's end or inside one",
+      "names": ["ΟΔΟΣ ΕΝΑ", "ΟΔΟΣΕΝΑ", "οδος ενα"],
+      "skeleton": "oẟooꞓva"
+    },
+    {
+      "about": "Arabic, with its spacing changed",
+      "names": ["سكان شارع البلوط", "سكان  شارع-البلوط"],
+      "skeleton": "سكlنسۛlرعlلبلوط"
+    }
+  ],
+  "apart": [
+    {
+      "about": "a different word",
+      "names": ["Eastside Tenants Union", "Westside Tenants Union", "Eastside Tenants"]
+    },
+    {
+      "about": "an accent is a different letter, not a look-alike",
+      "names": ["Café Workers", "Cafe Workers"]
+    },
+    {
+      "about": "a capital I for an l in a mixed-case name: case folding reads it as i first (§4.4)",
+      "names": ["Mill Creek", "MiII Creek"]
+    }
+  ]
+}
