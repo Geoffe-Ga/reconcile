@@ -135,14 +135,17 @@ export function promotionFor(
 
 /**
  * The Dispatch a group's Proposal decides, with its ceiling: its own, put to
- * the group's vote, or a promotion motion's; null for any other Proposal.
+ * the group's vote, or a promotion motion's; null for any other Proposal, and
+ * for one put to the vote only for the public shelf, which rises nowhere (#430).
  */
 export function dispatchOf(
   proposal: Pick<Proposal, 'id' | 'target'>,
   coalitions: readonly HeldCoalition[],
 ): { readonly id: string; readonly ceiling: Ceiling } | null {
   const { target } = proposal;
-  if (target.kind === 'dispatch') return { id: proposal.id, ceiling: target.ceiling };
+  if (target.kind === 'dispatch') {
+    return target.ceiling === 0 ? null : { id: proposal.id, ceiling: target.ceiling };
+  }
   const promoted = promotionFor(proposal, coalitions);
   return promoted === null ? null : { id: promoted.dispatch.id, ceiling: promoted.ceiling };
 }

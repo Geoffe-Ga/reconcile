@@ -5,11 +5,13 @@
  * it does, naming a header add's heading (#103). A steward or rules
  * Proposal's one version has no text: it carries what the ballot decides
  * instead (#102, #117), and so does a dissolve Proposal's (#108), a member
- * removal's (#115), a move's (#103) and a class Proposal's (#116).
+ * removal's (#115), a move's (#103) and a class Proposal's (#116). A
+ * Dispatch that asks for the public shelf has a second, the shelf line (#430).
  */
 import { isHeadingOnly } from '../engine/atomText';
 import { WIPE_DAYS } from '../engine/dissolve';
 import type { MoveTarget } from '../engine/event';
+import { shelfLineOf } from '../engine/dispatches';
 import type { GroupState, Proposal } from '../engine/fold';
 import { displayName } from '../engine/names';
 import { rulesChangeOf } from '../engine/optIns';
@@ -55,6 +57,11 @@ export interface VersionView {
    * chose, and what passing does.
    */
   readonly decision?: DissolveView;
+  /**
+   * What a line of a two-line ballot is called in its score and meter labels:
+   * a Dispatch with a shelf line's "sending it" and "the public shelf" (#430).
+   */
+  readonly line?: string;
 }
 
 /**
@@ -238,8 +245,27 @@ export function versionViews(
       ...(target.kind === 'class' ? { protect: protectView(state, target) } : {}),
       ...(target.kind === 'remove' ? { removal: removalView(state, target.member) } : {}),
       ...decisionOf(proposal),
+      ...shelfLineView(state, proposal, version.id),
     };
   });
+}
+
+/**
+ * A Dispatch's two lines when it asks for the public shelf (#430): each
+ * named in its labels, and the shelf line deciding to put the group's name to
+ * it there, in place of the Dispatch's decision. Nothing for any other.
+ */
+function shelfLineView(
+  state: Pick<GroupState, 'name'>,
+  proposal: Pick<Proposal, 'id' | 'target'>,
+  id: string,
+): Pick<VersionView, 'decision' | 'line'> {
+  const shelf = shelfLineOf(proposal);
+  const { shelfLine } = messages;
+  if (shelf === null) return {};
+  if (id !== shelf) return { line: shelfLine.names.dispatch };
+  const decision = { title: shelfLine.ballotTitle(state.name), line: shelfLine.line };
+  return { decision, line: shelfLine.names.shelf };
 }
 
 /**

@@ -13,6 +13,7 @@ import {
   isPromoteProposal,
   isRulesProposal,
   parseEvent,
+  type Reach,
 } from './event';
 
 const ANA = authorOf('ana');
@@ -100,6 +101,29 @@ describe('a Dispatch put to a vote (#126)', () => {
     ['an Atom', { ...DISPATCH, atom: 'g1.0' }],
   ])('refuses one with %s', (_label, body) => {
     expect(parseEvent(proposal(body))).toBeNull();
+  });
+});
+
+describe('a shelf line on a Dispatch put to a vote (#430)', () => {
+  const reaches: readonly (readonly [Reach])[] = [[0], ...CEILINGS.map((c) => [c] as const)];
+  it.each(reaches)('reads shelf: true with a reach of %s, 0 only beside it', (ceiling) => {
+    const target = { kind: 'dispatch', ceiling, doc: 'g1', shelf: true };
+    expect(bodyOf({ ...DISPATCH, target })).toEqual({ ...DISPATCH, target });
+  });
+
+  it.each([
+    ['shelf: false', { kind: 'dispatch', ceiling: 1, shelf: false }],
+    ['shelf as text', { kind: 'dispatch', ceiling: 1, shelf: 'true' }],
+    ['shelf as 1', { kind: 'dispatch', ceiling: 0, shelf: 1 }],
+    ['a reach of 0 and shelf: false', { kind: 'dispatch', ceiling: 0, shelf: false }],
+    ['a reach of "0" beside the shelf', { kind: 'dispatch', ceiling: '0', shelf: true }],
+  ])('refuses one with %s', (_label, target) => {
+    expect(parseEvent(proposal({ ...DISPATCH, target }))).toBeNull();
+  });
+
+  it('drops a shelf line from a promotion record: a coalition has no door', () => {
+    const body = bodyOf({ ...PROMOTE, target: { ...PROMOTE.target, shelf: true } });
+    expect(body).toEqual(PROMOTE);
   });
 });
 

@@ -153,6 +153,8 @@ A listed group's devices keep the shelf in step with the group's own log, as the
 
 ### 5.1 The shelf line
 
+**Built.** #430 built the shelf line: the target's `shelf: true`, a reach of 0 beside it, the second version, `state.published` and `publishedBy`, the form, the two-line ballot and both results. That contract now lives in [`phase-1/04-events/11-dispatches.md`](phase-1/04-events/11-dispatches.md) (The shelf line) and [`phase-1/08-screens.md`](phase-1/08-screens.md) (item 15). The pilot rule of §3.1 covers older builds: the shelf line is offered only while a group is listed, and every device in a group runs a current build before that group's first listing Proposal. Nothing is posted to the shelf yet: §4.5's entry is #431's.
+
 - While a group is listed, Send a Dispatch offers "Also ask to put it on the public shelf", only for a Dispatch that goes to a vote.
 - Its ballot has two scored lines: the Dispatch, and "Put {name} to this on the public shelf". Each is 0 to 4 with its own consent meter. The shelf line passes only if the Dispatch line passes too, at the ordinary bar.
 - **Groups only.** A coalition has no door, so a promote motion carries no shelf line in this slice.

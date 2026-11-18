@@ -227,10 +227,14 @@ interface Rising {
   readonly until: number;
 }
 
-/** A group's own Dispatch put to a vote (#126), as {@link Rising}: level 1 above it, passed once final. */
+/**
+ * A group's own Dispatch put to a vote (#126), as {@link Rising}: level 1 above
+ * it, passed once final. One put to the vote only for the public shelf, with a
+ * reach of 0 (#430), rises nowhere.
+ */
 function groupRising(proposal: Proposal): Rising | null {
   const { id, target, dispatch, outcome, final } = proposal;
-  if (target.kind !== 'dispatch' || dispatch === null) return null;
+  if (target.kind !== 'dispatch' || dispatch === null || target.ceiling === 0) return null;
   const until = closeTime(proposal) + RESULT_GRACE_MINUTES;
   const passed = outcome.kind === 'pass' && final;
   return {

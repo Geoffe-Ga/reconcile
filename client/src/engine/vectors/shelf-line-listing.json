@@ -1,0 +1,1501 @@
+{
+  "kind": "fold",
+  "vectors": [
+    {
+      "name": "shelf-line-unlisted: a door that is open but not listed takes no shelf line, for this group only or with a ceiling, and a Dispatch put to the vote for this group only without one is a bad shape; the same Dispatch rising with no shelf line opens",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29354840,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1761290400000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29354841,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761290460000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29354842,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1761290520000,
+            "body": {
+              "name": "Cal",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "rules",
+                "optIn": "frontDoor",
+                "value": {
+                  "sign": {
+                    "$base64url": [
+                      17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
+                      17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17
+                    ]
+                  },
+                  "box": {
+                    "$base64url": [
+                      34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34,
+                      34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34
+                    ]
+                  },
+                  "showCount": false
+                }
+              },
+              "title": "Open our front door",
+              "why": "Our group talked it over in the chat."
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500660000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375012,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500720000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375013,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500780000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375014,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500840000,
+            "body": {
+              "target": {
+                "kind": "dispatch",
+                "ceiling": 0,
+                "shelf": true
+              },
+              "title": "Rally Saturday",
+              "why": "",
+              "dispatch": {
+                "title": "Rally Saturday",
+                "text": "Meet at the river at ten."
+              }
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29375015,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500900000,
+            "body": {
+              "target": {
+                "kind": "dispatch",
+                "ceiling": 2,
+                "shelf": true
+              },
+              "title": "Rally Saturday",
+              "why": "",
+              "dispatch": {
+                "title": "Rally Saturday",
+                "text": "Meet at the river at ten."
+              }
+            }
+          }
+        },
+        {
+          "seq": 10,
+          "received": 29375016,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500960000,
+            "body": {
+              "target": {
+                "kind": "dispatch",
+                "ceiling": 0
+              },
+              "title": "Rally Saturday",
+              "why": "",
+              "dispatch": {
+                "title": "Rally Saturday",
+                "text": "Meet at the river at ten."
+              }
+            }
+          }
+        },
+        {
+          "seq": 11,
+          "received": 29375017,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501020000,
+            "body": {
+              "target": {
+                "kind": "dispatch",
+                "ceiling": 2
+              },
+              "title": "Rally Saturday",
+              "why": "",
+              "dispatch": {
+                "title": "Rally Saturday",
+                "text": "Meet at the river at ten."
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29375018,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@4"
+          },
+          {
+            "id": "@11",
+            "target": {
+              "kind": "dispatch",
+              "ceiling": 2
+            },
+            "versions": [
+              {
+                "id": "@11",
+                "author": "%ana",
+                "text": ""
+              }
+            ]
+          }
+        ],
+        "published": [],
+        "ignored": [
+          {
+            "seq": 8,
+            "id": "@8"
+          },
+          {
+            "seq": 9,
+            "id": "@9"
+          },
+          {
+            "seq": 10
+          }
+        ]
+      }
+    },
+    {
+      "name": "shelf-line-unlisted-before-close: of two shelf Proposals opened while listed, the one that closes before an unlisting passes is published, and the one that closes after it goes out to the group but is not published",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29354840,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1761290400000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29354841,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761290460000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29354842,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1761290520000,
+            "body": {
+              "name": "Cal",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "rules",
+                "optIn": "frontDoor",
+                "value": {
+                  "sign": {
+                    "$base64url": [
+                      17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
+                      17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17
+                    ]
+                  },
+                  "box": {
+                    "$base64url": [
+                      34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34,
+                      34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34
+                    ]
+                  },
+                  "showCount": false,
+                  "listed": true,
+                  "covenant": {
+                    "$base64url": [
+                      90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90,
+                      90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90
+                    ]
+                  }
+                }
+              },
+              "title": "Open and list our front door",
+              "why": "Our group talked it over in the chat."
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500660000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375012,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500720000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375013,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500780000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375014,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500840000,
+            "body": {
+              "target": {
+                "kind": "dispatch",
+                "ceiling": 0,
+                "shelf": true
+              },
+              "title": "Rally Saturday",
+              "why": "",
+              "dispatch": {
+                "title": "Rally Saturday",
+                "text": "Meet at the river at ten."
+              }
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29375015,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500900000,
+            "body": {
+              "target": {
+                "kind": "dispatch",
+                "ceiling": 0,
+                "shelf": true
+              },
+              "title": "Picnic Sunday",
+              "why": "",
+              "dispatch": {
+                "title": "Picnic Sunday",
+                "text": "Bring something to share."
+              }
+            }
+          }
+        },
+        {
+          "seq": 10,
+          "received": 29375016,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500960000,
+            "body": {
+              "proposal": "@8",
+              "scores": {
+                "@8": 4,
+                "@8.shelf": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 11,
+          "received": 29375017,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501020000,
+            "body": {
+              "proposal": "@8",
+              "scores": {
+                "@8": 4,
+                "@8.shelf": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 12,
+          "received": 29375018,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762501080000,
+            "body": {
+              "proposal": "@8",
+              "scores": {
+                "@8": 4,
+                "@8.shelf": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 13,
+          "received": 29375019,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501140000,
+            "body": {
+              "target": {
+                "kind": "rules",
+                "optIn": "frontDoor",
+                "value": {
+                  "sign": {
+                    "$base64url": [
+                      17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
+                      17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17
+                    ]
+                  },
+                  "box": {
+                    "$base64url": [
+                      34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34,
+                      34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34
+                    ]
+                  },
+                  "showCount": false
+                }
+              },
+              "title": "Unlist our front door",
+              "why": "Our group talked it over in the chat."
+            }
+          }
+        },
+        {
+          "seq": 14,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501200000,
+            "body": {
+              "proposal": "@13",
+              "scores": {
+                "@13": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 15,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501260000,
+            "body": {
+              "proposal": "@13",
+              "scores": {
+                "@13": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 16,
+          "received": 29375022,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762501320000,
+            "body": {
+              "proposal": "@13",
+              "scores": {
+                "@13": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 17,
+          "received": 29375023,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501380000,
+            "body": {
+              "proposal": "@9",
+              "scores": {
+                "@9": 4,
+                "@9.shelf": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 18,
+          "received": 29375024,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501440000,
+            "body": {
+              "proposal": "@9",
+              "scores": {
+                "@9": 4,
+                "@9.shelf": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 19,
+          "received": 29375025,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762501500000,
+            "body": {
+              "proposal": "@9",
+              "scores": {
+                "@9": 4,
+                "@9.shelf": 4
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29375027,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@4"
+          },
+          {
+            "id": "@8",
+            "closedAt": 29375018,
+            "outcome": {
+              "kind": "pass",
+              "version": "@8",
+              "bar": {
+                "avgAtLeast": 2,
+                "zerosUnderPercent": 10
+              }
+            }
+          },
+          {
+            "id": "@9",
+            "closedAt": 29375025,
+            "outcome": {
+              "kind": "pass",
+              "version": "@9",
+              "bar": {
+                "avgAtLeast": 2,
+                "zerosUnderPercent": 10
+              }
+            }
+          },
+          {
+            "id": "@13"
+          }
+        ],
+        "dispatches": [
+          {
+            "id": "@8",
+            "by": {
+              "proposal": "@8"
+            },
+            "title": "Rally Saturday",
+            "text": "Meet at the river at ten.",
+            "doc": null,
+            "received": 29375018
+          },
+          {
+            "id": "@9",
+            "by": {
+              "proposal": "@9"
+            },
+            "title": "Picnic Sunday",
+            "text": "Bring something to share.",
+            "doc": null,
+            "received": 29375025
+          }
+        ],
+        "published": ["@8"],
+        "optIns": {
+          "frontDoor": {
+            "sign": {
+              "$base64url": [
+                17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
+                17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17
+              ]
+            },
+            "box": {
+              "$base64url": [
+                34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34,
+                34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34
+              ]
+            },
+            "showCount": false
+          }
+        }
+      }
+    },
+    {
+      "name": "shelf-line-deadline: a shelf Proposal three of four score, Dee having earned a vote by two vouches and the wait, closes at its deadline, and an unlisting opened after it closes at its own later deadline; folded once relay time has passed both, the Dispatch was listed at its close, so it is published, and the door is unlisted",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29354840,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1761290400000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29354841,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761290460000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29354842,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1761290520000,
+            "body": {
+              "name": "Cal",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29354843,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1761290580000,
+            "body": {
+              "name": "Dee",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29354844,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761290640000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29354845,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761290700000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "rules",
+                "optIn": "frontDoor",
+                "value": {
+                  "sign": {
+                    "$base64url": [
+                      17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
+                      17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17
+                    ]
+                  },
+                  "box": {
+                    "$base64url": [
+                      34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34,
+                      34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34
+                    ]
+                  },
+                  "showCount": false,
+                  "listed": true,
+                  "covenant": {
+                    "$base64url": [
+                      90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90,
+                      90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90
+                    ]
+                  }
+                }
+              },
+              "title": "Open and list our front door",
+              "why": "Our group talked it over in the chat."
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500660000,
+            "body": {
+              "proposal": "@7",
+              "scores": {
+                "@7": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29375012,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500720000,
+            "body": {
+              "proposal": "@7",
+              "scores": {
+                "@7": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 10,
+          "received": 29375013,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500780000,
+            "body": {
+              "proposal": "@7",
+              "scores": {
+                "@7": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 11,
+          "received": 29375014,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762500840000,
+            "body": {
+              "proposal": "@7",
+              "scores": {
+                "@7": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 12,
+          "received": 29375015,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500900000,
+            "body": {
+              "target": {
+                "kind": "dispatch",
+                "ceiling": 0,
+                "shelf": true
+              },
+              "title": "Rally Saturday",
+              "why": "",
+              "dispatch": {
+                "title": "Rally Saturday",
+                "text": "Meet at the river at ten."
+              }
+            }
+          }
+        },
+        {
+          "seq": 13,
+          "received": 29375016,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500960000,
+            "body": {
+              "proposal": "@12",
+              "scores": {
+                "@12": 4,
+                "@12.shelf": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 14,
+          "received": 29375017,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501020000,
+            "body": {
+              "proposal": "@12",
+              "scores": {
+                "@12": 4,
+                "@12.shelf": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 15,
+          "received": 29375018,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762501080000,
+            "body": {
+              "proposal": "@12",
+              "scores": {
+                "@12": 3,
+                "@12.shelf": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 16,
+          "received": 29375019,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501140000,
+            "body": {
+              "target": {
+                "kind": "rules",
+                "optIn": "frontDoor",
+                "value": {
+                  "sign": {
+                    "$base64url": [
+                      17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
+                      17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17
+                    ]
+                  },
+                  "box": {
+                    "$base64url": [
+                      34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34,
+                      34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34
+                    ]
+                  },
+                  "showCount": false
+                }
+              },
+              "title": "Unlist our front door",
+              "why": "Our group talked it over in the chat."
+            }
+          }
+        },
+        {
+          "seq": 17,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762501200000,
+            "body": {
+              "proposal": "@16",
+              "scores": {
+                "@16": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 18,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501260000,
+            "body": {
+              "proposal": "@16",
+              "scores": {
+                "@16": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 19,
+          "received": 29375022,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762501320000,
+            "body": {
+              "proposal": "@16",
+              "scores": {
+                "@16": 4
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29385100,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@7"
+          },
+          {
+            "id": "@12",
+            "deadline": 29385095,
+            "closedAt": null,
+            "final": true,
+            "outcome": {
+              "kind": "pass",
+              "version": "@12",
+              "bar": {
+                "avgAtLeast": 2,
+                "zerosUnderPercent": 10
+              }
+            }
+          },
+          {
+            "id": "@16",
+            "final": true
+          }
+        ],
+        "dispatches": [
+          {
+            "id": "@12",
+            "by": {
+              "proposal": "@12"
+            },
+            "title": "Rally Saturday",
+            "text": "Meet at the river at ten.",
+            "doc": null,
+            "received": 29385095
+          }
+        ],
+        "published": ["@12"],
+        "optIns": {
+          "frontDoor": {
+            "sign": {
+              "$base64url": [
+                17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
+                17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17
+              ]
+            },
+            "box": {
+              "$base64url": [
+                34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34,
+                34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34
+              ]
+            },
+            "showCount": false
+          }
+        }
+      }
+    },
+    {
+      "name": "shelf-line-leave: Dee leaves while a shelf Proposal is open, which closes the listed door at that record; Ana's, Ben's and Cal's 4s pass both lines at the deadline, so the Dispatch goes out, but nothing is published",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29354840,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1761290400000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29354841,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761290460000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29354842,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1761290520000,
+            "body": {
+              "name": "Cal",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29354843,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1761290580000,
+            "body": {
+              "name": "Dee",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29354844,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761290640000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29354845,
+          "event": {
+            "v": 1,
+            "type": "vouch",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761290700000,
+            "body": {
+              "member": "%dee"
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500600000,
+            "body": {
+              "target": {
+                "kind": "rules",
+                "optIn": "frontDoor",
+                "value": {
+                  "sign": {
+                    "$base64url": [
+                      17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
+                      17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17
+                    ]
+                  },
+                  "box": {
+                    "$base64url": [
+                      34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34,
+                      34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34
+                    ]
+                  },
+                  "showCount": false,
+                  "listed": true,
+                  "covenant": {
+                    "$base64url": [
+                      90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90,
+                      90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90
+                    ]
+                  }
+                }
+              },
+              "title": "Open and list our front door",
+              "why": "Our group talked it over in the chat."
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500660000,
+            "body": {
+              "proposal": "@7",
+              "scores": {
+                "@7": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29375012,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762500720000,
+            "body": {
+              "proposal": "@7",
+              "scores": {
+                "@7": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 10,
+          "received": 29375013,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762500780000,
+            "body": {
+              "proposal": "@7",
+              "scores": {
+                "@7": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 11,
+          "received": 29375014,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762500840000,
+            "body": {
+              "proposal": "@7",
+              "scores": {
+                "@7": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 12,
+          "received": 29375015,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500900000,
+            "body": {
+              "target": {
+                "kind": "dispatch",
+                "ceiling": 0,
+                "shelf": true
+              },
+              "title": "Rally Saturday",
+              "why": "",
+              "dispatch": {
+                "title": "Rally Saturday",
+                "text": "Meet at the river at ten."
+              }
+            }
+          }
+        },
+        {
+          "seq": 13,
+          "received": 29375016,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1762500960000,
+            "body": {
+              "proposal": "@12",
+              "scores": {
+                "@12": 4,
+                "@12.shelf": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 14,
+          "received": 29375017,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1762501020000,
+            "body": {
+              "proposal": "@12",
+              "scores": {
+                "@12": 4,
+                "@12.shelf": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 15,
+          "received": 29375018,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1762501080000,
+            "body": {
+              "proposal": "@12",
+              "scores": {
+                "@12": 4,
+                "@12.shelf": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 16,
+          "received": 29375019,
+          "event": {
+            "v": 1,
+            "type": "leave",
+            "group": "@1",
+            "author": "%dee",
+            "ts": 1762501140000,
+            "body": {}
+          }
+        }
+      ],
+      "relayNow": 29385096,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@7"
+          },
+          {
+            "id": "@12",
+            "final": true,
+            "outcome": {
+              "kind": "pass",
+              "version": "@12",
+              "bar": {
+                "avgAtLeast": 2,
+                "zerosUnderPercent": 10
+              }
+            }
+          }
+        ],
+        "dispatches": [
+          {
+            "id": "@12",
+            "by": {
+              "proposal": "@12"
+            },
+            "title": "Rally Saturday",
+            "text": "Meet at the river at ten.",
+            "doc": null,
+            "received": 29385095
+          }
+        ],
+        "published": [],
+        "optIns": {
+          "frontDoor": false
+        }
+      }
+    }
+  ]
+}

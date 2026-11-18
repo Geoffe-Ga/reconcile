@@ -14,6 +14,7 @@ import type { GroupState } from '../engine/fold';
 import { axeViolations } from '../test/axe';
 import { authorOf } from '../test/keys';
 import { held, pastPressFallback } from '../test/press';
+import { DOOR, LISTED } from '../test/door';
 import { groupLog } from '../test/votes';
 import { SendDispatch } from './SendDispatch';
 
@@ -43,11 +44,23 @@ function renderSend(state: GroupState, options: Options = {}) {
       me={authorOf(me)}
       leaving={leaving}
       onSend={onSend}
-      {...(rises ? { onPropose } : {})}
+      onPropose={onPropose}
+      rises={rises}
     />,
   );
   return { user: userEvent.setup(), onSend, onPropose };
 }
+
+/** Ana, Ben and Cal, whose front door passed as `door`: listed (#485) unless told otherwise. */
+function listedGroup(door = LISTED) {
+  const log = groupLog({ members: ['Ben', 'Cal'] });
+  const listing = log.rules('Ana', 'frontDoor', door, { title: 'Our front door' });
+  for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, listing, 4);
+  log.minute += 1;
+  return log;
+}
+
+const shelf = () => screen.getByRole('checkbox', { name: sendDispatch.shelfLabel });
 
 /** Ana founds; Ben joins as a Collaborator and Kim as a Member. */
 function group() {
@@ -259,5 +272,61 @@ describe('SendDispatch', () => {
     expect(screen.getByRole('heading', { level: 1, name: messages.leave.noProposingTitle }));
     expect(screen.getByText(sendDispatch.leaving)).toBeVisible();
     expect(screen.queryByRole('textbox')).toBeNull();
+  });
+
+  describe('the shelf line (#430)', () => {
+    it('offers to ask for the public shelf only while the door is listed, never ticked', async () => {
+      renderSend(listedGroup().state());
+      expect(shelf()).not.toBeChecked();
+      expect(shelf()).toHaveAccessibleDescription(sendDispatch.shelfHint);
+      expect(submit()).toBeVisible();
+      expect(await axeViolations()).toEqual([]);
+    });
+
+    it.each([
+      ['a group with no door', () => group().state()],
+      ['a door open but not listed', () => listedGroup(DOOR).state()],
+    ])('offers nothing for %s', (_label, state) => {
+      renderSend(state());
+      expect(screen.queryByRole('checkbox')).toBeNull();
+    });
+
+    it('puts a Dispatch for this group only to a vote with the shelf line, and says who will read it', async () => {
+      const { user, onSend, onPropose } = renderSend(listedGroup().state());
+      await fill(user, '  Rally Saturday  ', 'Meet at the river.');
+      await user.click(shelf());
+      expect(screen.getByText(sendDispatch.visibilityShelf)).toBeVisible();
+      await user.click(screen.getByRole('button', { name: sendDispatch.submitVote }));
+      expect(onPropose).toHaveBeenCalledExactlyOnceWith({
+        title: 'Rally Saturday',
+        text: 'Meet at the river.',
+        doc: null,
+        ceiling: 0,
+        shelf: true,
+      });
+      expect(onSend).not.toHaveBeenCalled();
+      expect(await axeViolations()).toEqual([]);
+    });
+
+    it('carries the shelf line on a Dispatch that may rise too', async () => {
+      const { user, onPropose } = renderSend(listedGroup().state(), { rises: true });
+      await fill(user, 'Rally');
+      await user.click(screen.getByText('Two levels up'));
+      await user.click(shelf());
+      await user.click(screen.getByRole('button', { name: sendDispatch.submitVote }));
+      expect(onPropose).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ ceiling: 2, shelf: true }),
+      );
+    });
+
+    it('sends at once again once the box is cleared', async () => {
+      const { user, onSend, onPropose } = renderSend(listedGroup().state());
+      await fill(user, 'Rally');
+      await user.click(shelf());
+      await user.click(shelf());
+      await user.click(submit());
+      expect(onSend).toHaveBeenCalledExactlyOnceWith({ title: 'Rally', text: '', doc: null });
+      expect(onPropose).not.toHaveBeenCalled();
+    });
   });
 });

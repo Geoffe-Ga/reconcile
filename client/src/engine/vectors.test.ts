@@ -195,6 +195,8 @@ describe('vector files', () => {
       'sections-pass-order.json',
       'sections-remove.json',
       'sections-rotate.json',
+      'shelf-line-ballot.json',
+      'shelf-line-listing.json',
       'signatures.json',
       'steward-cleared.json',
       'steward-recall.json',
@@ -361,6 +363,8 @@ describe('vector files', () => {
       'fold',
       'fold',
       'coalition',
+      'fold',
+      'fold',
       'fold',
       'fold',
       'fold',
@@ -690,6 +694,19 @@ describe('vector files', () => {
     'listed-door-leave',
     'listed-door-shape',
   ])('include the front door vector "%s" (#121, #288, #426, #485)', (name) => {
+    expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
+  });
+
+  it.each([
+    'shelf-line-pass',
+    'shelf-line-fail',
+    'shelf-line-needs-dispatch',
+    'shelf-line-ballot',
+    'shelf-line-unlisted',
+    'shelf-line-unlisted-before-close',
+    'shelf-line-deadline',
+    'shelf-line-leave',
+  ])('include the shelf line vector "%s" (#430)', (name) => {
     expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
   });
 

@@ -1419,8 +1419,9 @@ function DispatchesScreen({ groupId }: { readonly groupId: string }) {
 /**
  * Send a Dispatch (#112); sending it replaces the form with the group's
  * Dispatches. Once the group sits in a formed coalition, it may put the
- * Dispatch to a vote with a ceiling instead (#126), which replaces the form
- * with that Proposal's ballot.
+ * Dispatch to a vote with a ceiling instead (#126), and while its door is
+ * listed, ask for the public shelf (#430); either replaces the form with
+ * that Proposal's ballot.
  */
 function SendDispatchScreen({ services, groupId }: GroupScreenProps) {
   const onSend = async (values: DispatchValues) => {
@@ -1442,7 +1443,8 @@ function SendDispatchScreen({ services, groupId }: GroupScreenProps) {
           me={me.author}
           leaving={leaving}
           onSend={onSend}
-          {...(sitsInFormed(state, coalitions) ? { onPropose } : {})}
+          onPropose={onPropose}
+          rises={sitsInFormed(state, coalitions)}
         />
       )}
     </GroupGate>

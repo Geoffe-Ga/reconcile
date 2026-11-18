@@ -138,6 +138,25 @@ describe('proposeDispatch (#126)', () => {
   });
 });
 
+describe('proposeDispatch with a shelf line (#430)', () => {
+  it('asks for the public shelf with a reach of 0, leaving the shelf out when not asked', async () => {
+    const fake = createFakeRelay();
+    const { device, groupId } = await founded(fake);
+    fake.offline = true;
+    const words = { title: 'Rally', text: '', doc: null };
+    await proposeDispatch(device.services, groupId, { ...words, ceiling: 0, shelf: true });
+    await proposeDispatch(device.services, groupId, { ...words, ceiling: 2 });
+
+    const targets = (await outbox(device, groupId)).map((event) =>
+      event?.type === 'proposal' && 'target' in event.body ? event.body.target : null,
+    );
+    expect(targets).toEqual([
+      { kind: 'dispatch', ceiling: 0, shelf: true },
+      { kind: 'dispatch', ceiling: 2 },
+    ]);
+  });
+});
+
 describe('sendDispatch (#112)', () => {
   it('queues one dispatch, NFC-normalized, with its Document, and returns its id', async () => {
     const fake = createFakeRelay();

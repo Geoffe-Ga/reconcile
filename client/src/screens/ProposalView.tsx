@@ -511,6 +511,12 @@ interface VoteProps {
   readonly motion: MotionView | null;
 }
 
+/** A meter's own label: a priority option's, or a two-line ballot's line by name (#107, #430). */
+function meterLabel(version: VersionView, priority: boolean): { readonly label?: string } {
+  if (version.line !== undefined) return { label: messages.shelfLine.meterLabel(version.line) };
+  return priority ? { label: messages.meter.optionLabel(version.text) } : {};
+}
+
 /**
  * Each version's consent meter while the vote is open, from the engine's
  * tally of the ballots so far, and nothing once it has closed: the result
@@ -521,7 +527,7 @@ function metersFor(proposal: Proposal): (version: VersionView) => ReactNode {
   const priority = isPriority(proposal);
   return function MeterFor(version) {
     const tallied = detail?.versions.find((candidate) => candidate.id === version.id);
-    const label = priority ? { label: messages.meter.optionLabel(version.text) } : {};
+    const label = meterLabel(version, priority);
     return detail === null || tallied === undefined ? null : (
       <ConsentMeter
         number={version.number}

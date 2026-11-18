@@ -94,3 +94,42 @@ export function newestFirst(state: DispatchList): Dispatch[] {
 export function latestDispatch(state: DispatchList): Dispatch | null {
   return state.dispatches.at(-1) ?? null;
 }
+
+/**
+ * The id of a shelf line on the ballot of the Dispatch Proposal `proposal`
+ * (#430): `${proposal}.shelf`. A Proposal's own versions are its id or event
+ * ids, and a priority vote's options end in a number, so it names no other line.
+ */
+export function shelfLineId(proposal: string): string {
+  return `${proposal}.shelf`;
+}
+
+/** What {@link shelfLineOf} reads of a Proposal: its id and its target. */
+export interface ShelfLineProposal {
+  readonly id: string;
+  readonly target: { readonly kind: string; readonly shelf?: true };
+}
+
+/**
+ * The shelf line on a Proposal's ballot (#430): its id for a Dispatch put to
+ * a vote that asks for the public shelf, else null.
+ */
+export function shelfLineOf(proposal: ShelfLineProposal): string | null {
+  const { id, target } = proposal;
+  return target.kind === 'dispatch' && target.shelf === true ? shelfLineId(id) : null;
+}
+
+/** What {@link publishedBy} reads: the fold's list of the group's published Dispatches. */
+export interface PublishedList {
+  readonly published: readonly string[];
+}
+
+/**
+ * The ids of the Dispatches the group published (#430; listed-doors.md §5.1):
+ * each one whose vote passed the Dispatch line and the shelf line while the
+ * group was listed, in the order the votes closed. Nothing is posted to the
+ * shelf here; a later issue's keeper posts each one (§4.5).
+ */
+export function publishedBy(state: PublishedList): string[] {
+  return [...state.published];
+}

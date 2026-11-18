@@ -9,10 +9,13 @@
  * Once the group sits in a formed coalition, the form asks how far it can go
  * (#126; ADR-0037, ADR-0071): this group only sends it at once, as before,
  * and any other choice puts it to the group's vote with that ceiling, so each
- * coalition above can vote on it in turn.
+ * coalition above can vote on it in turn. While the group's front door is
+ * listed (#430; ADR-0081), it also offers to ask for the public shelf, never
+ * ticked: that puts the Dispatch to the group's vote, whatever its reach,
+ * with a second line on the ballot, as the fold takes one (listingInEffect).
  */
 import { type SyntheticEvent, useState } from 'react';
-import { Button, Form } from 'react-aria-components';
+import { Button, CheckboxButton, CheckboxField, Form, Text } from 'react-aria-components';
 
 import { documentTitle } from '../app/dispatchLines';
 import { holdPresses } from '../app/holdPresses';
@@ -25,8 +28,9 @@ import { BackLink, Field, PageHeader } from '../app/ui';
 import { useSaving } from '../app/useSaving';
 import { can, isSuspended } from '../engine/capabilities';
 import { documentIds } from '../engine/dispatches';
-import { type Ceiling, CEILINGS } from '../engine/event';
+import { CEILINGS, type Reach } from '../engine/event';
 import type { GroupState } from '../engine/fold';
+import { listingInEffect } from '../engine/frontDoor';
 
 /** Props for {@link SendDispatch}. */
 export interface SendDispatchProps {
@@ -39,15 +43,14 @@ export interface SendDispatchProps {
   /** Queues the Dispatch from valid entries; rejects when it couldn't be saved. */
   readonly onSend: (values: DispatchValues) => Promise<void>;
   /**
-   * Puts the Dispatch to the group's vote with the ceiling chosen (#126);
-   * rejects when it couldn't be saved. Given only once the group sits in a
-   * formed coalition, which is when the form asks how far it can go.
+   * Puts the Dispatch to the group's vote with the reach chosen (#126) and
+   * any shelf line (#430); rejects when it couldn't be saved. Without it the
+   * form offers neither a ceiling nor the shelf.
    */
   readonly onPropose?: (values: RisingValues) => Promise<void>;
+  /** Whether the group sits in a formed coalition, so the form asks how far it can go (#126). */
+  readonly rises?: boolean;
 }
-
-/** How far a Dispatch can go: this group only, or a ceiling above it (#126). */
-type Reach = 0 | Ceiling;
 
 /** Every choice, this group only first. */
 const REACHES: readonly Reach[] = [0, ...CEILINGS];
@@ -132,33 +135,75 @@ function CeilingPicker({ value, onChange }: CeilingPickerProps) {
   );
 }
 
-/** Sends the Dispatch at once for this group only, else puts it to a vote with its ceiling (#126). */
+interface ShelfChoiceProps {
+  readonly value: boolean;
+  readonly onChange: (value: boolean) => void;
+}
+
+/** "Also ask to put it on the public shelf" (#430), with what that means. */
+function ShelfChoice({ value, onChange }: ShelfChoiceProps) {
+  const { sendDispatch } = messages;
+  return (
+    <CheckboxField className="check-option" name="shelf" isSelected={value} onChange={onChange}>
+      <CheckboxButton className="checkbox">
+        <span className="checkbox-box" aria-hidden="true" />
+        {sendDispatch.shelfLabel}
+      </CheckboxButton>
+      <Text slot="description" className="check-description">
+        {sendDispatch.shelfHint}
+      </Text>
+    </CheckboxField>
+  );
+}
+
+/** What the form submits: the entries, how far it can go, and whether it asks for the shelf. */
+interface Chosen extends DispatchValues {
+  readonly reach: Reach;
+  readonly shelf: boolean;
+}
+
+/**
+ * Sends the Dispatch at once for this group only, else puts it to a vote with
+ * its reach (#126), and with the shelf line when it asks for it (#430).
+ */
 function sender(props: Pick<SendDispatchProps, 'onSend' | 'onPropose'>) {
-  return async ({ reach, ...values }: DispatchValues & { readonly reach: Reach }) => {
-    if (reach === 0 || props.onPropose === undefined) await props.onSend(values);
-    else await props.onPropose({ ...values, ceiling: reach });
+  return async ({ reach, shelf, ...values }: Chosen) => {
+    const asked = shelf ? { shelf } : {};
+    if ((reach === 0 && !shelf) || props.onPropose === undefined) await props.onSend(values);
+    else await props.onPropose({ ...values, ceiling: reach, ...asked });
   };
+}
+
+/** The caption under the choices: who sees a Dispatch, a Proposal, or a shelf line's result. */
+function visibilityOf(voted: boolean, shelf: boolean): string {
+  const { sendDispatch } = messages;
+  if (shelf) return sendDispatch.visibilityShelf;
+  return voted ? sendDispatch.visibilityVote : sendDispatch.visibility;
 }
 
 /**
  * The form: title, text, Document and, once the group sits in a formed
- * coalition, how far it can go (#126). Submitting queues one `dispatch`, or
- * one Proposal that puts it to a vote.
+ * coalition, how far it can go (#126), and while its door is listed, the
+ * public shelf (#430). Submitting queues one `dispatch`, or one Proposal that
+ * puts it to a vote.
  */
-function DispatchForm(props: Pick<SendDispatchProps, 'state' | 'onSend' | 'onPropose'>) {
-  const { state, onPropose } = props;
+function DispatchForm(props: Pick<SendDispatchProps, 'state' | 'onSend' | 'onPropose' | 'rises'>) {
+  const { state, onPropose, rises = false } = props;
   const [title, setTitle] = useState('');
   const [text, setText] = useState('');
   const [doc, setDoc] = useState(NO_DOCUMENT);
   const [reach, setReach] = useState<Reach>(0);
+  const [shelf, setShelf] = useState(false);
   const { run, running, outcome } = useSaving(sender(props));
   const { sendDispatch } = messages;
+  const offersShelf = onPropose !== undefined && listingInEffect(state) !== null;
+  const asked = offersShelf && shelf;
   const submit = (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
     const chosen = doc === NO_DOCUMENT ? null : doc;
-    void run({ title: title.trim(), text: text.trim(), doc: chosen, reach });
+    void run({ title: title.trim(), text: text.trim(), doc: chosen, reach, shelf: asked });
   };
-  const voted = reach !== 0;
+  const voted = reach !== 0 || asked;
   return (
     <Form className="form" onSubmit={submit}>
       <Field
@@ -181,8 +226,11 @@ function DispatchForm(props: Pick<SendDispatchProps, 'state' | 'onSend' | 'onPro
         onChange={setText}
       />
       <DocumentPicker state={state} value={doc} onChange={setDoc} />
-      {onPropose === undefined ? null : <CeilingPicker value={reach} onChange={setReach} />}
-      <p className="caption">{voted ? sendDispatch.visibilityVote : sendDispatch.visibility}</p>
+      {onPropose === undefined || !rises ? null : (
+        <CeilingPicker value={reach} onChange={setReach} />
+      )}
+      {offersShelf ? <ShelfChoice value={shelf} onChange={setShelf} /> : null}
+      <p className="caption">{visibilityOf(voted, asked)}</p>
       {outcome === 'failed' ? (
         <p role="alert" className="form-error">
           {sendDispatch.failed}
@@ -199,7 +247,7 @@ function DispatchForm(props: Pick<SendDispatchProps, 'state' | 'onSend' | 'onPro
 
 /** Send a Dispatch to everyone in the group, for someone who may send one. */
 export function SendDispatch(props: SendDispatchProps) {
-  const { state, me, leaving = false, onSend, onPropose } = props;
+  const { state, me, leaving = false, onSend, onPropose, rises = false } = props;
   if (leaving || !can(state, me, 'dispatch')) {
     return <Unavailable state={state} me={me} leaving={leaving} />;
   }
@@ -219,6 +267,7 @@ export function SendDispatch(props: SendDispatchProps) {
       <DispatchForm
         state={state}
         onSend={onSend}
+        rises={rises}
         {...(onPropose === undefined ? {} : { onPropose })}
       />
     </main>
