@@ -641,6 +641,43 @@ describe('bedfellows picks and orders a view (#479)', () => {
     expect(leaders.size).toBeGreaterThan(1);
   });
 
+  it('leaves out every entry the reader marked Too far, and nothing else (#480)', async () => {
+    const leaveOut = ['c00', 'm03', 'w11', 'not-on-the-shelf'];
+    const all = await bedfellows({ reader: [doc('R')], entries, dial: 0 }, models);
+    const kept = await bedfellows({ reader: [doc('R')], entries, dial: 0, leaveOut }, models);
+    expect(kept.map((row) => row.entryId)).toEqual(
+      all.map((row) => row.entryId).filter((id) => !leaveOut.includes(id)),
+    );
+    const view = { size: 36, date: '2026-11-18', seed: 7 };
+    const shown = await bedfellows(
+      { reader: [doc('R')], entries, dial: 0, leaveOut, view },
+      models,
+    );
+    expect(shown.some((row) => leaveOut.includes(row.entryId))).toBe(false);
+  });
+
+  it('ranks the entries the reader hasn’t seen first in each tier, with or without a view (#480)', async () => {
+    const firstSix = (prefix: string) =>
+      Array.from({ length: 6 }, (_, i) => `${prefix}0${String(i)}`);
+    const seen = [...firstSix('c'), ...firstSix('m')];
+    const rows = await bedfellows({ reader: [doc('R')], entries, dial: 0, shown: seen }, models);
+    const close = rows.filter((row) => row.tier === 'close').map((row) => row.entryId);
+    expect(close.slice(0, 6).every((id) => !seen.includes(id))).toBe(true);
+    expect(close.slice(6).every((id) => seen.includes(id))).toBe(true);
+    const middle = rows.filter((row) => row.tier === 'middle').map((row) => row.entryId);
+    expect(middle.slice(0, 6).every((id) => !seen.includes(id))).toBe(true);
+
+    // A view of 6 at dial 0 shows only unseen entries while each tier has enough, on any day.
+    for (const date of ['2026-11-18', '2026-11-19', '2026-12-01']) {
+      const view = { size: 6, date, seed: 3 };
+      const picked = await bedfellows(
+        { reader: [doc('R')], entries, dial: 0, shown: seen, view },
+        models,
+      );
+      expect(picked.filter((row) => seen.includes(row.entryId))).toEqual([]);
+    }
+  });
+
   it('holds the dial’s floors in the pipeline’s view for any dial, date and seed', async () => {
     await fc.assert(
       fc.asyncProperty(
@@ -679,6 +716,21 @@ describe('bedfellows picks and orders a view (#479)', () => {
     expect(tiersOf(rows).filter((tier) => tier === 'close')).toHaveLength(7);
     const cached = new Set(store.records().map((record) => record.entryId));
     expect(own.filter((id) => cached.has(id))).toEqual(own);
+  });
+
+  it('still keeps the vectors of entries marked Too far, so the cache shows no sign of a mark (#480)', async () => {
+    const leaveOut = ['c00', 'm03', 'w11'];
+    const store = memoryVectorStore();
+    const view = { size: 10, date: '2026-11-18', seed: 7 };
+    const kept: Models = { ...models, embedder: { ...embedder, model: 'scripted' } };
+
+    const rows = await bedfellows({ reader: [doc('R')], entries, dial: 0, leaveOut, view }, kept, {
+      store,
+    });
+
+    expect(rows.filter((row) => leaveOut.includes(row.entryId))).toEqual([]);
+    const cached = new Set(store.records().map((record) => record.entryId));
+    expect(leaveOut.filter((id) => cached.has(id))).toEqual(leaveOut);
   });
 
   describe('the bridging bonus', () => {

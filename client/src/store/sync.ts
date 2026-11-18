@@ -819,6 +819,8 @@ export function createSync(options: SyncOptions): Sync {
       await keepRooms(store, roomReads);
       // And so does what the loop keeps of a group no longer on the device (#270).
       forgetGone(await store.listGroups());
+      // And each Bedfellows history record 30 days old, by the device clock (#480).
+      await store.sweepBedfellows(clock());
       ok = await eachGroup(syncGroup);
       // Only after a complete pass: a device that missed records mustn't write a key change.
       if (ok) ok = await eachGroup((group) => rotateIfDue(group.groupId));

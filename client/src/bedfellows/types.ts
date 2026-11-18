@@ -47,6 +47,17 @@ export interface BedfellowsInput {
   readonly dial: number;
   /** The view to pick; without one, every row comes back ranked (the harness scores matches, not views). */
   readonly view?: BedfellowsView;
+  /**
+   * Entries Bedfellows already showed the reader (#480, the device's sealed
+   * history): each tier ranks the entries not among them first.
+   */
+  readonly shown?: readonly string[];
+  /**
+   * Entries the reader marked Too far (#480): never shown again while the
+   * history keeps the mark. Like `view.own`, they leave the rows out, not the
+   * run's input, so the cache holds the whole shelf and no sign of a mark.
+   */
+  readonly leaveOut?: readonly string[];
 }
 
 /** A claim's vector. */

@@ -438,6 +438,7 @@ function SettingsScreen({ services }: { readonly services: AppServices }) {
       onSave={(backup) => saveBackup(services, backup)}
       onRestore={(bytes, passphrase) => restoreBackup(services, bytes, passphrase)}
       onErase={services.erase}
+      onClearBedfellows={() => services.store.clearBedfellows()}
       passkey={{
         ...passkeyState,
         onCreate: () => passkey.create(),

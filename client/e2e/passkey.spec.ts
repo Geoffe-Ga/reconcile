@@ -19,7 +19,9 @@
  *   encryption key (#98), group secret, relay backup key, share seed, share
  *   signing or public key (#255), or reply seed, reply key or invite seed
  *   (#265) outside the vault, as raw bytes or base64url, and no group,
- *   relay backup, personal or sent record carries one. A tab Ana opened
+ *   relay backup, personal or sent record carries one, and each vault has
+ *   its Bedfellows history slot (#480), sealed and 64 KiB, though neither
+ *   device opened Bedfellows. A tab Ana opened
  *   before the lock shows her statement as shared, with no link, Stop or
  *   Delete, until she unlocks.
  *   Ana proposes. A reload shows the unlock screen, and the page sends the
@@ -41,6 +43,8 @@ import { randomBytes } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 
 import type { CDPSession, Frame, Page, Request } from '@playwright/test';
+
+import { HISTORY_SEALED_BYTES } from '../src/crypto/history';
 
 import { noFileSharing, withBackupKey } from './support/backupFile';
 
@@ -281,6 +285,33 @@ function sealedCanaries(
   ];
 }
 
+/**
+ * The vault store on `page`, read with no hook into the app: each record's
+ * key, and the Bedfellows history slot's sealed bytes (#480), or null.
+ */
+async function rawVaultStore(page: Page): Promise<{ keys: string[]; slot: number[] | null }> {
+  return page.evaluate(async () => {
+    const request = <R>(asking: IDBRequest<R>): Promise<R> =>
+      new Promise((resolve, reject) => {
+        asking.onsuccess = () => {
+          resolve(asking.result);
+        };
+        asking.onerror = () => {
+          reject(asking.error ?? new Error('IndexedDB refused the request.'));
+        };
+      });
+    const db = await request(indexedDB.open('reconcile'));
+    try {
+      const store = db.transaction('vault').objectStore('vault');
+      const keys = (await request(store.getAllKeys())).map(String);
+      const slot = (await request(store.get('history'))) as { sealed?: Uint8Array } | undefined;
+      return { keys, slot: slot?.sealed === undefined ? null : Array.from(slot.sealed) };
+    } finally {
+      db.close();
+    }
+  });
+}
+
 /** Locks `person`'s keys with a passkey in two taps, from the offer or Settings, and checks the line. */
 async function lockKeys(person: Person, screen: string): Promise<void> {
   const { page } = person;
@@ -492,6 +523,14 @@ test('with PRF, the keys live only in the vault, and the passkey unlocks voting 
     expect(anas.sentFields).toEqual([['door', 'groupName', 'id', 'sentAt']]);
   });
 
+  await test.step('every vault has its Bedfellows history slot, 64 KiB, though neither device opened Bedfellows (#480)', async () => {
+    for (const person of [ana, ben]) {
+      const vault = await rawVaultStore(person.page);
+      expect(vault.keys.sort()).toEqual(['history', 'vault']);
+      expect(vault.slot).toHaveLength(HISTORY_SEALED_BYTES);
+    }
+  });
+
   await test.step('the tab Ana opened before the lock shows her statement as shared, with no link, Stop or Delete', async () => {
     const { page } = earlierTab;
     await page.getByRole('link', { name: /^Personal/ }).click();
@@ -581,6 +620,12 @@ test('with PRF, the keys live only in the vault, and the passkey unlocks voting 
         .getByRole('status')
         .filter({ hasText: BACKED_UP }),
     ).toBeVisible();
+  });
+
+  await test.step('after the unlock and a sync pass, Ana’s slot is still one sealed 64 KiB record (#480)', async () => {
+    const vault = await rawVaultStore(ana.page);
+    expect(vault.keys.sort()).toEqual(['history', 'vault']);
+    expect(vault.slot).toHaveLength(HISTORY_SEALED_BYTES);
   });
 
   await test.step('her statement shows the same link from the vault and stops, and the application its invite', async () => {

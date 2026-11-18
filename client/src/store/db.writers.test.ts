@@ -78,6 +78,16 @@ const RECORD_WRITERS = [
   'writeDraft',
 ] as const satisfies readonly (keyof Store)[];
 
+/**
+ * Methods that write the Bedfellows history's slot (#480), sealed under the
+ * vault key the session holds, but never a key: the history holds none.
+ */
+const HISTORY_WRITERS = [
+  'clearBedfellows',
+  'keepBedfellows',
+  'sweepBedfellows',
+] as const satisfies readonly (keyof Store)[];
+
 /** Methods that write nothing. */
 const READERS = [
   'close',
@@ -99,6 +109,7 @@ const READERS = [
   'listPushForgets',
   'listRooms',
   'listSent',
+  'readBedfellows',
   'readDraft',
   'readVault',
   'requireUnlocked',
@@ -108,7 +119,12 @@ const READERS = [
 describe('who writes key material (#391)', () => {
   it('lists every method the store has as a key writer, a record writer or a reader, once', async () => {
     const store = await openStore();
-    const listed: readonly (keyof Store)[] = [...KEY_WRITERS, ...RECORD_WRITERS, ...READERS];
+    const listed: readonly (keyof Store)[] = [
+      ...KEY_WRITERS,
+      ...RECORD_WRITERS,
+      ...HISTORY_WRITERS,
+      ...READERS,
+    ];
 
     expect(new Set(listed).size).toBe(listed.length);
     expect(Object.keys(store).sort()).toEqual([...listed].sort());
