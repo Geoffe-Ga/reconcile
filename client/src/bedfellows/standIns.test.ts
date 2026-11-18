@@ -55,7 +55,7 @@ describe('standInEmbedder (#475)', () => {
     const [empty, other] = await standInEmbedder.embed(['It is what it is.', 'Open it.']);
     if (empty === undefined || other === undefined) throw new Error('2');
 
-    expect(empty.every((x) => x === 0)).toBe(true);
+    expect(Array.from(empty).every((x) => x === 0)).toBe(true);
     expect(cosine(empty, other)).toBe(0);
   });
 });

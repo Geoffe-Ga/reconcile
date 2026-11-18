@@ -30,13 +30,19 @@ export interface BedfellowsInput {
 }
 
 /** A claim's vector. */
-export type Vector = readonly number[];
+export type Vector = ArrayLike<number>;
 
 /** Cuts a text into claims, one sentence each (ADR-0080 §1). */
 export type Splitter = (text: string) => string[];
 
 /** The sentence-embedding port: sentences in, one vector each out, in order. */
 export interface Embedder {
+  /**
+   * Names the model, its tokenizer and its pooling, so a vector kept on the
+   * device is reused only by the model that made it (`entryVectors.ts`). An
+   * embedder without one keeps nothing.
+   */
+  readonly model?: string;
   embed(sentences: readonly string[]): Promise<readonly Vector[]>;
 }
 
@@ -48,9 +54,13 @@ export interface StanceJudge {
   judge(readerSentence: string, entrySentence: string): Promise<Stance>;
 }
 
-/** The models a run uses. Without a splitter, the stand-in splitter cuts claims. */
+/**
+ * The models a run uses. Without an embedder (the model hasn't loaded), every
+ * entry is matched by term overlap (`fallback.ts`); without a splitter,
+ * `split.ts` cuts claims.
+ */
 export interface Models {
-  readonly embedder: Embedder;
+  readonly embedder?: Embedder | undefined;
   readonly judge: StanceJudge;
   readonly splitter?: Splitter;
 }
@@ -76,11 +86,18 @@ export interface Row {
   readonly reason: Reason;
 }
 
-/** The page asks the worker for one run's rows; `id` names the run in every later message. */
+/**
+ * The page asks the worker for one run's rows; `id` names the run in every
+ * later message. With `model`, the worker matches with the embedding model,
+ * loading it on first use; the page sets it only once the reader has seen the
+ * model's size and agreed to its download (ADR-0080 §2). Without it, or when
+ * the model fails to load, the run matches by term overlap.
+ */
 export interface RunRequest {
   readonly type: 'run';
   readonly id: number;
   readonly input: BedfellowsInput;
+  readonly model: boolean;
 }
 
 /** The page cancels run `id`: the worker stops it and answers nothing. */

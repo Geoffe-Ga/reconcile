@@ -2,10 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { sha256 } from '../crypto/hash';
 import { fetchPinned, PinMismatchError } from '../net/modelFiles';
-import type { ModelFileName, ModelPins, PinnedFile } from '../net/modelPins';
+import { MODEL_FILES, type ModelFileName, type ModelPins, type PinnedFile } from '../net/modelPins';
 import { ortWasm } from '../test/ortWasm';
 import { TINY_VOCAB, tinyModelOnnx, tinyTokenizerJson, tinyVectorOf } from '../test/tinyModel';
-import { BATCH, embedderLoader, meanPooled, modelEmbedder } from './embedder';
+import { BATCH, embedderLoader, meanPooled, modelEmbedder, modelIdOf } from './embedder';
 import { cosine } from './pipeline';
 import { type Encoder, startEncoder, type TokenStates } from './runtime';
 
@@ -106,16 +106,27 @@ describe('modelEmbedder (#476)', () => {
     return { encoder, batches };
   }
 
-  it(`runs the model ${String(BATCH)} sentences at a time and keeps their order`, async () => {
+  it('runs the model one sentence at a time, so no sentence’s vector depends on another’s (#477)', async () => {
     const { encoder, batches } = counting();
-    const sentences = Array.from({ length: BATCH * 2 + 3 }, (_, i) => `Sentence ${String(i)}.`);
+    const sentences = ['A.', 'Bee.', 'Sea.'];
 
     const vectors = await modelEmbedder(encoder).embed(sentences);
+    const alone = await modelEmbedder(encoder).embed(['Bee.']);
 
-    expect(batches).toEqual([BATCH, BATCH, 3]);
+    expect(BATCH).toBe(1);
+    expect(batches).toEqual([1, 1, 1, 1]);
     expect(vectors).toHaveLength(sentences.length);
-    expect(vectors[BATCH]).toEqual(vectors[0]);
-    expect(vectors[1]?.[0]).toBeGreaterThan(vectors[0]?.[0] ?? 1);
+    expect(vectors[1]).toEqual(alone[0]);
+  });
+
+  it('names its model, so a kept vector is reused only by the model that made it (#477)', () => {
+    const { encoder } = counting();
+
+    expect(modelEmbedder(encoder, 'm1').model).toBe('m1');
+    expect(modelEmbedder(encoder)).not.toHaveProperty('model');
+    expect(modelIdOf(MODEL_FILES)).toBe(
+      `mean-pooled-unit/${MODEL_FILES.model.sha256}/${MODEL_FILES.tokenizer.sha256}`,
+    );
   });
 
   it('asks the model nothing for no sentences', async () => {

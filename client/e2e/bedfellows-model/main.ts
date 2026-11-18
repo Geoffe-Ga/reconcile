@@ -105,12 +105,24 @@ function rowsOf(report: Measurement): [string, string][] {
     ['One sentence alone (median of 10)', `${report.perSentence.aloneMs.toFixed(1)} ms`],
     ['Per sentence, 64 in batches', `${report.perSentence.batchedMs.toFixed(1)} ms`],
     [
-      `50 entries × 5 Documents (${String(report.shelf50.claims)} claims; budget 3 s)`,
-      s(report.shelf50.ms),
+      `50 entries × 5 Documents, cold (${String(report.shelf50.cold.claims)} claims; budget 3 s)`,
+      s(report.shelf50.cold.ms),
     ],
     [
-      `500 entries × 20 Documents (${String(report.shelf500.claims)} claims; budget 10 s)`,
-      s(report.shelf500.ms),
+      `50 entries × 5 Documents, warm (${String(report.shelf50.warm.claims)} claims)`,
+      s(report.shelf50.warm.ms),
+    ],
+    [
+      `500 entries × 20 Documents, cold (${String(report.shelf500.cold.claims)} claims)`,
+      s(report.shelf500.cold.ms),
+    ],
+    [
+      `500 entries × 20 Documents, warm (${String(report.shelf500.warm.claims)} claims; budget 10 s)`,
+      s(report.shelf500.warm.ms),
+    ],
+    [
+      'Rows: reading room vs library / chess vs housing board',
+      `${report.rows.library.row ? 'row' : 'none'} (${report.rows.library.cosine.toFixed(3)}) / ${report.rows.chess.row ? 'row' : 'none'} (${report.rows.chess.cosine.toFixed(3)})`,
     ],
     [
       'Example: reading room vs library / vs chess',

@@ -16,11 +16,15 @@ import { type Encoder, type RuntimeFiles, startEncoder, type TokenStates } from 
 import type { Embedder, Vector } from './types';
 
 /**
- * Sentences per run of the model. A batch pads to its longest sentence, and
- * attention's memory grows with the batch, so a long Document never goes in
- * as one.
+ * Sentences per run of the model: one (#477). The 8-bit model quantizes each
+ * run's activations with one scale for the whole batch, so in a batch a
+ * sentence's vector shifts with the sentences beside it, and a batch pads
+ * every sentence to its longest. One at a time, a claim's vector is the same
+ * on every shelf and in every run, so a kept vector is the one a fresh run
+ * would make, and the thresholds tuned pair by pair hold in the app; and on
+ * one WebAssembly thread it is no slower (#477's measurements).
  */
-export const BATCH = 16;
+export const BATCH = 1;
 
 /** Each sentence's vector: the mean of its real tokens' states, scaled to unit length. */
 export function meanPooled(states: TokenStates): Vector[] {
@@ -37,9 +41,19 @@ export function meanPooled(states: TokenStates): Vector[] {
   });
 }
 
-/** An `Embedder` over a started model, {@link BATCH} sentences at a time. */
-export function modelEmbedder(encoder: Encoder): Embedder {
+/**
+ * What a vector of this embedder says it was made by (`Embedder.model`): the
+ * pooling, then the model's and the tokenizer's pinned SHA-256s. A change to
+ * any of them is a new model, so no vector kept from the old one is reused.
+ */
+export function modelIdOf(pins: ModelPins): string {
+  return `mean-pooled-unit/${pins.model.sha256}/${pins.tokenizer.sha256}`;
+}
+
+/** An `Embedder` over a started model, {@link BATCH} sentences at a time, named `model`. */
+export function modelEmbedder(encoder: Encoder, model?: string): Embedder {
   return {
+    ...(model === undefined ? {} : { model }),
     embed: async (sentences) => {
       const vectors: Vector[] = [];
       for (let start = 0; start < sentences.length; start += BATCH) {
@@ -69,7 +83,7 @@ export function embedderLoader(
       fetchPin(pins.tokenizer),
       fetchPin(pins.runtime),
     ]);
-    return modelEmbedder(await start({ model, tokenizer, runtime }));
+    return modelEmbedder(await start({ model, tokenizer, runtime }), modelIdOf(pins));
   }
   return () => {
     loading ??= load().catch((error: unknown) => {

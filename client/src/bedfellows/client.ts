@@ -28,8 +28,13 @@ export interface BedfellowsRun {
 
 /** The page's handle on the worker. */
 export interface BedfellowsClient {
-  /** Starts a run of `input`. */
-  run(input: BedfellowsInput): BedfellowsRun;
+  /**
+   * Starts a run of `input`. With `model`, the worker matches with the
+   * embedding model, loading it on first use: set it only once the reader has
+   * seen the model's size and agreed to its download (ADR-0080 §2). Without
+   * it, the run matches by term overlap.
+   */
+  run(input: BedfellowsInput, options?: { readonly model?: boolean }): BedfellowsRun;
   /** Ends the worker, rejecting every open run with an AbortError. The next run starts a new one. */
   close(): void;
 }
@@ -95,14 +100,14 @@ export function createBedfellowsClient(
   }
 
   return {
-    run: (input) => {
+    run: (input, options) => {
       last += 1;
       const id = last;
       const rows = new Promise<Row[]>((resolve, reject) => {
         waiting.set(id, { resolve, reject });
       });
       try {
-        connected().postMessage({ type: 'run', id, input });
+        connected().postMessage({ type: 'run', id, input, model: options?.model === true });
       } catch {
         // The worker couldn't start (a CSP that blocks it, say): the run fails, it doesn't throw.
         end(failed);
