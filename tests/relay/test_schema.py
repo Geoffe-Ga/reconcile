@@ -32,6 +32,16 @@ BLOB_COLUMNS = [
 PUSH_SUB_COLUMNS = [("mailbox", "TEXT"), ("endpoint", "TEXT"), ("expiry", "INTEGER")]
 NUDGE_COLUMNS = [("mailbox", "TEXT"), ("due", "INTEGER")]
 BACKUP_COLUMNS = [("id", "TEXT"), ("blob", "BLOB"), ("expiry", "INTEGER")]
+SHELF_COLUMNS = [
+    ("seq", "INTEGER"),
+    ("address", "TEXT"),
+    ("kind", "TEXT"),
+    ("ref", "TEXT"),
+    ("body", "BLOB"),
+    ("received", "INTEGER"),
+    ("expiry", "INTEGER"),
+    ("held_until", "INTEGER"),
+]
 
 
 @pytest.fixture
@@ -65,7 +75,7 @@ def test_seq_is_an_autoincrement_primary_key(db: sqlite3.Connection) -> None:
     assert "INTEGER PRIMARY KEY AUTOINCREMENT" in " ".join(sql.split())
 
 
-def test_the_only_tables_are_blobs_meta_push_backups_and_sqlite_sequence(
+def test_the_only_tables_are_blobs_meta_push_backups_shelf_and_sqlite_sequence(
     db: sqlite3.Connection,
 ) -> None:
     """There is no other table to grow a list of people in."""
@@ -81,6 +91,7 @@ def test_the_only_tables_are_blobs_meta_push_backups_and_sqlite_sequence(
         "push_subs",
         "nudges",
         "backups",
+        "shelf",
     }
 
 
@@ -146,6 +157,33 @@ def test_backups_is_indexed_by_its_key_and_expiry_alone(
 
     assert sorted(origin for origin, _ in indexes.values()) == ["c", "pk"]
     assert ["expiry"] in [columns for _, columns in indexes.values()]
+
+
+def test_shelf_has_exactly_the_columns_listed_doors_allows(
+    db: sqlite3.Connection,
+) -> None:
+    """The spec's eight (listed-doors.md §4.2, ADR-0081), every one NOT NULL (#484).
+
+    ``seq`` is an AUTOINCREMENT key, so a seq is never reused after a purge.
+    Adding a column fails here until an ADR allows it.
+    """
+    info = list(db.execute("PRAGMA table_info(shelf)"))
+    (sql,) = db.execute("SELECT sql FROM sqlite_master WHERE name = 'shelf'").fetchone()
+
+    assert [(row[1], row[2]) for row in info] == SHELF_COLUMNS
+    assert [row[1] for row in info if row[5]] == ["seq"]
+    assert all(row[3] for row in info if row[1] != "seq"), "every column is NOT NULL"
+    assert "INTEGER PRIMARY KEY AUTOINCREMENT" in " ".join(sql.split())
+
+
+def test_shelf_is_indexed_by_expiry_and_size_alone(db: sqlite3.Connection) -> None:
+    """The purge and the shelf's byte cap walk one index; nothing indexes an address."""
+    indexed = [
+        [row[2] for row in db.execute(f"PRAGMA index_xinfo('{name}')") if row[5]]
+        for (_, name, *_) in db.execute("PRAGMA index_list(shelf)")
+    ]
+
+    assert indexed == [["expiry", None]]
 
 
 def test_meta_holds_only_the_instance(db: sqlite3.Connection) -> None:

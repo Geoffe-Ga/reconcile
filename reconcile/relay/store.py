@@ -16,6 +16,13 @@ replaces the row, so no earlier copy stays, and ``WITHOUT ROWID`` leaves no
 counter that would order backups by when each first arrived. Adding a column
 needs an ADR.
 
+The public shelf (#484, docs/spec/listed-doors.md §4.2, ADR-0081) adds
+``shelf``: the first rows whose bodies the relay can read. Each holds a
+record's seq, the address it was PUT under, its kind, the id it names or
+``""``, its signed bytes, its receipt minute, its expiry day and the minute
+it is held until (0 for a record that isn't held). Nothing else, and no
+index on an address, so nothing is quicker to look up by group.
+
 Each mailbox has a byte cap (#141). ``blobs_by_mailbox_size`` indexes each
 blob's length beside its mailbox and expiry, so summing a mailbox's unexpired
 bytes reads that index alone and never a blob.
@@ -70,6 +77,17 @@ CREATE TABLE IF NOT EXISTS backups (
     expiry INTEGER NOT NULL
 ) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS backups_by_expiry ON backups (expiry);
+CREATE TABLE IF NOT EXISTS shelf (
+    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    address TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    ref TEXT NOT NULL,
+    body BLOB NOT NULL,
+    received INTEGER NOT NULL,
+    expiry INTEGER NOT NULL,
+    held_until INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS shelf_by_expiry_size ON shelf (expiry, length(body));
 """
 
 # A mailbox's unexpired bytes. SQLite reads each length from
@@ -77,6 +95,10 @@ CREATE INDEX IF NOT EXISTS backups_by_expiry ON backups (expiry);
 MAILBOX_BYTES_SQL = (
     "SELECT coalesce(sum(length(blob)), 0) FROM blobs WHERE mailbox = ? AND expiry > ?"
 )
+
+
+# The shelf's unexpired bytes, read from shelf_by_expiry_size alone.
+SHELF_BYTES_SQL = "SELECT coalesce(sum(length(body)), 0) FROM shelf WHERE expiry > ?"
 
 
 def minute_of(unix_seconds: float) -> int:
@@ -96,6 +118,25 @@ class Record:
     seq: int
     received: int
     blob: bytes
+
+
+@dataclass(frozen=True)
+class ShelfRow:
+    """One shelf record, as a GET returns it."""
+
+    seq: int
+    received: int
+    address: str
+    body: bytes
+
+
+@dataclass(frozen=True)
+class ShelfWhen:
+    """When a shelf record arrived, when it expires, and when it is held until."""
+
+    received: int
+    expiry: int
+    held_until: int = 0
 
 
 class BlobStore:
@@ -166,12 +207,41 @@ class BlobStore:
         ).fetchone()
         return None if row is None else bytes(row[0])
 
+    def add_shelf(
+        self, address: str, kind: str, ref: str, body: bytes, when: ShelfWhen
+    ) -> int:
+        """Store one shelf record and return its new seq."""
+        rows = self._db.execute(
+            "INSERT INTO shelf"
+            " (address, kind, ref, body, received, expiry, held_until)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING seq",
+            (address, kind, ref, body, when.received, when.expiry, when.held_until),
+        ).fetchall()
+        return int(rows[0][0])
+
+    def read_shelf(
+        self, *, after: int, limit: int, today: int, minute: int
+    ) -> list[ShelfRow]:
+        """Up to ``limit`` unexpired records not held at ``minute``, after ``after``."""
+        rows = self._db.execute(
+            "SELECT seq, received, address, body FROM shelf"
+            " WHERE seq > ? AND expiry > ? AND held_until <= ?"
+            " ORDER BY seq LIMIT ?",
+            (after, today, minute, limit),
+        ).fetchall()
+        return [ShelfRow(*row) for row in rows]
+
+    def shelf_bytes(self, *, today: int) -> int:
+        """The bytes of the shelf's unexpired records, as its cap counts them."""
+        (used,) = self._db.execute(SHELF_BYTES_SQL, (today,)).fetchone()
+        return int(used)
+
     def delete_expired(self, today: int) -> int:
         """Delete every expired row; return how many.
 
-        Blobs, push subscriptions and backups go once their expiry day has
-        come. A nudge due before yesterday began was never taken by the tick
-        (push was off), so it goes too.
+        Blobs, push subscriptions, backups and shelf records go once their
+        expiry day has come. A nudge due before yesterday began was never
+        taken by the tick (push was off), so it goes too.
         """
         return (
             self._db.execute("DELETE FROM blobs WHERE expiry <= ?", (today,)).rowcount
@@ -184,6 +254,7 @@ class BlobStore:
             + self._db.execute(
                 "DELETE FROM backups WHERE expiry <= ?", (today,)
             ).rowcount
+            + self._db.execute("DELETE FROM shelf WHERE expiry <= ?", (today,)).rowcount
         )
 
     def subscribe(self, mailbox: str, endpoint: str, *, expiry: int, keep: int) -> None:

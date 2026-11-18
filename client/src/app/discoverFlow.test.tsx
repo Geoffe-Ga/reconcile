@@ -3,17 +3,27 @@
  * one fake relay: Ana is in two groups, each sends a Dispatch, and Discover
  * lists both, newest first, each under its group's name, built from the logs
  * the device already holds. Opening Discover asks the relay for nothing.
+ *
+ * The public shelf (#484): a listing and an entry hand-signed with a door's
+ * key and PUT to a fake shelf show on Discover on a device in no group, and
+ * nothing of the shelf shows while the relay has none.
  */
-import { within } from '@testing-library/react';
+import { waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import type { TestDevice } from '../test/appServices';
+import { base64url } from '../crypto/base64url';
+import { newSigningKeys } from '../crypto/sign';
+import { createShelf } from '../net/shelf';
+import { signShelfBody } from '../shelf/record';
+import { type TestDevice, testDevice } from '../test/appServices';
 import { axeViolations } from '../test/axe';
 import { createFakeRelay } from '../test/fakeRelay';
+import { createFakeShelf } from '../test/fakeShelf';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { foundAnother, go, members, type MountedApp, mountApp } from '../test/members';
 import { messages } from './messages';
 import { sendDispatch } from './proposals';
+import { createShelfFeed } from './shelfFeed';
 
 freshIndexedDBPerTest();
 
@@ -64,5 +74,72 @@ describe('Discover’s feed through the app (#429)', { timeout: 60_000 }, () => 
     expect(homes).toEqual([`#/g/${second}`, `#/g/${made.groupId}`]);
     expect(fake.requests).toHaveLength(asked);
     expect(await axeViolations()).toEqual([]);
+  });
+});
+
+describe('The public shelf on Discover through the app (#484)', { timeout: 60_000 }, () => {
+  /** Oak St Tenants' listing and one entry, hand-signed with a door's key and PUT to the shelf. */
+  async function stockedShelf(available = true) {
+    const fake = createFakeShelf({ available });
+    const shelf = createShelf({ fetch: fake.fetch });
+    if (!available) return { fake, shelf };
+    const door = newSigningKeys();
+    const address = base64url(door.publicKey);
+    const covenant = base64url(new Uint8Array(32).fill(9));
+    const id = base64url(new Uint8Array(32).fill(4));
+    const listing = { v: 1, kind: 'listing', open: true, name: 'Oak St Tenants' } as const;
+    await shelf.put(
+      address,
+      signShelfBody(door, { ...listing, skeleton: 'oaksttenants', covenant }),
+    );
+    await shelf.put(
+      address,
+      signShelfBody(door, {
+        v: 1,
+        kind: 'entry',
+        id,
+        title: 'Rent strike vote',
+        text: 'Thursday.',
+      }),
+    );
+    return { fake, shelf };
+  }
+
+  it('shows a hand-signed entry under its listing’s name on a device in no group', async () => {
+    const { shelf } = await stockedShelf();
+    const device = await testDevice(createFakeRelay(), 'Nobody');
+    opened.push(device);
+    const services = { ...device.services, shelf: createShelfFeed({ shelf, now: () => 0 }) };
+
+    go('#/discover');
+    const app = mountApp(services, 's');
+    mounted.push(app);
+    const view = within(app.container);
+    const section = await view.findByRole('region', { name: messages.discover.shelfHeading });
+
+    expect(view.getByText(messages.discover.empty)).toBeVisible();
+    expect(within(section).getByRole('heading', { level: 3 })).toHaveTextContent(
+      'Rent strike vote',
+    );
+    expect(section.querySelector('.dispatch-from > bdi')).toHaveTextContent('Oak St Tenants');
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('shows nothing of the shelf when the relay has none', async () => {
+    const { fake, shelf } = await stockedShelf(false);
+    const device = await testDevice(createFakeRelay(), 'Nobody');
+    opened.push(device);
+    const services = { ...device.services, shelf: createShelfFeed({ shelf, now: () => 0 }) };
+
+    go('#/discover');
+    const app = mountApp(services, 'u');
+    mounted.push(app);
+    const view = within(app.container);
+    await view.findByText(messages.discover.empty);
+    await waitFor(() => {
+      expect(fake.urls).toEqual(['/v1/shelf?after=0&limit=100']);
+    });
+
+    expect(view.queryByText(messages.discover.shelfHeading)).toBeNull();
   });
 });

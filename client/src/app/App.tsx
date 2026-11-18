@@ -1595,7 +1595,7 @@ function PlainScreen(props: PlainScreenProps) {
     case 'personal':
       return <PersonalScreen services={services} />;
     case 'discover':
-      return <DiscoverScreen store={services.store} />;
+      return <DiscoverScreen store={services.store} shelf={services.shelf} />;
     case 'personalDocument':
       // Keyed by id, so another Document starts its editor afresh.
       return <PersonalDocumentScreen key={route.id} services={services} id={route.id} />;

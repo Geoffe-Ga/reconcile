@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import base64
 import datetime as dt
+import json
 import secrets
 import sqlite3
 from collections.abc import Awaitable, Callable, Mapping
@@ -12,7 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.asymmetric import ec, ed25519
 from fastapi import FastAPI
 
 from reconcile.relay.privacy import PrivacyMiddleware
@@ -305,3 +307,89 @@ def nudge_rows(db_path: Path) -> list[tuple[Any, ...]]:
     """Every ``nudges`` row as (mailbox, due), sorted."""
     with closing(sqlite3.connect(db_path)) as db:
         return list(db.execute("SELECT mailbox, due FROM nudges ORDER BY 1, 2"))
+
+
+# --- The public shelf (#484) -----------------------------------------------
+
+SHELF_TAG = b"reconcile/v1/shelf\x00"
+
+
+@dataclass(frozen=True)
+class ShelfSigner:
+    """An Ed25519 key that signs shelf records, as a door's ``sign`` key does."""
+
+    key: ed25519.Ed25519PrivateKey
+
+    @classmethod
+    def fresh(cls) -> ShelfSigner:
+        """A new key, made at run time so none is ever committed."""
+        return cls(ed25519.Ed25519PrivateKey.generate())
+
+    @property
+    def address(self) -> str:
+        """The public key in unpadded base64url: the address it posts under."""
+        raw = self.key.public_key().public_bytes(
+            serialization.Encoding.Raw, serialization.PublicFormat.Raw
+        )
+        return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
+
+    def sign(self, message: bytes) -> bytes:
+        """A record: the signature over the shelf tag, 0x00 and ``message``, then it."""
+        return self.key.sign(SHELF_TAG + message) + message
+
+    def record(self, body: Mapping[str, Any]) -> bytes:
+        """``body`` as compact UTF-8 JSON, signed."""
+        return self.sign(compact(body))
+
+
+def compact(body: Mapping[str, Any]) -> bytes:
+    """``body`` as compact UTF-8 JSON, as a device writes a shelf record."""
+    return json.dumps(body, separators=(",", ":"), ensure_ascii=False).encode()
+
+
+def listing(name: str = "Oak St Tenants") -> dict[str, Any]:
+    """An open listing's body; the relay reads only its kind."""
+    return {
+        "v": 1,
+        "kind": "listing",
+        "open": True,
+        "name": name,
+        "skeleton": name.lower().replace(" ", ""),
+        "covenant": "A" * 43,
+    }
+
+
+def entry(entry_id: str = "d" * 43, text: str = "Saturday at ten.") -> dict[str, Any]:
+    """An entry's body under the id ``entry_id``."""
+    return {
+        "v": 1,
+        "kind": "entry",
+        "id": entry_id,
+        "title": "Rent strike vote",
+        "text": text,
+    }
+
+
+def put_shelf(
+    client: TestClient,
+    address: str,
+    data: bytes,
+    *,
+    headers: Mapping[str, str] | None = None,
+) -> Any:
+    """PUT the record ``data`` under ``address`` as an octet stream."""
+    return client.put(
+        f"/v1/shelf/{address}",
+        content=data,
+        headers={**OCTET_STREAM, **(headers or {})},
+    )
+
+
+def shelf_rows(db_path: Path) -> list[tuple[Any, ...]]:
+    """Every ``shelf`` row but its body, by seq."""
+    with closing(sqlite3.connect(db_path)) as db:
+        query = (
+            "SELECT seq, address, kind, ref, length(body), received, expiry, held_until"
+            " FROM shelf ORDER BY seq"
+        )
+        return list(db.execute(query).fetchall())

@@ -63,6 +63,8 @@ A group can list its front door. A listed group can publish single Dispatches to
 
 The shelf is one public log on the relay. Every device reads the same log and folds it with the same pure function, as it folds a group's log.
 
+**Built so far.** #484 built §4.1's records (on the wire, a record is the 64-byte signature, then the JSON; the address travels beside it, not in it), §4.2's `PUT` and `GET /v1/shelf`, its size limits, `shelf_full` and the table, and §4.3's rule 1 and the newest listing per address. That contract now lives in [`phase-1/06-relay-api.md`](phase-1/06-relay-api.md) and [`phase-1/09-privacy-rules.md`](phase-1/09-privacy-rules.md); the rest of this section is still to build.
+
 ### 4.1 Records
 
 Every record is compact UTF-8 JSON, signed with Ed25519 under the tag `reconcile/v1/shelf`. The signer is the door's `sign` key for a group's records and the steward's key for notices.

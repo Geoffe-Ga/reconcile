@@ -132,6 +132,14 @@ export const messages = {
     ended: 'Ended',
     /** Where a card or link opens: the link bar (#444). */
     pasteInBar: 'To open a card or link, paste it into the bar at the top.',
+    /**
+     * The public shelf (#484; ADR-0081): Dispatches that listed groups voted
+     * to publish, each under its group's name. The section shows only while
+     * the shelf holds an entry.
+     */
+    shelfHeading: 'On the public shelf',
+    shelfLede:
+      'Groups that chose to be listed publish these by vote. Anyone with the app can read them.',
   },
   start: {
     pageTitle: 'Your groups',

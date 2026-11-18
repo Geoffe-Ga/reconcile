@@ -9,10 +9,16 @@
  * coalition it's shown from, which links to that place's home; a dissolved
  * group's adds "Ended". No count, badge or reaction. With none, the empty
  * state's one sentence shows instead, and one line pointing to the link bar
- * at the top, where a card or link opens on every screen (#444). Shelf
- * entries come in a later issue (ADR-0077 §1). Nothing here reaches the
- * network: the feed is a view of logs the device holds.
+ * at the top, where a card or link opens on every screen (#444). Nothing
+ * here reaches the network: the feed is a view of logs the device holds.
+ *
+ * Below it, "On the public shelf" (#484; ADR-0081; listed-doors.md §5.2)
+ * lists the entries the shelf's fold shows (`shelf/fold.ts`), newest first,
+ * each under its listing's name. `DiscoverScreen` reads the shelf; this
+ * screen only shows it. The section shows only while the shelf holds an
+ * entry, so on a relay without the steward's key nothing of it appears.
  */
+import { useId } from 'react';
 import { Link } from 'react-aria-components';
 
 import { DispatchCard } from '../app/DispatchCard';
@@ -20,11 +26,14 @@ import type { FeedItem, FeedPlace } from '../app/discoverFeed';
 import { messages } from '../app/messages';
 import { routeHref } from '../app/router';
 import { PageHeader } from '../app/ui';
+import type { ShelfEntry, ShelfState } from '../shelf/fold';
 
 /** Props for {@link Discover}. */
 export interface DiscoverProps {
   /** Every Dispatch this device holds, newest first, each from where it's shown (#429). */
   readonly feed: readonly FeedItem[];
+  /** The public shelf as folded, or null while there is none to show (#484). */
+  readonly shelf?: ShelfState | null;
 }
 
 /** The home of the group or coalition a Dispatch is shown from. */
@@ -66,11 +75,53 @@ function Feed({ feed }: { readonly feed: readonly FeedItem[] }) {
   );
 }
 
+/** One shelf entry: its listing's name, then its title and text, as a Dispatch card's. */
+function ShelfCard({ entry }: { readonly entry: ShelfEntry }) {
+  const heading = useId();
+  return (
+    <article className="card dispatch" aria-labelledby={heading}>
+      <p className="eyebrow dispatch-from">
+        <bdi>{entry.name}</bdi>
+      </p>
+      <h3 id={heading} className="heading-3 dispatch-title">
+        <bdi>{entry.title}</bdi>
+      </h3>
+      {entry.text === '' ? null : (
+        <p className="dispatch-text" dir="auto">
+          {entry.text}
+        </p>
+      )}
+    </article>
+  );
+}
+
+/** "On the public shelf": its heading and one line, then each entry, newest first (#484). */
+function Shelf({ entries }: { readonly entries: readonly ShelfEntry[] }) {
+  const words = messages.discover;
+  const heading = useId();
+  return (
+    <section className="section" aria-labelledby={heading}>
+      <h2 id={heading} className="eyebrow section-heading">
+        {words.shelfHeading}
+      </h2>
+      <p>{words.shelfLede}</p>
+      <ul className="dispatch-list" aria-labelledby={heading}>
+        {entries.map((entry) => (
+          <li key={`${entry.address} ${entry.id}`}>
+            <ShelfCard entry={entry} />
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 /**
  * The eyebrow and heading, then the feed; or, with none, the empty state's
- * one sentence and where a card or link opens: the link bar (#444).
+ * one sentence and where a card or link opens: the link bar (#444). Then the
+ * public shelf, while it holds an entry (#484).
  */
-export function Discover({ feed }: DiscoverProps) {
+export function Discover({ feed, shelf = null }: DiscoverProps) {
   const words = messages.discover;
   return (
     <main className="shell" data-scene="treetops">
@@ -83,6 +134,7 @@ export function Discover({ feed }: DiscoverProps) {
       ) : (
         <Feed feed={feed} />
       )}
+      {shelf === null || shelf.entries.length === 0 ? null : <Shelf entries={shelf.entries} />}
     </main>
   );
 }

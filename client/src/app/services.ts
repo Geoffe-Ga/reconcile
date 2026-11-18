@@ -1,7 +1,8 @@
 /**
  * Everything the app reaches outside React: the store, the sync loop, the
  * relay, the seal, the clock, the clipboard, Web Share, where a backup file
- * goes, Erase, push's switches, passkey setup, and the guide's flag. `main.tsx` builds the real ones; tests
+ * goes, Erase, push's switches, passkey setup, the guide's flag, and the
+ * public shelf. `main.tsx` builds the real ones; tests
  * hand in a fake relay and fake IndexedDB.
  */
 import type { GuideRecord } from '../platform/guide';
@@ -10,6 +11,7 @@ import type { Sync } from '../store/sync';
 import type { Services } from './actions';
 import type { Passkey } from './passkey';
 import type { FileTargets, WebShare } from './share';
+import type { ShelfFeed } from './shelfFeed';
 
 /** What `App` runs on. */
 export interface AppServices extends Services {
@@ -38,6 +40,11 @@ export interface AppServices extends Services {
    * most tests, the guide never shows.
    */
   readonly guide?: GuideRecord;
+  /**
+   * The public shelf Discover reads (#484). Without one, as in most tests,
+   * Discover shows no shelf and asks the relay for nothing.
+   */
+  readonly shelf?: ShelfFeed;
 }
 
 /**
