@@ -10,7 +10,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { memoryVectorStore } from './entryVectors';
 import { standInEmbedder, standInJudge } from './standIns';
-import type { BedfellowsInput, Embedder, FromWorker, ToWorker } from './types';
+import type { BedfellowsInput, Embedder, FromWorker, StanceJudge, ToWorker } from './types';
 import { createRunner, type WorkerSetup, yielding } from './worker';
 
 const INPUT: BedfellowsInput = {
@@ -125,6 +125,50 @@ describe('createRunner (#475, #477)', () => {
     expect(store.records().map((record) => record.entryId)).toEqual(['e1', 'e2']);
   });
 
+  it('judges with the stance model once the embedding model has loaded, and a pair it agrees with is verified (#478)', async () => {
+    const agreeing: StanceJudge = { judge: () => Promise.resolve('agrees') };
+    const loadJudge = vi.fn(() => Promise.resolve(agreeing));
+
+    const posted = await answerTo(
+      { ...standIn(), loadJudge },
+      { type: 'run', id: 3, input: INPUT, model: true },
+    );
+
+    expect(posted).toEqual([
+      {
+        type: 'rows',
+        id: 3,
+        rows: [
+          { ...LIBRARY_ROW, tier: 'middle', reason: { ...LIBRARY_ROW.reason, verified: true } },
+        ],
+      },
+    ]);
+    expect(loadJudge).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves out, saying nothing, an entry whose only pair the stance model opposes (#478)', async () => {
+    const opposing: StanceJudge = { judge: () => Promise.resolve('opposes') };
+
+    const posted = await answerTo(
+      { ...standIn(), loadJudge: () => Promise.resolve(opposing) },
+      { type: 'run', id: 4, input: INPUT, model: true },
+    );
+
+    expect(posted).toEqual([{ type: 'rows', id: 4, rows: [] }]);
+  });
+
+  it('keeps the stand-in judge when the stance model won’t load, and asks for none without the embedding model (#478)', async () => {
+    const loadJudge = vi.fn(() => Promise.reject(new Error('offline')));
+    const setup: WorkerSetup = { ...standIn(), loadJudge };
+
+    const offline = await answerTo(setup, { type: 'run', id: 5, input: INPUT, model: true });
+    const overlap = await answerTo(setup, { type: 'run', id: 6, input: INPUT, model: false });
+
+    expect(offline).toEqual([{ type: 'rows', id: 5, rows: [{ ...LIBRARY_ROW, tier: 'middle' }] }]);
+    expect(overlap).toEqual([{ type: 'rows', id: 6, rows: [{ ...LIBRARY_ROW, tier: 'close' }] }]);
+    expect(loadJudge).toHaveBeenCalledTimes(1);
+  });
+
   it('posts a bare error, with no words in it, when the model fails mid-run, and keeps nothing of the run', async () => {
     const broken: Embedder = {
       embed: () => Promise.reject(new Error('Keep the library open on Sundays.')),
@@ -235,6 +279,22 @@ describe('the worker’s entry (#475, #477)', () => {
 
     expect(posted[0]).toMatchObject({ type: 'rows', id: 5, rows: [{ entryId: 'e1' }] });
     expect(loadEmbedder).not.toHaveBeenCalled();
+  });
+
+  it('judges with judge.ts’s judge on a run with the model: switched off, the stand-in, so every reason is unverified (#478)', async () => {
+    vi.doMock('./embedder', () => ({ loadEmbedder: () => Promise.resolve(standInEmbedder) }));
+    const { send, posted } = await entry();
+
+    send({ type: 'run', id: 9, input: INPUT, model: true });
+    await vi.waitFor(() => {
+      expect(posted).toHaveLength(1);
+    });
+
+    expect(posted[0]).toMatchObject({
+      type: 'rows',
+      id: 9,
+      rows: [{ entryId: 'e1', reason: { verified: false } }],
+    });
   });
 
   it('imports the model’s module, embedder.ts, on the first run with the model', async () => {

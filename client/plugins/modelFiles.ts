@@ -1,6 +1,7 @@
 /**
  * Puts the Bedfellows model's files in the build, under `models/`, each
- * checked against its pin (#476; ADR-0080 §2; `src/net/modelPins.ts`).
+ * checked against its pin (#476; ADR-0080 §2; `src/net/modelPins.ts`): the
+ * embedder's, and a stance model's once one is pinned (#478).
  *
  * - The runtime's WebAssembly comes from the npm package the lockfile pins.
  * - The model and its tokenizer are too large for git: `scripts/models.sh`
@@ -26,7 +27,7 @@ import { fileURLToPath } from 'node:url';
 
 import type { Plugin } from 'vite';
 
-import { MODEL_FILES, type SourcedFile } from '../src/net/modelPins.ts';
+import { MODEL_FILES, SERVED_FILES, type SourcedFile } from '../src/net/modelPins.ts';
 
 /** Where `scripts/models.sh` leaves the files it fetched. */
 const CACHE = fileURLToPath(new URL('../.models', import.meta.url));
@@ -78,7 +79,7 @@ export function modelFiles(required = process.env.RECONCILE_MODELS === 'required
     apply: 'build',
     buildStart() {
       const missing: string[] = [];
-      for (const pin of Object.values(MODEL_FILES)) {
+      for (const pin of SERVED_FILES) {
         const source = sourceOf(pin);
         if (!existsSync(source)) {
           missing.push(pin.file);

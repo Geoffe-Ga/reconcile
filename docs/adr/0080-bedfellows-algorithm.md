@@ -44,6 +44,7 @@ ADR-0077 §4's rules stand: everything runs on the reader's device; no text, ter
 - **Opposes:** the pair doesn't count, and the view never says so. An entry can still qualify through a different claim.
 - **Unsure:** the pair counts as a shared subject only.
 - There is no "other side" lane. **Trigger to revisit:** the check's precision on opposed pairs is above about 90% on the corpus, and the founder asks for the lane.
+- **Amended (#478): the check ships switched off.** No small inference model met §8's targets within the download budget and ADR-0024, so no stance model is pinned (`STANCE_MODEL` in `client/src/net/modelPins.ts`), no device downloads one, the judge is the stand-in, and every reason is unverified: "You both write about this:", never "You both care about this:". An opposed pair is therefore never left out by stance; it shows as a shared subject, which is true. The judge itself is built and tested (`client/src/bedfellows/judge.ts`): it asks the model both ways, and a pair **agrees** only when entailment is at least 0.8 both ways and **opposes** only when contradiction is at least 0.9 both ways, the thresholds in `thresholds.ts` set on `tune`. One-way entailment can't be the rule: it is how these models read a literal echo, and DeBERTa reads the ironic ring-road entry as entailing the reader's welcome at 0.97. **Trigger to revisit:** a stance model that verifies shared claims at §8's targets on `held-out` and fits the budget and ADR-0024; pinning it switches the judge on, its files then built and served beside the embedder's.
 
 ### 4. The band and the stretch
 
@@ -105,7 +106,26 @@ ADR-0077 §4's rules stand: everything runs on the reader's device; no text, ter
   | Peak memory, the page's renderer | 399 MB | 401–402 MB | | < 300 MB |
 
   A refresh with the shelf kept is inside its budget; the first run on a new shelf isn't, and memory is unchanged, since the model's own working set dominates it. A first open still pays for the model's load (2.5–2.8 s to the first vector here) before any match. The thresholds are in `client/src/bedfellows/thresholds.ts`, set on the corpus's `tune` split: a near-copy is an entry more than 65% of whose claims are restated, not 80%, because an entry's title is a claim and a Document's isn't, so a near-copy of a Document tops out at two claims of three.
-- A part that misses its target ships in its weaker form: unverified wording everywhere if the stance check misses, and the shared-enemy check off if it's unmeasured.
+- **Measured (#478): the stance check misses, so it ships in its weaker form.** Three inference models were tried on `tune`, each through the pipeline's best three pairs per entry, asked both ways:
+
+  | Model (8-bit unless noted) | Size | License | Fits | `tune`: shared claims verified | opposed verified | opposed left out | ms per ask (desktop) |
+  |---|---|---|---|---|---|---|---|
+  | MoritzLaurer/xtremedistil-l6-h256-zeroshot-v1.1-all-33, two-way | 13.1 MB | MIT | yes | 0/33 | 0/31 | 0 (it has no contradiction) | 10 |
+  | Xenova/mobilebert-uncased-mnli, 4-bit weights and 16-bit floats | 21.0 MB (26.4 MB at 8 bits) | none stated by its author | budget only | 1/33 | 0/31 | 1/31 | 108 |
+  | Xenova/nli-deberta-v3-xsmall | 87.2 MB | Apache-2.0 | license only | 1/33 | 0/31 | 2/31 | 57 |
+
+  The models share the embedder's tokenizer except DeBERTa, so the first two would add only their network to the 38.5 MB. Even handed the labelled sentences themselves, the best of them reads 1 of the 33 `tune` shared claims as entailment both ways at 0.8, and the others none: the corpus's shared claims are values two groups hold in their own words, not restatements, and inference models are trained on literal ones. That answers the first open question below for models of this size. On `held-out`, at the thresholds set on `tune`, beside #477's stand-in:
+
+  | `held-out` | Stand-in (#477, ships) | xtremedistil | MobileBERT | DeBERTa |
+  |---|---|---|---|---|
+  | Lines verified | 0 | 0 | 1, a near-copy | 0 |
+  | Verified lines that are shared claims (≥ 90%) | none to judge | none to judge | 0/1 | none to judge |
+  | Opposed pairs verified (< 5%) | 0/16 | 0/16 | 0/16 | 0/16 |
+  | Opposed pairs caught as opposes / left unsure / no candidate | 0 / 10 / 6 | 0 / 10 / 6 | 0 / 10 / 6 | 0 / 10 / 6 |
+  | Shared claims shown, unverified | 7/17 | 7/17 | 7/17 | 7/17 |
+
+  The deer-season, irony and quoted-opponent pairs are judged unsure by all three on every pair the pipeline sends (one held-out quoted-opponent pair finds no candidate). The issue's own examples: MobileBERT and DeBERTa agree on "Keep the library open." and "We want the library to stay open."; xtremedistil is unsure; on "Deer season is our heritage." and "End deer season now." DeBERTa opposes and the others are unsure. The download, memory and phone budgets are unchanged, since nothing more is fetched.
+- A part that misses its target ships in its weaker form: unverified wording everywhere if the stance check misses (it did, #478), and the shared-enemy check off if it's unmeasured.
 
 ## Why
 
@@ -119,14 +139,14 @@ ADR-0077 §4's rules stand: everything runs on the reader's device; no text, ter
 - **The history is high-risk data by this project's own definition:** a dated list of public statements a person agreed with. The founder chose it over keeping only the dial's position, for a stretch that can hide what was seen and respond to marks. Sealing protects a locked phone, not an unlocked or coerced one, which is why it expires, stays out of every backup, and has its own erase.
 - **A device with no vault keeps no history.** Bedfellows still works there from the clock alone, kept in memory for the session.
 - **The CSP loosens by one keyword.** `'wasm-unsafe-eval'` lets the page compile WebAssembly from its own origin; it doesn't allow `eval` or inline script.
-- **Two models, about 50 to 115 MB together by estimate,** stretch ADR-0077's "app size and battery matter". The 60 MB budget in §8 decides whether the stance model ships at its smallest size or not at all.
+- **Two models, about 50 to 115 MB together by estimate,** stretch ADR-0077's "app size and battery matter". The 60 MB budget in §8 decides whether the stance model ships at its smallest size or not at all. For now it doesn't ship (#478, §3), so the download is the embedder's 38.5 MB.
 - The app gains its first machine-learning dependency. It is pinned exactly and imported by one module.
 - #428's term-overlap module becomes the fallback, and #433 shows quotes, a dial and marks instead of shared terms.
 - The shelf is public, so anyone can run the same open model over it and draw a likeness graph of publishing groups. Reconcile never computes or publishes one.
 
 ## Open questions
 
-- Whether a small inference model can read implied values at all. The opposed-pair set in §8 answers it.
+- Whether a small inference model can read implied values at all. The opposed-pair set in §8 answers it: at 13 to 87 MB, no (#478, §8). A larger model, or one trained on stance rather than inference, is the next thing to try, measured by the same harness.
 - Whether a zero-shot use of the stance model is enough for the shared-enemy check, or it needs a classifier of its own.
 - The pace of the clock and the size of each tier's floor. The simulation proposes first values, and the pilot corrects them.
-- The model files' licenses, checked before either ships (ADR-0024). The embedding model's are (#476, §2); the stance model's are #478's.
+- The model files' licenses, checked before either ships (ADR-0024). The embedding model's are (#476, §2). No stance model ships (#478, §3); of the candidates, MobileBERT-MNLI's author states no license, so it can't ship whatever it scores.

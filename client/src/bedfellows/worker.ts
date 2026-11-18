@@ -16,8 +16,10 @@
  * it the runtime, are imported only then. Without `model`, or when the model
  * fails to load (offline on first use, a file that doesn't match its pin), the
  * run matches by term overlap, every row unverified (`fallback.ts`), and a
- * later run with `model` tries the load again. The judge is still the
- * stand-in (#478).
+ * later run with `model` tries the load again. A run with the model judges
+ * stance with `judge.ts` (#478), imported then too; it ships switched off, so
+ * its judge is the stand-in and every reason is unverified, and a stance
+ * model that won't load leaves the stand-in in its place.
  *
  * The one thing it writes is the cache of public entry vectors
  * (`entryVectors.ts`), in an IndexedDB database of its own: never the
@@ -38,7 +40,14 @@ export interface Runner {
 
 /** What a runner runs with. */
 export interface WorkerSetup {
+  /** The judge while no stance model has loaded: the stand-in, always unsure. */
   readonly judge: StanceJudge;
+  /**
+   * The stance model (#478), loaded on the first run that has the embedding
+   * model; a call after a failed load tries again. Without it, or when it
+   * won't load, the run judges with {@link WorkerSetup.judge}.
+   */
+  readonly loadJudge?: () => Promise<StanceJudge>;
   /** The embedding model, loaded on the first call; a call after a failed load tries again. */
   readonly loadModel: () => Promise<Embedder>;
   /** Where entries' public vectors are kept, where the browser can keep them. */
@@ -65,6 +74,12 @@ async function loadModel(): Promise<Embedder> {
   return loadEmbedder();
 }
 
+/** Imports the stance judge's module and loads its model: the stand-in while none is pinned. */
+async function loadJudge(): Promise<StanceJudge> {
+  const judge = await import('./judge');
+  return judge.loadJudge();
+}
+
 /** The model for a run that asks for it, or none when it doesn't or the model won't load. */
 async function embedderFor(model: boolean, setup: WorkerSetup): Promise<Embedder | undefined> {
   if (!model) return undefined;
@@ -72,6 +87,16 @@ async function embedderFor(model: boolean, setup: WorkerSetup): Promise<Embedder
     return yielding(await setup.loadModel());
   } catch {
     return undefined;
+  }
+}
+
+/** The judge for a run: the stance model's when the run has the embedding model and it loads, else the setup's. */
+async function judgeFor(embedder: Embedder | undefined, setup: WorkerSetup): Promise<StanceJudge> {
+  if (embedder === undefined || setup.loadJudge === undefined) return setup.judge;
+  try {
+    return await setup.loadJudge();
+  } catch {
+    return setup.judge;
   }
 }
 
@@ -85,9 +110,10 @@ export function createRunner(setup: WorkerSetup, post: (message: FromWorker) => 
     runs.set(id, controller);
     try {
       const embedder = await embedderFor(model, setup);
+      const judge = await judgeFor(embedder, setup);
       const rows = await bedfellows(
         input,
-        { embedder, judge: setup.judge },
+        { embedder, judge },
         { signal: controller.signal, store: setup.store },
       );
       post({ type: 'rows', id, rows });
@@ -111,6 +137,7 @@ const runner = createRunner(
   {
     judge: standInJudge,
     loadModel,
+    loadJudge,
     store: typeof indexedDB === 'undefined' ? undefined : indexedDbVectorStore(indexedDB),
   },
   (message) => {

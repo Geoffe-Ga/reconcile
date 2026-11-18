@@ -4,7 +4,8 @@
  * of a few dozen words in the real one's format, and an ONNX graph that looks
  * up an 8-number vector for each token, with the real model's inputs and
  * output. Its vectors mean nothing; what it proves is that the files load,
- * verify and run under the deploy CSP.
+ * verify and run under the deploy CSP. {@link tinyClassifierOnnx} does the same
+ * for a sentence-pair classifier, the shape of a stance model (#478).
  *
  * The ONNX file is written here, field by field, from `onnx.proto`'s field
  * numbers, rather than kept as a binary in git. The runtime's WebAssembly is
@@ -80,7 +81,13 @@ export function tinyTokenizerJson(): string {
         { Sequence: { id: 'A', type_id: 0 } },
         { SpecialToken: { id: '[SEP]', type_id: 0 } },
       ],
-      pair: [],
+      pair: [
+        { SpecialToken: { id: '[CLS]', type_id: 0 } },
+        { Sequence: { id: 'A', type_id: 0 } },
+        { SpecialToken: { id: '[SEP]', type_id: 0 } },
+        { Sequence: { id: 'B', type_id: 1 } },
+        { SpecialToken: { id: '[SEP]', type_id: 1 } },
+      ],
       special_tokens: {
         '[CLS]': { id: '[CLS]', ids: [2], tokens: ['[CLS]'] },
         '[SEP]': { id: '[SEP]', ids: [3], tokens: ['[SEP]'] },
@@ -171,6 +178,92 @@ export function tinyModelOnnx(inputs: readonly string[] = INPUTS.slice(1)): Uint
     ...bytes(5, tensor),
     ...['input_ids', ...inputs].flatMap((name) => bytes(11, valueInfo(name, INT64, tokens))),
     ...bytes(12, valueInfo('last_hidden_state', FLOAT, [...tokens, TINY_DIMENSIONS])),
+  ];
+  const opset = [...text(1, ''), ...int(2, 13)];
+  return new Uint8Array([...int(1, 8), ...bytes(7, graph), ...bytes(8, opset)]);
+}
+
+/** An `AttributeProto` holding a list of integers (ONNX's `INTS`, type 7). */
+function intsAttribute(name: string, values: readonly number[]): number[] {
+  return [...text(1, name), ...values.flatMap((value) => int(8, value)), ...int(20, 7)];
+}
+
+/** An `AttributeProto` holding one integer (ONNX's `INT`, type 2). */
+function intAttribute(name: string, value: number): number[] {
+  return [...text(1, name), ...int(3, value), ...int(20, 2)];
+}
+
+/** A `NodeProto`: `op` over `inputs` into `output`, with `attributes`. */
+function nodeOf(
+  op: string,
+  inputs: readonly string[],
+  output: string,
+  attributes: readonly (readonly number[])[] = [],
+): number[] {
+  return [
+    ...inputs.flatMap((name) => text(1, name)),
+    ...text(2, output),
+    ...text(4, op),
+    ...attributes.flatMap((attribute) => bytes(5, attribute)),
+  ];
+}
+
+/** A float tensor initializer named `name`, of `rows` rows of equal length. */
+function floatTable(name: string, rows: readonly (readonly number[])[]): number[] {
+  const table = new Float32Array(rows.flat());
+  return [
+    ...int(1, rows.length),
+    ...int(1, rows[0]?.length ?? 0),
+    ...int(2, FLOAT),
+    ...text(8, name),
+    ...bytes(9, [...new Uint8Array(table.buffer)]),
+  ];
+}
+
+/** How many labels the tiny classifier tells apart: as many as an inference model's three. */
+export const TINY_LABELS = 3;
+
+/** Token `id`'s contribution to the tiny classifier's logits: its vector's first three numbers. */
+export function tinyLogitsOf(id: number): number[] {
+  return tinyVectorOf(id).slice(0, TINY_LABELS);
+}
+
+/** Each token type's contribution to the tiny classifier's logits: 0 for the first sentence, 1 for the second. */
+export const TINY_TYPE_LOGITS: readonly (readonly number[])[] = [
+  [0, 0, 0],
+  [1, -2, 3],
+];
+
+/**
+ * The tiny classifier: `logits = ReduceMean(Gather(tokens, input_ids) +
+ * Gather(types, token_type_ids), axis 1)`, one row of {@link TINY_LABELS}
+ * numbers per pair, with a stance model's three inputs (`attention_mask`
+ * unused) and its output, at opset 13.
+ */
+export function tinyClassifierOnnx(): Uint8Array {
+  const tokens = ['batch', 'sequence'];
+  const graph = [
+    ...bytes(1, nodeOf('Gather', ['tokens', 'input_ids'], 'by_token')),
+    ...bytes(1, nodeOf('Gather', ['types', 'token_type_ids'], 'by_type')),
+    ...bytes(1, nodeOf('Add', ['by_token', 'by_type'], 'summed')),
+    ...bytes(
+      1,
+      nodeOf('ReduceMean', ['summed'], 'logits', [
+        intsAttribute('axes', [1]),
+        intAttribute('keepdims', 0),
+      ]),
+    ),
+    ...text(2, 'tiny-classifier'),
+    ...bytes(
+      5,
+      floatTable(
+        'tokens',
+        TINY_VOCAB.map((_, id) => tinyLogitsOf(id)),
+      ),
+    ),
+    ...bytes(5, floatTable('types', TINY_TYPE_LOGITS)),
+    ...INPUTS.flatMap((name) => bytes(11, valueInfo(name, INT64, tokens))),
+    ...bytes(12, valueInfo('logits', FLOAT, ['batch', TINY_LABELS])),
   ];
   const opset = [...text(1, ''), ...int(2, 13)];
   return new Uint8Array([...int(1, 8), ...bytes(7, graph), ...bytes(8, opset)]);

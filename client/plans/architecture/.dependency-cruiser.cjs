@@ -49,11 +49,14 @@ module.exports = {
       },
     },
     {
-      name: 'only-embedder-ts-fetches-the-model',
+      name: 'only-the-model-loaders-fetch-the-model',
       comment:
-        "The one door from Bedfellows to the network is src/net/modelFiles.ts, which fetches only a pinned model file by name from our own origin and checks its hash (#476, ADR-0080 §2): no word, vector or score of the reader's can ride on it. Only src/bedfellows/embedder.ts, and its test, may use it.",
+        "The one door from Bedfellows to the network is src/net/modelFiles.ts, which fetches only a pinned model file by name from our own origin and checks its hash (#476, ADR-0080 §2): no word, vector, score or stance of the reader's can ride on it. Only the two model loaders, src/bedfellows/embedder.ts and src/bedfellows/judge.ts (#478), and their tests, may use it.",
       severity: 'error',
-      from: { path: '^src/bedfellows/', pathNot: '^src/bedfellows/embedder(\\.test)?\\.ts$' },
+      from: {
+        path: '^src/bedfellows/',
+        pathNot: '^src/bedfellows/(embedder|judge)(\\.test)?\\.ts$',
+      },
       to: { path: '^src/net/' },
     },
     {

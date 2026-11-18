@@ -6,14 +6,15 @@
  * only ask for a pinned file by name: the request carries a fixed path under
  * `/models/` and nothing else, so no word, vector or score of the reader's can
  * ride on it, and every device asks for the same files. dependency-cruiser
- * lets `src/bedfellows/embedder.ts` import this module and nothing else of
+ * lets the two model loaders, `src/bedfellows/embedder.ts` and
+ * `src/bedfellows/judge.ts` (#478), import this module and nothing else of
  * `src/net`.
  *
  * The service worker keeps each file the first time it's fetched
  * (`serviceWorker.ts`), so this check runs on every load, cached or not.
  */
 import { sha256OfFile } from '../crypto/hash';
-import { MODEL_FILES, type PinnedFile } from './modelPins';
+import { type PinnedFile, SERVED_FILES } from './modelPins';
 
 /** A file that came back, but not the one pinned: it is never used. */
 export class PinMismatchError extends Error {
@@ -21,10 +22,7 @@ export class PinMismatchError extends Error {
 }
 
 /** Every byte a first load downloads: what the reader sees before it starts (#433). */
-export const MODEL_DOWNLOAD_BYTES = Object.values(MODEL_FILES).reduce(
-  (sum, pin) => sum + pin.bytes,
-  0,
-);
+export const MODEL_DOWNLOAD_BYTES = SERVED_FILES.reduce((sum, pin) => sum + pin.bytes, 0);
 
 /** A file name with no path in it: letters, digits, `.`, `_` and `-`, not starting with `.`. */
 const FILE_NAME = /^[A-Za-z0-9_-][A-Za-z0-9._-]*$/;

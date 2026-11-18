@@ -5,7 +5,9 @@
  * `only-runtime-ts-imports-the-runtime`), so swapping the runtime touches one
  * file.
  *
- * It fetches nothing. It is handed the three files, already checked against
+ * It runs the embedding model (`startEncoder`, #476) and, for the stance
+ * check, a sentence-pair classifier (`startPairClassifier`, #478). It fetches
+ * nothing. It is handed each model's three files, already checked against
  * their pins (`src/net/modelFiles.ts`), and runs on one thread in the worker
  * it is loaded in: no proxy worker, no threads (which would need a `blob:`
  * worker the CSP refuses), and no file from any URL. Compiling the
@@ -116,13 +118,19 @@ function feedFor(
   return new Tensor('int64', batch.ids, dims);
 }
 
+/** A started session and its tokenizer, from the model's checked files. */
+interface Opened {
+  readonly session: InferenceSession;
+  readonly tokenizer: Tokenizer;
+}
+
 /**
- * Starts the model from its checked files: one session, on WebAssembly, on
+ * Opens the model from its checked files: one session, on WebAssembly, on
  * this thread.
  *
- * @throws {Error} when the model asks for an input this encoder can't feed.
+ * @throws {Error} when the model asks for an input this runtime can't feed.
  */
-export async function startEncoder(files: RuntimeFiles): Promise<Encoder> {
+async function open(files: RuntimeFiles): Promise<Opened> {
   env.wasm.wasmBinary = files.runtime;
   env.wasm.numThreads = 1;
   env.wasm.proxy = false;
@@ -141,6 +149,17 @@ export async function startEncoder(files: RuntimeFiles): Promise<Encoder> {
     await session.release();
     throw new Error(`The model asks for an input the encoder can’t feed: ${unfed.join(', ')}.`);
   }
+  return { session, tokenizer };
+}
+
+/**
+ * Starts the model from its checked files: one session, on WebAssembly, on
+ * this thread.
+ *
+ * @throws {Error} when the model asks for an input this encoder can't feed.
+ */
+export async function startEncoder(files: RuntimeFiles): Promise<Encoder> {
+  const { session, tokenizer } = await open(files);
   const output = session.outputNames[0] ?? 'last_hidden_state';
   return {
     encode: async (sentences) => {
@@ -158,6 +177,76 @@ export async function startEncoder(files: RuntimeFiles): Promise<Encoder> {
         tokens: batch.tokens,
         dimensions,
       };
+    },
+  };
+}
+
+/** A started sentence-pair classifier: a premise and a hypothesis in, one probability per label out. */
+export interface PairClassifier {
+  classify(premise: string, hypothesis: string): Promise<Float32Array>;
+}
+
+/** `sentence`'s token ids without [CLS] or [SEP], at most {@link MAX_TOKENS} − 2 of them. */
+function idsOf(tokenizer: Tokenizer, sentence: string): number[] {
+  return tokenizer.encode(sentence, { add_special_tokens: false }).ids.slice(0, MAX_TOKENS - 2);
+}
+
+/**
+ * The pair's tensors: `[CLS] premise [SEP] hypothesis [SEP]`, the
+ * hypothesis and its [SEP] as the second token type (the [CLS] and [SEP] the
+ * tokenizer wraps an empty sentence in), each sentence cut to
+ * {@link MAX_TOKENS} − 2 tokens so the pair fits a BERT model's 512 positions.
+ */
+function pairFeeds(
+  tokenizer: Tokenizer,
+  names: readonly string[],
+  premise: string,
+  hypothesis: string,
+): Record<string, Tensor> {
+  const wrapper = tokenizer.encode('').ids;
+  const [cls, sep] = [wrapper.slice(0, 1), wrapper.slice(1)];
+  const first = [...cls, ...idsOf(tokenizer, premise), ...sep];
+  const second = [...idsOf(tokenizer, hypothesis), ...sep];
+  const ids = [...first, ...second];
+  const values: Record<string, readonly number[]> = {
+    input_ids: ids,
+    attention_mask: ids.map(() => 1),
+    token_type_ids: [...first.map(() => 0), ...second.map(() => 1)],
+  };
+  const dims = [1, ids.length];
+  return Object.fromEntries(
+    names.map((name) => [
+      name,
+      new Tensor('int64', BigInt64Array.from(values[name] ?? [], BigInt), dims),
+    ]),
+  );
+}
+
+/** `logits` turned into probabilities that add up to 1. */
+function softmax(logits: ArrayLike<number>): Float32Array {
+  const values = Array.from(logits);
+  const top = Math.max(...values);
+  const exps = values.map((x) => Math.exp(x - top));
+  const total = exps.reduce((sum, x) => sum + x, 0);
+  return Float32Array.from(exps, (x) => x / total);
+}
+
+/**
+ * Starts a sentence-pair classifier, such as a natural-language-inference
+ * model (#478), from its checked files: one session, on WebAssembly, on this
+ * thread. It reads one pair per run, as the embedder reads one sentence
+ * (#477): an 8-bit model's answer would otherwise shift with its neighbours.
+ *
+ * @throws {Error} when the model asks for an input this runtime can't feed.
+ */
+export async function startPairClassifier(files: RuntimeFiles): Promise<PairClassifier> {
+  const { session, tokenizer } = await open(files);
+  const output = session.outputNames[0] ?? 'logits';
+  return {
+    classify: async (premise, hypothesis) => {
+      const feeds = pairFeeds(tokenizer, session.inputNames, premise, hypothesis);
+      const results = await session.run(feeds);
+      return softmax((results[output]?.data ?? []) as Float32Array);
     },
   };
 }
