@@ -2,18 +2,13 @@
 
 from __future__ import annotations
 
-import json
 import os
 import shutil
 import subprocess  # nosec B404 - runs our own script and git in a temp repo
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
 
 import pytest
 import yaml
-
-if TYPE_CHECKING:
-    from collections.abc import Callable
 
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "scripts" / "changed-areas.sh"
@@ -195,56 +190,14 @@ def test_ci_area_step_obeys_force_all_and_a_prs_base(repo: Path) -> None:
     assert _ci_areas_step(repo, force_all="false", base_ref="HEAD~1") == NONE
 
 
-def test_ci_e2e_job_installs_and_runs_both_browsers() -> None:
-    """CI's e2e job installs Chromium and WebKit and never narrows the run.
+def test_ci_e2e_job_runs_both_browsers() -> None:
+    """CI's e2e job never narrows the run to one browser.
 
     ``E2E_PROJECTS`` lets a laptop without WebKit run Chromium alone; CI must
-    run every project in client/playwright.config.ts.
+    run every project in client/playwright.config.ts. Its image holds both
+    browsers (tests/test_ci_e2e_image.py).
     """
     job = yaml.safe_load(CI.read_text(encoding="utf-8"))["jobs"]["e2e"]
     runs = "\n".join(step.get("run", "") for step in job["steps"])
-    assert "npx playwright install --with-deps chromium webkit" in runs
+    assert "./scripts/check-all.sh --e2e" in runs
     assert "E2E_PROJECTS" not in CI.read_text(encoding="utf-8")
-
-
-def _step_index(steps: list[dict[str, Any]], found: Callable[[Any], bool]) -> int:
-    """The index of the one step ``found`` accepts."""
-    matches = [i for i, step in enumerate(steps) if found(step)]
-    assert len(matches) == 1, matches
-    return matches[0]
-
-
-def test_ci_e2e_job_restores_the_browsers_it_installs(tmp_path: Path) -> None:
-    """The e2e job restores Playwright's browsers before it installs them.
-
-    The key names the locked Playwright version, the runner's Ubuntu (WebKit is
-    built for each release) and both browsers, so a new one of any never reuses
-    old builds. The install still runs on a hit: it downloads nothing then, and
-    adds the system packages the browsers need.
-    """
-    steps = yaml.safe_load(CI.read_text(encoding="utf-8"))["jobs"]["e2e"]["steps"]
-    cache = _step_index(
-        steps, lambda s: s.get("with", {}).get("path") == "~/.cache/ms-playwright"
-    )
-    install = _step_index(steps, lambda s: "playwright install" in s.get("run", ""))
-    name = _step_index(steps, lambda s: s.get("id") == "browsers")
-    assert name < cache < install
-    assert steps[cache]["uses"].startswith("actions/cache@")
-    assert steps[cache]["with"]["key"] == "${{ steps.browsers.outputs.key }}"
-
-    output = tmp_path / "output"
-    subprocess.run(  # nosec B603 - fixed argv, no shell
-        [BASH, "-euo", "pipefail", "-c", steps[name]["run"]],
-        cwd=ROOT,
-        env={
-            "PATH": os.environ["PATH"],
-            "ImageOS": "ubuntu26",
-            "GITHUB_OUTPUT": str(output),
-        },
-        check=True,
-    )
-    lock = json.loads((ROOT / "client" / "package-lock.json").read_text("utf-8"))
-    version = lock["packages"]["node_modules/playwright-core"]["version"]
-    assert output.read_text("utf-8") == (
-        f"key=playwright-{version}-ubuntu26-chromium-webkit\n"
-    )
