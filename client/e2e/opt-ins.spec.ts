@@ -158,10 +158,14 @@ test('the group turns its chat bot on by an entrenched vote, and a steward turns
     expect(post?.method).toBe('POST');
     expect(post?.url).toBe(`${WEBHOOK}?wait=true`);
     expect(post?.body).toEqual({
-      content: `A vote has finished in Reconcile.\n${origin}/`,
+      // The notice ends with the vote's link (#472): its token names neither the group nor the Proposal.
+      content: expect.stringMatching(
+        /^A vote has finished in Reconcile\.\nhttps?:\/\/[^/]+\/#vote\/[A-Za-z0-9_-]{22}$/,
+      ) as unknown,
       thread_name: 'Proposal 1 in Reconcile',
       allowed_mentions: { parse: [] },
     });
+    expect((post?.body as { content: string }).content).toContain(`\n${origin}/#vote/`);
     expect(post?.headers['origin']).toBe(origin);
     expect(post?.headers['content-type']).toBe('application/json');
     expect(post?.headers['referer']).toBeUndefined();

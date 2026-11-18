@@ -181,7 +181,8 @@ test('a Proposal’s first notice opens its Discord thread, Join discussion open
 
   await test.step('on Ben’s phone, the Proposal shows its number, and Join discussion opens its thread', async () => {
     const { page } = ben;
-    await page.goto(proposalUrl);
+    // The vote link left Ben on this page: WebKit would reload a goto to it, under the service worker.
+    await visit(page, proposalUrl);
     await expect(heading(page, PROPOSAL)).toBeVisible();
     await expect(page.getByText('Proposal 2 · Open', { exact: true })).toBeVisible();
     await expect(joinDiscussion(page)).toHaveAttribute('href', THREAD, { timeout: 30_000 });

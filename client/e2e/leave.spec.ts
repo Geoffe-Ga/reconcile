@@ -114,11 +114,14 @@ test('A tells the group a vote is open; B finds it under Needs your vote, then l
       return value;
     }, SHARED);
     const origin = new URL(page.url()).origin;
+    // The share's address is the vote's own link (#472), as Copy link to this vote shows it.
+    const link = await page.getByRole('textbox', { name: 'Link to this vote' }).inputValue();
+    expect(link).toMatch(new RegExp(`^${origin.replace(/[.]/g, '\\.')}/#vote/[A-Za-z0-9_-]{22}$`));
     expect(shared).toEqual({
       text: expect.stringMatching(
         /^A new Proposal is open in Reconcile\. Voting ends \w{3} \d{1,2} \w{3}\.$/,
       ) as unknown,
-      url: `${origin}/`,
+      url: link,
     });
     expect(Object.keys(shared as object)).toEqual(['text', 'url']);
     await expectAccessible(ana, 'Proposal view');
