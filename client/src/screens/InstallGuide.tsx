@@ -4,6 +4,7 @@ import type { FoundGroup, InviteLookup } from '../app/actions';
 import { CopyLink } from '../app/CopyLink';
 import { HELD_LINKS, type HeldLinkName } from '../app/heldLinks';
 import { messages } from '../app/messages';
+import { readsAsVoteToken, voteLinkOf } from '../app/voteLink';
 import { PageHeader } from '../app/ui';
 import { doorLinkOf, type DoorView, parseDoorPayload } from '../door/page';
 import { DoorExcerpt } from './FrontDoor';
@@ -12,14 +13,16 @@ import { InvitePreview } from './InvitePreview';
 /**
  * How the page was opened: plainly; with a link whose seed is held in memory,
  * an invite, a reconcile card or a follow link (#280, `heldLinks.ts`); with
- * one of those that can't be read, and its kind; or with a front door's link
- * (#121), whose address is no secret.
+ * one of those that can't be read, and its kind; with a front door's link
+ * (#121), whose address is no secret; or with a vote link (#472), whose token
+ * names no group.
  */
 export type Arrival =
   | { readonly kind: 'plain' }
   | { readonly kind: HeldLinkName; readonly seed: Uint8Array }
   | { readonly kind: 'damaged'; readonly link: HeldLinkName }
-  | { readonly kind: 'door'; readonly payload: string };
+  | { readonly kind: 'door'; readonly payload: string }
+  | { readonly kind: 'vote'; readonly payload: string };
 
 /** Props for {@link InstallGuide}. */
 export interface InstallGuideProps {
@@ -243,6 +246,10 @@ function lastStep(arrival: Arrival, phase: Phase): string {
     case 'card':
     case 'follow':
       return messages.install.openToPaste[arrival.kind];
+    case 'vote':
+      return readsAsVoteToken(arrival.payload)
+        ? messages.install.openToPaste.vote
+        : messages.install.open;
     case 'damaged':
     case 'plain':
       return messages.install.open;
@@ -271,9 +278,41 @@ function ArrivalArea(props: InstallGuideProps & { readonly phase: Phase }) {
           readDoor={readDoor}
         />
       );
+    case 'vote':
+      return <VoteArea payload={arrival.payload} origin={origin} copyText={copyText} />;
     case 'plain':
       return <CopyAppAddress origin={origin} copyText={copyText} />;
   }
+}
+
+interface VoteAreaProps extends Pick<InstallGuideProps, 'origin' | 'copyText'> {
+  readonly payload: string;
+}
+
+/**
+ * A vote link opened outside the installed app (#472): the link to copy into
+ * the installed app, which opens it only if it's in the vote's group. A token
+ * that doesn't read leaves only the app's address.
+ */
+function VoteArea({ payload, origin, copyText }: VoteAreaProps) {
+  const heading = useId();
+  if (!readsAsVoteToken(payload)) return <CopyAppAddress origin={origin} copyText={copyText} />;
+  const words = messages.install.held.vote;
+  return (
+    <section className="stack" aria-labelledby={heading}>
+      <h2 id={heading} className="heading-3">
+        {words.heading}
+      </h2>
+      <CopyLink
+        link={voteLinkOf(origin, payload)}
+        label={words.label}
+        hint={messages.install.heldHint}
+        button={words.copy}
+        primary
+        copyText={copyText}
+      />
+    </section>
+  );
 }
 
 /** Reads the invite's preview once, with nothing kept on the device. */
@@ -306,7 +345,8 @@ function useInviteLookup(arrival: Arrival, lookup: InstallGuideProps['lookup']):
  * preview, and its link to copy into the installed app; a reconcile card's
  * or a follow link shows its link to copy (#280), with no preview, since its
  * own page there shows what it holds before anything happens; a front door's
- * link shows its page, and its link to copy, in place of the form (#121).
+ * link shows its page, and its link to copy, in place of the form (#121); and
+ * a vote link shows its link to copy (#472).
  */
 export function InstallGuide(props: InstallGuideProps) {
   const { arrival, lookup } = props;

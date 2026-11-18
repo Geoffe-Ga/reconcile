@@ -94,12 +94,13 @@ export interface FirstRunGateProps extends FirstRunServices {
 }
 
 /**
- * How the page was opened, read from its `#door/{address}` route or a held
- * link's: `#join/{seed}`, `#reconcile/{seed}` or `#follow/{seed}` (#280).
+ * How the page was opened, read from its `#door/{address}` or `#vote/{token}`
+ * route (#472) or a held link's: `#join/{seed}`, `#reconcile/{seed}` or `#follow/{seed}` (#280).
  */
 function arrivalFrom(hash: string): Arrival {
   const route = parseRoute(hash);
   if (route.name === 'door') return { kind: 'door', payload: route.payload };
+  if (route.name === 'vote') return { kind: 'vote', payload: route.payload };
   const link = heldLinkOf(route);
   const payload = 'payload' in route ? route.payload : null;
   if (link === null || payload === null) return { kind: 'plain' };
@@ -118,10 +119,11 @@ interface Held {
  * whole address, since this browser never opens the app; under the notice,
  * the link's own page stays (Join, Bring a card or Follow), so the app opens
  * there with the seed in hand. A front door's link holds no secret (#121),
- * so it stays, and the app opens at the door once the notice is accepted.
+ * so it stays, and the app opens at the door once the notice is accepted;
+ * so does a vote link (#472), whose token names no group.
  */
 function release(arrival: Arrival, open: boolean): void {
-  if (arrival.kind === 'door') return;
+  if (arrival.kind === 'door' || arrival.kind === 'vote') return;
   if (!open) window.history.replaceState(null, '', '/');
   else if (arrival.kind === 'damaged') replaceRoute(heldRoute(arrival.link));
   else if (arrival.kind !== 'plain') replaceRoute(heldRoute(arrival.kind));
@@ -246,7 +248,11 @@ function useWelcome(
   // A plain visit in a browser tab, on a device that hadn't accepted the notice at launch
   // and holds no locked keys: a device with keys isn't new, whatever its notice says.
   const [newHere] = useState(() => !notice.accepted() && !lock.lockedAtLaunch);
-  const visiting = newHere && !isInstalled(platform) && arrival.kind === 'plain';
+  // Where keys can be made, a vote link goes as a plain visit (#472): its screen says, once
+  // first run is through, that the vote opens only on a device in its group. Behind the
+  // install gate, the guide holds the link to copy at once, as it holds an invite's.
+  const plain = arrival.kind === 'plain' || (arrival.kind === 'vote' && canCreateKeys(platform));
+  const visiting = newHere && !isInstalled(platform) && plain;
   const [welcomed, setWelcomed] = useState(false);
   const start = () => {
     // The next screen opens at its top, wherever on the page Start a Group was pressed.

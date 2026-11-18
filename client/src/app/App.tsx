@@ -154,6 +154,8 @@ import {
 import type { AppServices } from './services';
 import type { ChatDetails, ChatMoment } from './chatMessages';
 import { chatPayload, shareOrCopy } from './share';
+import type { VoteLinkPort } from './TellYourGroup';
+import { locateVote, type VoteTarget, voteLinkOf } from './voteLink';
 import { relayMinuteNow } from './time';
 import { GroupServicesContext, type GroupView, useCoalitionList, useGroup } from './useGroup';
 import { useGroupList, useGroups } from './useGroupList';
@@ -167,6 +169,7 @@ import { recoverSession, startRecovery, stopRecovery } from '../recovery/request
 import { HelpRecover } from '../screens/HelpRecover';
 import { Landing } from '../screens/Landing';
 import { RecoverStart } from '../screens/RecoverStart';
+import { VoteLink } from '../screens/VoteLink';
 import { messages } from './messages';
 import { RecoveryAlert } from './RecoveryAlert';
 import { useRecovery } from './useRecovery';
@@ -1163,6 +1166,21 @@ interface GroupProposalProps {
 }
 
 /**
+ * `proposalId`'s vote link in `group` (#472, ADR-0079), with the clipboard
+ * for Copy link to this vote, or undefined when it has no token.
+ */
+function voteLinkFor(
+  services: AppServices,
+  group: ReadyGroup,
+  proposalId: string,
+): VoteLinkPort | undefined {
+  const token = group.voteToken(proposalId);
+  return token === null
+    ? undefined
+    : { link: voteLinkOf(services.origin, token), copyText: services.copyText };
+}
+
+/**
  * One Proposal's page: its ballot, and for a Dispatch that may rise (#126),
  * this device's plan to cast this person's score from another group, with
  * Don't cast, and the notes they wrote on it elsewhere.
@@ -1180,8 +1198,9 @@ function GroupProposal({ services, group, proposalId }: GroupProposalProps) {
   const onProposeAgain = () => {
     navigate({ name: 'again', groupId, proposalId });
   };
+  const voteLink = voteLinkFor(services, group, proposalId);
   const onTell = (moment: ChatMoment, details: ChatDetails) =>
-    shareOrCopy(chatPayload(moment, details, services.origin), services);
+    shareOrCopy(chatPayload(moment, details, voteLink?.link ?? `${services.origin}/`), services);
   const onRespond = (text: string) =>
     respondToRemoval(services, groupId, { proposal: proposalId, text });
   return (
@@ -1201,6 +1220,7 @@ function GroupProposal({ services, group, proposalId }: GroupProposalProps) {
       onVote={onVote}
       onProposeAgain={onProposeAgain}
       onTell={onTell}
+      {...(voteLink === undefined ? {} : { voteLink })}
       onRespond={onRespond}
       carry={group.carries.find((plan) => plan.motion === proposalId) ?? null}
       onSkipCarry={() => skipCarry(services.store, groupId, proposalId)}
@@ -1553,7 +1573,7 @@ type PlainRoute = Exclude<Route, GroupRoute | CoalitionRoute | { readonly payloa
 
 /**
  * A route that carries a link's payload: Join (#73), a shared page (#105), a
- * front door (#121) and a reconcile card (#114).
+ * front door (#121), a reconcile card (#114) and a vote (#472).
  */
 type LinkRoute = Extract<Route, { readonly payload: unknown }>;
 
@@ -1587,7 +1607,7 @@ interface LinkScreenProps extends Omit<ScreenProps, 'route' | 'holdSeed' | 'pers
   readonly releaseSeed: () => void;
 }
 
-/** Join, a shared page, a front door, a card and a follow link: each reads what follows its link's `#`. */
+/** Join, a shared page, a front door, a vote, a card and a follow link: each reads what follows its link's `#`. */
 function LinkScreen({ route, services, heldSeed, releaseSeed, guide }: LinkScreenProps) {
   switch (route.name) {
     case 'follow':
@@ -1613,6 +1633,9 @@ function LinkScreen({ route, services, heldSeed, releaseSeed, guide }: LinkScree
       return <SharedPage payload={route.payload} reader={services} />;
     case 'door':
       return <DoorScreen services={services} payload={route.payload} />;
+    case 'vote':
+      // Keyed by the token, so another vote link looks afresh.
+      return <VoteLinkScreen key={route.payload} services={services} token={route.payload} />;
     case 'join':
       return (
         <JoinScreen
@@ -1667,6 +1690,27 @@ function Screen({ route, services, heldSeed, holdSeed, persistence, guide }: Scr
       openInvite={openInvite}
     />
   );
+}
+
+/** Opens the Proposal a vote link names, in the link's place, so Back skips it (#472). */
+function openVote(target: VoteTarget): void {
+  replaceRoute({ name: 'proposal', ...target });
+}
+
+interface VoteLinkScreenProps {
+  readonly services: AppServices;
+  readonly token: string;
+}
+
+/**
+ * A vote link (#472, ADR-0079 §3): matches the token across the device's
+ * groups, waiting for the sync pass under way before it says the vote isn't
+ * on this device.
+ */
+function VoteLinkScreen({ services, token }: VoteLinkScreenProps) {
+  const locate = useCallback(() => locateVote(services.store, token), [services, token]);
+  const waitForSync = useCallback(() => services.sync.syncOnce(), [services]);
+  return <VoteLink locate={locate} waitForSync={waitForSync} onFound={openVote} />;
 }
 
 /** Opens a search result at its own page, a section's Document scrolled to it (#445). */

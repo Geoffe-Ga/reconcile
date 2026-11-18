@@ -315,7 +315,12 @@ function EditResult(props: ResultViewProps) {
       {detail.outcome.kind === 'lapse' ? null : <LateNotice own={own} />}
       <Mismatches state={state} proposal={proposal} />
       {props.leaving === true ? null : (
-        <TellYourGroup moment="result" proposal={proposal} onTell={props.onTell} />
+        <TellYourGroup
+          moment="result"
+          proposal={proposal}
+          onTell={props.onTell}
+          {...(props.voteLink === undefined ? {} : { voteLink: props.voteLink })}
+        />
       )}
       <Totals detail={detail} versions={versions} naming="versions" />
       {cleared === undefined ? (

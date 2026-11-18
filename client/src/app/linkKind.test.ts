@@ -16,9 +16,11 @@ import { newInviteSeed } from '../crypto/invite';
 import { linkCode, newLinkKeys, newLinkSeed } from '../crypto/link';
 import { newRecoveryKeys, recoveryCode } from '../crypto/recovery';
 import { doorLinkOf } from '../door/page';
+import { voteToken } from '../crypto/voteLink';
 import { shareLinkOf } from '../share/shareLink';
 import { inviteLink } from './invite';
 import { type LinkKindName, linkKind } from './linkKind';
+import { voteLinkOf } from './voteLink';
 
 const ORIGIN = 'https://reconcile.example';
 
@@ -31,6 +33,8 @@ const MAKERS: Readonly<
   follow: (origin, seed) => followLink(origin, seed),
   door: (origin, address) => doorLinkOf(origin, address),
   shared: (origin, seed, publicKey) => shareLinkOf(origin, { seed, publicKey }),
+  // A vote link (#472): a group's secret and a Proposal's id make its token.
+  vote: (origin, secret, proposal) => voteLinkOf(origin, voteToken(secret, base64url(proposal))),
 };
 
 const KINDS = Object.keys(MAKERS) as LinkKindName[];
@@ -82,6 +86,21 @@ describe('linkKind', () => {
     const payload = new URL(link).hash.slice('#join/'.length);
 
     expect(linkKind(wrap(link))).toEqual({ kind: 'invite', payload });
+  });
+
+  it('reads a vote link as a vote, and one whose token isn’t 22 base64url characters as damaged (#472)', () => {
+    const token = voteToken(new Uint8Array(32).fill(7), base64url(new Uint8Array(32)));
+
+    expect(linkKind(`vote today! https://app.example/#vote/${token}`)).toEqual({
+      kind: 'vote',
+      payload: token,
+    });
+    expect(linkKind(`#vote/${token}`)).toEqual({ kind: 'vote', payload: token });
+    expect(linkKind(`https://app.example/#vote/${token}x`)).toEqual({ kind: 'damaged' });
+    expect(linkKind(`https://app.example/#vote/${token.slice(0, 21)}=`)).toEqual({
+      kind: 'damaged',
+    });
+    expect(linkKind('https://app.example/#vote/')).toEqual({ kind: 'damaged' });
   });
 
   it('reads the first link that opens, past a damaged one before it', () => {

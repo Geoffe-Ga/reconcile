@@ -9,7 +9,8 @@
  * reads as the shared page whatever follows it, and stays in the address
  * bar, so a reload reads it again; the page reads a damaged one as not shared.
  * A front door's `#door/{address}` (#121) reads the same way: it carries no
- * secret, so it stays in the address bar too.
+ * secret, so it stays in the address bar too, and so does a vote link's
+ * `#vote/{token}` (#472, ADR-0079), whose token names no group or Proposal.
  */
 import { useSyncExternalStore } from 'react';
 
@@ -49,6 +50,8 @@ export type Route =
   | { readonly name: 'shared'; readonly payload: string }
   /** A group's front door (#121): what follows `#door/`, as written. */
   | { readonly name: 'door'; readonly payload: string }
+  /** A vote link (#472, ADR-0079): what follows `#vote/`, as written. */
+  | { readonly name: 'vote'; readonly payload: string }
   | { readonly name: 'group'; readonly groupId: string }
   /** One of the group's Documents (#92), by its id; without one, the group's first. */
   | { readonly name: 'document'; readonly groupId: string; readonly documentId?: string }
@@ -433,9 +436,12 @@ const SHARE_PREFIX = '#share/';
 /** A front door link's own form (#121): `#door/{address}`, with no slash after `#`. */
 const DOOR_PREFIX = '#door/';
 
+/** A vote link's own form (#472): `#vote/{token}`, with no slash after `#`. */
+const VOTE_PREFIX = '#vote/';
+
 /**
- * A link's own route, with no slash after `#`: a share link's page (#105) or
- * a front door (#121), each reading its payload itself, an invite's (spec
+ * A link's own route, with no slash after `#`: a share link's page (#105),
+ * a front door (#121) or a vote (#472), each reading its payload itself, an invite's (spec
  * §3), a reconcile card's (#114) or a follow link's (#124); null for any
  * other hash.
  */
@@ -444,6 +450,8 @@ function linkRoute(hash: string): Route | null {
     return { name: 'shared', payload: hash.slice(SHARE_PREFIX.length) };
   if (hash.startsWith(DOOR_PREFIX))
     return { name: 'door', payload: hash.slice(DOOR_PREFIX.length) };
+  if (hash.startsWith(VOTE_PREFIX))
+    return { name: 'vote', payload: hash.slice(VOTE_PREFIX.length) };
   if (hash.startsWith(INVITE_PREFIX)) {
     const rest = hash.slice(INVITE_PREFIX.length).split('/');
     return rest.length === 1 && rest[0] !== '' ? joinRoute(rest) : START;
@@ -648,6 +656,8 @@ function topHref(route: Exclude<Route, GroupRoute | CoalitionRoute>): string {
       return `${SHARE_PREFIX}${route.payload}`;
     case 'door':
       return `${DOOR_PREFIX}${route.payload}`;
+    case 'vote':
+      return `${VOTE_PREFIX}${route.payload}`;
     default:
       return TOP_HREFS[route.name];
   }

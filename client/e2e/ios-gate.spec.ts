@@ -6,7 +6,8 @@
  * Copy button; none shows Create group, Join, Bring or the pilot notice, and
  * IndexedDB holds no records. An invite link still shows its preview, and a
  * card's link is held to copy into the installed app (#280); each leaves the
- * address bar.
+ * address bar. A vote link (#472) is held to copy too, and stays in the
+ * address bar, since its token holds no secret.
  */
 import { type Page } from '@playwright/test';
 
@@ -147,6 +148,24 @@ for (const [name, userAgent] of Object.entries(IPHONES)) {
       await expectAccessible({ name, page: carded }, 'install guide with a card');
       await expectNothingMade(carded);
       await carded.close();
+    });
+
+    await test.step('a vote link, opened in a new page, is held to copy, and stays in the address bar (#472)', async () => {
+      const voted = await page.context().newPage();
+      // The guide reads no token: any 22 base64url characters stand in for one.
+      const voteLink = new URL(`/#vote/${'k9V2'.repeat(5)}xY`, page.url()).href;
+      await voted.goto(voteLink);
+      await expect(heading(voted, 'Add Reconcile to your Home Screen')).toBeVisible();
+      const held = voted.getByRole('region', { name: 'A vote' });
+      await expect(held.getByRole('textbox', { name: 'Your vote link' })).toHaveValue(voteLink);
+      await expect(held.getByRole('button', { name: 'Copy vote link' })).toBeVisible();
+      await expect(voted.getByRole('listitem').last()).toHaveText(
+        'Open Reconcile from your Home Screen, then paste this link into the bar at the top.',
+      );
+      expect(voted.url()).toBe(voteLink);
+      await expectAccessible({ name, page: voted }, 'install guide with a vote link');
+      await expectNothingMade(voted);
+      await voted.close();
     });
   });
 }

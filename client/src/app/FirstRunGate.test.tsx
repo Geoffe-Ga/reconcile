@@ -379,6 +379,32 @@ describe('FirstRunGate with a front door’s link (#121)', () => {
   });
 });
 
+describe('FirstRunGate with a vote link (#472)', () => {
+  const vote = `#vote/${'k9V2'.repeat(5)}xY`;
+
+  it('goes as a plain visit elsewhere, the landing page then the notice, leaving the link in place for the app', async () => {
+    const { user, opened } = setup({ hash: vote });
+    expect(landingHeading()).toBeVisible();
+    expect(window.location.hash).toBe(vote);
+    await startFromLanding(user);
+    await user.click(screen.getByRole('button', { name: 'I understand' }));
+    expect(appHeading()).toBeVisible();
+    // The app opens at the link, which then says whether the vote is on this device.
+    expect(window.location.hash).toBe(vote);
+    expect(opened.at(-1)?.heldSeed).toBeNull();
+  });
+
+  it('shows an iPhone outside the installed app the guide holding the link to copy, leaving it in place', () => {
+    setup({ platform: IPHONE_TAB, hash: vote });
+    expect(guideHeading()).toBeVisible();
+    expect(screen.getByRole('textbox', { name: 'Your vote link' })).toHaveValue(
+      `${ORIGIN}/${vote}`,
+    );
+    expect(window.location.hash).toBe(vote);
+    expect(appHeading()).toBeNull();
+  });
+});
+
 /**
  * A reconcile card's and a follow link's own forms (#114, #124), each holding
  * a seed as an invite does: what an iPhone in Safari lost at the install gate (#280).

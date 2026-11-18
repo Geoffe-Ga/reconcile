@@ -224,31 +224,34 @@ describe('shareableTitle and chatDetails', () => {
   });
 });
 
-describe('botNotice: what the chat bot posts (#119, #123)', () => {
+describe('botNotice: what the chat bot posts (#119, #123, #472)', () => {
   const notice = botNotice('https://app.example', 'UTC');
+  /** A vote link's token: 22 base64url characters, as the bot's device derives it. */
+  const TOKEN = `${'k9V2'.repeat(5)}xY`;
+  const LINK = `https://app.example/#vote/${TOKEN}`;
 
-  it('is the moment’s line with no title, then the app’s address on a line of its own', () => {
-    expect(notice('open', FRI_14, false)).toBe(
-      'A new Proposal is open in Reconcile. Voting ends Fri 14 Nov.\nhttps://app.example/',
+  it('is the moment’s line with no title, then the vote’s link on a line of its own', () => {
+    expect(notice('open', FRI_14, false, TOKEN)).toBe(
+      `A new Proposal is open in Reconcile. Voting ends Fri 14 Nov.\n${LINK}`,
     );
-    expect(notice('closing', FRI_14, false)).toBe(
-      'A vote closes within a day in Reconcile.\nhttps://app.example/',
+    expect(notice('closing', FRI_14, false, TOKEN)).toBe(
+      `A vote closes within a day in Reconcile.\n${LINK}`,
     );
-    expect(notice('result', FRI_14, false)).toBe(
-      'A vote has finished in Reconcile.\nhttps://app.example/',
+    expect(notice('result', FRI_14, false, TOKEN)).toBe(
+      `A vote has finished in Reconcile.\n${LINK}`,
     );
   });
 
-  it('says the argument has concluded for the result inside a Proposal’s thread, and nothing else changes there', () => {
-    expect(notice('result', FRI_14, true)).toBe(
-      'The argument has concluded. A vote has finished in Reconcile.\nhttps://app.example/',
+  it('says the argument has concluded for the result inside a Proposal’s thread, with the vote’s link too', () => {
+    expect(notice('result', FRI_14, true, TOKEN)).toBe(
+      `The argument has concluded. A vote has finished in Reconcile.\n${LINK}`,
     );
-    expect(notice('open', FRI_14, true)).toBe(notice('open', FRI_14, false));
-    expect(notice('closing', FRI_14, true)).toBe(notice('closing', FRI_14, false));
+    expect(notice('open', FRI_14, true, TOKEN)).toBe(notice('open', FRI_14, false, TOKEN));
+    expect(notice('closing', FRI_14, true, TOKEN)).toBe(notice('closing', FRI_14, false, TOKEN));
   });
 
-  it('is made from the moment, the deadline and whether it is in a thread alone, so nothing else of a Proposal can reach it', () => {
-    expect(notice).toHaveLength(3);
+  it('is made from the moment, the deadline, whether it is in a thread and the token alone, so nothing else of a Proposal can reach it', () => {
+    expect(notice).toHaveLength(4);
   });
 });
 

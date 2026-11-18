@@ -305,3 +305,31 @@ describe.each(SEED_LINKS)('InstallGuide with a $kind link (#280)', (held) => {
     expect(await axeViolations()).toEqual([]);
   });
 });
+
+describe('InstallGuide with a vote link (#472)', () => {
+  const TOKEN = `${'k9V2'.repeat(5)}xY`;
+
+  it('holds the link to copy, and says to open Reconcile from the Home Screen and paste it', async () => {
+    const { user, copyText, lookup, readDoor } = setup({
+      arrival: { kind: 'vote', payload: TOKEN },
+    });
+    const section = screen.getByRole('region', { name: 'A vote' });
+    const field = within(section).getByRole('textbox', { name: 'Your vote link' });
+    expect(field).toHaveValue(`${ORIGIN}/#vote/${TOKEN}`);
+    const steps = within(screen.getByRole('list')).getAllByRole('listitem');
+    expect(steps.at(-1)).toHaveTextContent(
+      'Open Reconcile from your Home Screen, then paste this link into the bar at the top.',
+    );
+    await user.click(within(section).getByRole('button', { name: 'Copy vote link' }));
+    expect(copyText).toHaveBeenCalledWith(`${ORIGIN}/#vote/${TOKEN}`);
+    expect(lookup).not.toHaveBeenCalled();
+    expect(readDoor).not.toHaveBeenCalled();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('holds nothing for a token that doesn’t read, and offers the app’s address', () => {
+    setup({ arrival: { kind: 'vote', payload: 'cut' } });
+    expect(screen.queryByRole('textbox', { name: 'Your vote link' })).toBeNull();
+    expect(screen.getByRole('textbox', { name: 'Reconcile’s address' })).toBeVisible();
+  });
+});

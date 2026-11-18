@@ -64,6 +64,7 @@ export const messages = {
       follow: 'A coalition to follow',
       door: 'A front door',
       shared: 'A shared Document',
+      vote: 'A vote',
     },
     damaged: 'This link is damaged or cut off. Copy all of it and paste it again.',
     notALink: 'That isn’t a Reconcile link.',
@@ -168,6 +169,7 @@ export const messages = {
       card: 'Open Reconcile from your Home Screen and paste your card link into the bar at the top.',
       follow:
         'Open Reconcile from your Home Screen and paste your follow link into the bar at the top.',
+      vote: 'Open Reconcile from your Home Screen, then paste this link into the bar at the top.',
     },
     why: 'Safari can clear a website’s data after a week without a visit, so on iPhone and iPad Reconcile runs from your Home Screen.',
     /**
@@ -183,6 +185,7 @@ export const messages = {
         label: 'Your follow link',
         copy: 'Copy follow link',
       },
+      vote: { heading: 'A vote', label: 'Your vote link', copy: 'Copy vote link' },
     },
     /** Under every held link's field. */
     heldHint: 'Copy it now, then paste it into Reconcile once it’s on your Home Screen.',
@@ -782,7 +785,7 @@ export const messages = {
   tell: {
     action: 'Tell your group',
     /** Over the message Tell your group shares, which shows beneath it as it will read. */
-    hint: 'Shares this message and Reconcile’s address:',
+    hint: 'Shares this message and a link to this vote:',
     /** Adds the Proposal's title to the message, for one share; it starts unticked every time. */
     includeTitle: 'Include the title',
     shared: 'Shared.',
@@ -1305,6 +1308,22 @@ export const messages = {
    * a sentence, the words around it are kept apart, so the screen sets the
    * name in `<bdi>`.
    */
+  /**
+   * A vote link (#472, ADR-0079): the screen `#vote/{token}` opens, which
+   * shows only while it looks, or when the vote isn't on this device. Its
+   * words never name a group, and never vary with the token.
+   */
+  vote: {
+    pageTitle: 'A vote',
+    title: 'A vote',
+    looking: 'Looking for this vote on this device…',
+    missing:
+      'This vote isn’t on this device. It opens only on a device that’s in the vote’s group.',
+    /** Copy link to this vote, on a Proposal's page and on its result. */
+    copyLabel: 'Link to this vote',
+    copyHint: 'Only people in this group can open this link.',
+    copy: 'Copy link to this vote',
+  },
   door: {
     /** The tab's title on every state: never the group's own name, which browser history would keep. */
     pageTitle: 'Front door',

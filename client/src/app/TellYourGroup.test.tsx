@@ -41,7 +41,7 @@ describe('TellYourGroup', () => {
       const { user, onTell } = setup({ moment });
       const line = chatMessage(moment, { deadline: DEADLINE });
 
-      expect(screen.getByText('Shares this message and Reconcile’s address:')).toBeVisible();
+      expect(screen.getByText('Shares this message and a link to this vote:')).toBeVisible();
       expect(screen.getByText(line)).toBeVisible();
       expect(tell()).toHaveAccessibleDescription(line);
       expect(includeTitle()).not.toBeChecked();
@@ -130,5 +130,24 @@ describe('TellYourGroup', () => {
     expect(includeTitle()).not.toBeChecked();
     expect(screen.getByText(chatMessage('open', { deadline: DEADLINE }))).toBeVisible();
     expect(onTell).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers Copy link to this vote beside it, saying only the group can open it (#472)', async () => {
+    const link = `https://reconcile.test/#vote/${'k9V2'.repeat(5)}xY`;
+    const copyText = vi.fn(() => Promise.resolve());
+    const { user } = setup({ voteLink: { link, copyText } });
+
+    expect(screen.getByRole('textbox', { name: 'Link to this vote' })).toHaveValue(link);
+    expect(screen.getByText('Only people in this group can open this link.')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Copy link to this vote' }));
+
+    expect(copyText).toHaveBeenCalledExactlyOnceWith(link);
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('offers no Copy link without a vote link', () => {
+    setup();
+
+    expect(screen.queryByRole('button', { name: 'Copy link to this vote' })).toBeNull();
   });
 });

@@ -23,3 +23,7 @@ These never pass through a bot, at any step: rosters, vouches, sensitive Documen
 
 - Phase 3 for steps 2–4. Step 1 can ship alongside link-any-chat (ADR-0011).
 - Step 4 needs a per-Document `sensitivity` flag. Ballots cast in-platform are bridged into the group log by the bot, signed with a bot key the group approved.
+
+## Amendment (2026-11-17)
+
+A step 1 notice ends with a vote link to its Proposal instead of the app's bare address ([ADR-0079](0079-vote-links.md)). The link carries a token keyed by the group's secret, so the platform still learns only that the group uses Reconcile. The table stands.

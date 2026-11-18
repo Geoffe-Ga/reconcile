@@ -14,6 +14,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { weekOf } from '../crypto/groupKeys';
 import { xchachaSeal } from '../crypto/seal';
+import { voteToken } from '../crypto/voteLink';
 import { type EventBodies, type EventType, signEvent } from '../engine/event';
 import { fold } from '../engine/fold';
 import { getWebhook, postWebhook } from '../net/discord';
@@ -37,15 +38,25 @@ const START = 29_375_000;
 /** When the Proposal under test opens, so its deadline is Fri 14 Nov 2025, 12:00 UTC. */
 const PROPOSED = 29_375_280;
 const DEADLINE = PROPOSED + 7 * DAY;
-const ORIGIN = 'https://reconcile.test/';
+const ORIGIN = 'https://reconcile.test';
 /** A canary in every field of the Proposal under test. */
 const CANARY = { title: 'CANARY-title', why: 'CANARY-why', text: 'CANARY-atom' };
 
-const NOTICES = {
-  open: `A new Proposal is open in Reconcile. Voting ends Fri 14 Nov.\n${ORIGIN}`,
-  closing: `A vote closes within a day in Reconcile.\n${ORIGIN}`,
-  result: `A vote has finished in Reconcile.\n${ORIGIN}`,
-};
+/** What the bot posts for each moment of a Proposal whose vote link is `link` (#472). */
+function notices(link: string) {
+  return {
+    open: `A new Proposal is open in Reconcile. Voting ends Fri 14 Nov.\n${link}`,
+    closing: `A vote closes within a day in Reconcile.\n${link}`,
+    result: `A vote has finished in Reconcile.\n${link}`,
+  };
+}
+
+/** The vote link of `proposal` in `groupId`, from the group's secret on `device` (#472, ADR-0079). */
+async function linkOf(device: TestDevice, groupId: string, proposal: string): Promise<string> {
+  const kept = await device.services.store.getGroup(groupId);
+  if (kept === undefined) throw new Error('Expected the group on this device.');
+  return `${ORIGIN}/#vote/${voteToken(kept.secret, proposal)}`;
+}
 
 const opened: TestDevice[] = [];
 
@@ -177,14 +188,16 @@ async function sameKeyDevice(fake: FakeRelay, device: TestDevice, groupId: strin
 }
 
 describe('the chat bot, with the bot on', () => {
-  it('posts the result of the vote that turned it on, once, as the fixed line and the app’s address', async () => {
+  it('posts the result of the vote that turned it on, once, as the fixed line and the vote’s link', async () => {
     const fake = createFakeRelay({ minute: START });
     const { groupId, devices } = await group(fake);
 
-    await turnBotOn(devices, groupId);
+    const on = await turnBotOn(devices, groupId);
     await syncRounds(devices);
+    const [ana] = devices;
+    if (ana === undefined) throw new Error('Expected Ana’s device.');
 
-    expect(bodies(fake)).toEqual([posted(NOTICES.result)]);
+    expect(bodies(fake)).toEqual([posted(notices(await linkOf(ana, groupId, on)).result)]);
     expect(delivered(fake.discord).map((request) => request.url)).toEqual([WEBHOOK]);
   });
 
@@ -201,8 +214,9 @@ describe('the chat bot, with the bot on', () => {
     await syncRounds(devices);
     fake.discord.requests.length = 0;
 
-    await proposeCanary(fake, ana, groupId);
+    const canary = await proposeCanary(fake, ana, groupId);
     await syncRounds(devices);
+    const NOTICES = notices(await linkOf(ana, groupId, canary));
     expect(bodies(fake)).toEqual([posted(NOTICES.open)]);
 
     fake.minute = DEADLINE - DAY - 1;
@@ -232,6 +246,9 @@ describe('the chat bot, with the bot on', () => {
       expect(everything).not.toContain(canary);
     }
     for (const section of FOUNDING.text.split('\n\n')) expect(everything).not.toContain(section);
+    // The vote link names neither the group nor the Proposal (#472).
+    expect(everything).not.toContain(groupId);
+    expect(everything).not.toContain(canary);
     const paths = fake.discord.requests.map((request) => request.url.split('?')[0]);
     expect(paths.every((path) => path === WEBHOOK)).toBe(true);
     expect(relayLeaks(fake)).toEqual([]);
@@ -251,10 +268,11 @@ describe('the chat bot, with the bot on', () => {
     fake.discord.requests.length = 0;
 
     fake.minute = PROPOSED;
-    await say(ben, groupId, {
+    const bins = await say(ben, groupId, {
       type: 'proposal',
       body: { atom: `${groupId}.1`, title: 'Bins', why: 'Smell.', text: 'Bins out on Monday.' },
     });
+    const NOTICES = notices(await linkOf(ben, groupId, bins));
     await ben.services.sync.syncOnce();
     for (const minute of [PROPOSED, DEADLINE - DAY, DEADLINE]) {
       fake.minute = minute;
@@ -272,22 +290,26 @@ describe('the chat bot, with the bot on', () => {
     const fake = createFakeRelay({ minute: START });
     const { groupId, devices } = await group(fake);
     fake.discord.status = 500;
-    await turnBotOn(devices, groupId);
+    const on = await turnBotOn(devices, groupId);
     await syncRounds(devices);
     fake.minute += 60;
     await syncRounds(devices);
-    // A 500 isn't a text channel's refusal of a thread, so nothing goes again.
-    const result = posted(NOTICES.result, 'Proposal 1 in Reconcile');
-    expect(attempts(fake)).toEqual([result]);
-
     const [ana] = devices;
     if (ana === undefined) throw new Error('Expected Ana’s device.');
+    // A 500 isn't a text channel's refusal of a thread, so nothing goes again.
+    const result = posted(
+      notices(await linkOf(ana, groupId, on)).result,
+      'Proposal 1 in Reconcile',
+    );
+    expect(attempts(fake)).toEqual([result]);
+
     fake.discord.offline = true;
-    await proposeCanary(fake, ana, groupId);
+    const canary = await proposeCanary(fake, ana, groupId);
     await syncRounds(devices);
     fake.minute += 60;
     await syncRounds(devices);
-    expect(attempts(fake)).toEqual([result, posted(NOTICES.open, 'Proposal 2 in Reconcile')]);
+    const open = notices(await linkOf(ana, groupId, canary)).open;
+    expect(attempts(fake)).toEqual([result, posted(open, 'Proposal 2 in Reconcile')]);
     expect(await Promise.all(devices.map((device) => device.services.sync.syncOnce()))).toEqual([
       true,
       true,
@@ -535,10 +557,10 @@ describe('createChatBot over one store', () => {
     if (ana === undefined || ben === undefined) throw new Error('Expected two devices.');
     await turnBotOn(devices, groupId);
     await syncRounds(devices);
-    await proposeCanary(fake, ana, groupId);
+    const canary = await proposeCanary(fake, ana, groupId);
     await ana.services.sync.syncOnce();
     await syncRounds([ben], 2);
-    expect(bodies(fake).at(-1)).toEqual(posted(NOTICES.open));
+    expect(bodies(fake).at(-1)).toEqual(posted(notices(await linkOf(ana, groupId, canary)).open));
     fake.discord.requests.length = 0;
     // Ana's other tab reads the relay while her claim still waits in the outbox.
     await pullOnly(ana, groupId);

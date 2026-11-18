@@ -16,7 +16,7 @@ import { ChoiceList, OptionList } from '../app/Options';
 import { routeHref } from '../app/router';
 import { SendStatus } from '../app/SendStatus';
 import type { ShareOutcome } from '../app/share';
-import { TellYourGroup } from '../app/TellYourGroup';
+import { TellYourGroup, type VoteLinkPort } from '../app/TellYourGroup';
 import { AtomText } from '../app/text/AtomText';
 import { WordDiff } from '../app/text/WordDiff';
 import { BackLink, PageHeader } from '../app/ui';
@@ -105,6 +105,8 @@ export interface ProposalViewProps {
   readonly onProposeAgain: () => void;
   /** Shares `moment`'s ready-made message into the group's chat, or copies it (#77, #113). */
   readonly onTell: (moment: ChatMoment, details: ChatDetails) => Promise<ShareOutcome>;
+  /** The vote's link, for Copy link to this vote beside Tell your group (#472). */
+  readonly voteLink?: VoteLinkPort;
   /** Whether this device's leave waits for the relay (#77): then it takes no ballot or version. */
   readonly leaving?: boolean;
   /** Whether this copy came back from a backup and hasn't heard from its group (#231): the same. */
@@ -472,7 +474,15 @@ function isOpenToVersions(props: ProposalViewProps, proposal: Proposal): boolean
 function Tell({ props, proposal }: { props: ProposalViewProps; proposal: Proposal }) {
   if (!isOpen(props, proposal) || readsOnly(props)) return null;
   const moment = openMoment(proposal, props.me, props.now);
-  return <TellYourGroup key={moment} moment={moment} proposal={proposal} onTell={props.onTell} />;
+  return (
+    <TellYourGroup
+      key={moment}
+      moment={moment}
+      proposal={proposal}
+      onTell={props.onTell}
+      {...(props.voteLink === undefined ? {} : { voteLink: props.voteLink })}
+    />
+  );
 }
 
 /** "Add your version", which opens the composer for this section, or why there's no room. */
@@ -1045,6 +1055,7 @@ function Folded({ props, proposal }: { props: ProposalViewProps; proposal: Propo
           own={props.own}
           onProposeAgain={props.onProposeAgain}
           onTell={props.onTell}
+          {...(props.voteLink === undefined ? {} : { voteLink: props.voteLink })}
           leaving={readOnly}
           names={names}
           {...clearedOf(props, proposal)}
