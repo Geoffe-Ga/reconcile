@@ -20,6 +20,13 @@
  * in it, so every application the form lets through fits one blob. The
  * applicant's device keeps no copy: what it sent is still its own Document.
  *
+ * A door the public shelf lists takes none while it's newly listed or held
+ * (#432; listed-doors.md §5.3, ADR-0081): a fake door keeps whatever it's
+ * sent. {@link apply} asks the shelf itself ({@link takesDocuments}) and
+ * sends nothing when Documents come for such a door, or when the shelf
+ * can't be read, so the rule holds whatever the form shows. A door the shelf
+ * doesn't list, reached by a hand-given link, is unchanged.
+ *
  * A member answers with an invite link sealed to the reply key, in the reply
  * mailbox the seed derives. For {@link SENT_DAYS} days, every sync reads each
  * pending application's reply mailbox ({@link checkReplies}); a reply that
@@ -43,6 +50,8 @@ import {
 } from '../crypto/door';
 import { codePointLength } from '../engine/text';
 import type { Relay } from '../net/relay';
+import { doorListing, newlyListed } from '../shelf/fold';
+import type { ShelfReader } from '../shelf/read';
 import {
   type ApplicationDocument,
   SENT_DAYS,
@@ -95,6 +104,8 @@ export interface ApplyServices {
   readonly store: Pick<SentStore, 'addSent'>;
   /** The device clock in milliseconds: when it was sent. */
   readonly now: () => number;
+  /** The public shelf, which says whether the door is newly listed (#432); none while there is none. */
+  readonly shelf?: Pick<ShelfReader, 'current'> | undefined;
 }
 
 /** What reading replies reaches. */
@@ -256,12 +267,40 @@ export function documentCopies(documents: readonly ApplicationDocument[]): Appli
 }
 
 /**
+ * Whether the door at `address` may be sent personal Documents (§5.3): yes
+ * unless the shelf lists it and it's held or was first listed under 43,200
+ * relay minutes ago, by the relay's minute at the shelf's last read. With
+ * no shelf, or while the relay has none, every door is unlisted. Rejects
+ * when the shelf can't be read.
+ */
+export async function takesDocuments(
+  shelf: Pick<ShelfReader, 'current'> | undefined,
+  address: string,
+): Promise<boolean> {
+  const read = await shelf?.current();
+  if (read === undefined || read === null) return true;
+  return !newlyListed(doorListing(read.records, address, read.since), read.now);
+}
+
+/** Whether `documents` may go to the door at `address`: none always may; else as the shelf says. */
+async function documentsMayGo(
+  services: ApplyServices,
+  address: Uint8Array,
+  documents: readonly ApplicationDocument[],
+): Promise<boolean> {
+  if (documents.length === 0) return true;
+  return takesDocuments(services.shelf, base64url(address)).catch(() => false);
+}
+
+/**
  * Send: seals the application to `page`'s box key, padded, PUTs it to the
  * door's inbox for 30 days, and only once the relay has it keeps the reply
  * seed and key on this device. Offline, nothing is kept. The name and message
  * are trimmed and NFC-normalized first, and each chosen Document's title and
  * text is NFC-normalized ({@link documentCopies}, #425); a choice the form
- * would refuse ({@link documentsProblem}) sends nothing.
+ * would refuse ({@link documentsProblem}) sends nothing, and so do any
+ * Documents for a door the shelf says is newly listed or held, or when the
+ * shelf can't be read ({@link takesDocuments}, #432).
  */
 export async function apply(
   services: ApplyServices,
@@ -271,6 +310,7 @@ export async function apply(
 ): Promise<'sent' | 'failed'> {
   const documents = documentCopies(values.documents ?? []);
   if (documentsProblem(documents) !== null) return 'failed';
+  if (!(await documentsMayGo(services, address, documents))) return 'failed';
   const seed = newReplySeed();
   const replyKey = newKxKey();
   const application = {

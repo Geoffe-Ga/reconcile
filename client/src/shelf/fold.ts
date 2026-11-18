@@ -353,3 +353,60 @@ export function nameHolder(
   );
   return held ?? null;
 }
+
+/**
+ * Relay minutes a door counts as newly listed (§5.3, #432): 30 relay days.
+ * Until then, and while it's held, its application form takes no personal
+ * Documents (ADR-0081's one preventive rule).
+ */
+export const NEW_LISTING_MINUTES = 43_200;
+
+/** What the shelf says of one door's listing, for its application form (§5.3). */
+export interface DoorListing {
+  /**
+   * The earliest relay minute this device read at the address, or the
+   * standing copy's receipt if earlier. Every record at an address arrives
+   * after its first listing (an entry needs a live one, and the relay
+   * renews a listing in place, stamping it anew), so this is never earlier
+   * than the true first listing: a device that read late sees the door as
+   * newer than it is, never older.
+   */
+  readonly listedSince: number;
+  /**
+   * Whether a steward's hold stands on it. No notice is folded until the
+   * moderation issues (#488, #489), so none does yet.
+   */
+  readonly held: boolean;
+}
+
+/**
+ * The listing of the door at `address` among `records`, or null while it has
+ * none: its newest open listing that verifies (rules 1 to 3), unless a final
+ * one ended it. A listing shadowed by a look-alike name still counts, so a
+ * shadowed door is held to the same rule.
+ */
+export function doorListing(
+  records: readonly ShelfRecord[],
+  address: string,
+  since?: ReadonlyMap<string, number>,
+): DoorListing | null {
+  const valid = records
+    .filter((record) => record.address === address)
+    .sort((a, b) => a.seq - b.seq)
+    .map(verified)
+    .filter((item) => item !== null);
+  const claim = standingClaims(valid).get(address);
+  if (claim === undefined) return null;
+  const listedSince = Math.min(claim.listing.received, since?.get(address) ?? Infinity);
+  return { listedSince, held: false };
+}
+
+/**
+ * Whether a door's form must offer no personal Documents at relay minute
+ * `now` (§5.3): it is listed, and either held or listed under
+ * {@link NEW_LISTING_MINUTES} ago. An unlisted door (null) is unchanged.
+ */
+export function newlyListed(listing: DoorListing | null, now: number): boolean {
+  if (listing === null) return false;
+  return listing.held || now - listing.listedSince < NEW_LISTING_MINUTES;
+}

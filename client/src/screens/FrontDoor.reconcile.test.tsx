@@ -67,6 +67,7 @@ async function setup(
       asked={() => false}
       onApply={() => Promise.resolve('sent')}
       documents={[]}
+      takesDocuments={() => Promise.resolve(true)}
       cardGroups={groups}
       onMakeCard={onMakeCard}
     />,

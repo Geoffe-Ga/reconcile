@@ -49,6 +49,8 @@ interface Options {
   readonly asked?: boolean;
   readonly outcome?: 'sent' | 'failed' | Promise<'sent' | 'failed'>;
   readonly offline?: boolean;
+  /** What the shelf says of the door (#432): it takes Documents, it's newly listed, or it can't be read. */
+  readonly takes?: boolean | 'unreadable';
 }
 
 /** The screen over a fake relay holding `page` as the door's only copy. */
@@ -64,6 +66,10 @@ async function setup(options: Options = {}) {
     () => Promise.resolve(options.outcome ?? 'sent'),
   );
   const asked = vi.fn(() => options.asked ?? false);
+  const takes = options.takes ?? true;
+  const takesDocuments = vi.fn<(address: string) => Promise<boolean>>(() =>
+    takes === 'unreadable' ? Promise.reject(new Error('offline')) : Promise.resolve(takes),
+  );
   render(
     <FrontDoor
       payload={options.payload ?? PAYLOAD}
@@ -71,11 +77,12 @@ async function setup(options: Options = {}) {
       asked={asked}
       onApply={onApply}
       documents={options.documents ?? []}
+      takesDocuments={takesDocuments}
       cardGroups={[]}
       onMakeCard={() => Promise.reject(new Error('Not on this device.'))}
     />,
   );
-  return { user: userEvent.setup(), onApply, asked, fake };
+  return { user: userEvent.setup(), onApply, asked, fake, takesDocuments };
 }
 
 /** Types `text` into the field labelled `label`. */
@@ -301,6 +308,53 @@ describe('FrontDoor: sending personal Documents with it (#425)', () => {
     await user.click(screen.getByRole('button', { name: door.send }));
     expect(onApply).not.toHaveBeenCalled();
     expect(document.querySelectorAll('.form-error')).toHaveLength(1);
+  });
+});
+
+describe('FrontDoor: a newly listed or held door takes no Documents (#432, listed-doors.md §5.3)', () => {
+  it('offers no Documents and says why, asks the shelf about this door, and passes axe', async () => {
+    const { takesDocuments } = await setup({ documents: [STATEMENT, BIKES], takes: false });
+    await screen.findByRole('heading', { level: 1, name: 'Riverside Tenants' });
+    expect(screen.queryByRole('group', { name: door.documentsLabel })).toBeNull();
+    expect(screen.queryByRole('checkbox')).toBeNull();
+    expect(screen.getByText(door.newlyListed)).toBeVisible();
+    expect(door.newlyListed).toBe('This group is newly listed, so you can’t attach Documents yet.');
+    expect(takesDocuments).toHaveBeenCalledWith(PAYLOAD);
+    // Under the message, above the caution, where the picker would be.
+    const message = screen.getByRole('textbox', { name: door.messageLabel });
+    const line = screen.getByText(door.newlyListed);
+    expect(message.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('sends the name and why alone', async () => {
+    const { user, onApply } = await setup({ documents: [STATEMENT], takes: false });
+    await screen.findByRole('heading', { level: 1, name: 'Riverside Tenants' });
+    await type(user, door.nameLabel, 'Kim');
+    await type(user, door.messageLabel, 'Hello.');
+    await user.click(screen.getByRole('button', { name: door.send }));
+    const [[, , values]] = onApply.mock.calls as [[Uint8Array, OpenPage, ApplyValues]];
+    expect(values).toEqual({ name: 'Kim', message: 'Hello.' });
+  });
+
+  it('treats a shelf it can’t read as a newly listed door', async () => {
+    await setup({ documents: [STATEMENT], takes: 'unreadable' });
+    await screen.findByRole('heading', { level: 1, name: 'Riverside Tenants' });
+    expect(screen.queryByRole('checkbox')).toBeNull();
+    expect(screen.getByText(door.newlyListed)).toBeVisible();
+  });
+
+  it('says nothing of it to someone with no personal Documents', async () => {
+    await setup({ documents: [], takes: false });
+    await screen.findByRole('heading', { level: 1, name: 'Riverside Tenants' });
+    expect(screen.queryByText(door.newlyListed)).toBeNull();
+  });
+
+  it('offers them, with no such line, at a door that takes them, and passes axe', async () => {
+    await setup({ documents: [STATEMENT], takes: true });
+    expect(await screen.findByRole('group', { name: door.documentsLabel })).toBeVisible();
+    expect(screen.queryByText(door.newlyListed)).toBeNull();
+    expect(await axeViolations()).toEqual([]);
   });
 });
 

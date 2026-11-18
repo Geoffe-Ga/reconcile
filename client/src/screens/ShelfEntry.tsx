@@ -9,6 +9,12 @@
  * shelf doesn't show the entry (it came down, its 30 days ended, or the relay
  * has no shelf) one line says so instead. Nothing records which entry was
  * opened.
+ *
+ * Under the entry, Ask to join opens the listing's front door (#432), and
+ * Propose reconciling opens it too on a device with a group that may propose
+ * reconciling with it (#426's rule), where the door's own button starts the
+ * card. A door the shelf says is newly listed or held takes no personal
+ * Documents there (§5.3).
  */
 import { Link } from 'react-aria-components';
 
@@ -30,10 +36,33 @@ export interface ShelfEntryProps {
   readonly copyText: (text: string) => Promise<void>;
   /** Where Share sends the link; without one, Copy stands alone. */
   readonly sharing?: SharePort | undefined;
+  /** Whether this device has a group that may propose reconciling with the listing's group (#426). */
+  readonly mayReconcile: boolean;
 }
 
-/** The entry and its link with Copy and Share, or the line that it isn't on the shelf. */
-export function ShelfEntry({ entry, link, copyText, sharing }: ShelfEntryProps) {
+/** Ask to join, and Propose reconciling where `mayReconcile`: each opens the door at `address`. */
+function DoorActions({ address, mayReconcile }: { address: string; mayReconcile: boolean }) {
+  const words = messages.shelfEntry;
+  const href = routeHref({ name: 'door', payload: address });
+  return (
+    <div className="row">
+      <Link className="button button-secondary" href={href}>
+        {words.askToJoin}
+      </Link>
+      {mayReconcile ? (
+        <Link className="button button-secondary" href={href}>
+          {words.proposeReconciling}
+        </Link>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * The entry, with Ask to join and maybe Propose reconciling, and its link
+ * with Copy and Share; or the line that it isn't on the shelf.
+ */
+export function ShelfEntry({ entry, link, copyText, sharing, mayReconcile }: ShelfEntryProps) {
   const words = messages.shelfEntry;
   return (
     <main className="shell" data-scene="treetops">
@@ -42,7 +71,9 @@ export function ShelfEntry({ entry, link, copyText, sharing }: ShelfEntryProps) 
         <p className="lede">{words.gone}</p>
       ) : (
         <>
-          <ShelfCard entry={entry} level={2} />
+          <ShelfCard entry={entry} level={2}>
+            <DoorActions address={entry.address} mayReconcile={mayReconcile} />
+          </ShelfCard>
           <CopyLink
             link={link}
             label={words.linkLabel}

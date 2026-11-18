@@ -15,7 +15,14 @@ import { sha256 } from '../crypto/hash';
 import { signShelfRecord } from '../crypto/shelf';
 import { newSigningKeys, publicKeyOf, type SigningKeys } from '../crypto/sign';
 import type { ShelfRecord } from '../net/shelf';
-import { foldShelf, nameHolder, type ShelfState } from './fold';
+import {
+  doorListing,
+  foldShelf,
+  nameHolder,
+  NEW_LISTING_MINUTES,
+  newlyListed,
+  type ShelfState,
+} from './fold';
 import { type ShelfBody, signShelfBody } from './record';
 import { nameSkeleton } from './skeleton';
 
@@ -605,6 +612,62 @@ describe('foldShelf', () => {
       const later = new Map([[oak, standing + 5]]);
       expect(foldShelf(records, NOW, { since: later }).entries[0]?.listedSince).toBe(standing);
     });
+  });
+
+  describe('a door’s listing, for its application form (§5.3, #432)', () => {
+    const oak = base64url(OAK.publicKey);
+
+    it('is null for an address with no standing listing: an unlisted door', () => {
+      expect(doorListing([], oak)).toBeNull();
+      expect(doorListing([listing('Birch Ave', BIRCH)], oak)).toBeNull();
+    });
+
+    it('is null once the door’s listing is final', () => {
+      expect(doorListing([listing('Oak St Tenants'), final()], oak)).toBeNull();
+    });
+
+    it('ignores a listing its address didn’t sign', () => {
+      const forged = recordOf(
+        BIRCH,
+        { v: 1, kind: 'listing', open: true, name: 'Oak', skeleton: 'oak', covenant: COVENANT },
+        oak,
+      );
+      expect(doorListing([forged], oak)).toBeNull();
+    });
+
+    it('counts a shadowed listing as listed: it stands, though its name is another’s', () => {
+      const records = [listing('Oak St Tenants', BIRCH), listing('Oak St Tenants')];
+      expect(foldShelf(records, NOW).listings.map((l) => l.address)).not.toContain(oak);
+      expect(doorListing(records, oak)).not.toBeNull();
+    });
+
+    it('is listed since the earliest receipt this device read there, or the standing copy’s', () => {
+      const records = [listing('Oak St Tenants')];
+      const standing = records[0]?.received ?? 0;
+
+      expect(doorListing(records, oak)).toEqual({ listedSince: standing, held: false });
+      const since = new Map([[oak, standing - 50_000]]);
+      expect(doorListing(records, oak, since)?.listedSince).toBe(standing - 50_000);
+      const later = new Map([[oak, standing + 5]]);
+      expect(doorListing(records, oak, later)?.listedSince).toBe(standing);
+    });
+
+    it('is new for 43,200 relay minutes: new at 43,199, no longer at 43,200', () => {
+      expect(NEW_LISTING_MINUTES).toBe(43_200);
+      const listed = { listedSince: NOW, held: false };
+      expect(newlyListed(listed, NOW)).toBe(true);
+      expect(newlyListed(listed, NOW + 43_199)).toBe(true);
+      expect(newlyListed(listed, NOW + 43_200)).toBe(false);
+    });
+
+    it('is new while held, however old, and never for an unlisted door', () => {
+      expect(newlyListed({ listedSince: 0, held: true }, NOW)).toBe(true);
+      expect(newlyListed(null, NOW)).toBe(false);
+    });
+
+    it.todo(
+      'is held while a hold notice stands on its address (#488, #489: holds aren’t folded yet)',
+    );
   });
 
   describe('vectors/entries.json', () => {
