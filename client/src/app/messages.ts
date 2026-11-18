@@ -140,6 +140,28 @@ export const messages = {
     shelfHeading: 'On the public shelf',
     shelfLede:
       'Groups that chose to be listed publish these by vote. Anyone with the app can read them.',
+    /** Under an entry (#431): since when its group has been listed, by month. */
+    listedSince: (month: string) => `Listed since ${month}`,
+    /** On an entry its own group sees before the relay day's wait ends (#431). */
+    showsTomorrow: 'Shows publicly tomorrow',
+    /** Under an entry: its own page, with Share and Copy for its link (#431). */
+    passAlong: 'Share or copy its link',
+  },
+  /** One shelf entry's own page (#431; listed-doors.md §5.2): the link Share and Copy pass along. */
+  shelfEntry: {
+    pageTitle: 'On the public shelf',
+    linkLabel: 'Link to this entry',
+    linkHint: 'Anyone with the app can open it and read it, without joining anything.',
+    copy: 'Copy link',
+    gone: 'This entry isn’t on the public shelf. It may have come down, or its 30 days ended.',
+    toDiscover: 'Go to Discover',
+    /**
+     * On Group home (#431, §4.5): an entry under the group's name that its
+     * log didn't make, which a member's device withdrew.
+     */
+    strayHeading: 'Taken off the public shelf',
+    stray:
+      'Someone posted this under your group’s name without a vote, using your front door’s key. A member’s device took it down.',
   },
   start: {
     pageTitle: 'Your groups',

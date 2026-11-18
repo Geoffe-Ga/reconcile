@@ -2,8 +2,10 @@
  * The shelf's fold (#484, #486, #487; docs/spec/listed-doors.md §4.3): rule
  * 1, the signature; rule 2, the newest listing per address, which a final
  * one outranks; rule 3, the skeleton; and rule 4, name ownership, with its
- * golden vectors in `vectors/ownership.json`. Every other rule is a named
- * `it.todo` in the issue that builds it.
+ * golden vectors in `vectors/ownership.json`; and rules 5 to 7 (#431), an
+ * address's first 4 unexpired entries, the day's wait and withdrawals, with
+ * theirs in `vectors/entries.json`. Every other rule is a named `it.todo` in
+ * the issue that builds it.
  */
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
@@ -47,6 +49,11 @@ function entry(label: string, title: string, keys = OAK): ShelfRecord {
   return recordOf(keys, { v: 1, kind: 'entry', id: idOf(label), title, text: `About ${title}.` });
 }
 
+/** A withdraw of `label`'s id, from the Oak St door unless told otherwise. */
+function withdrawal(label: string, keys = OAK): ShelfRecord {
+  return recordOf(keys, { v: 1, kind: 'withdraw', id: idOf(label) });
+}
+
 /** The final listing of a door that closed. */
 function final(keys = OAK): ShelfRecord {
   return recordOf(keys, { v: 1, kind: 'listing', open: false, final: true });
@@ -63,14 +70,34 @@ interface OwnershipFile {
   }[];
 }
 
-/** A record as a vector writes it: an open listing, an entry's id label, or a final listing. */
+/**
+ * A record as a vector writes it: an open listing, an entry's id label, a
+ * withdraw's, or a final listing, received at `received` (else a day and a
+ * minute before {@link NOW}).
+ */
 interface VectorRecord {
   readonly seq: number;
   readonly door: string;
+  readonly received?: number;
   readonly listing?: string;
   readonly skeleton?: string;
   readonly entry?: string;
+  readonly withdraw?: string;
   readonly final?: true;
+}
+
+/** `vectors/entries.json`: which entries show, under rules 5 to 7 (#431). */
+interface EntriesFile {
+  readonly kind: 'entries';
+  readonly cases: readonly {
+    readonly about: string;
+    readonly now: number;
+    /** The doors whose group this device is in. */
+    readonly own: readonly string[];
+    readonly records: readonly VectorRecord[];
+    /** The door, the entry's label and whether it shows early, newest first. */
+    readonly entries: readonly (readonly [string, string, boolean])[];
+  }[];
 }
 
 const [OWNERSHIP] = Object.values(
@@ -78,30 +105,43 @@ const [OWNERSHIP] = Object.values(
 );
 if (OWNERSHIP === undefined) throw new Error('vectors/ownership.json is missing.');
 
+const [ENTRIES] = Object.values(
+  import.meta.glob<EntriesFile>('./vectors/entries.json', { import: 'default', eager: true }),
+);
+if (ENTRIES === undefined) throw new Error('vectors/entries.json is missing.');
+
 /** A vector door's keys, from its label: the secret is the label's SHA-256. */
 function doorKeys(label: string): SigningKeys {
   const secretKey = sha256(new TextEncoder().encode(`reconcile/vector/ownership/${label}`));
   return { secretKey, publicKey: publicKeyOf(secretKey) };
 }
 
+/** A vector record's body. */
+function bodyFrom(vector: VectorRecord): ShelfBody {
+  if (vector.listing !== undefined) {
+    const skeleton = vector.skeleton ?? nameSkeleton(vector.listing);
+    return {
+      v: 1,
+      kind: 'listing',
+      open: true,
+      name: vector.listing,
+      skeleton,
+      covenant: COVENANT,
+    };
+  }
+  if (vector.entry !== undefined) {
+    return { v: 1, kind: 'entry', id: idOf(vector.entry), title: vector.entry, text: '' };
+  }
+  if (vector.withdraw !== undefined) return { v: 1, kind: 'withdraw', id: idOf(vector.withdraw) };
+  return { v: 1, kind: 'listing', open: false, final: true };
+}
+
 /** A vector's record, signed by its door. */
 function recordFrom(vector: VectorRecord): ShelfRecord {
   const keys = doorKeys(vector.door);
-  const body: ShelfBody =
-    vector.listing !== undefined
-      ? {
-          v: 1,
-          kind: 'listing',
-          open: true,
-          name: vector.listing,
-          skeleton: vector.skeleton ?? nameSkeleton(vector.listing),
-          covenant: COVENANT,
-        }
-      : vector.entry !== undefined
-        ? { v: 1, kind: 'entry', id: idOf(vector.entry), title: vector.entry, text: '' }
-        : { v: 1, kind: 'listing', open: false, final: true };
   const address = base64url(keys.publicKey);
-  return { seq: vector.seq, received: NOW - 100, address, data: signShelfBody(keys, body) };
+  const received = vector.received ?? NOW - 1441;
+  return { seq: vector.seq, received, address, data: signShelfBody(keys, bodyFrom(vector)) };
 }
 
 /** What `state` shows, by the vectors' door labels and entry titles. */
@@ -127,10 +167,11 @@ describe('foldShelf', () => {
     });
   });
 
-  it('starts empty, with no tombstone and no pause', () => {
+  it('starts empty, with no withdrawal, no tombstone and no pause', () => {
     expect(foldShelf([], NOW)).toEqual({
       listings: [],
       entries: [],
+      withdrawn: [],
       tombstones: [],
       paused: false,
     });
@@ -376,10 +417,206 @@ describe('foldShelf', () => {
     });
   });
 
+  describe('rule 5: an address’s first 4 unexpired entries (#431)', () => {
+    it('shows only an address’s first 4 entries in seq order', () => {
+      const records = [
+        listing('Oak St Tenants'),
+        ...['d1', 'd2', 'd3', 'd4', 'd5'].map((label) => entry(label, label)),
+        listing('Birch Ave', BIRCH),
+        entry('d6', 'd6', BIRCH),
+      ];
+
+      expect(foldShelf(records, NOW).entries.map((e) => e.title)).toEqual([
+        'd6',
+        'd4',
+        'd3',
+        'd2',
+        'd1',
+      ]);
+    });
+
+    it('counts a repeated id once, at its first copy', () => {
+      const records = [
+        listing('Oak St Tenants'),
+        entry('d1', 'd1'),
+        entry('d1', 'd1'),
+        entry('d2', 'd2'),
+        entry('d3', 'd3'),
+        entry('d4', 'd4'),
+      ];
+
+      expect(foldShelf(records, NOW).entries.map((e) => e.title)).toEqual(['d4', 'd3', 'd2', 'd1']);
+    });
+
+    it('drops an entry on the relay day its 30 days end, and lets the fifth take its place', () => {
+      const today = Math.floor(NOW / 1440);
+      // The last minute of the day 30 days back: it is kept through today, and gone tomorrow.
+      const first = { ...entry('d1', 'd1'), received: (today - 30) * 1440 + 1439 };
+      const records = [
+        listing('Oak St Tenants'),
+        first,
+        ...['d2', 'd3', 'd4', 'd5'].map((label) => entry(label, label)),
+      ];
+      const lastDay = (today + 1) * 1440 - 1;
+
+      expect(foldShelf(records, lastDay).entries.map((e) => e.title)).toEqual([
+        'd4',
+        'd3',
+        'd2',
+        'd1',
+      ]);
+      expect(foldShelf(records, lastDay + 1).entries.map((e) => e.title)).toEqual([
+        'd5',
+        'd4',
+        'd3',
+        'd2',
+      ]);
+    });
+
+    it('shows no entry of a shadowed listing, and counts none of them against another', () => {
+      const records = [
+        listing('Eastside Tenants Union'),
+        listing('EASTSIDE TENANTS UNI0N', BIRCH),
+        ...['d1', 'd2', 'd3', 'd4'].map((label) => entry(label, label, BIRCH)),
+        entry('d5', 'd5'),
+      ];
+
+      expect(foldShelf(records, NOW).entries.map((e) => e.title)).toEqual(['d5']);
+    });
+
+    it('keeps the cap whatever order the records arrive in (fast-check)', () => {
+      const records = [
+        listing('Oak St Tenants'),
+        ...['d1', 'd2', 'd3', 'd4', 'd5', 'd6'].map((label) => entry(label, label)),
+        withdrawal('d2'),
+        entry('d1', 'again'),
+      ];
+      const folded = foldShelf(records, NOW);
+      expect(folded.entries.map((e) => e.title)).toEqual(['d5', 'd4', 'd3', 'd1']);
+      fc.assert(
+        fc.property(fc.shuffledSubarray(records, { minLength: records.length }), (shuffled) => {
+          expect(foldShelf(shuffled, NOW)).toEqual(folded);
+        }),
+      );
+    });
+
+    it('never shows more than 4 entries an address posted, whichever it posted (fast-check)', () => {
+      const posted = ['d1', 'd2', 'd3', 'd4', 'd5', 'd6', 'd7'].map((label) => entry(label, label));
+      fc.assert(
+        fc.property(fc.subarray(posted), (some) => {
+          const shown = foldShelf([listing('Oak St Tenants'), ...some], NOW).entries;
+          expect(shown.map((e) => e.seq)).toEqual(
+            some
+              .map((r) => r.seq)
+              .slice(0, 4)
+              .reverse(),
+          );
+        }),
+      );
+    });
+  });
+
+  describe('rule 6: the day’s wait (#431)', () => {
+    it('holds a new entry back until a relay day has passed', () => {
+      const records = [listing('Oak St'), { ...entry('d1', 'Rent strike vote'), received: 1000 }];
+      expect(foldShelf(records, 1000 + 1439).entries).toEqual([]);
+      expect(foldShelf(records, 1000 + 1440).entries.map(({ id }) => id)).toEqual([idOf('d1')]);
+    });
+
+    it('shows its own group’s entry at once, marked early, until the day has passed', () => {
+      const records = [listing('Oak St'), { ...entry('d1', 'Rent strike vote'), received: 1000 }];
+      const own = new Set([base64url(OAK.publicKey)]);
+
+      expect(foldShelf(records, 1000, { own }).entries.map((e) => e.early)).toEqual([true]);
+      expect(foldShelf(records, 1000 + 1439, { own }).entries.map((e) => e.early)).toEqual([true]);
+      expect(foldShelf(records, 1000 + 1440, { own }).entries.map((e) => e.early)).toEqual([false]);
+      expect(
+        foldShelf(records, 1000, { own: new Set([base64url(BIRCH.publicKey)]) }).entries,
+      ).toEqual([]);
+    });
+
+    it('counts an entry still waiting against its address’s 4', () => {
+      const records = [
+        listing('Oak St Tenants'),
+        ...['d1', 'd2', 'd3'].map((label) => entry(label, label)),
+        { ...entry('d4', 'd4'), received: NOW },
+        entry('d5', 'd5'),
+      ];
+
+      expect(foldShelf(records, NOW).entries.map((e) => e.title)).toEqual(['d3', 'd2', 'd1']);
+    });
+  });
+
+  describe('rule 7: withdrawals (#431)', () => {
+    it('removes an entry its own address withdrew, wherever the withdraw falls', () => {
+      const before = [listing('Oak St Tenants'), withdrawal('d1'), entry('d1', 'Stray')];
+      const after = [listing('Oak St Tenants'), entry('d1', 'Stray'), withdrawal('d1')];
+
+      expect(foldShelf(before, NOW).entries).toEqual([]);
+      expect(foldShelf(after, NOW).entries).toEqual([]);
+    });
+
+    it('removes no other address’s entry', () => {
+      const records = [
+        listing('Oak St Tenants'),
+        listing('Birch Ave', BIRCH),
+        entry('d1', 'Oak’s'),
+        entry('d1', 'Birch’s', BIRCH),
+        withdrawal('d1', BIRCH),
+        recordOf(BIRCH, { v: 1, kind: 'withdraw', id: idOf('d1') }, base64url(OAK.publicKey)),
+      ];
+
+      expect(foldShelf(records, NOW).entries.map((e) => e.title)).toEqual(['Oak’s']);
+    });
+
+    it('lists what each address withdrew, with the withdrawn entry’s title', () => {
+      const records = [
+        listing('Oak St Tenants'),
+        entry('d1', 'Stray'),
+        withdrawal('d1'),
+        withdrawal('d9'),
+      ];
+
+      expect(foldShelf(records, NOW).withdrawn).toEqual([
+        { address: base64url(OAK.publicKey), id: idOf('d1'), title: 'Stray' },
+      ]);
+    });
+
+    it('frees the withdrawn entry’s place among the first 4', () => {
+      const records = [
+        listing('Oak St Tenants'),
+        ...['d1', 'd2', 'd3', 'd4', 'd5'].map((label) => entry(label, label)),
+        withdrawal('d1'),
+      ];
+
+      expect(foldShelf(records, NOW).entries.map((e) => e.title)).toEqual(['d5', 'd4', 'd3', 'd2']);
+    });
+  });
+
+  describe('Listed since (§5.2)', () => {
+    it('is the earliest receipt this device read of the listing, or the standing copy’s', () => {
+      const records = [listing('Oak St Tenants'), entry('d1', 'Rent strike vote')];
+      const oak = base64url(OAK.publicKey);
+      const standing = records[0]?.received ?? 0;
+
+      expect(foldShelf(records, NOW).entries[0]?.listedSince).toBe(standing);
+      const since = new Map([[oak, standing - 50_000]]);
+      expect(foldShelf(records, NOW, { since }).entries[0]?.listedSince).toBe(standing - 50_000);
+      const later = new Map([[oak, standing + 5]]);
+      expect(foldShelf(records, NOW, { since: later }).entries[0]?.listedSince).toBe(standing);
+    });
+  });
+
+  describe('vectors/entries.json', () => {
+    it.each(ENTRIES.cases.map((vector) => [vector.about, vector] as const))('%s', (_, vector) => {
+      const own = new Set(vector.own.map((label) => base64url(doorKeys(label).publicKey)));
+      const state = foldShelf(vector.records.map(recordFrom), vector.now, { own });
+      expect(shown(state).entries).toEqual(vector.entries.map(([door, id]) => [door, id]));
+      expect(state.entries.map((e) => e.early)).toEqual(vector.entries.map(([, , early]) => early));
+    });
+  });
+
   describe('rules to come', () => {
-    it.todo('shows only an address’s first 4 unexpired entries in seq order (#431)');
-    it.todo('waits until the relay clock is 1,440 minutes past an entry’s receipt (#431)');
-    it.todo('removes an entry its own address withdrew, and no other address’s (#431)');
     it.todo('applies a release notice (#488), and hold, uphold, suspend and pause (#489)');
   });
 });

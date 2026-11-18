@@ -14,7 +14,10 @@
  *
  * Below it, "On the public shelf" (#484; ADR-0081; listed-doors.md §5.2)
  * lists the entries the shelf's fold shows (`shelf/fold.ts`), newest first,
- * each under its listing's name. `DiscoverScreen` reads the shelf; this
+ * each under its listing's name (`ShelfCard`), with "Listed since" and, on a
+ * device in the entry's own group before its relay day has passed, "Shows
+ * publicly tomorrow", and a link to the entry's own page, whose Share and
+ * Copy pass its link along (#431). `DiscoverScreen` reads the shelf; this
  * screen only shows it. The section shows only while the shelf holds an
  * entry, so on a relay without the steward's key nothing of it appears.
  */
@@ -25,6 +28,7 @@ import { DispatchCard } from '../app/DispatchCard';
 import type { FeedItem, FeedPlace } from '../app/discoverFeed';
 import { messages } from '../app/messages';
 import { routeHref } from '../app/router';
+import { ShelfCard } from '../app/ShelfCard';
 import { PageHeader } from '../app/ui';
 import type { ShelfEntry, ShelfState } from '../shelf/fold';
 
@@ -75,26 +79,6 @@ function Feed({ feed }: { readonly feed: readonly FeedItem[] }) {
   );
 }
 
-/** One shelf entry: its listing's name, then its title and text, as a Dispatch card's. */
-function ShelfCard({ entry }: { readonly entry: ShelfEntry }) {
-  const heading = useId();
-  return (
-    <article className="card dispatch" aria-labelledby={heading}>
-      <p className="eyebrow dispatch-from">
-        <bdi>{entry.name}</bdi>
-      </p>
-      <h3 id={heading} className="heading-3 dispatch-title">
-        <bdi>{entry.title}</bdi>
-      </h3>
-      {entry.text === '' ? null : (
-        <p className="dispatch-text" dir="auto">
-          {entry.text}
-        </p>
-      )}
-    </article>
-  );
-}
-
 /** "On the public shelf": its heading and one line, then each entry, newest first (#484). */
 function Shelf({ entries }: { readonly entries: readonly ShelfEntry[] }) {
   const words = messages.discover;
@@ -110,7 +94,13 @@ function Shelf({ entries }: { readonly entries: readonly ShelfEntry[] }) {
         <ul className="dispatch-list" aria-labelledby={heading}>
           {entries.map((entry) => (
             <li key={`${entry.address} ${entry.id}`}>
-              <ShelfCard entry={entry} />
+              <ShelfCard entry={entry} level={3}>
+                <Link
+                  href={routeHref({ name: 'shelfEntry', address: entry.address, id: entry.id })}
+                >
+                  {words.passAlong}
+                </Link>
+              </ShelfCard>
             </li>
           ))}
         </ul>

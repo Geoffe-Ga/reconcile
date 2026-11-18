@@ -10,10 +10,16 @@
  * which lapses 30 days after its last post; an open copy after a final one
  * gets 409 `listing_final`; and a final copy deletes the address's other
  * records.
+ *
+ * It keeps #431's entry rules too: an entry or withdraw needs a live open
+ * listing (409 `not_listed`); a repeat with the same address and id returns
+ * the first copy's seq with 200; a withdraw names one of the address's
+ * entries (409 `no_entry`); and an address has at most 4 live entries and 1
+ * new one a relay day (429 `too_many_entries`).
  */
 import { verifyShelfRecord } from '../crypto/shelf';
 import type { Fetch } from '../net/relay';
-import { parseShelfBody, type ShelfBody } from '../shelf/record';
+import { type EntryBody, parseShelfBody, type ShelfBody, type WithdrawBody } from '../shelf/record';
 
 /** A record the fake shelf keeps. */
 export interface FakeShelfRecord {
@@ -74,10 +80,52 @@ export function createFakeShelf({ minute = 29_000_000, available = true } = {}):
     return Response.json({ seq }, { status: 201 });
   }
 
+  /** `address`'s unexpired records whose body is `kind` naming `id`. */
+  function named(address: string, kind: 'entry' | 'withdraw', id: string): FakeShelfRecord[] {
+    return shelf.records.filter((r) => {
+      const body = r.address === address && r.expiry > today() ? bodyOf(r.data, address) : null;
+      return body?.kind === kind && body.id === id;
+    });
+  }
+
+  /** Whether `address` has a live entry with `id`: unexpired and not withdrawn. */
+  const live = (address: string, id: string): boolean =>
+    named(address, 'entry', id).length > 0 && named(address, 'withdraw', id).length === 0;
+
+  /** The refusal or repeat an entry or withdraw meets (#431), or null for a new one to store. */
+  function check(address: string, body: EntryBody | WithdrawBody): Response | null {
+    const standing = shelf.records.find(
+      (r) => r.address === address && r.expiry > today() && isListing(r.data, address),
+    );
+    if (standing === undefined || isFinal(standing.data, address)) {
+      return refuse(409, 'not_listed');
+    }
+    const [first] = named(address, body.kind, body.id);
+    if (first !== undefined) return Response.json({ seq: first.seq }, { status: 200 });
+    if (body.kind === 'withdraw') {
+      return named(address, 'entry', body.id).length === 0 ? refuse(409, 'no_entry') : null;
+    }
+    const entries = shelf.records.filter(
+      (r) =>
+        r.address === address && r.expiry > today() && bodyOf(r.data, address)?.kind === 'entry',
+    );
+    const liveCount = entries.filter((r) => {
+      const entry = bodyOf(r.data, address);
+      return entry?.kind === 'entry' && live(address, entry.id);
+    }).length;
+    const todays = entries.filter((r) => Math.floor(r.received / DAY_MINUTES) === today()).length;
+    return liveCount >= 4 || todays >= 1 ? refuse(429, 'too_many_entries') : null;
+  }
+
   async function put(address: string, init: RequestInit | undefined): Promise<Response> {
     const data = new Uint8Array(await new Response(init?.body ?? null).arrayBuffer());
+    const body = bodyOf(data, address);
     if (verifyShelfRecord(data, address) === null) return refuse(403, 'bad_signature');
     if (isListing(data, address)) return list(address, data, isFinal(data, address));
+    if (body?.kind === 'entry' || body?.kind === 'withdraw') {
+      const answered = check(address, body);
+      if (answered !== null) return answered;
+    }
     lastSeq += 1;
     const expiry = today() + KEEP_DAYS + 1;
     shelf.records.push({ seq: lastSeq, received: shelf.minute, address, data, expiry });

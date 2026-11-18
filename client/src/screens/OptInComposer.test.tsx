@@ -443,7 +443,7 @@ describe('OptInComposer: listing the front door (#485; ADR-0081)', () => {
 /** A shelf holding one listing, `name`, at `address`. */
 function shelfWith(name: string, address = secretOf(0x66)): ShelfState {
   const listing = { address, name, covenant: COVENANT_HASH, seq: 3, received: 100 };
-  return { listings: [listing], entries: [], tombstones: [], paused: false };
+  return { listings: [listing], entries: [], withdrawn: [], tombstones: [], paused: false };
 }
 
 /** The line warning that another listed group already holds a name like this one. */

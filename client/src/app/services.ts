@@ -11,7 +11,7 @@ import type { Sync } from '../store/sync';
 import type { Services } from './actions';
 import type { Passkey } from './passkey';
 import type { FileTargets, WebShare } from './share';
-import type { ShelfFeed } from './shelfFeed';
+import type { ShelfReader } from '../shelf/read';
 
 /** What `App` runs on. */
 export interface AppServices extends Services {
@@ -44,7 +44,7 @@ export interface AppServices extends Services {
    * The public shelf Discover reads (#484). Without one, as in most tests,
    * Discover shows no shelf and asks the relay for nothing.
    */
-  readonly shelf?: ShelfFeed;
+  readonly shelf?: ShelfReader;
 }
 
 /**

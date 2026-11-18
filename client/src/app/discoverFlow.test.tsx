@@ -8,7 +8,8 @@
  * key and PUT to a fake shelf show on Discover on a device in no group, and
  * nothing of the shelf shows while the relay has none. The listing composer
  * reads the same shelf, and warns when a listed group holds a name like the
- * group's own (#487).
+ * group's own (#487). An entry's link opens its own page, with Copy and
+ * Share, on a device in no group (#431).
  */
 import { waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -16,7 +17,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { base64url } from '../crypto/base64url';
 import { newSigningKeys } from '../crypto/sign';
-import { createShelf } from '../net/shelf';
+import { createShelf, type Shelf } from '../net/shelf';
+import { createShelfReader } from '../shelf/read';
 import { signShelfBody } from '../shelf/record';
 import { nameSkeleton } from '../shelf/skeleton';
 import { type TestDevice, testDevice } from '../test/appServices';
@@ -27,7 +29,6 @@ import { freshIndexedDBPerTest } from '../test/idb';
 import { foundAnother, go, members, type MountedApp, mountApp } from '../test/members';
 import { messages } from './messages';
 import { sendDispatch } from './proposals';
-import { createShelfFeed } from './shelfFeed';
 
 freshIndexedDBPerTest();
 
@@ -106,14 +107,20 @@ describe('The public shelf on Discover through the app (#484)', { timeout: 60_00
         text: 'Thursday.',
       }),
     );
-    return { fake, shelf };
+    // A relay day passes, so every device shows the entry (#431).
+    fake.minute += 1440;
+    return { fake, shelf, address, id };
   }
+
+  /** The shelf's reader on `device`, keeping its copy in the device's store. */
+  const readerOf = (shelf: Shelf, device: TestDevice) =>
+    createShelfReader({ shelf, keep: device.services.store, now: () => 0 });
 
   it('shows a hand-signed entry under its listing’s name on a device in no group', async () => {
     const { shelf } = await stockedShelf();
     const device = await testDevice(createFakeRelay(), 'Nobody');
     opened.push(device);
-    const services = { ...device.services, shelf: createShelfFeed({ shelf, now: () => 0 }) };
+    const services = { ...device.services, shelf: readerOf(shelf, device) };
 
     go('#/discover');
     const app = mountApp(services, 's');
@@ -129,11 +136,50 @@ describe('The public shelf on Discover through the app (#484)', { timeout: 60_00
     expect(await axeViolations()).toEqual([]);
   });
 
+  it('opens an entry’s link on a device in no group, with Copy and Share for it (#431)', async () => {
+    const { shelf, address, id } = await stockedShelf();
+    const device = await testDevice(createFakeRelay(), 'Nobody');
+    opened.push(device);
+    const services = { ...device.services, shelf: readerOf(shelf, device) };
+
+    go('#/discover');
+    const app = mountApp(services, 'e');
+    mounted.push(app);
+    const view = within(app.container);
+    const pass = await view.findByRole('link', { name: messages.discover.passAlong });
+    const href = `#/discover/${String(address)}/${String(id)}`;
+    expect(pass).toHaveAttribute('href', href);
+    await userEvent.setup().click(pass);
+
+    expect(await view.findByRole('heading', { level: 2, name: 'Rent strike vote' })).toBeVisible();
+    expect(view.getByRole('textbox', { name: messages.shelfEntry.linkLabel })).toHaveValue(
+      `${services.origin}/${href}`,
+    );
+    expect(view.getByRole('button', { name: messages.shelfEntry.copy })).toBeVisible();
+    expect(view.getByRole('button', { name: messages.linkShare.button })).toBeVisible();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('says an entry’s link opens nothing once the shelf no longer shows it (#431)', async () => {
+    const { shelf, address } = await stockedShelf();
+    const device = await testDevice(createFakeRelay(), 'Nobody');
+    opened.push(device);
+    const services = { ...device.services, shelf: readerOf(shelf, device) };
+
+    go(`#/discover/${String(address)}/${'Z'.repeat(43)}`);
+    const app = mountApp(services, 'g');
+    mounted.push(app);
+    const view = within(app.container);
+
+    expect(await view.findByText(messages.shelfEntry.gone)).toBeVisible();
+    expect(view.queryByRole('textbox')).toBeNull();
+  });
+
   it('shows nothing of the shelf when the relay has none', async () => {
     const { fake, shelf } = await stockedShelf(false);
     const device = await testDevice(createFakeRelay(), 'Nobody');
     opened.push(device);
-    const services = { ...device.services, shelf: createShelfFeed({ shelf, now: () => 0 }) };
+    const services = { ...device.services, shelf: readerOf(shelf, device) };
 
     go('#/discover');
     const app = mountApp(services, 'u');
@@ -153,7 +199,7 @@ describe('The public shelf on Discover through the app (#484)', { timeout: 60_00
     opened.push(...made.devices);
     const [ana] = made.devices;
     if (ana === undefined) throw new Error('Expected Ana’s device.');
-    const services = { ...ana.services, shelf: createShelfFeed({ shelf, now: () => 0 }) };
+    const services = { ...ana.services, shelf: readerOf(shelf, ana) };
 
     go(`#/g/${made.groupId}/rules/frontDoor`);
     const app = mountApp(services, 'w');

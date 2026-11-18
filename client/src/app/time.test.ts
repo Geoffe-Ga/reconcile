@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   formatDay,
   formatMinute,
+  formatMonth,
   formatSyncedAt,
   MINUTE_MS,
   minuteIso,
@@ -61,6 +62,15 @@ describe('formatMinute', () => {
   it('shows the weekday, date and time on a 12-hour clock', () => {
     expect(formatMinute(MON_1405, 'UTC')).toBe('Mon 16 Nov, 2:05 pm');
     expect(formatMinute(MON_1405, 'America/New_York')).toBe('Mon 16 Nov, 9:05 am');
+  });
+});
+
+describe('formatMonth', () => {
+  it('says a relay minute as its month and year, in the device’s time zone (#431)', () => {
+    expect(formatMonth(MON_1405, 'UTC')).toBe('November 2026');
+    expect(formatMonth(Date.UTC(2026, 11, 1, 1) / MINUTE_MS, 'America/New_York')).toBe(
+      'November 2026',
+    );
   });
 });
 

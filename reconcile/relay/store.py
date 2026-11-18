@@ -139,6 +139,14 @@ class ShelfWhen:
     held_until: int = 0
 
 
+@dataclass(frozen=True)
+class EntryCounts:
+    """An address's live entries, and the entries that arrived today (#431)."""
+
+    live: int
+    today: int
+
+
 class BlobStore:
     """Appends blobs to mailboxes and reads them back in seq order.
 
@@ -248,6 +256,42 @@ class BlobStore:
         return self._db.execute(
             "DELETE FROM shelf WHERE address = ? AND kind != 'listing'", (address,)
         ).rowcount
+
+    def unexpired_listing(self, address: str, *, today: int) -> bytes | None:
+        """``address``'s listing's signed bytes until it expires, else ``None``."""
+        row = self._db.execute(
+            "SELECT body FROM shelf"
+            " WHERE address = ? AND kind = 'listing' AND expiry > ?",
+            (address, today),
+        ).fetchone()
+        return None if row is None else bytes(row[0])
+
+    def shelf_seq(self, address: str, kind: str, ref: str, *, today: int) -> int | None:
+        """The seq of ``address``'s live ``kind`` record naming ``ref``, or ``None``."""
+        row = self._db.execute(
+            "SELECT seq FROM shelf"
+            " WHERE address = ? AND kind = ? AND ref = ? AND expiry > ?"
+            " ORDER BY seq LIMIT 1",
+            (address, kind, ref, today),
+        ).fetchone()
+        return None if row is None else int(row[0])
+
+    def entry_counts(self, address: str, *, today: int) -> EntryCounts:
+        """How many of ``address``'s entries are live, and how many arrived today.
+
+        An entry is live until it expires or its address withdraws it. One
+        that arrived today counts toward today's, withdrawn or not.
+        """
+        live, new = self._db.execute(
+            "SELECT"
+            " coalesce(sum(NOT EXISTS (SELECT 1 FROM shelf w"
+            "  WHERE w.address = e.address AND w.kind = 'withdraw'"
+            "  AND w.ref = e.ref AND w.expiry > ?)), 0),"
+            " coalesce(sum(e.received >= ?), 0)"
+            " FROM shelf e WHERE e.address = ? AND e.kind = 'entry' AND e.expiry > ?",
+            (today, today * MINUTES_PER_DAY, address, today),
+        ).fetchone()
+        return EntryCounts(live=int(live), today=int(new))
 
     def read_shelf(
         self, *, after: int, limit: int, today: int, minute: int

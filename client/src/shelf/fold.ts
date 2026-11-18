@@ -28,15 +28,26 @@
  *    it only from the rename. A tie, which only a faulty relay serves, goes
  *    to the lower address, so no order of arrival changes who holds a name.
  *
- * An entry shows under its address's standing listing, with that listing's
- * name, newest first, once per address and id. Without a standing listing
- * that holds its name it shows nowhere: an entry carries no name of its own.
+ * 5. **Entries** (#431). An entry shows under its address's standing
+ *    listing, with that listing's name, newest first, once per address and
+ *    id (its first copy). Without a standing listing that holds its name it
+ *    shows nowhere: an entry carries no name of its own. It stands only as
+ *    one of its address's first {@link ENTRIES_SHOWN} unexpired entries in
+ *    seq order, withdrawn ones left out, as the relay counts its live ones.
+ *    An entry expires as the relay's does: on the relay day 31 days after
+ *    the day it arrived ({@link ENTRY_KEEP_DAYS}).
+ * 6. **The day's wait** (#431). An entry shows once relay minute `now` is
+ *    {@link ENTRY_WAIT_MINUTES} past its `received`. On a device in its
+ *    group (`own`, the addresses of the device's own listed doors) it shows
+ *    at once, marked `early` until then: "Shows publicly tomorrow".
+ * 7. **Withdrawals** (#431). A withdraw removes the entry it names under its
+ *    own address only, whichever comes first in seq order, since a record's
+ *    signature ties it to the address it came under. `withdrawn` lists each
+ *    withdrawn entry that still verifies, so Group home can say a stray was
+ *    taken down.
  *
- * Still to come, each with the issue that builds it: the
- * caps, the day's wait and withdrawals (#431); and the steward's notices,
- * which fill `tombstones` and `paused` (#488, #489). Until then those two
- * stay empty and false, and `now`, the relay minute those rules read, is
- * taken but not read.
+ * The rest come with their issues: the steward's notices fill `tombstones`
+ * and `paused` (#488, #489), and until then those stay empty and false.
  */
 import { verifyShelfRecord } from '../crypto/shelf';
 import type { ShelfRecord } from '../net/shelf';
@@ -68,6 +79,17 @@ export interface ShelfEntry {
   readonly name: string;
   readonly seq: number;
   readonly received: number;
+  /** Whether it shows only to its own group yet: "Shows publicly tomorrow" (rule 6). */
+  readonly early: boolean;
+  /** The earliest relay minute this device read of its listing: "Listed since" (§5.2). */
+  readonly listedSince: number;
+}
+
+/** An entry its own address withdrew (rule 7): what Group home names when its log didn't make it. */
+export interface ShelfWithdrawn {
+  readonly address: string;
+  readonly id: string;
+  readonly title: string;
 }
 
 /** What an upheld or suspended record leaves in its place (#489). */
@@ -85,17 +107,45 @@ export interface ShelfState {
   readonly listings: readonly ShelfListing[];
   /** The entries that show, newest first. */
   readonly entries: readonly ShelfEntry[];
+  /** The entries their own addresses withdrew, in seq order (rule 7). */
+  readonly withdrawn: readonly ShelfWithdrawn[];
   /** What the steward removed, in place of each (#489): none yet. */
   readonly tombstones: readonly ShelfTombstone[];
   /** Whether a pause notice stands (#489): never yet. */
   readonly paused: boolean;
 }
 
+/** What a device adds to the fold of the shelf every device reads alike. */
+export interface FoldShelfOptions {
+  /** The addresses of the listed doors of groups this device is in: their entries show at once (rule 6). */
+  readonly own?: ReadonlySet<string>;
+  /** The earliest relay minute this device read of each address's listing (§5.2, `read.ts`). */
+  readonly since?: ReadonlyMap<string, number>;
+}
+
 /**
  * Folds `records` as of relay minute `now`. Any order in which the relay
  * could have served them folds the same: they are taken in seq order.
  */
-export type FoldShelf = (records: readonly ShelfRecord[], now: number) => ShelfState;
+export type FoldShelf = (
+  records: readonly ShelfRecord[],
+  now: number,
+  options?: FoldShelfOptions,
+) => ShelfState;
+
+/** The entries an address shows at most (rule 5), as the relay keeps at most 4 live. */
+export const ENTRIES_SHOWN = 4;
+
+/** Relay minutes before an entry shows publicly (rule 6): a relay day. */
+export const ENTRY_WAIT_MINUTES = 1440;
+
+/** Whole relay days an entry is kept after the day it arrived, as the relay's `SHELF_KEEP_DAYS`. */
+export const ENTRY_KEEP_DAYS = 30;
+
+/** Whether an entry received at `received` has expired by relay minute `now`, as the relay counts. */
+export const entryExpired = (received: number, now: number): boolean =>
+  Math.floor(now / ENTRY_WAIT_MINUTES) >=
+  Math.floor(received / ENTRY_WAIT_MINUTES) + ENTRY_KEEP_DAYS + 1;
 
 /** A record whose signature verified and whose body parsed. */
 interface Verified {
@@ -171,47 +221,121 @@ function listingOf(record: ShelfRecord, body: OpenListingBody): ShelfListing {
   return { address, name: body.name, covenant: body.covenant, seq, received };
 }
 
-/** An entry under `listing`'s name. */
-function entryOf(record: ShelfRecord, body: EntryBody, listing: ShelfListing): ShelfEntry {
-  const { address, seq, received } = record;
+/** An entry an address posted, and the relay minute it arrived. */
+export interface PostedEntry {
+  readonly body: EntryBody;
+  readonly received: number;
+}
+
+/** An entry the fold reads: a verified entry record and its body. */
+interface Posted {
+  readonly record: ShelfRecord;
+  readonly body: EntryBody;
+}
+
+/** The key of an address's entry: its address and id. */
+const keyOf = (address: string, id: string): string => `${address} ${id}`;
+
+/**
+ * Rules 5 and 7: each address's first copy of each id, unexpired at `now`,
+ * in seq order, split into those its address withdrew and those it didn't.
+ */
+function entriesAt(records: readonly Verified[], now: number) {
+  const pulled = new Set<string>();
+  for (const { record, body } of records) {
+    if (body.kind === 'withdraw') pulled.add(keyOf(record.address, body.id));
+  }
+  const firsts = new Map<string, Posted>();
+  for (const { record, body } of records) {
+    if (body.kind !== 'entry' || entryExpired(record.received, now)) continue;
+    const key = keyOf(record.address, body.id);
+    if (!firsts.has(key)) firsts.set(key, { record, body });
+  }
+  const posted = [...firsts.entries()];
   return {
-    address,
-    id: body.id,
-    title: body.title,
-    text: body.text,
-    name: listing.name,
-    seq,
-    received,
+    live: posted.filter(([key]) => !pulled.has(key)).map(([, item]) => item),
+    withdrawn: posted.filter(([key]) => pulled.has(key)).map(([, item]) => item),
   };
 }
 
-/** Each entry under a standing listing, the first copy of each address and id, newest first. */
+/** The first {@link ENTRIES_SHOWN} of each address's live entries, in seq order (rule 5). */
+function firstFourEach(live: readonly Posted[]): Posted[] {
+  const counts = new Map<string, number>();
+  return live.filter(({ record }) => {
+    const count = counts.get(record.address) ?? 0;
+    counts.set(record.address, count + 1);
+    return count < ENTRIES_SHOWN;
+  });
+}
+
+/** Each entry that shows at `now`, under its listing's name, newest first (rules 5 and 6). */
 function entriesUnder(
-  records: readonly Verified[],
+  live: readonly Posted[],
   listings: ReadonlyMap<string, ShelfListing>,
+  now: number,
+  { own, since }: FoldShelfOptions,
 ): ShelfEntry[] {
-  const shown = new Map<string, ShelfEntry>();
-  for (const { record, body } of records) {
+  const shown: ShelfEntry[] = [];
+  for (const { record, body } of firstFourEach(live)) {
     const listing = listings.get(record.address);
-    const key = `${record.address} ${body.kind === 'entry' ? body.id : ''}`;
-    if (body.kind !== 'entry' || listing === undefined || shown.has(key)) continue;
-    shown.set(key, entryOf(record, body, listing));
+    const early = now - record.received < ENTRY_WAIT_MINUTES;
+    if (listing === undefined || (early && own?.has(record.address) !== true)) continue;
+    const { address, seq, received } = record;
+    const first = Math.min(listing.received, since?.get(address) ?? Infinity);
+    shown.push({
+      address,
+      id: body.id,
+      title: body.title,
+      text: body.text,
+      name: listing.name,
+      seq,
+      received,
+      early,
+      listedSince: first,
+    });
   }
-  return [...shown.values()].reverse();
+  return shown.reverse();
 }
 
 /** The shelf as every device shows it, from the records the relay served (§4.3). */
-export const foldShelf: FoldShelf = (records) => {
+export const foldShelf: FoldShelf = (records, now, options = {}) => {
   const inOrder = [...records].sort((a, b) => a.seq - b.seq);
   const valid = inOrder.map(verified).filter((item) => item !== null);
   const listings = holders(standingClaims(valid));
+  const { live, withdrawn } = entriesAt(valid, now);
   return {
     listings: [...listings.values()].sort((a, b) => a.seq - b.seq),
-    entries: entriesUnder(valid, listings),
+    entries: entriesUnder(live, listings, now, options),
+    withdrawn: withdrawn.map(({ record, body }) => ({
+      address: record.address,
+      id: body.id,
+      title: body.title,
+    })),
     tombstones: [],
     paused: false,
   };
 };
+
+/**
+ * The entries `address` posted among `records`, unexpired at `now`, its
+ * first copy of each id in seq order: those it didn't withdraw, and those it
+ * did (rules 5 and 7), whatever its listing. The keeper reads them to post
+ * what's missing and withdraw what its group's log didn't make (#431).
+ */
+export function entriesPostedAt(
+  records: readonly ShelfRecord[],
+  address: string,
+  now: number,
+): { readonly live: PostedEntry[]; readonly withdrawn: PostedEntry[] } {
+  const mine = records.filter((record) => record.address === address);
+  const valid = [...mine]
+    .sort((a, b) => a.seq - b.seq)
+    .map(verified)
+    .filter((item) => item !== null);
+  const { live, withdrawn } = entriesAt(valid, now);
+  const posted = ({ record, body }: Posted): PostedEntry => ({ body, received: record.received });
+  return { live: live.map(posted), withdrawn: withdrawn.map(posted) };
+}
 
 /**
  * The standing listing that holds `name`'s skeleton on `shelf`, other than

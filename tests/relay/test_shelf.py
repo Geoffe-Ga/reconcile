@@ -110,10 +110,12 @@ def test_an_entry_or_withdraw_is_filed_under_its_id(
     shelf_client: TestClient, db_path: Path, door: ShelfSigner, body: dict[str, Any]
 ) -> None:
     """``ref`` is the id an entry or a withdraw names."""
+    _room_for(shelf_client, door, body)
+
     response = put_shelf(shelf_client, door.address, door.record(body))
 
     assert response.status_code == 201
-    [row] = shelf_rows(db_path)
+    row = shelf_rows(db_path)[-1]
     assert row[2:4] == (body["kind"], "e" * 43)
 
 
@@ -194,12 +196,26 @@ def test_put_refuses_a_body_that_is_not_an_octet_stream(
     )
 
 
-def _padded(signer: ShelfSigner, body: dict[str, Any], size: int) -> bytes:
-    """``body`` signed, with one string field padded so the record is ``size``."""
+def _padded_body(
+    signer: ShelfSigner, body: dict[str, Any], size: int
+) -> dict[str, Any]:
+    """``body`` with one string field padded so its signed record is ``size``."""
     record = signer.record(body)
     key = {"entry": "text", "listing": "name", "withdraw": "id"}[body["kind"]]
-    padded = {**body, key: body[key] + "x" * (size - len(record))}
-    return signer.record(padded)
+    return {**body, key: body[key] + "x" * (size - len(record))}
+
+
+def _padded(signer: ShelfSigner, body: dict[str, Any], size: int) -> bytes:
+    """``body`` signed, with one string field padded so the record is ``size``."""
+    return signer.record(_padded_body(signer, body, size))
+
+
+def _room_for(client: TestClient, door: ShelfSigner, body: dict[str, Any]) -> None:
+    """What ``body`` needs first (#431): a listing, and for a withdraw its entry."""
+    if body["kind"] != "listing":
+        put_shelf(client, door.address, door.record(listing()))
+    if body["kind"] == "withdraw":
+        put_shelf(client, door.address, door.record(entry(body["id"])))
 
 
 SIZES = [(listing(), 1024), (WITHDRAW, 1024), (entry(), 4096)]
@@ -210,8 +226,10 @@ def test_put_takes_a_record_of_exactly_its_size(
     shelf_client: TestClient, door: ShelfSigner, body: dict[str, Any], size: int
 ) -> None:
     """The limits are inclusive."""
-    record = _padded(door, body, size)
+    padded = _padded_body(door, body, size)
+    record = door.record(padded)
     assert len(record) == size
+    _room_for(shelf_client, door, padded)
 
     assert put_shelf(shelf_client, door.address, record).status_code == 201
 
@@ -516,11 +534,14 @@ def test_get_returns_every_record_in_seq_order_with_its_address(
     assert page["instance"] == store_of(shelf_client.app).instance
 
 
-def test_get_pages_after_a_seq(shelf_client: TestClient, door: ShelfSigner) -> None:
+def test_get_pages_after_a_seq(
+    shelf_client: TestClient, door: ShelfSigner, clock: FakeClock
+) -> None:
     """``after`` and ``limit`` page the shelf as they page a mailbox."""
     put_shelf(shelf_client, door.address, door.record(listing()))
     for label in "abcd":
         put_shelf(shelf_client, door.address, door.record(entry(label * 43)))
+        clock.advance(DAY)  # an address posts one new entry a day (#431)
 
     assert _seqs(shelf_client.get("/v1/shelf", params={"after": 1, "limit": 2})) == [
         2,
