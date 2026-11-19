@@ -1286,9 +1286,12 @@ function stewardInboxIn(record: DeviceRecord | undefined): KeptInbox | undefined
   return record !== undefined && 'items' in record ? record : undefined;
 }
 
-/** The removals record in a device record read from its key, or none yet: only it has dismissals (#491). */
+/**
+ * The removals record in a device record read from its key, or none yet: only it has sent
+ * cards (#491). Not dismissals: the steward's inbox keeps those too (#490).
+ */
 function removalsIn(record: DeviceRecord | undefined): KeptRemovals {
-  return record !== undefined && 'dismissed' in record ? record : { cards: [], dismissed: [] };
+  return record !== undefined && 'cards' in record ? record : { cards: [], dismissed: [] };
 }
 
 /** The push DELETEs owed in a device record read from their key, or none (#356). */
