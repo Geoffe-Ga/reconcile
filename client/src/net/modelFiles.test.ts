@@ -2,7 +2,14 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { sha256 } from '../crypto/hash';
 import { fetchPinned, MODEL_DOWNLOAD_BYTES, modelUrl, PinMismatchError } from './modelFiles';
-import { MODEL_FILES, type PinnedFile } from './modelPins';
+import {
+  MODEL_FILES,
+  type PinnedFile,
+  SERVED_FILES,
+  servedFiles,
+  STANCE_MODEL,
+  type StanceModel,
+} from './modelPins';
 
 const BYTES = new TextEncoder().encode('a tiny stand-in for a model file');
 
@@ -96,5 +103,29 @@ describe('the pinned files (#476)', () => {
   it('adds up to what the reader is told before the download, inside ADR-0080 §8’s 60 MB', () => {
     expect(MODEL_DOWNLOAD_BYTES).toBe(22_972_370 + 711_661 + 14_848_852);
     expect(MODEL_DOWNLOAD_BYTES).toBeLessThan(60_000_000);
+  });
+});
+
+describe('the stance model’s files (#478)', () => {
+  it('pins none: no candidate met ADR-0080 §8 on tune, so the judge is off and no device downloads one', () => {
+    expect(STANCE_MODEL).toBeNull();
+    expect(SERVED_FILES).toEqual(Object.values(MODEL_FILES));
+  });
+
+  it('serves a pinned stance model’s files beside the embedder’s, each file once', () => {
+    const network = {
+      file: 'nli-q8-00000000.onnx',
+      sha256: '0'.repeat(64),
+      bytes: 1,
+      source: 'https://example.invalid/nli.onnx',
+      license: 'MIT',
+    };
+    const stance: StanceModel = {
+      files: { model: network, tokenizer: MODEL_FILES.tokenizer, runtime: MODEL_FILES.runtime },
+      labels: { entailment: 0, contradiction: 2 },
+    };
+
+    expect(servedFiles(stance)).toEqual([...Object.values(MODEL_FILES), network]);
+    expect(servedFiles(null)).toEqual(Object.values(MODEL_FILES));
   });
 });

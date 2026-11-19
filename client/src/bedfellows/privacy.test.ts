@@ -1,11 +1,11 @@
 /**
- * Bedfellows keeps the reader's writing in memory (#475, #477; ADR-0080 §5).
- * While the worker runs the pipeline with the model over real corpus readers
- * and the whole tune shelf, every write to IndexedDB, the Cache API and Web
+ * Bedfellows keeps the reader's writing in memory (#475, #477, #478; ADR-0080
+ * §5). While the worker runs the pipeline with the model and a stance judge
+ * over real corpus readers and the whole tune shelf, every write to IndexedDB, the Cache API and Web
  * Storage is captured, and every request and console call watched. The only
  * writes are the cache of public entry vectors: each an entry's id, its
  * model, its own claims and their vectors. No reader sentence that isn't also
- * an entry's, no reader vector and no score is written anywhere, and nothing
+ * an entry's, no reader vector, no score and no stance is written anywhere, and nothing
  * is requested or logged. A control call through each door proves the watch
  * would see it.
  */
@@ -16,7 +16,7 @@ import { loadCorpus } from './corpus';
 import { indexedDbVectorStore, type StoredVectors } from './entryVectors';
 import { claimsIn, splitClaims } from './split';
 import { standInEmbedder, standInJudge } from './standIns';
-import type { FromWorker } from './types';
+import type { FromWorker, Stance, StanceJudge } from './types';
 import { createRunner } from './worker';
 
 /** Every door the watch covers but IndexedDB, each a spy. */
@@ -54,7 +54,15 @@ function captureIndexedDbWrites(): () => unknown[] {
   return () => [...put.mock.calls, ...add.mock.calls].map(([value]) => value as unknown);
 }
 
-describe('the worker’s run keeps the reader’s writing in memory (#475, #477)', () => {
+/** A judge that answers all three stances, by the pair's length, so every path of the check runs. */
+const VARIED_JUDGE: StanceJudge = {
+  judge: (readerSentence, entrySentence) => {
+    const stances: readonly Stance[] = ['agrees', 'opposes', 'unsure'];
+    return Promise.resolve(stances[(readerSentence.length + entrySentence.length) % 3] ?? 'unsure');
+  },
+};
+
+describe('the worker’s run keeps the reader’s writing in memory (#475, #477, #478)', () => {
   let doors: ReturnType<typeof watchEveryDoor>;
   let written: () => unknown[];
 
@@ -68,7 +76,7 @@ describe('the worker’s run keeps the reader’s writing in memory (#475, #477)
     vi.restoreAllMocks();
   });
 
-  it('writes only entries’ public vectors, and requests and logs nothing', async () => {
+  it('writes only entries’ public vectors, never a pair or its stance, and requests and logs nothing', async () => {
     const corpus = loadCorpus();
     const readers = corpus.readers.filter((r) => r.split === 'tune').slice(0, 3);
     const entries = corpus.entries.filter((e) => e.split === 'tune');
@@ -77,6 +85,7 @@ describe('the worker’s run keeps the reader’s writing in memory (#475, #477)
       {
         judge: standInJudge,
         loadModel: () => Promise.resolve(standInEmbedder),
+        loadJudge: () => Promise.resolve(VARIED_JUDGE),
         store: indexedDbVectorStore(new IDBFactory()),
       },
       (message) => posted.push(message),
@@ -127,6 +136,9 @@ describe('the worker’s run keeps the reader’s writing in memory (#475, #477)
     }
     const text = JSON.stringify(written(), (_, v: unknown) => (v instanceof Float32Array ? [] : v));
     for (const sentence of readerOnly) expect(text, sentence).not.toContain(sentence);
+    for (const stance of ['agrees', 'opposes', 'unsure']) expect(text).not.toContain(stance);
+    const verified = posted.flatMap((m) => (m.type === 'rows' ? m.rows : []));
+    expect(verified.some((row) => row.reason.verified)).toBe(true);
     for (const [door, spy] of Object.entries(doors)) {
       expect(spy, door).not.toHaveBeenCalled();
     }

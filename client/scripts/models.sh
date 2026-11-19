@@ -2,7 +2,8 @@
 # scripts/models.sh - Fetch the Bedfellows model's files into client/.models/ (#476).
 #
 # The model and its tokenizer are too large for git. This fetches each file
-# src/net/modelPins.ts pins from its source, a Hugging Face URL at a fixed
+# src/net/modelPins.ts serves (SERVED_FILES: the embedder's, and a stance
+# model's once one is pinned) from its source, a Hugging Face URL at a fixed
 # revision, checks its size and SHA-256, and only then moves it into
 # client/.models/, where the build (plugins/modelFiles.ts) reads it. A file
 # already there with the right hash isn't fetched again. The runtime's
@@ -17,7 +18,7 @@ cd "$(dirname "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)")"
 
 case "${1:-}" in
     "") ;;
-    --help) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --help) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "Error: Unknown option: $1" >&2; exit 2 ;;
 esac
 
@@ -27,8 +28,8 @@ done
 
 # One line per pinned file with an https source: file, sha256, bytes, source.
 pins="$(node --input-type=module -e "
-import { MODEL_FILES } from './src/net/modelPins.ts';
-for (const pin of Object.values(MODEL_FILES)) {
+import { SERVED_FILES } from './src/net/modelPins.ts';
+for (const pin of SERVED_FILES) {
   if (pin.source.startsWith('https://')) console.log([pin.file, pin.sha256, pin.bytes, pin.source].join(' '));
 }")"
 

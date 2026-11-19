@@ -10,8 +10,8 @@
  * `dist/models/`; the page checks it once more before first use
  * (`src/net/modelFiles.ts`). A file changes only with an app release.
  *
- * This file holds data only, so the build, the scripts and the app all read
- * the same pins.
+ * This file holds data, and {@link servedFiles}, which only lists it, so the
+ * build, the scripts and the app all read the same pins.
  */
 
 /**
@@ -85,3 +85,33 @@ export const MODEL_FILES: Readonly<Record<ModelFileName, SourcedFile>> = {
     license: 'MIT',
   },
 };
+
+/**
+ * A stance model (#478; ADR-0080 §3): a sentence-pair inference model, its
+ * tokenizer and the runtime, and which of its outputs is entailment and which
+ * contradiction. A two-way model, entailment or not, has no contradiction.
+ */
+export interface StanceModel {
+  readonly files: Readonly<Record<ModelFileName, SourcedFile>>;
+  readonly labels: { readonly entailment: number; readonly contradiction?: number };
+}
+
+/**
+ * The stance model every device would fetch: none (#478). Three small
+ * inference models were tried on the corpus's `tune` split, and none that
+ * fits the 60 MB budget and ADR-0024 calls a single shared claim agreement,
+ * so the judge ships switched off (ADR-0080 §3's amendment): every reason is
+ * unverified, and no device downloads a stance model. Pinning one that passes
+ * the harness switches it on; its files are then built, fetched and served
+ * beside the embedder's ({@link servedFiles}).
+ */
+export const STANCE_MODEL: StanceModel | null = null;
+
+/** Every file the build serves under `/models/`: the embedder's, then `stance`'s, each once. */
+export function servedFiles(stance: StanceModel | null): SourcedFile[] {
+  const files = [...Object.values(MODEL_FILES), ...Object.values(stance?.files ?? {})];
+  return [...new Map(files.map((pin) => [pin.file, pin])).values()];
+}
+
+/** The files the build serves, and every device may fetch, under `/models/`. */
+export const SERVED_FILES: readonly SourcedFile[] = servedFiles(STANCE_MODEL);

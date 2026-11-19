@@ -1,5 +1,5 @@
 /**
- * Every threshold the Bedfellows pipeline reads (#475, #477; ADR-0080 §1–§4),
+ * Every threshold the Bedfellows pipeline reads (#475, #477, #478; ADR-0080 §1–§4),
  * in one place.
  *
  * The cosine thresholds are for the real model (#476, all-MiniLM-L6-v2) and
@@ -19,6 +19,12 @@ export interface Thresholds {
   readonly nearCopy: number;
   /** How many of an entry's best pairs go to the stance check. */
   readonly judged: number;
+  /**
+   * The stance check's confidence (`judge.ts`, #478): a pair agrees when the
+   * model's entailment is at least `entails` asked both ways, and opposes
+   * when its contradiction is at least `contradicts` asked both ways.
+   */
+  readonly stance: { readonly entails: number; readonly contradicts: number };
   /** Tier cuts by strangeness, one minus coverage, for an entry of `shortEntry.claims` claims or more. */
   readonly strangeness: { readonly closeBelow: number; readonly strangeFrom: number };
   /** Tier cuts by closeness for a shorter entry (`tiers.ts`). */
@@ -67,6 +73,31 @@ export const THRESHOLDS: Thresholds = {
   nearCopy: 0.65,
   /** ADR-0080 §3: the stance check reads an entry's best three pairs. */
   judged: 3,
+  /**
+   * Set on `tune` (#478) over the pairs the pipeline sent the judge, for the
+   * three candidates: xtremedistil-l6-h256 (two-way, 13.1 MB), MobileBERT-MNLI
+   * (4-bit, 21.0 MB) and nli-deberta-v3-xsmall (8-bit, 87.2 MB). The judge is
+   * switched off, since no candidate passed (`STANCE_MODEL` in
+   * `src/net/modelPins.ts`), so these hold for whichever model is pinned next,
+   * and a new model means tuning them again.
+   *
+   * `entails` 0.8: no candidate's entailment reaches 0.35 both ways on any
+   * opposed pair (the highest are 0.16, 0.30, 0.06), and from 0.5 to 0.8 each
+   * gives the same numbers: shared claims verified 0/33, 1/33 and 1/33, and
+   * nothing else verified. 0.8 is the strict end of that span, because a
+   * wrongly verified pair misstates a group (ADR-0080's "Why"). Asked one way
+   * only, no bar passes: at 0.9, MobileBERT verifies 4 shared claims, 2
+   * opposed pairs and 1 unclear one (precision 4/7, false agreement 2/31),
+   * DeBERTa 4, 1, and a trap and an unclear one; and DeBERTa reads the ironic
+   * ring-road entry as entailing the reader's welcome at 0.97.
+   *
+   * `contradicts` 0.9: on the 25 opposed and 26 shared-claim entries the
+   * pipeline judged, contradiction both ways at 0.9 leaves out 2 opposed and
+   * no shared claim with DeBERTa, 1 and none with MobileBERT; at 0.5, 4 and
+   * none, 3 and 2. One way only, at 0.9 it leaves out 5 opposed and 2 shared
+   * claims, 3 and 2. The two-way model has no contradiction.
+   */
+  stance: { entails: 0.8, contradicts: 0.9 },
   /**
    * Cut where `tune`'s 83 rows fall: 7 with strangeness 0.5 (two claims of
    * four restated) are close, 36 between 0.667 and 0.8 middle, and 40 with
