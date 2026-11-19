@@ -258,6 +258,10 @@ Build on **React Aria Components** (unstyled, accessible). Style everything from
   - It reveals a press-and-hold confirm. Releasing early cancels, and a polite live region announces the progress.
   - `negative` appears only on that final confirm.
   - No skulls, no red banners, no "stealth" language.
+- **The build's version and a new version** (Settings, Start; #513): quiet, like every setting (ADR-0018).
+  - Settings ends, under its sections, with "Version <id>" in caption: the build's id, for comparing devices, never a release number or "update available" badge.
+  - While a new version is installed and waiting, "A new version is ready. Close and reopen Reconcile." in caption, a polite status: above the version in Settings, and on Start just above the quiet Settings link.
+  - Never a banner, a badge, a dot, a modal or a button. Nothing reloads the app or makes the new version take over; the words say how to get it.
 - **Passkey offer** (#95, #389): the offer after the pilot notice, and Settings' Lock with a passkey. It never pressures and never hides Not now.
   - What a passkey does (body), then the two taps: Make a passkey (primary; secondary in Settings, whose one primary action is Make a backup file) with Not now (quiet) on its line.
   - **A way back first** (#389). With groups and no way back, "First, a way back to your groups" (heading-3) and one line in body take setup's place, then Save a backup's own form, whose Make a backup file is the one primary action, then "Choose recovery contacts instead →" as a forward link, then Not now. Once the file is saved, setup takes the form's place under one line saying so.
