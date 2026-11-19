@@ -22,6 +22,7 @@ import {
   pick,
   test,
 } from './support/fixtures';
+import { SYNC_MS } from './support/steps';
 
 const GROUP = 'Riverside Tenants';
 const TITLE = 'House rules';
@@ -82,10 +83,11 @@ async function openProposal(person: Person, title: string): Promise<void> {
 /** The Document as one profile sees it, once both votes have closed. */
 async function expectDocument(person: Person): Promise<void> {
   await openDocument(person);
-  await expect(person.page.getByRole('article').getByRole('paragraph')).toHaveText([
-    FIRST_ATOM,
-    NEW_ATOM,
-  ]);
+  // The other profile's last vote crosses through the relay first.
+  await expect(person.page.getByRole('article').getByRole('paragraph')).toHaveText(
+    [FIRST_ATOM, NEW_ATOM],
+    { timeout: SYNC_MS },
+  );
 }
 
 test('a group adds one section and removes another, and every profile shows the same Document', async ({
@@ -160,7 +162,10 @@ test('a group adds one section and removes another, and every profile shows the 
     const { page } = ben;
     // Ben is still on Group home, where he joined.
     await page.getByRole('link', { name: TITLE, exact: true }).click();
-    await expect(page.getByRole('button', { name: 'Add your version to section 2' })).toBeVisible();
+    // A's two Proposals reach B's device through the relay.
+    await expect(page.getByRole('button', { name: 'Add your version to section 2' })).toBeVisible({
+      timeout: SYNC_MS,
+    });
     expect(await fitsWidth(page)).toBe(true);
     await expectAccessible(ben, 'Document view, on a phone');
     await page.getByRole('button', { name: 'Propose removing this section, section 2' }).click();
@@ -189,9 +194,10 @@ test('a group adds one section and removes another, and every profile shows the 
   await test.step('A scores the removal too, and the removal passes', async () => {
     const { page } = ana;
     await openProposal(ana, REWORD);
+    // B's removal reaches A's device through the relay.
     await expect(
       page.getByText('A new version was added. Score it to update your ballot.'),
-    ).toBeVisible();
+    ).toBeVisible({ timeout: SYNC_MS });
     await pick(page, '4 · Strongly supportive', scores(page, 2));
     await page.getByRole('button', { name: 'Update your vote' }).click();
     await expect(sendStatus(page)).toHaveText('Sent');
