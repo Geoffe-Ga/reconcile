@@ -21,11 +21,11 @@ import { shelfLineId } from '../engine/dispatches';
 import type { ShelfRecord } from '../net/shelf';
 import { signNotice } from '../shelf/notices';
 import type { ShelfReader } from '../shelf/read';
-import type { NoticeBody } from '../shelf/record';
+import type { NoticeDraft } from '../shelf/record';
 import { axeViolations } from '../test/axe';
 import { DOOR, LISTED } from '../test/door';
 import { authorOf } from '../test/keys';
-import { STEWARD_ADDRESS, TEST_STEWARD } from '../test/steward';
+import { STEWARD_ADDRESS, stampAt, TEST_STEWARD } from '../test/steward';
 import { groupLog, type LogBuilder } from '../test/votes';
 import { formatDate } from './time';
 import { messages } from './messages';
@@ -58,12 +58,12 @@ function publish(log: LogBuilder, title: string): string {
 }
 
 /** The steward's `notices`, as the relay serves them, each arriving at `received`. */
-function served(notices: readonly NoticeBody[], received = NOW - 100): ShelfRecord[] {
+function served(notices: readonly NoticeDraft[], received = NOW - 100): ShelfRecord[] {
   return notices.map((body, i) => ({
     seq: i + 1,
     received,
     address: STEWARD_ADDRESS,
-    data: signNotice(TEST_STEWARD.signing, body),
+    data: signNotice(TEST_STEWARD.signing, body, stampAt(received)),
   }));
 }
 
@@ -72,7 +72,7 @@ const readerOf = (records: readonly ShelfRecord[], now = NOW): ShelfReader => ({
   current: () => Promise.resolve({ records, now, since: new Map() }),
 });
 
-const HOLD: NoticeBody = { v: 1, kind: 'notice', act: 'hold', address: ADDRESS, clause: 'C2' };
+const HOLD: NoticeDraft = { v: 1, kind: 'notice', act: 'hold', address: ADDRESS, clause: 'C2' };
 
 describe('ShelfHolds', () => {
   it('shows a hold on the group’s listing, its clause in words and when it lapses, and passes axe', async () => {
@@ -97,7 +97,7 @@ describe('ShelfHolds', () => {
   it('names a held entry by its Dispatch’s title, in <bdi>', async () => {
     const log = opened();
     const id = publish(log, 'Rally Saturday');
-    const hold: NoticeBody = { ...HOLD, id, clause: 'C3' };
+    const hold: NoticeDraft = { ...HOLD, id, clause: 'C3' };
 
     render(<ShelfHolds state={log.state()} shelf={readerOf(served([hold]))} />);
 
@@ -115,7 +115,7 @@ describe('ShelfHolds', () => {
   });
 
   it('shows nothing for another door’s hold, an unlisted group, or no shelf', async () => {
-    const other: NoticeBody = { ...HOLD, address: base64url(new Uint8Array(32).fill(1)) };
+    const other: NoticeDraft = { ...HOLD, address: base64url(new Uint8Array(32).fill(1)) };
     const { rerender } = render(
       <ShelfHolds state={opened().state()} shelf={readerOf(served([other]))} />,
     );
@@ -133,7 +133,7 @@ describe('ShelfHolds', () => {
 
 describe('ShelfHolds: Ask the steward to look again (#490)', () => {
   const words = messages.shelfEntry;
-  const SUSPEND: NoticeBody = {
+  const SUSPEND: NoticeDraft = {
     v: 1,
     kind: 'notice',
     act: 'suspend',

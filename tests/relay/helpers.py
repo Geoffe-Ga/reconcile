@@ -342,6 +342,52 @@ class ShelfSigner:
         return self.sign(compact(body))
 
 
+# A notice's nonce: 16 random bytes in canonical unpadded base64url (§4.1).
+NONCE_BYTES = 16
+MINUTES_PER_DAY = DAY // MINUTE
+
+
+def nonce() -> str:
+    """A fresh notice nonce, made at run time: 22 base64url characters."""
+    raw = secrets.token_bytes(NONCE_BYTES)
+    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
+
+
+def notice(act: str, **fields: Any) -> dict[str, Any]:
+    """A notice's body before its stamp: ``act`` and whatever it names."""
+    return {"v": 1, "kind": "notice", "act": act, **fields}
+
+
+def stamped(
+    body: Mapping[str, Any], *, day: int, n: str | None = None
+) -> dict[str, Any]:
+    """``body`` with the day the steward signed it and a nonce, fresh unless given."""
+    return {**body, "day": day, "n": nonce() if n is None else n}
+
+
+def relay_day(client: TestClient) -> int:
+    """The relay's UTC day, from the ``now`` a shelf GET returns; else ``NOON``'s."""
+    response = client.get("/v1/shelf", params={"limit": "1"})
+    if response.status_code != 200:
+        return int(NOON // DAY)
+    return int(response.json()["now"]) // MINUTES_PER_DAY
+
+
+def put_notice(
+    client: TestClient,
+    steward: ShelfSigner,
+    body: Mapping[str, Any],
+    *,
+    day: int | None = None,
+    n: str | None = None,
+) -> Any:
+    """PUT ``body`` as the steward's notice, stamped with the relay's day."""
+    when = relay_day(client) if day is None else day
+    return put_shelf(
+        client, steward.address, steward.record(stamped(body, day=when, n=n))
+    )
+
+
 def compact(body: Mapping[str, Any]) -> bytes:
     """``body`` as compact UTF-8 JSON, as a device writes a shelf record."""
     return json.dumps(body, separators=(",", ":"), ensure_ascii=False).encode()

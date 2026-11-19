@@ -28,8 +28,11 @@ from tests.relay.helpers import (
     ShelfSigner,
     entry,
     listing,
+    notice,
+    put_notice,
     put_shelf,
     shelf_rows,
+    stamped,
     store_of,
 )
 
@@ -48,14 +51,9 @@ def _key() -> str:
     return base64.urlsafe_b64encode(os.urandom(32)).rstrip(b"=").decode("ascii")
 
 
-def notice(act: str, **fields: Any) -> dict[str, Any]:
-    """A notice's body: ``act`` and whatever it names."""
-    return {"v": 1, "kind": "notice", "act": act, **fields}
-
-
 def _steward(client: TestClient, steward: ShelfSigner, body: dict[str, Any]) -> Any:
-    """PUT ``body`` as the steward's notice."""
-    return put_shelf(client, steward.address, steward.record(body))
+    """PUT ``body`` as the steward's notice, stamped with the relay's day."""
+    return put_notice(client, steward, body)
 
 
 def _post(client: TestClient, door: ShelfSigner, body: dict[str, Any]) -> Any:
@@ -412,7 +410,7 @@ def test_a_door_cannot_sign_a_notice(
     shelf_client: TestClient, door: ShelfSigner, body: dict[str, Any]
 ) -> None:
     """Under a door's own address, every act gets 403 bad_signature."""
-    response = _post(shelf_client, door, body)
+    response = _post(shelf_client, door, stamped(body, day=TODAY))
 
     assert response.status_code == 403
     assert response.json() == {"error": "bad_signature"}

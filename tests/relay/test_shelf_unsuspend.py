@@ -21,8 +21,11 @@ from tests.relay.helpers import (
     FakeClock,
     ShelfSigner,
     listing,
+    notice,
+    put_notice,
     put_shelf,
     shelf_rows,
+    stamped,
     store_of,
 )
 
@@ -34,14 +37,9 @@ if TYPE_CHECKING:
 TODAY = int(NOON // DAY)
 
 
-def notice(act: str, **fields: Any) -> dict[str, Any]:
-    """A notice's body: ``act`` and whatever it names."""
-    return {"v": 1, "kind": "notice", "act": act, **fields}
-
-
 def _steward(client: TestClient, steward: ShelfSigner, body: dict[str, Any]) -> Any:
-    """PUT ``body`` as the steward's notice."""
-    return put_shelf(client, steward.address, steward.record(body))
+    """PUT ``body`` as the steward's notice, stamped with the relay's day."""
+    return put_notice(client, steward, body)
 
 
 def _list(client: TestClient, door: ShelfSigner) -> Any:
@@ -194,13 +192,17 @@ def test_an_unsuspend_names_an_address(
     assert shelf_rows(db_path) == []
 
 
-def test_no_door_can_lift_a_suspension(
+def test_a_lift_any_other_key_signs_is_refused(
     shelf_client: TestClient, door: ShelfSigner, steward: ShelfSigner
 ) -> None:
-    """Under the door's own address the PUT is refused, and the suspension stands."""
+    """A key not the steward's, PUT under its own address, gets 403 bad_signature.
+
+    The key is a stranger's: the suspended door's own PUTs get 403
+    ``suspended`` before any signature is read. The suspension stands.
+    """
     _suspended(shelf_client, door, steward)
     other = ShelfSigner.fresh()
-    lift = notice("unsuspend", address=door.address)
+    lift = stamped(notice("unsuspend", address=door.address), day=TODAY)
 
     response = put_shelf(shelf_client, other.address, other.record(lift))
 

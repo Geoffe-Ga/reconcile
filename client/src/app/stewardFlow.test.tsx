@@ -87,12 +87,13 @@ describe('the steward through the app (#488, #489)', { timeout: 60_000 }, () => 
   });
 
   it('imports the key in Settings, lists a held listing beside its look-alike, and releases it', async () => {
-    const fake = createFakeShelf();
+    // The release is stamped with this device's day, so the relay's clock reads it too.
+    const fake = createFakeShelf({ minute: Math.floor(Date.now() / 60_000) });
     const shelf = createShelf({ fetch: fake.fetch });
     const birch = newSigningKeys();
     const oak = newSigningKeys();
     await shelf.put(base64url(birch.publicKey), listingBy(birch, 'Eastside Tenants Union'));
-    await release(shelf, base64url(birch.publicKey));
+    await release(fake, base64url(birch.publicKey));
     await shelf.put(base64url(oak.publicKey), listingBy(oak, 'EASTSIDE TENANTS UNI0N'));
     const services = await deviceOn(shelf);
     const user = userEvent.setup();

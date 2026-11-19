@@ -8,7 +8,7 @@ import { CLAUSE_WORDS, COVENANT_HASH } from '../shelf/covenant';
 import type { ShelfEntry, ShelfListing, StandingHold, WaitingListing } from '../shelf/fold';
 import type { InboxItem } from '../shelf/inbox';
 import type { NoticeRemoval } from '../shelf/notices';
-import type { NoticeBody } from '../shelf/record';
+import type { NoticeDraft } from '../shelf/record';
 import { axeViolations } from '../test/axe';
 import { Steward, type StewardQueue, type StewardView } from './Steward';
 
@@ -66,7 +66,7 @@ const viewOf = (fields: Partial<StewardView> = {}): StewardView => ({
 
 function setup(
   queue: StewardQueue,
-  onNotice = vi.fn<(notice: NoticeBody) => Promise<boolean>>(() => Promise.resolve(true)),
+  onNotice = vi.fn<(notice: NoticeDraft) => Promise<boolean>>(() => Promise.resolve(true)),
   onDismiss = vi.fn<(key: string) => Promise<boolean>>(() => Promise.resolve(true)),
 ) {
   render(<Steward queue={queue} onNotice={onNotice} onDismiss={onDismiss} />);

@@ -1,6 +1,6 @@
 {
   "kind": "notices",
-  "about": "The steward's notices on the shelf (#488, #489; shelf/fold.ts rules 1 and 8, shelf/notices.ts, docs/spec/listed-doors.md §4.3 and §6.1). Each door's record is signed by its door's key, made from the door's label (fold.test.ts), as in ownership.json. A record under `release`, `hold`, `uphold`, `suspend` or `unsuspend` (#490) is that notice naming that door, with `id` naming one of its entries by label and `clause` the covenant clause; one under `pause` is a pause, on or off. Each is signed by the steward's key the tests pin (src/test/steward.ts) and served under its address, or, with `signer`, signed by that door's own key and served under that door's address, which every device ignores. A record arrives at `received`, else a day and a minute before the minute the fold runs at, fold.test.ts's NOW (29,000,000); a hold lapses 10,080 relay minutes after it arrives. These records are folded as given, with no release added. `listings` are the doors whose listings show, each with its name; `entries` the doors and ids that show, newest first; `held` the doors whose listing a door's page counts as held (no release, a hold that stands, or a suspend); `tombstones`, when given, each tombstone as its door, the entry it replaced or null for a listing, and its clause, newest first; `holds`, when given, each hold that stands; `paused`, when given, whether a pause stands, which every reader's screen shows in place of the shelf.",
+  "about": "The steward's notices on the shelf (#488, #489; shelf/fold.ts rules 1 and 8, shelf/notices.ts, docs/spec/listed-doors.md §4.3 and §6.1). Each door's record is signed by its door's key, made from the door's label (fold.test.ts), as in ownership.json. A record under `release`, `hold`, `uphold`, `suspend` or `unsuspend` (#490) is that notice naming that door, with `id` naming one of its entries by label and `clause` the covenant clause; one under `pause` is a pause, on or off. Each is signed by the steward's key the tests pin (src/test/steward.ts) and served under its address, or, with `signer`, signed by that door's own key and served under that door's address, which every device ignores. A record arrives at `received`, else a day and a minute before the minute the fold runs at, fold.test.ts's NOW (29,000,000); a hold lapses 10,080 relay minutes after it arrives. These records are folded as given, with no release added. `listings` are the doors whose listings show, each with its name; `entries` the doors and ids that show, newest first; `held` the doors whose listing a door's page counts as held (no release, a hold that stands, or a suspend); `tombstones`, when given, each tombstone as its door, the entry it replaced or null for a listing, and its clause, newest first; `holds`, when given, each hold that stands; `paused`, when given, whether a pause stands, which every reader's screen shows in place of the shelf. Every notice is stamped (#490's review) with the day it was signed, the day it arrived less `signedDaysBefore` (else 0), and a nonce: the first 16 bytes of the SHA-256 of `reconcile/vector/nonce/` and its `nonce` label, else its seq, so two records with one `nonce` label are one notice the relay served twice. A device counts a notice only when it was signed on the day it arrived or the day before, and only the first with each nonce, by seq.",
   "cases": [
     {
       "about": "a listing no release names shows nowhere, nor do its entries",
@@ -721,6 +721,198 @@
       "entries": [],
       "held": ["oak"],
       "tombstones": [["oak", null, "C2"]]
+    },
+    {
+      "about": "an old unsuspend the relay serves again after a fresh suspend counts for nothing: the new suspension stands (#490's review)",
+      "records": [
+        {
+          "seq": 1,
+          "door": "oak",
+          "listing": "Oak St Tenants"
+        },
+        {
+          "seq": 2,
+          "release": "oak"
+        },
+        {
+          "seq": 3,
+          "suspend": "oak",
+          "clause": "C3"
+        },
+        {
+          "seq": 4,
+          "unsuspend": "oak",
+          "nonce": "lift"
+        },
+        {
+          "seq": 5,
+          "release": "oak"
+        },
+        {
+          "seq": 6,
+          "suspend": "oak",
+          "clause": "C1"
+        },
+        {
+          "seq": 7,
+          "unsuspend": "oak",
+          "nonce": "lift"
+        }
+      ],
+      "listings": [],
+      "entries": [],
+      "held": ["oak"],
+      "tombstones": [["oak", null, "C1"]]
+    },
+    {
+      "about": "an old suspend the relay serves again after the lift counts for nothing: the listing released since shows",
+      "records": [
+        {
+          "seq": 1,
+          "door": "oak",
+          "listing": "Oak St Tenants"
+        },
+        {
+          "seq": 2,
+          "release": "oak"
+        },
+        {
+          "seq": 3,
+          "suspend": "oak",
+          "clause": "C3",
+          "nonce": "suspend"
+        },
+        {
+          "seq": 4,
+          "unsuspend": "oak"
+        },
+        {
+          "seq": 5,
+          "release": "oak"
+        },
+        {
+          "seq": 6,
+          "suspend": "oak",
+          "clause": "C3",
+          "nonce": "suspend"
+        }
+      ],
+      "listings": [["oak", "Oak St Tenants"]],
+      "entries": [],
+      "held": [],
+      "tombstones": []
+    },
+    {
+      "about": "an old release the relay serves again after the lift counts for nothing: the relisting waits for a fresh one",
+      "records": [
+        {
+          "seq": 1,
+          "release": "oak",
+          "nonce": "release"
+        },
+        {
+          "seq": 2,
+          "suspend": "oak",
+          "clause": "C2"
+        },
+        {
+          "seq": 3,
+          "unsuspend": "oak"
+        },
+        {
+          "seq": 4,
+          "door": "oak",
+          "listing": "Oak St Tenants"
+        },
+        {
+          "seq": 5,
+          "release": "oak",
+          "nonce": "release"
+        }
+      ],
+      "listings": [],
+      "entries": [],
+      "held": ["oak"],
+      "tombstones": []
+    },
+    {
+      "about": "an old hold the relay serves again the next day counts for nothing: the first lapsed at 10,080 relay minutes, and the listing shows",
+      "records": [
+        {
+          "seq": 1,
+          "door": "oak",
+          "listing": "Oak St Tenants"
+        },
+        {
+          "seq": 2,
+          "release": "oak"
+        },
+        {
+          "seq": 3,
+          "hold": "oak",
+          "clause": "C2",
+          "nonce": "hold",
+          "received": 28989420
+        },
+        {
+          "seq": 4,
+          "hold": "oak",
+          "clause": "C2",
+          "nonce": "hold",
+          "received": 28990860,
+          "signedDaysBefore": 1
+        }
+      ],
+      "listings": [["oak", "Oak St Tenants"]],
+      "entries": [],
+      "held": [],
+      "holds": []
+    },
+    {
+      "about": "a notice counts when signed on the day it arrived or the day before, never two days before",
+      "records": [
+        {
+          "seq": 1,
+          "door": "oak",
+          "listing": "Oak St Tenants"
+        },
+        {
+          "seq": 2,
+          "door": "birch",
+          "listing": "Birch Ave"
+        },
+        {
+          "seq": 3,
+          "release": "oak",
+          "signedDaysBefore": 2
+        },
+        {
+          "seq": 4,
+          "release": "birch",
+          "signedDaysBefore": 1
+        }
+      ],
+      "listings": [["birch", "Birch Ave"]],
+      "entries": [],
+      "held": ["oak"]
+    },
+    {
+      "about": "a notice signed on a day after the day it arrived counts for nothing",
+      "records": [
+        {
+          "seq": 1,
+          "door": "oak",
+          "listing": "Oak St Tenants"
+        },
+        {
+          "seq": 2,
+          "release": "oak",
+          "signedDaysBefore": -1
+        }
+      ],
+      "listings": [],
+      "entries": [],
+      "held": ["oak"]
     }
   ]
 }

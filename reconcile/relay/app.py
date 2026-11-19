@@ -79,6 +79,16 @@ lifts, which stays: the newer of an address's suspend and unsuspend, by seq,
 decides, so a later suspend stands again. The address's records were
 deleted, so its next listing is a first listing, held until a new release.
 
+No notice can be replayed (#490's review, listed-doors.md §4.1). Each is
+signed with ``day``, the UTC day the steward signed it on, and ``n``, a
+fresh nonce. One whose ``day`` isn't the relay's today or yesterday gets 400
+``stale_notice``, and one whose nonce the relay has taken before gets 409
+``replayed_notice``, both before it is read for anything else. The relay
+keeps each nonce it takes in ``notice_nonces`` until the day after the last
+one its notice could be taken on, apart from the notice's own row, so a
+notice deleted early (an uphold kept only as long as its entry) still can't
+come back.
+
 Nothing here logs. Error bodies are a constant ``{"error": "<code>"}`` that
 never echoes the request. The privacy middleware wraps everything.
 """
@@ -136,6 +146,10 @@ SHELF_KEEP_DAYS = 30
 NOTICE_KEEP_DAYS = 180
 # A steward's hold lapses 10,080 relay minutes after it arrived (§6.1, #489).
 HOLD_MINUTES = 10_080
+# A notice is taken on the UTC day it was signed and the day after, never
+# later or earlier (#490's review): 1 day of grace for midnight and a slow
+# upload. Its nonce is kept until it could be taken no more.
+NOTICE_GRACE_DAYS = 1
 # An address's entries (#431, §4.2, proposed): at most 4 live, 1 new a relay day.
 MAX_LIVE_ENTRIES = 4
 MAX_NEW_ENTRIES_A_DAY = 1
@@ -438,7 +452,7 @@ class _Shelf:
         key = key_bytes(address)
         if key is None:
             raise RelayError(400, "invalid_address")
-        if self._suspended(address):
+        if self._suspended(address, day_of(self.clock())):
             raise RelayError(403, "suspended")
         _check_media_type(request.headers, OCTET_STREAM)
         length = _declared_length(request.headers, shelf.MAX_RECORD_BYTES)
@@ -488,10 +502,16 @@ class _Shelf:
         have been; a suspend deletes its address's records; an unsuspend
         (409 ``not_suspended`` with no suspension standing) and a pause do
         nothing more here. ``at`` is the relay minute and day it arrived.
+
+        First, a notice must be fresh (400 ``stale_notice``) and its nonce
+        new (409 ``replayed_notice``); its nonce is kept only once it is
+        stored.
         """
         received, today = at
+        self._check_unused(notice, today)
         when = ShelfWhen(received=received, expiry=self._kept_until(notice, today))
         seq = self.store.add_shelf(steward, "notice", notice.ref, body, when)
+        self.store.remember_nonce(notice.n, expiry=notice.day + NOTICE_GRACE_DAYS + 1)
         if notice.act == shelf.RELEASE:
             held = self._hold_ends(notice.address, received, today)
             self.store.release(notice.address, held_until=held)
@@ -503,13 +523,24 @@ class _Shelf:
             self.store.drop_address(notice.address)
         return seq
 
+    def _check_unused(self, notice: shelf.Notice, today: int) -> None:
+        """Refuse a notice signed on a day but today or yesterday, or seen before.
+
+        A nonce is remembered until its notice's day is two days gone, so
+        whatever passes the first check meets the second.
+        """
+        if not today - NOTICE_GRACE_DAYS <= notice.day <= today:
+            raise RelayError(400, "stale_notice")
+        if self.store.nonce_seen(notice.n):
+            raise RelayError(409, "replayed_notice")
+
     def _kept_until(self, notice: shelf.Notice, today: int) -> int:
         """The day ``notice`` expires: 180 days on, or with the entry an uphold names.
 
         An uphold needs a live entry (409 ``no_entry``), and an unsuspend a
         suspension that stands (409 ``not_suspended``, #490).
         """
-        if notice.act == shelf.UNSUSPEND and not self._suspended(notice.address):
+        if notice.act == shelf.UNSUSPEND and not self._suspended(notice.address, today):
             raise RelayError(409, "not_suspended")
         if notice.act != shelf.UPHOLD:
             return today + NOTICE_KEEP_DAYS + 1
@@ -518,9 +549,8 @@ class _Shelf:
             raise RelayError(409, "no_entry")
         return kept
 
-    def _suspended(self, address: str) -> bool:
-        """Whether a suspend of ``address`` stands, newer than any unsuspend (#490)."""
-        today = day_of(self.clock())
+    def _suspended(self, address: str, today: int) -> bool:
+        """Whether a suspend of ``address`` stands on ``today``, newer than a lift."""
         newest = self.store.newest_notice_seq
         suspend = newest(f"{shelf.SUSPEND}:{address}", today=today)
         lift = newest(f"{shelf.UNSUSPEND}:{address}", today=today)

@@ -27,12 +27,20 @@
  *   says a pause is "on or off" and §4.1 had no field for it, so #489 adds
  *   `on`, on a pause only.
  *
+ * Every notice ends with its stamp (#490's review): `day`, the UTC day number
+ * the steward signed it on, and `n`, a fresh 16-byte nonce in canonical
+ * unpadded base64url. Both are signed with the rest, so no one who saved a
+ * notice the shelf served can have it taken again later: the relay refuses a
+ * stale day or a nonce it has seen, and `notices.ts` counts a notice only
+ * when it arrived on the day it was signed or the next, and only once per
+ * nonce.
+ *
  * A body with any other key, or one missing, reads as none: a reader never
  * guesses at what a signer meant.
  */
 import { canonicalBytes } from '../crypto/base64url';
 import { objectIn } from '../crypto/json';
-import { signShelfRecord } from '../crypto/shelf';
+import { NOTICE_NONCE_BYTES, signShelfRecord } from '../crypto/shelf';
 import type { SigningKeys } from '../crypto/sign';
 import { DISPATCH_TEXT_MAX, DISPATCH_TITLE_MAX } from '../engine/dispatches';
 import { codePointLength } from '../engine/text';
@@ -154,14 +162,25 @@ export interface PauseNoticeBody {
   readonly on: boolean;
 }
 
-/** A record the steward signs. */
-export type NoticeBody =
+/** What a steward's notice says before its stamp: its act and what it names. */
+export type NoticeDraft =
   | ReleaseNoticeBody
   | HoldNoticeBody
   | UpholdNoticeBody
   | SuspendNoticeBody
   | UnsuspendNoticeBody
   | PauseNoticeBody;
+
+/** What makes each notice once-only (#490's review): the day it was signed, and a nonce. */
+export interface NoticeStamp {
+  /** The UTC day number the steward signed it on: days since 1970-01-01. */
+  readonly day: number;
+  /** {@link NOTICE_NONCE_BYTES} random bytes, in canonical unpadded base64url. */
+  readonly n: string;
+}
+
+/** A record the steward signs: a draft, stamped. */
+export type NoticeBody = NoticeDraft & NoticeStamp;
 
 /** Any record a door, or the steward, signs. */
 export type ShelfBody = OpenListingBody | FinalListingBody | EntryBody | WithdrawBody | NoticeBody;
@@ -183,8 +202,13 @@ function ordered(body: ShelfBody): ShelfBody {
   }
 }
 
-/** A notice with its keys in the spec's order, leaving out those it lacks. */
+/** A notice with its keys in the spec's order, its stamp last. */
 function orderedNotice(body: NoticeBody): NoticeBody {
+  return { ...orderedDraft(body), day: body.day, n: body.n };
+}
+
+/** A draft with its keys in the spec's order, leaving out those it lacks. */
+function orderedDraft(body: NoticeDraft): NoticeDraft {
   const { v, kind } = body;
   switch (body.act) {
     case 'release':
@@ -328,8 +352,24 @@ function suspendOf(fields: Readonly<Record<string, unknown>>): SuspendNoticeBody
   return fits ? { v: SHELF_VERSION, kind: 'notice', act: 'suspend', address, clause } : null;
 }
 
-/** A notice's fields as its body, by its act, or null for an act it doesn't know. */
+/** Whether `value` is a whole, non-negative day number. */
+const isDay = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+
+/** Whether `value` is a nonce: 16 bytes in canonical unpadded base64url. */
+const isNonce = (value: unknown): value is string =>
+  canonicalBytes(value)?.length === NOTICE_NONCE_BYTES;
+
+/** A notice's fields as its body: a draft with a valid stamp, or null. */
 function noticeOf(fields: Readonly<Record<string, unknown>>): NoticeBody | null {
+  const { day, n, ...rest } = fields;
+  if (!isDay(day) || !isNonce(n)) return null;
+  const draft = draftOf(rest);
+  return draft === null ? null : { ...draft, day, n };
+}
+
+/** A notice's unstamped fields as its draft, by its act, or null for an act it doesn't know. */
+function draftOf(fields: Readonly<Record<string, unknown>>): NoticeDraft | null {
   switch (fields.act) {
     case 'release':
     case 'unsuspend':

@@ -23,7 +23,7 @@ import type { Shelf } from '../net/shelf';
 import { foldShelf, standingHolds, waitingListings } from '../shelf/fold';
 import { dismissInboxItem, type InboxItem, type InboxKeep, readStewardInbox } from '../shelf/inbox';
 import { foldNotices, signNotice } from '../shelf/notices';
-import type { NoticeBody } from '../shelf/record';
+import type { NoticeDraft } from '../shelf/record';
 import { STEWARD_PINS, type StewardPins } from '../shelf/steward';
 import { type StewardKeyStore, VaultLocked } from '../store/db';
 import type { StewardImport } from './StewardKeyCard';
@@ -134,14 +134,17 @@ export async function readQueue(
 }
 
 /**
- * Signs `notice` with the steward's key and PUTs it under the steward's
- * address; true once the relay has it, false when the device holds no key
- * that derives the pins or the relay refused it.
+ * Signs `notice` with the steward's key, stamped with this device's UTC day
+ * and a fresh nonce so no one can replay it (#490's review), and PUTs it
+ * under the steward's address; true once the relay has it, false when the
+ * device holds no key that derives the pins or the relay refused it, a
+ * notice signed on a day the relay no longer takes (`stale_notice`, a clock
+ * more than a day off) included.
  */
 export async function sendNotice(
   store: Pick<StewardKeyStore, 'getStewardKey'>,
   shelf: Pick<Shelf, 'put'>,
-  notice: NoticeBody,
+  notice: NoticeDraft,
 ): Promise<boolean> {
   const secret = await store.getStewardKey().catch(() => undefined);
   if (secret === undefined) return false;

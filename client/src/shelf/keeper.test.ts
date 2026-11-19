@@ -495,8 +495,7 @@ describe('createShelfKeeper: entries (§4.2, §4.5)', () => {
     const fake = shelfAt(log);
     await device(fake, log).run();
     const address = addressOfDoor(LISTED);
-    const shelf = createShelf({ fetch: fake.fetch });
-    await notify(shelf, { v: 1, kind: 'notice', act: 'uphold', address, id, clause: 'C2' });
+    await notify(fake, { v: 1, kind: 'notice', act: 'uphold', address, id, clause: 'C2' });
     inStep(fake, log, 1440);
     const before = puts(fake);
 
@@ -513,8 +512,7 @@ describe('createShelfKeeper: entries (§4.2, §4.5)', () => {
     const ana = device(fake, log);
     await ana.run();
     const address = addressOfDoor(LISTED);
-    const shelf = createShelf({ fetch: fake.fetch });
-    await notify(shelf, { v: 1, kind: 'notice', act: 'suspend', address, clause: 'C3' });
+    await notify(fake, { v: 1, kind: 'notice', act: 'suspend', address, clause: 'C3' });
     inStep(fake, log, REFRESH_MINUTES);
     publish(log, 'Another');
     const before = puts(fake);
@@ -531,14 +529,13 @@ describe('createShelfKeeper: entries (§4.2, §4.5)', () => {
     const fake = shelfAt(log, { held: true });
     await device(fake, log).run();
     const address = addressOfDoor(LISTED);
-    const shelf = createShelf({ fetch: fake.fetch });
-    await notify(shelf, { v: 1, kind: 'notice', act: 'release', address });
-    await notify(shelf, { v: 1, kind: 'notice', act: 'suspend', address, clause: 'C3' });
+    await notify(fake, { v: 1, kind: 'notice', act: 'release', address });
+    await notify(fake, { v: 1, kind: 'notice', act: 'suspend', address, clause: 'C3' });
     const ana = device(fake, log);
     await ana.run();
     expect(bodiesAt(fake, LISTED)).toEqual([]);
 
-    await notify(shelf, { v: 1, kind: 'notice', act: 'unsuspend', address });
+    await notify(fake, { v: 1, kind: 'notice', act: 'unsuspend', address });
     await device(fake, log).run();
 
     expect(bodiesAt(fake, LISTED)).toEqual([OPEN]);

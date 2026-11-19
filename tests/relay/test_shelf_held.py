@@ -27,8 +27,10 @@ from tests.relay.helpers import (
     entry,
     final_listing,
     listing,
+    put_notice,
     put_shelf,
     shelf_rows,
+    stamped,
     store_of,
 )
 
@@ -66,9 +68,7 @@ def test_a_new_listing_is_held_until_the_steward_releases_it(
     put_shelf(shelf_client, door.address, door.record(listing()))
     assert shelf_client.get("/v1/shelf").json()["records"] == []
 
-    response = put_shelf(
-        shelf_client, steward.address, steward.record(release(door.address))
-    )
+    response = put_notice(shelf_client, steward, release(door.address))
 
     assert response.status_code == 201
     assert _addresses(shelf_client.get("/v1/shelf")) == [
@@ -98,7 +98,7 @@ def test_the_held_route_returns_held_records_only(
     other = ShelfSigner.fresh()
     put_shelf(shelf_client, door.address, door.record(listing()))
     put_shelf(shelf_client, other.address, other.record(listing("Elm Co-op")))
-    put_shelf(shelf_client, steward.address, steward.record(release(other.address)))
+    put_notice(shelf_client, steward, release(other.address))
 
     held = shelf_client.get("/v1/shelf/held").json()
 
@@ -146,7 +146,7 @@ def test_a_release_frees_the_address_records_and_what_follows(
     """Its listing and entries go live, and a later entry is stored live."""
     put_shelf(shelf_client, door.address, door.record(listing()))
     put_shelf(shelf_client, door.address, door.record(entry("e" * 43)))
-    put_shelf(shelf_client, steward.address, steward.record(release(door.address)))
+    put_notice(shelf_client, steward, release(door.address))
     put_shelf(shelf_client, door.address, door.record(listing("Oak St Union")))
 
     rows = shelf_rows(db_path)
@@ -167,7 +167,7 @@ def test_a_release_frees_only_the_address_it_names(
     put_shelf(shelf_client, door.address, door.record(listing()))
     put_shelf(shelf_client, other.address, other.record(listing("Elm Co-op")))
 
-    put_shelf(shelf_client, steward.address, steward.record(release(door.address)))
+    put_notice(shelf_client, steward, release(door.address))
 
     assert _addresses(shelf_client.get("/v1/shelf/held")) == [other.address]
 
@@ -176,7 +176,7 @@ def test_a_notice_is_kept_180_days(
     shelf_client: TestClient, db_path: Path, steward: ShelfSigner
 ) -> None:
     """A notice expires 180 whole days after the day it arrived (§4.2, proposed)."""
-    put_shelf(shelf_client, steward.address, steward.record(release("A" * 43)))
+    put_notice(shelf_client, steward, release("A" * 43))
 
     assert shelf_rows(db_path)[0][5:] == (int(NOON // MINUTE), TODAY + 181, 0)
 
@@ -190,7 +190,7 @@ def test_a_release_lasts_as_long_as_the_listing_it_released(
 ) -> None:
     """A renewed listing carries its release's expiry with it, never shortening it."""
     put_shelf(shelf_client, door.address, door.record(listing()))
-    put_shelf(shelf_client, steward.address, steward.record(release(door.address)))
+    put_notice(shelf_client, steward, release(door.address))
     clock.advance(100 * DAY)
     put_shelf(shelf_client, door.address, door.record(listing()))
     assert shelf_rows(db_path)[1][6] == TODAY + 181  # still the notice's own
@@ -213,7 +213,7 @@ def test_a_listing_that_lapsed_is_held_again(
 ) -> None:
     """Once its row is purged, the address's next listing is a first listing."""
     put_shelf(shelf_client, door.address, door.record(listing()))
-    put_shelf(shelf_client, steward.address, steward.record(release(door.address)))
+    put_notice(shelf_client, steward, release(door.address))
     clock.advance(31 * DAY)
     purge(store_of(shelf_client.app), clock())
 
@@ -243,7 +243,11 @@ def test_a_notice_signed_by_any_other_key_is_refused(
     """A door that signs a release under its own address gets 403 bad_signature."""
     put_shelf(shelf_client, door.address, door.record(listing()))
 
-    response = put_shelf(shelf_client, door.address, door.record(release(door.address)))
+    response = put_shelf(
+        shelf_client,
+        door.address,
+        door.record(stamped(release(door.address), day=TODAY)),
+    )
 
     assert response.status_code == 403
     assert response.json() == {"error": "bad_signature"}
@@ -256,7 +260,9 @@ def test_a_notice_under_the_steward_address_signed_by_another_is_refused(
 ) -> None:
     """The signature must be the steward's own."""
     response = put_shelf(
-        shelf_client, steward.address, door.record(release(door.address))
+        shelf_client,
+        steward.address,
+        door.record(stamped(release(door.address), day=TODAY)),
     )
 
     assert response.status_code == 403
@@ -280,7 +286,9 @@ def test_a_notice_missing_what_it_names_is_no_record(
     shelf_client: TestClient, db_path: Path, steward: ShelfSigner, body: dict[str, Any]
 ) -> None:
     """A release names a key; a later act with no clause, or no ``on``, is none."""
-    response = put_shelf(shelf_client, steward.address, steward.record(body))
+    signed = steward.record(stamped(body, day=TODAY))
+
+    response = put_shelf(shelf_client, steward.address, signed)
 
     assert response.status_code == 400
     assert response.json() == {"error": "invalid_record"}
@@ -291,7 +299,7 @@ def test_a_notice_is_at_most_1024_bytes(
     shelf_client: TestClient, steward: ShelfSigner
 ) -> None:
     """A notice is a small record (§4.1)."""
-    body = {**release("A" * 43), "pad": "x" * 1000}
+    body = {**stamped(release("A" * 43), day=TODAY), "pad": "x" * 1000}
 
     response = put_shelf(shelf_client, steward.address, steward.record(body))
 

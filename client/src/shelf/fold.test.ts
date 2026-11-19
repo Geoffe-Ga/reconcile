@@ -21,7 +21,7 @@ import { sha256 } from '../crypto/hash';
 import { signShelfRecord } from '../crypto/shelf';
 import { newSigningKeys, publicKeyOf, type SigningKeys } from '../crypto/sign';
 import type { ShelfRecord } from '../net/shelf';
-import { releaseRecord, STEWARD_ADDRESS, TEST_STEWARD } from '../test/steward';
+import { releaseRecord, stampAt, STEWARD_ADDRESS, TEST_STEWARD } from '../test/steward';
 import {
   doorListing as doorListingAsServed,
   type FoldShelfOptions,
@@ -34,7 +34,8 @@ import {
   type ShelfTombstone,
   waitingListings,
 } from './fold';
-import { type Clause, type NoticeBody, type ShelfBody, signShelfBody } from './record';
+import { signNotice } from './notices';
+import { type Clause, type NoticeDraft, type ShelfBody, signShelfBody } from './record';
 import { nameSkeleton } from './skeleton';
 
 const NOW = 29_000_000;
@@ -73,18 +74,18 @@ function doorListing(
   return doorListingAsServed([...records, ...releasesOf(records)], address, NOW, since);
 }
 
-/** A notice the tests' steward signed, served under its address, arriving at `received`. */
+/** A notice the tests' steward signed on the day it arrives, at `received`, served under its address. */
 function stewardNotice(
-  fields: DistributiveOmit<NoticeBody, 'v' | 'kind'>,
+  fields: DistributiveOmit<NoticeDraft, 'v' | 'kind'>,
   received = NOW - 1441,
 ): ShelfRecord {
   nextSeq += 1;
-  const body = { v: 1, kind: 'notice', ...fields } as NoticeBody;
+  const body = { v: 1, kind: 'notice', ...fields } as NoticeDraft;
   return {
     seq: nextSeq,
     received,
     address: STEWARD_ADDRESS,
-    data: signShelfBody(TEST_STEWARD.signing, body),
+    data: signNotice(TEST_STEWARD.signing, body, stampAt(received)),
   };
 }
 
@@ -162,6 +163,14 @@ interface VectorRecord {
   readonly pause?: boolean;
   /** The door that signs a notice in the steward's place, under its own address. */
   readonly signer?: string;
+  /**
+   * A notice's nonce, by label (#490's review): two records with one label
+   * are one notice served twice. Else the nonce is the record's own, from
+   * its seq.
+   */
+  readonly nonce?: string;
+  /** How many days before the day it arrived the steward signed a notice: else 0. */
+  readonly signedDaysBefore?: number;
 }
 
 /** A tombstone or a hold as a vector writes it: its door, its entry's label or null, and its clause. */
@@ -240,16 +249,30 @@ function bodyFrom(vector: VectorRecord): ShelfBody {
 /** A vector door's address. */
 const addressOf = (label: string): string => base64url(doorKeys(label).publicKey);
 
-/** A vector notice's record: signed by the steward under its address, or by `signer` under its own. */
-function noticeFrom(vector: VectorRecord, body: NoticeBody): ShelfRecord {
+/** A vector notice's nonce: the first 16 bytes of the SHA-256 of its label, or of its seq. */
+const nonceOf = (vector: VectorRecord): string =>
+  base64url(
+    sha256(
+      new TextEncoder().encode(`reconcile/vector/nonce/${vector.nonce ?? String(vector.seq)}`),
+    ).slice(0, 16),
+  );
+
+/**
+ * A vector notice's record: signed by the steward under its address, or by
+ * `signer` under its own, stamped with the day it arrived (less
+ * `signedDaysBefore`) and its nonce.
+ */
+function noticeFrom(vector: VectorRecord, draft: NoticeDraft): ShelfRecord {
   const keys = vector.signer === undefined ? TEST_STEWARD.signing : doorKeys(vector.signer);
   const address = base64url(keys.publicKey);
   const received = vector.received ?? NOW - 1441;
-  return { seq: vector.seq, received, address, data: signShelfBody(keys, body) };
+  const day = Math.floor(received / 1440) - (vector.signedDaysBefore ?? 0);
+  const data = signNotice(keys, draft, { day, n: nonceOf(vector) });
+  return { seq: vector.seq, received, address, data };
 }
 
-/** A vector's notice body, or null for a record a door signs as its own. */
-function noticeBodyFrom(vector: VectorRecord): NoticeBody | null {
+/** A vector's notice draft, or null for a record a door signs as its own. */
+function noticeBodyFrom(vector: VectorRecord): NoticeDraft | null {
   const { clause = 'C1' } = vector;
   const id = vector.id === undefined ? {} : { id: idOf(vector.id) };
   if (vector.release !== undefined) {
@@ -395,7 +418,7 @@ describe('foldShelf', () => {
 
     it('ignores a release the steward key pinned in shelf/steward.ts didn’t sign (#488)', () => {
       const oak = base64url(OAK.publicKey);
-      const body = { v: 1, kind: 'notice', act: 'release', address: oak } as const;
+      const body = { v: 1, kind: 'notice', act: 'release', address: oak, ...stampAt(NOW) } as const;
       const forged = [
         recordOf(OAK, body),
         recordOf(BIRCH, body, STEWARD_ADDRESS),

@@ -37,6 +37,14 @@ acts on, so the relay finds a standing one without reading a body. An
 ``unsuspend`` (#490) deletes nothing: the newer of an address's suspend and
 unsuspend, by seq, says whether it is suspended.
 
+No notice is taken twice (#490's review): ``notice_nonces`` keeps each
+taken notice's nonce, 16 random bytes the notice itself carries and the shelf
+serves to anyone, and the UTC day it may go, two days after the day the
+notice was signed, when it could be taken no more. Nothing else: no
+address, act, seq or receipt minute, and ``WITHOUT ROWID`` leaves no counter.
+It is kept apart from the notice's row because a row can go sooner, an
+uphold's with its entry.
+
 Each mailbox has a byte cap (#141). ``blobs_by_mailbox_size`` indexes each
 blob's length beside its mailbox and expiry, so summing a mailbox's unexpired
 bytes reads that index alone and never a blob.
@@ -105,6 +113,10 @@ CREATE TABLE IF NOT EXISTS shelf (
     held_until INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS shelf_by_expiry_size ON shelf (expiry, length(body));
+CREATE TABLE IF NOT EXISTS notice_nonces (
+    n TEXT NOT NULL PRIMARY KEY,
+    expiry INTEGER NOT NULL
+) WITHOUT ROWID;
 """
 
 # A mailbox's unexpired bytes. SQLite reads each length from
@@ -328,6 +340,19 @@ class BlobStore:
         ).fetchone()
         return int(seq)
 
+    def nonce_seen(self, n: str) -> bool:
+        """Whether a notice with the nonce ``n`` was taken and is still remembered."""
+        row = self._db.execute(
+            "SELECT 1 FROM notice_nonces WHERE n = ?", (n,)
+        ).fetchone()
+        return row is not None
+
+    def remember_nonce(self, n: str, *, expiry: int) -> None:
+        """Keep the nonce ``n`` until UTC day ``expiry``, when the purge deletes it."""
+        self._db.execute(
+            "INSERT INTO notice_nonces (n, expiry) VALUES (?, ?)", (n, expiry)
+        )
+
     def entry_expiry(self, address: str, entry: str, *, today: int) -> int | None:
         """The expiry day of ``address``'s live entry ``entry``, or ``None``."""
         row = self._db.execute(
@@ -425,8 +450,8 @@ class BlobStore:
     def delete_expired(self, today: int) -> int:
         """Delete every expired row; return how many.
 
-        Blobs, push subscriptions, backups and shelf records go once their
-        expiry day has come. A nudge due before yesterday began was never
+        Blobs, push subscriptions, backups, shelf records and notice nonces
+        go once their expiry day has come. A nudge due before yesterday began was never
         taken by the tick (push was off), so it goes too.
         """
         return (
@@ -441,6 +466,9 @@ class BlobStore:
                 "DELETE FROM backups WHERE expiry <= ?", (today,)
             ).rowcount
             + self._db.execute("DELETE FROM shelf WHERE expiry <= ?", (today,)).rowcount
+            + self._db.execute(
+                "DELETE FROM notice_nonces WHERE expiry <= ?", (today,)
+            ).rowcount
         )
 
     def subscribe(self, mailbox: str, endpoint: str, *, expiry: int, keep: int) -> None:

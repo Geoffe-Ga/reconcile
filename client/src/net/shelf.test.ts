@@ -92,7 +92,7 @@ describe('read', () => {
     const fake = createFakeShelf({ minute: 500 });
     const shelf = createShelf({ fetch: fake.fetch });
     await shelf.put(ADDRESS, LISTING);
-    await release(shelf, ADDRESS);
+    await release(fake, ADDRESS);
 
     const page = await shelf.read();
 

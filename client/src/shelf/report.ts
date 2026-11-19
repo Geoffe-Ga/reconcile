@@ -174,6 +174,9 @@ async function sendToSteward(
   try {
     const box = fromBase64url(pins.box);
     const inbox = stewardInboxOf(box);
+    // `atLeast` is a floor, not a cap: callers must bound their own plaintext
+    // (a note's 500 code points), or a larger one grows to the next size and
+    // the blob's size tells the relay something.
     const blob = sealPadded(box, plaintext, info, inbox, STEWARD_BLOB_SIZE);
     await services.relay.putBlob(inbox, blob, STEWARD_TTL_DAYS);
     return 'sent';

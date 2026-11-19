@@ -25,6 +25,12 @@ of it is no record:
 - ``unsuspend``: an ``address``, whose suspension it lifts (#490).
 - ``pause``: ``on``, true or false (#489's encoding of "on or off").
 
+Every notice also carries ``day``, the UTC day number the steward signed it
+on, and ``n``, a fresh 16-byte nonce in canonical unpadded base64url (22
+characters), both signed with the rest (#490's review). The route takes a
+notice only on that day or the next, and only once per nonce, so no one who
+saved a notice the shelf served can PUT it again to undo a later decision.
+
 A notice is filed under a ``ref`` that says what it acts on, so the relay
 can find it again: a release under the address it names, as #488 filed it,
 and the others under ``hold:{address}``, ``hold:{address}:{id}``,
@@ -39,8 +45,10 @@ the only check.
 
 from __future__ import annotations
 
+import base64
 import json
-from dataclasses import dataclass
+import re
+from dataclasses import dataclass, replace
 from typing import Any, TypeGuard
 
 from cryptography.exceptions import InvalidSignature
@@ -75,6 +83,9 @@ UNSUSPEND = "unsuspend"
 PAUSE = "pause"
 # The covenant's clauses a hold, uphold or suspend names (§6.1).
 CLAUSES = frozenset({"C1", "C2", "C3"})
+# A notice's nonce: 16 bytes, spelled in 22 base64url characters (§4.1).
+NONCE_BYTES = 16
+_NONCE = re.compile(r"[A-Za-z0-9_-]{22}")
 
 
 @dataclass(frozen=True)
@@ -108,11 +119,17 @@ class ShelfRecord:
 
 @dataclass(frozen=True)
 class Notice:
-    """What a steward's notice acts on: its act, the address and the entry it names."""
+    """What a steward's notice acts on, and its stamp.
+
+    Its act, the address and the entry it names, then ``day``, the UTC day
+    the steward signed it on, and ``n``, its nonce.
+    """
 
     act: str
     address: str = ""
     entry: str = ""
+    day: int = 0
+    n: str = ""
 
     @property
     def ref(self) -> str:
@@ -185,9 +202,15 @@ def _listing(body: dict[str, Any]) -> ShelfRecord | None:
 
 
 def _notice(body: dict[str, Any]) -> ShelfRecord | None:
-    """A notice that names all its act names, filed by its ``ref``; else ``None``."""
+    """A stamped notice naming all its act names, filed by ``ref``; else ``None``."""
+    day, n = body.get("day"), body.get("n")
+    if not _is_day(day) or not _is_nonce(n):
+        return None
     notice = _acts_on(body)
-    return None if notice is None else ShelfRecord("notice", notice.ref, notice=notice)
+    if notice is None:
+        return None
+    stamped = replace(notice, day=day, n=n)
+    return ShelfRecord("notice", stamped.ref, notice=stamped)
 
 
 def _acts_on(body: dict[str, Any]) -> Notice | None:
@@ -217,6 +240,19 @@ def _with_entry(act: str, address: str, entry: object) -> Notice | None:
 def _is_key(value: object) -> TypeGuard[str]:
     """Whether ``value`` spells 32 bytes in canonical unpadded base64url."""
     return isinstance(value, str) and key_bytes(value) is not None
+
+
+def _is_day(value: object) -> TypeGuard[int]:
+    """Whether ``value`` is a whole, non-negative day number, and not a boolean."""
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+def _is_nonce(value: object) -> TypeGuard[str]:
+    """Whether ``value`` spells 16 bytes in canonical unpadded base64url."""
+    if not isinstance(value, str) or _NONCE.fullmatch(value) is None:
+        return False
+    raw = base64.urlsafe_b64decode(value + "==")  # 22 such characters always decode
+    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii") == value
 
 
 def _is_clause(value: object) -> bool:

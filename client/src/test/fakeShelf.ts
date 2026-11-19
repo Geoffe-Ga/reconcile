@@ -36,20 +36,28 @@
  * And #490's `unsuspend`: it lifts a suspension that stands (409
  * `not_suspended` without one), the newer of the two by seq deciding, and
  * leaves the suspend stored, as the relay does.
+ *
+ * And no replays (#490's review): a notice whose `day` isn't the fake's
+ * relay day or the day before gets 400 `stale_notice`, and one whose nonce
+ * it has taken gets 409 `replayed_notice`, before anything else is read of
+ * it. It remembers every nonce it took, for its whole life. {@link notify}
+ * and {@link release} stamp each notice with the fake's day and a fresh
+ * nonce.
  */
 import { verifyShelfRecord } from '../crypto/shelf';
 import type { Fetch } from '../net/relay';
-import type { Shelf } from '../net/shelf';
+import { createShelf } from '../net/shelf';
+import { isFresh, signNotice } from '../shelf/notices';
 import {
   type EntryBody,
   type NoticeBody,
+  type NoticeDraft,
   parseShelfBody,
   type ShelfBody,
-  signShelfBody,
   type UpholdNoticeBody,
   type WithdrawBody,
 } from '../shelf/record';
-import { STEWARD_ADDRESS, TEST_STEWARD } from './steward';
+import { STEWARD_ADDRESS, stampAt, TEST_STEWARD } from './steward';
 
 /** A record the fake shelf keeps. */
 export interface FakeShelfRecord {
@@ -113,6 +121,8 @@ export function createFakeShelf({
 
   let lastSeq = 0;
   const today = (): number => Math.floor(shelf.minute / DAY_MINUTES);
+  /** Every nonce a notice it took carried (#490's review). */
+  const nonces = new Set<string>();
 
   /** What a first listing waits until: a release, in held mode; else nothing. */
   const firstHold = (): number => (shelf.holds ? Infinity : 0);
@@ -226,9 +236,18 @@ export function createFakeShelf({
     shelf.records.splice(0, shelf.records.length, ...kept);
   }
 
-  /** Stores the steward's notice under its address and acts on it (#488, #489). */
+  /** Refuses a notice from another key, a stale one or a replay; else stores and acts on it. */
   function noticed(address: string, data: Uint8Array, body: NoticeBody): Response {
     if (address !== STEWARD_ADDRESS) return refuse(403, 'bad_signature');
+    if (!isFresh(body, shelf.minute)) return refuse(400, 'stale_notice');
+    if (nonces.has(body.n)) return refuse(409, 'replayed_notice');
+    const answer = acted(address, data, body);
+    if (answer.status === 201) nonces.add(body.n);
+    return answer;
+  }
+
+  /** Stores the steward's notice under its address and acts on it (#488, #489). */
+  function acted(address: string, data: Uint8Array, body: NoticeBody): Response {
     switch (body.act) {
       case 'release':
         releaseAddress(body.address);
@@ -355,12 +374,22 @@ function isFinal(data: Uint8Array, address: string): boolean {
   return body?.kind === 'listing' && !body.open;
 }
 
-/** PUTs the tests' steward's release of `address` to `shelf`, as the steward's console does (#488). */
-export async function release(shelf: Pick<Shelf, 'put'>, address: string): Promise<void> {
-  await notify(shelf, { v: 1, kind: 'notice', act: 'release', address });
+/** PUTs the tests' steward's release of `address` to `fake`, as the steward's console does (#488). */
+export async function release(
+  fake: Pick<FakeShelf, 'fetch' | 'minute'>,
+  address: string,
+): Promise<void> {
+  await notify(fake, { v: 1, kind: 'notice', act: 'release', address });
 }
 
-/** PUTs the tests' steward's `notice` to `shelf`, as the steward's console does (#488, #489). */
-export async function notify(shelf: Pick<Shelf, 'put'>, notice: NoticeBody): Promise<void> {
-  await shelf.put(STEWARD_ADDRESS, signShelfBody(TEST_STEWARD.signing, notice));
+/**
+ * PUTs the tests' steward's `notice` to `fake`, as the steward's console
+ * does (#488, #489), stamped with the fake's relay day and a fresh nonce.
+ */
+export async function notify(
+  fake: Pick<FakeShelf, 'fetch' | 'minute'>,
+  notice: NoticeDraft,
+): Promise<void> {
+  const record = signNotice(TEST_STEWARD.signing, notice, stampAt(fake.minute));
+  await createShelf({ fetch: fake.fetch }).put(STEWARD_ADDRESS, record);
 }

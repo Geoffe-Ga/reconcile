@@ -19,7 +19,7 @@ import { createRelay } from '../net/relay';
 import { createShelf } from '../net/shelf';
 import { NEW_LISTING_MINUTES } from '../shelf/fold';
 import { createShelfReader, type KeptShelf, type ShelfReader } from '../shelf/read';
-import { type NoticeBody, signShelfBody } from '../shelf/record';
+import { type NoticeDraft, signShelfBody } from '../shelf/record';
 import { nameSkeleton } from '../shelf/skeleton';
 import { openStore } from '../store/db';
 import { COVENANT_HASH, DOOR } from '../test/door';
@@ -68,7 +68,7 @@ function memoryKeep() {
  */
 async function shelfAfter(
   minutes: number,
-  { listed = true, notices = [] as readonly NoticeBody[] } = {},
+  { listed = true, notices = [] as readonly NoticeDraft[] } = {},
 ): Promise<ShelfReader> {
   const fake = createFakeShelf({ minute: LISTED_AT });
   const shelf = createShelf({ fetch: fake.fetch });
@@ -85,10 +85,10 @@ async function shelfAfter(
         covenant: COVENANT_HASH,
       }),
     );
-    await release(shelf, DOOR_ADDRESS);
+    await release(fake, DOOR_ADDRESS);
   }
   fake.minute = LISTED_AT + minutes;
-  for (const notice of notices) await notify(shelf, notice);
+  for (const notice of notices) await notify(fake, notice);
   return createShelfReader({ shelf, keep: memoryKeep(), now: () => 0 });
 }
 
@@ -138,14 +138,14 @@ describe('takesDocuments: whether the shelf lets a door take personal Documents'
 });
 
 describe('a door the steward holds or removes (#489, §6.1)', () => {
-  const hold: NoticeBody = {
+  const hold: NoticeDraft = {
     v: 1,
     kind: 'notice',
     act: 'hold',
     address: DOOR_ADDRESS,
     clause: 'C2',
   };
-  const suspend: NoticeBody = {
+  const suspend: NoticeDraft = {
     v: 1,
     kind: 'notice',
     act: 'suspend',

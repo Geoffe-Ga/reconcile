@@ -28,7 +28,7 @@
  * key, but under a tag of its own, `reconcile/v1/steward-appeal`, so no
  * appeal passes for a shelf record and no shelf record for an appeal.
  */
-import { concatBytes } from '@noble/hashes/utils.js';
+import { concatBytes, randomBytes } from '@noble/hashes/utils.js';
 
 import { base64url, canonicalBytes } from './base64url';
 import { KX_KEY_BYTES } from './box';
@@ -63,6 +63,14 @@ export const APPEAL_INFO = 'reconcile/v1/steward-appeal-box';
 export function stewardInboxOf(box: Uint8Array): string {
   if (box.length !== KX_KEY_BYTES) throw new RangeError('The steward’s box key is 32 bytes.');
   return base64url(hkdf32(box, STEWARD_INBOX_INFO));
+}
+
+/** The bytes in a steward notice's nonce (#490's review; `shelf/record.ts`'s `n`). */
+export const NOTICE_NONCE_BYTES = 16;
+
+/** A fresh nonce for a steward notice: {@link NOTICE_NONCE_BYTES} random bytes, in unpadded base64url. */
+export function newNoticeNonce(): string {
+  return base64url(randomBytes(NOTICE_NONCE_BYTES));
 }
 
 /** `message` signed with `keys` under `tag`: the signature, then the message. */

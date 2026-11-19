@@ -82,11 +82,12 @@ Every record is compact UTF-8 JSON, signed with Ed25519 under the tag `reconcile
 | `listing`, final | `{v: 1, kind, open: false, final: true}` | the door |
 | `entry` | `{v: 1, kind, id, title, text}`: the Dispatch's id, title (1 to 80 code points) and text (at most 500) | the door |
 | `withdraw` | `{v: 1, kind, id}`: an entry's id | the door |
-| `notice` | `{v: 1, kind, act, address?, id?, clause?, on?}` (§6.1; `on` on a pause only, #489; an `unsuspend` names an address alone, #490) | the steward |
+| `notice` | `{v: 1, kind, act, address?, id?, clause?, on?, day, n}` (§6.1; `on` on a pause only, #489; an `unsuspend` names an address alone, #490; `day` and `n` on every notice, #490's review) | the steward |
 
 - An entry carries no name. It shows its listing's current name, so a name lives in one place.
 - An entry carries no author, total, Document link, member count or time of its own.
 - Sizes **(proposed)**: a listing or notice is at most 1,024 bytes, an entry at most 4,096.
+- **A notice can't be replayed** (#490's review). Every notice ends with `day`, the UTC day number on which the steward signed it, and `n`, a fresh 16-byte nonce in canonical unpadded base64url, both signed with the rest. The relay takes a notice only on that day or the next (else `400 stale_notice`) and only once per nonce (else `409 replayed_notice`), remembering each nonce until its notice could be taken no more; every device counts a notice only when its `day` is its relay `received` day or the day before, and only the first with each nonce, by seq. Without them, anyone who saved a notice the shelf served could PUT it again later: an old `unsuspend` after a fresh suspend, an old `suspend` after a lift, an old `hold`, or an old `release` of a relisting. The format changed before any notice was live (the app's steward pins are still null), so no stored notice is invalidated.
 
 ### 4.2 Relay routes
 
@@ -110,7 +111,7 @@ These are the first routes whose bodies the relay can read. They are on only whe
 
 **What the relay never does:** read a name's meaning, compare skeletons, keep per-IP state, or log a request. The existing rules in §6 of the MVP spec apply unchanged: constant error bodies, no client address, no forwarding headers.
 
-**Storage.** One table, `shelf(seq, address, kind, ref, body, received, expiry, held_until)`, where `ref` is an entry's id or empty. No other column.
+**Storage.** One table, `shelf(seq, address, kind, ref, body, received, expiry, held_until)`, where `ref` is an entry's id or empty. No other column. Beside it, `notice_nonces(n, expiry)` keeps each taken notice's nonce for two days so none is taken twice (§4.1, #490's review): a value the notice itself publishes, and nothing else.
 
 - A listing expires 30 days after its last post, an entry 30 days after its first, a notice after 180 days **(proposed)**.
 - A final listing deletes its address's entries.
@@ -199,6 +200,7 @@ The steward signs each notice. The relay acts on it so that held records aren't 
 - **A hold lapses.** Without an `uphold` within 10,080 relay minutes, the entry shows again. An absent steward, or a thief who only holds, therefore fails open.
 - **A tombstone names the clause,** in words: "Removed: impersonation of another group". Decisions are public (ADR-0013).
 - **Clauses** are the covenant's: `C1`, `C2`, `C3`.
+- **Each notice is once-only** (§4.1, #490's review): signed with its day and a fresh nonce, it is taken by the relay and counted by devices once, within a day of its signing, so no saved notice can undo a later decision. Two decisions alike, a second suspend under the same clause, are two notices with two nonces.
 
 ### 6.2 The steward's key
 

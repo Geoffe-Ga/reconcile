@@ -34,7 +34,7 @@ import { CLAUSE_WORDS, COVENANT_HASH } from '../shelf/covenant';
 import type { ShelfEntry, ShelfListing, StandingHold, WaitingListing } from '../shelf/fold';
 import type { InboxItem } from '../shelf/inbox';
 import type { NoticeRemoval } from '../shelf/notices';
-import type { Clause, NoticeBody } from '../shelf/record';
+import type { Clause, NoticeDraft } from '../shelf/record';
 
 /** What the console shows (§6.4): what waits, what stands, what's held, and the pause. */
 export interface StewardView {
@@ -62,7 +62,7 @@ export interface StewardProps {
   /** What the console lists, or that the shelf is off or couldn't be read. */
   readonly queue: StewardQueue;
   /** Signs and PUTs `notice`; true once the relay has it. */
-  readonly onNotice: (notice: NoticeBody) => Promise<boolean>;
+  readonly onNotice: (notice: NoticeDraft) => Promise<boolean>;
   /** Dismisses the inbox item `key` names, on this device; true once kept (#490). */
   readonly onDismiss: (key: string) => Promise<boolean>;
 }
@@ -77,7 +77,7 @@ const words = messages.shelfSteward;
 const CLAUSES: readonly Clause[] = ['C1', 'C2', 'C3'];
 
 /** The steward's notice of `act` on `address`, or its entry `id`, under `clause`. */
-function noticeOf(act: ClauseAct, address: string, id: string | null, clause: Clause): NoticeBody {
+function noticeOf(act: ClauseAct, address: string, id: string | null, clause: Clause): NoticeDraft {
   if (act === 'uphold') return { v: 1, kind: 'notice', act, address, id: id ?? '', clause };
   if (act === 'suspend') return { v: 1, kind: 'notice', act, address, clause };
   return { v: 1, kind: 'notice', act, address, ...(id === null ? {} : { id }), clause };

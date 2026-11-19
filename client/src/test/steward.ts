@@ -11,9 +11,10 @@
  */
 import { base64url } from '../crypto/base64url';
 import { sha256 } from '../crypto/hash';
+import { newNoticeNonce } from '../crypto/shelf';
 import { stewardKeysOf } from '../crypto/steward';
 import type { ShelfRecord } from '../net/shelf';
-import { signShelfBody } from '../shelf/record';
+import { type NoticeStamp, signShelfBody } from '../shelf/record';
 import type { StewardPins } from '../shelf/steward';
 
 /** The tests' steward secret. */
@@ -31,13 +32,22 @@ export const TEST_PINS: StewardPins = {
 /** The steward's address in tests: its signing key, in unpadded base64url. */
 export const STEWARD_ADDRESS = TEST_PINS.sign;
 
-/** A release of `address`, signed by the tests' steward, as the relay serves it. */
+/** Relay minutes in a UTC day. */
+const DAY_MINUTES = 1440;
+
+/** A stamp for a notice that arrives at relay minute `received`: that day, and a fresh nonce. */
+export function stampAt(received: number): NoticeStamp {
+  return { day: Math.floor(received / DAY_MINUTES), n: newNoticeNonce() };
+}
+
+/** A release of `address`, signed by the tests' steward on the day it arrives, as the relay serves it. */
 export function releaseRecord(address: string, seq: number, received: number): ShelfRecord {
   const data = signShelfBody(TEST_STEWARD.signing, {
     v: 1,
     kind: 'notice',
     act: 'release',
     address,
+    ...stampAt(received),
   });
   return { seq, received, address: STEWARD_ADDRESS, data };
 }

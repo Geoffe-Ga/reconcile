@@ -38,7 +38,7 @@ import { createFakeShelf, release } from '../test/fakeShelf';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { go, members, type MountedApp, mountApp } from '../test/members';
 import { type Canary, findCanaries, keyCanaries, textCanary } from '../test/scan';
-import { STEWARD_ADDRESS, TEST_STEWARD, TEST_STEWARD_SECRET } from '../test/steward';
+import { STEWARD_ADDRESS, stampAt, TEST_STEWARD, TEST_STEWARD_SECRET } from '../test/steward';
 import { messages } from './messages';
 import { castBallot, proposeRules } from './proposals';
 
@@ -138,7 +138,7 @@ async function listedGroup(fake: FakeRelay) {
       covenant: COVENANT_HASH,
     }),
   );
-  await release(shelf, address);
+  await release(shelfFake, address);
   for (const [id, title] of [
     [HELD_ID, 'Rally Saturday'],
     [SHOWN_ID, 'Rent strike vote'],
@@ -148,7 +148,10 @@ async function listedGroup(fake: FakeRelay) {
     shelfFake.minute += 1440;
   }
   const hold = { v: 1, kind: 'notice', act: 'hold', address, id: HELD_ID, clause: 'C2' } as const;
-  await shelf.put(STEWARD_ADDRESS, signNotice(TEST_STEWARD.signing, hold));
+  await shelf.put(
+    STEWARD_ADDRESS,
+    signNotice(TEST_STEWARD.signing, hold, stampAt(shelfFake.minute)),
+  );
   // A relay day passes, so every device shows the entry that isn't held.
   return { groupId, devices, door, address, shelf };
 }

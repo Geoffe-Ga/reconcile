@@ -4,7 +4,10 @@
 endpoints and wake minutes, nothing else"): no push keys, since no payload is
 sent, and no timestamps or counters. #97 adds ``backups``, as ADR-0043 §3 and
 ADR-0072 items 13 and 14 allow: an id, a padded blob and an expiry day, with
-no receipt time and no rowid to count with.
+no receipt time and no rowid to count with. #490's review adds
+``notice_nonces``: each taken steward notice's nonce, which the notice itself
+carries publicly, and the day it may go, so no notice is taken twice
+(listed-doors.md §4.1).
 """
 
 from __future__ import annotations
@@ -32,6 +35,7 @@ BLOB_COLUMNS = [
 PUSH_SUB_COLUMNS = [("mailbox", "TEXT"), ("endpoint", "TEXT"), ("expiry", "INTEGER")]
 NUDGE_COLUMNS = [("mailbox", "TEXT"), ("due", "INTEGER")]
 BACKUP_COLUMNS = [("id", "TEXT"), ("blob", "BLOB"), ("expiry", "INTEGER")]
+NONCE_COLUMNS = [("n", "TEXT"), ("expiry", "INTEGER")]
 SHELF_COLUMNS = [
     ("seq", "INTEGER"),
     ("address", "TEXT"),
@@ -75,7 +79,7 @@ def test_seq_is_an_autoincrement_primary_key(db: sqlite3.Connection) -> None:
     assert "INTEGER PRIMARY KEY AUTOINCREMENT" in " ".join(sql.split())
 
 
-def test_the_only_tables_are_blobs_meta_push_backups_shelf_and_sqlite_sequence(
+def test_the_only_tables_are_blobs_meta_push_backups_shelf_nonces_and_sequence(
     db: sqlite3.Connection,
 ) -> None:
     """There is no other table to grow a list of people in."""
@@ -92,6 +96,7 @@ def test_the_only_tables_are_blobs_meta_push_backups_shelf_and_sqlite_sequence(
         "nudges",
         "backups",
         "shelf",
+        "notice_nonces",
     }
 
 
@@ -184,6 +189,26 @@ def test_shelf_is_indexed_by_expiry_and_size_alone(db: sqlite3.Connection) -> No
     ]
 
     assert indexed == [["expiry", None]]
+
+
+def test_notice_nonces_has_exactly_its_two_columns(db: sqlite3.Connection) -> None:
+    """A nonce and the day it may go (#490's review): no address, act or time.
+
+    The nonce is the primary key, so a nonce is kept once, and WITHOUT ROWID
+    leaves no hidden counter that would order notices. Adding a column fails
+    here until an ADR allows it.
+    """
+    info = list(db.execute("PRAGMA table_info(notice_nonces)"))
+    (sql,) = db.execute(
+        "SELECT sql FROM sqlite_master WHERE name = 'notice_nonces'"
+    ).fetchone()
+    indexes = [row[3] for row in db.execute("PRAGMA index_list(notice_nonces)")]
+
+    assert [(row[1], row[2]) for row in info] == NONCE_COLUMNS
+    assert [row[1] for row in info if row[5]] == ["n"]
+    assert all(row[3] for row in info), "every column is NOT NULL"
+    assert " ".join(sql.split()).endswith("WITHOUT ROWID")
+    assert indexes == ["pk"]
 
 
 def test_meta_holds_only_the_instance(db: sqlite3.Connection) -> None:

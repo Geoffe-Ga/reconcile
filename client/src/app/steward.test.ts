@@ -5,9 +5,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { base64url } from '../crypto/base64url';
+import { verifyShelfRecord } from '../crypto/shelf';
 import { newSigningKeys } from '../crypto/sign';
 import { createShelf } from '../net/shelf';
-import { signShelfBody } from '../shelf/record';
+import { parseShelfBody, signShelfBody } from '../shelf/record';
 import { nameSkeleton } from '../shelf/skeleton';
 import { VaultLocked } from '../store/db';
 import { createFakeShelf, release } from '../test/fakeShelf';
@@ -99,14 +100,17 @@ describe('importStewardKey', () => {
   });
 });
 
+/** This device's clock as a relay minute: `sendNotice` stamps each notice with its UTC day. */
+const deviceMinute = (): number => Math.floor(Date.now() / 60_000);
+
 describe('readQueue and sendNotice (#489)', () => {
   it('lists what stands, entries at once; holds one with its lapse; and leaves a held listing out of the waiting', async () => {
-    const fake = createFakeShelf();
+    const fake = createFakeShelf({ minute: deviceMinute() });
     const shelf = createShelf({ fetch: fake.fetch });
     const oak = newSigningKeys();
     const address = base64url(oak.publicKey);
     await shelf.put(address, listingBy(oak, 'Oak St Tenants'));
-    await release(shelf, address);
+    await release(fake, address);
     const id = base64url(new Uint8Array(32).fill(4));
     await shelf.put(
       address,
@@ -147,14 +151,49 @@ describe('readQueue and sendNotice (#489)', () => {
   });
 });
 
+describe('sendNotice stamps each notice (#490’s review)', () => {
+  it('signs with this device’s UTC day and a fresh nonce, so the same act sent twice is two notices', async () => {
+    const fake = createFakeShelf({ minute: deviceMinute() });
+    const shelf = createShelf({ fetch: fake.fetch });
+    const store = keyStore(TEST_STEWARD_SECRET);
+    const pause = { v: 1, kind: 'notice', act: 'pause', on: true } as const;
+
+    expect(await sendNotice(store, shelf, pause)).toBe(true);
+    expect(await sendNotice(store, shelf, pause)).toBe(true);
+
+    const bodies = fake.records.map(({ data }) => {
+      const message = verifyShelfRecord(data, STEWARD_ADDRESS);
+      return message === null ? null : parseShelfBody(message);
+    });
+    const day = Math.floor(fake.minute / 1440);
+    expect(bodies).toMatchObject([
+      { act: 'pause', on: true, day },
+      { act: 'pause', on: true, day },
+    ]);
+    const [first, second] = bodies;
+    expect(first?.kind === 'notice' && second?.kind === 'notice' && first.n !== second.n).toBe(
+      true,
+    );
+  });
+
+  it('says false when the relay finds the notice stale: this device’s clock is days behind', async () => {
+    const fake = createFakeShelf({ minute: deviceMinute() + 2 * 1440 });
+    const shelf = createShelf({ fetch: fake.fetch });
+    const pause = { v: 1, kind: 'notice', act: 'pause', on: true } as const;
+
+    expect(await sendNotice(keyStore(TEST_STEWARD_SECRET), shelf, pause)).toBe(false);
+    expect(fake.records).toEqual([]);
+  });
+});
+
 describe('readQueue and a lifted suspension (#490)', () => {
   it('lists a suspension that stands, and once lifted, the listing posted again waits for release', async () => {
-    const fake = createFakeShelf({ holds: true });
+    const fake = createFakeShelf({ minute: deviceMinute(), holds: true });
     const shelf = createShelf({ fetch: fake.fetch });
     const oak = newSigningKeys();
     const address = base64url(oak.publicKey);
     await shelf.put(address, listingBy(oak, 'Oak St Tenants'));
-    await release(shelf, address);
+    await release(fake, address);
     const store = keyStore(TEST_STEWARD_SECRET);
     const suspend = { v: 1, kind: 'notice', act: 'suspend', address, clause: 'C2' } as const;
     expect(await sendNotice(store, shelf, suspend)).toBe(true);
@@ -206,12 +245,12 @@ describe('dismissItem (#490)', () => {
 
 describe('readQueue and releaseListing', () => {
   it('lists each held listing beside the live one holding its name, and releases it', async () => {
-    const fake = createFakeShelf();
+    const fake = createFakeShelf({ minute: deviceMinute() });
     const shelf = createShelf({ fetch: fake.fetch });
     const birch = newSigningKeys();
     const oak = newSigningKeys();
     await shelf.put(base64url(birch.publicKey), listingBy(birch, 'Eastside Tenants Union'));
-    await release(shelf, base64url(birch.publicKey));
+    await release(fake, base64url(birch.publicKey));
     await shelf.put(base64url(oak.publicKey), listingBy(oak, 'EASTSIDE TENANTS UNI0N'));
 
     const queue = await readQueue(shelf);
