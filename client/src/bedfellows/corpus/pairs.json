@@ -1,0 +1,2642 @@
+[
+  {
+    "id": "p001",
+    "reader": "r01",
+    "entry": "e001",
+    "kind": "shared-claim",
+    "readerSentence": "We want the old laundry block turned back into a reading room, with long tables and a kettle.",
+    "entrySentence": "We are asking the council for a public library in the empty shop units on Harrow Parade, open evenings so children have a calm place to study.",
+    "case": "428-reading-room",
+    "note": "'reading room' vs 'library': both want a quiet public place for children to study"
+  },
+  {
+    "id": "p002",
+    "reader": "r01",
+    "entry": "e002",
+    "kind": "shared-claim",
+    "readerSentence": "A damp flat is a health problem, not a lifestyle choice.",
+    "entrySentence": "Mould in a rented home is a hazard to the people living there, full stop.",
+    "note": "tenants and landlords agree damp is a health hazard"
+  },
+  {
+    "id": "p003",
+    "reader": "r01",
+    "entry": "e003",
+    "kind": "opposed",
+    "readerSentence": "Rents should rise no faster than wages.",
+    "entrySentence": "Rent increases should follow the market, not a formula someone drew up in a committee room."
+  },
+  {
+    "id": "p004",
+    "reader": "r01",
+    "entry": "e004",
+    "kind": "word-sense-trap",
+    "readerSentence": "We expect the housing board to answer in writing within a month.",
+    "entrySentence": "If you have an old set gathering dust, bring it in; we will clean the pieces and put the board to work.",
+    "case": "428-chess-boards",
+    "note": "housing board (a body) vs chess board"
+  },
+  {
+    "id": "p005",
+    "reader": "r01",
+    "entry": "e005",
+    "kind": "word-sense-trap",
+    "readerSentence": "Nobody on these landings should face a broken boiler alone in January.",
+    "entrySentence": "Every landing is a small negotiation with the wind.",
+    "note": "stair landings vs a paraglider landing"
+  },
+  {
+    "id": "p006",
+    "reader": "r01",
+    "entry": "e006",
+    "kind": "near-copy"
+  },
+  {
+    "id": "p007",
+    "reader": "r01",
+    "entry": "e007",
+    "kind": "passing-mention",
+    "readerSentence": "We want the old laundry block turned back into a reading room, with long tables and a kettle.",
+    "entrySentence": "Parking is behind the hall, by the library steps.",
+    "case": "428-passing-mention",
+    "note": "'library steps' is a two-word location mention"
+  },
+  {
+    "id": "p008",
+    "reader": "r01",
+    "entry": "e008",
+    "kind": "idiom",
+    "readerSentence": "We want the old laundry block turned back into a reading room, with long tables and a kettle.",
+    "entrySentence": "Coming from a council that spent a fortune on a new logo, that is the pot calling the kettle black."
+  },
+  {
+    "id": "p009",
+    "reader": "r02",
+    "entry": "e009",
+    "kind": "opposed",
+    "readerSentence": "We will end the deer season in the Velmarsh valley within five years.",
+    "entrySentence": "Deer season is the heart of our year.",
+    "case": "428-deer-season"
+  },
+  {
+    "id": "p010",
+    "reader": "r02",
+    "entry": "e010",
+    "kind": "shared-claim",
+    "readerSentence": "Draining the wet meadows has done more harm to wildlife than anything else in our lifetime.",
+    "entrySentence": "We're asking landowners to stop draining the low fields and let the water come back.",
+    "note": "campaigners and duck hunters both want wetlands restored"
+  },
+  {
+    "id": "p011",
+    "reader": "r02",
+    "entry": "e011",
+    "kind": "unclear",
+    "readerSentence": "Where deer numbers are too high, we push for fertility control and for bringing back natural predators, not rifles.",
+    "entrySentence": "Some of us think a lynx or two might keep the deer off the young trees; some of us have lambs."
+  },
+  {
+    "id": "p012",
+    "reader": "r02",
+    "entry": "e012",
+    "kind": "word-sense-trap",
+    "readerSentence": "Animals are not targets, and a forest is not a shooting gallery.",
+    "entrySentence": "We'll shoot the mist coming off the water and then retreat to the cafe.",
+    "note": "shooting animals (figuratively a gallery) vs shooting photographs"
+  },
+  {
+    "id": "p013",
+    "reader": "r02",
+    "entry": "e013",
+    "kind": "near-copy"
+  },
+  {
+    "id": "p014",
+    "reader": "r02",
+    "entry": "e014",
+    "kind": "passing-mention",
+    "readerSentence": "We believe the land should be shared with the creatures who were here first.",
+    "entrySentence": "Tea and scones in the barn, and a short talk on wildlife hedges at three."
+  },
+  {
+    "id": "p015",
+    "reader": "r03",
+    "entry": "e015",
+    "kind": "opposed",
+    "readerSentence": "The deer cull keeps the herd healthy and the young trees standing, and we are proud of that work.",
+    "entrySentence": "There is no such thing as a humane cull."
+  },
+  {
+    "id": "p016",
+    "reader": "r03",
+    "entry": "e016",
+    "kind": "opposed",
+    "readerSentence": "The deer cull keeps the herd healthy and the young trees standing, and we are proud of that work.",
+    "entrySentence": "They tell us the cull keeps the herd healthy; we say a bullet has never healed anything.",
+    "case": "quoted-opponent",
+    "note": "entry repeats the club's claim only to reject it; heavy word overlap, opposite meaning"
+  },
+  {
+    "id": "p017",
+    "reader": "r03",
+    "entry": "e017",
+    "kind": "shared-claim",
+    "readerSentence": "Landowners trust us because we close gates, pick up our cartridges and keep our dogs in hand.",
+    "entrySentence": "Shut what you opened, carry out your litter, and keep the dog on a lead near stock.",
+    "note": "close gates / tidy up / control dogs, paraphrased"
+  },
+  {
+    "id": "p018",
+    "reader": "r03",
+    "entry": "e018",
+    "kind": "unclear",
+    "readerSentence": "The deer cull keeps the herd healthy and the young trees standing, and we are proud of that work.",
+    "entrySentence": "We have not yet taken a position on the autumn cull, and members on both sides have written to us with strong views."
+  },
+  {
+    "id": "p019",
+    "reader": "r03",
+    "entry": "e019",
+    "kind": "word-sense-trap",
+    "readerSentence": "Once a year we take teenagers out to learn tracking, knots and first aid.",
+    "entrySentence": "Racing is cancelled if the wind tops twenty-five knots, and the safety boat has the final word.",
+    "note": "tied knots vs wind speed"
+  },
+  {
+    "id": "p020",
+    "reader": "r03",
+    "entry": "e020",
+    "kind": "idiom",
+    "readerSentence": "Nobody under sixteen fires a shot.",
+    "entrySentence": "Give it a shot; the first cup is free."
+  },
+  {
+    "id": "p021",
+    "reader": "r03",
+    "entry": "e021",
+    "kind": "near-copy"
+  },
+  {
+    "id": "p022",
+    "reader": "r03",
+    "entry": "e022",
+    "kind": "passing-mention",
+    "readerSentence": "We take only what we will eat or give away.",
+    "entrySentence": "Thanks to the bakery, the allotment society, the school's harvest collection and the field club's venison, nobody was turned away."
+  },
+  {
+    "id": "p023",
+    "reader": "r04",
+    "entry": "e023",
+    "kind": "shared-claim",
+    "readerSentence": "What is said in the room stays in the room.",
+    "entrySentence": "Whatever anyone shares there is never repeated outside those four walls.",
+    "note": "confidentiality, paraphrased"
+  },
+  {
+    "id": "p024",
+    "reader": "r04",
+    "entry": "e025",
+    "kind": "opposed",
+    "readerSentence": "We don't take money from outside, however kindly it is offered.",
+    "entrySentence": "Every peer-support circle in the borough should take outside funding so volunteers aren't paying out of pocket."
+  },
+  {
+    "id": "p025",
+    "reader": "r04",
+    "entry": "e026",
+    "kind": "word-sense-trap",
+    "readerSentence": "Whoever arrives first puts the urn on.",
+    "entrySentence": "You do not need to buy an urn from us; any sealed container will do, and some families use a favourite tin.",
+    "note": "tea urn vs funeral urn"
+  },
+  {
+    "id": "p026",
+    "reader": "r04",
+    "entry": "e027",
+    "kind": "idiom",
+    "readerSentence": "What is said in the room stays in the room.",
+    "entrySentence": "Let's talk about the elephant in the room: the car park at pick-up time is dangerous."
+  },
+  {
+    "id": "p027",
+    "reader": "r04",
+    "entry": "e028",
+    "kind": "passing-mention",
+    "readerSentence": "We are people who used to drink, meeting every Tuesday in the basement of a borrowed hall.",
+    "entrySentence": "Non-drinkers welcome; the cordial is surprisingly good."
+  },
+  {
+    "id": "p028",
+    "reader": "r04",
+    "entry": "e029",
+    "kind": "near-copy"
+  },
+  {
+    "id": "p029",
+    "reader": "r04",
+    "entry": "e030",
+    "kind": "unclear",
+    "readerSentence": "Nobody here is a counsellor and nobody here is in charge.",
+    "entrySentence": "We don't have leaders, exactly, but somebody has to hold the keys, and it is usually Margit."
+  },
+  {
+    "id": "p030",
+    "reader": "r05",
+    "entry": "e031",
+    "kind": "shared-claim",
+    "readerSentence": "Fan art is welcome; credit the artist every time.",
+    "entrySentence": "Always put the maker's name on the label when a quilt is shown, even if she's shy about it.",
+    "note": "credit the maker, different craft and words"
+  },
+  {
+    "id": "p031",
+    "reader": "r05",
+    "entry": "e024",
+    "kind": "shared-claim",
+    "readerSentence": "Nobody owes anyone their real name, age or location.",
+    "entrySentence": "We only ever use your forum handle; we will never ask for your real name or your employer."
+  },
+  {
+    "id": "p032",
+    "reader": "r05",
+    "entry": "e032",
+    "kind": "opposed",
+    "readerSentence": "Spoilers go in the spoiler channel, tagged with the book number.",
+    "entrySentence": "We discuss endings freely; if you haven't finished, that's on you."
+  },
+  {
+    "id": "p033",
+    "reader": "r05",
+    "entry": "e033",
+    "kind": "word-sense-trap",
+    "readerSentence": "Spoilers go in the spoiler channel, tagged with the book number.",
+    "entrySentence": "The new rear spoiler on Dane's hatchback is purely for looks, and we love it.",
+    "note": "plot spoiler vs car spoiler"
+  },
+  {
+    "id": "p034",
+    "reader": "r05",
+    "entry": "e034",
+    "kind": "idiom",
+    "readerSentence": "Every winter we read the first book aloud for twelve hours and raise money for a children's hospital ward.",
+    "entrySentence": "If they catch whoever did it, they'll throw the book at them."
+  },
+  {
+    "id": "p035",
+    "reader": "r05",
+    "entry": "e035",
+    "kind": "near-copy"
+  },
+  {
+    "id": "p036",
+    "reader": "r05",
+    "entry": "e036",
+    "kind": "passing-mention",
+    "readerSentence": "Every winter we read the first book aloud for twelve hours and raise money for a children's hospital ward.",
+    "entrySentence": "Proceeds go to roof repairs at the scout hut, with a small jar for the hospital ward."
+  },
+  {
+    "id": "p037",
+    "reader": "r05",
+    "entry": "e037",
+    "kind": "unclear",
+    "readerSentence": "If you have a problem with a decision, message the mod team, not the whole server.",
+    "entrySentence": "Some of us think arguments about the rules belong in the open where everyone can see them; others think that just turns every complaint into a pile-on."
+  },
+  {
+    "id": "p038",
+    "reader": "r06",
+    "entry": "e038",
+    "kind": "opposed",
+    "readerSentence": "We welcome the new ring road; it will take the lorries off our high street.",
+    "entrySentence": "Wonderful news: the ring road will finally let us hear lorries from our bedrooms instead of just from the high street.",
+    "case": "irony",
+    "note": "sarcastic 'wonderful news'; literal reading looks like agreement, real meaning opposes the ring road"
+  },
+  {
+    "id": "p039",
+    "reader": "r06",
+    "entry": "e039",
+    "kind": "shared-claim",
+    "readerSentence": "Every member who can take on a young person for a year should, and we will help with the paperwork.",
+    "entrySentence": "We want every firm in Brindlewood that can take a trainee to take one.",
+    "note": "traders and a union both want firms to take on trainees"
+  },
+  {
+    "id": "p040",
+    "reader": "r06",
+    "entry": "e040",
+    "kind": "opposed",
+    "readerSentence": "We want parking that lets people pop in for ten minutes without a fine.",
+    "entrySentence": "Close Kettle Lane to cars between ten and four, and watch the pavement cafes fill up."
+  },
+  {
+    "id": "p041",
+    "reader": "r06",
+    "entry": "e041",
+    "kind": "word-sense-trap",
+    "readerSentence": "The Kettle Lane Traders' Association speaks for the forty-odd shops, cafes and workshops between the bridge and the market cross.",
+    "entrySentence": "On Good Friday we walk the cross from the chapel to the green, and anyone may help carry it.",
+    "note": "market cross (a landmark) vs the Christian cross"
+  },
+  {
+    "id": "p042",
+    "reader": "r06",
+    "entry": "e042",
+    "kind": "idiom",
+    "readerSentence": "Spend a fiver on the lane and it stays on the lane.",
+    "entrySentence": "We'll take a trip down memory lane together over tea and try to name every face."
+  },
+  {
+    "id": "p043",
+    "reader": "r06",
+    "entry": "e043",
+    "kind": "near-copy"
+  },
+  {
+    "id": "p044",
+    "reader": "r06",
+    "entry": "e044",
+    "kind": "passing-mention",
+    "readerSentence": "Spend a fiver on the lane and it stays on the lane.",
+    "entrySentence": "Leftover packets will be sold for pennies, and as ever, we try to buy local."
+  },
+  {
+    "id": "p045",
+    "reader": "r06",
+    "entry": "e045",
+    "kind": "unclear",
+    "readerSentence": "A high street dies when nobody can stop.",
+    "entrySentence": "Slower traffic might bring more people into the shops, or it might just push them to the retail park; we honestly don't know yet."
+  },
+  {
+    "id": "p046",
+    "reader": "r07",
+    "entry": "e046",
+    "kind": "idiom",
+    "readerSentence": "We are warriors against the devil, and we do not pretend evil is only a metaphor.",
+    "entrySentence": "The plan for the new layout is ready, but the devil's in the details: track gauge, wiring and who has to crawl under the table.",
+    "case": "devil-idiom",
+    "note": "'devil' only in an idiom on the entry side"
+  },
+  {
+    "id": "p047",
+    "reader": "r07",
+    "entry": "e047",
+    "kind": "shared-claim",
+    "readerSentence": "We feed whoever comes to the door on Saturday mornings, and we ask nobody about their faith before they eat.",
+    "entrySentence": "Anyone who turns up hungry gets fed; we don't check papers, beliefs or reasons.",
+    "note": "a church and a secular food bank: feed anyone, ask nothing"
+  },
+  {
+    "id": "p048",
+    "reader": "r07",
+    "entry": "e049",
+    "kind": "opposed",
+    "readerSentence": "We hold that marriage is a lifelong covenant between a man and a woman.",
+    "entrySentence": "Marriage is for any two adults who love each other, and we'll celebrate every one."
+  },
+  {
+    "id": "p049",
+    "reader": "r07",
+    "entry": "e050",
+    "kind": "word-sense-trap",
+    "readerSentence": "We hold that marriage is a lifelong covenant between a man and a woman.",
+    "entrySentence": "The covenant on the Fennick plots forbids building above two storeys, and we intend to enforce it.",
+    "note": "religious covenant vs a property deed covenant"
+  },
+  {
+    "id": "p050",
+    "reader": "r07",
+    "entry": "e051",
+    "kind": "near-copy"
+  },
+  {
+    "id": "p051",
+    "reader": "r07",
+    "entry": "e052",
+    "kind": "passing-mention",
+    "readerSentence": "Prayer is our first resort, not our last.",
+    "entrySentence": "Volunteers sit with patients, read to them, hold a hand, and sometimes pray with them if asked."
+  },
+  {
+    "id": "p052",
+    "reader": "r07",
+    "entry": "e053",
+    "kind": "unclear",
+    "readerSentence": "Prayer is our first resort, not our last.",
+    "entrySentence": "Should the parish council open with a prayer?"
+  },
+  {
+    "id": "p053",
+    "reader": "r07",
+    "entry": "e054",
+    "kind": "idiom",
+    "readerSentence": "The car park floods when it rains, so leave space by the drain.",
+    "entrySentence": "There were floods of tears when Reverend Osei retired after twenty-six years at the chapel."
+  },
+  {
+    "id": "p054",
+    "reader": "r08",
+    "entry": "e055",
+    "kind": "shared-claim",
+    "readerSentence": "Schools, hospitals and councils should not favour any religion.",
+    "entrySentence": "We ask that the council stop opening its meetings with prayers from one tradition; public business should be neutral ground for every believer and unbeliever alike.",
+    "note": "a secular society and a faith community agree on neutral public bodies"
+  },
+  {
+    "id": "p055",
+    "reader": "r08",
+    "entry": "e056",
+    "kind": "opposed",
+    "readerSentence": "We think public institutions should belong equally to people of every faith and none.",
+    "entrySentence": "A daily act of worship has shaped this school for a hundred years, and we will defend it."
+  },
+  {
+    "id": "p056",
+    "reader": "r08",
+    "entry": "e053",
+    "kind": "unclear",
+    "readerSentence": "Schools, hospitals and councils should not favour any religion.",
+    "entrySentence": "Should the parish council open with a prayer?"
+  },
+  {
+    "id": "p057",
+    "reader": "r08",
+    "entry": "e057",
+    "kind": "word-sense-trap",
+    "readerSentence": "We meet monthly for talks, walks and arguments.",
+    "entrySentence": "This week: functions with more than one argument, and why the order you pass them in matters.",
+    "note": "arguments (debate) vs function arguments"
+  },
+  {
+    "id": "p058",
+    "reader": "r08",
+    "entry": "e058",
+    "kind": "idiom",
+    "readerSentence": "We are a society for people who live without religion and want to live well anyway.",
+    "entrySentence": "God knows the number 7 needs more than that."
+  },
+  {
+    "id": "p059",
+    "reader": "r08",
+    "entry": "e059",
+    "kind": "near-copy"
+  },
+  {
+    "id": "p060",
+    "reader": "r08",
+    "entry": "e060",
+    "kind": "passing-mention",
+    "readerSentence": "We celebrate weddings, namings and funerals with our own ceremonies, written by the families themselves.",
+    "entrySentence": "It's available for meetings, parties, wakes and humanist weddings."
+  },
+  {
+    "id": "p061",
+    "reader": "r09",
+    "entry": "e061",
+    "kind": "shared-claim",
+    "readerSentence": "Fifteen-minute visits are not care.",
+    "entrySentence": "Ten minutes to get Mum up, washed and fed is an insult to her and to the carer.",
+    "note": "paraphrase: short visits are not real care"
+  },
+  {
+    "id": "p062",
+    "reader": "r09",
+    "entry": "e062",
+    "kind": "shared-claim",
+    "readerSentence": "We want paid travel time between visits, because driving from one client to the next is work.",
+    "entrySentence": "As small care agency owners, we agree with our staff on one thing at least: the time between visits should be paid, and the council's contract rates make that impossible.",
+    "note": "workers and agency owners agree"
+  },
+  {
+    "id": "p063",
+    "reader": "r09",
+    "entry": "e063",
+    "kind": "opposed",
+    "readerSentence": "We will organise every agency in the borough, union or not, and we will not cross a picket line.",
+    "entrySentence": "Our drivers will keep delivering through the strike, because our customers can't wait."
+  },
+  {
+    "id": "p064",
+    "reader": "r09",
+    "entry": "e064",
+    "kind": "word-sense-trap",
+    "readerSentence": "We will organise every agency in the borough, union or not, and we will not cross a picket line.",
+    "entrySentence": "The old picket fence along the almshouses is rotten, and we're replacing it one picket at a time.",
+    "note": "picket line vs picket fence"
+  },
+  {
+    "id": "p065",
+    "reader": "r09",
+    "entry": "e065",
+    "kind": "idiom",
+    "readerSentence": "Fifteen-minute visits are not care.",
+    "entrySentence": "Your fifteen minutes of fame start at the Brindlewood Institute on the 22nd."
+  },
+  {
+    "id": "p066",
+    "reader": "r09",
+    "entry": "e066",
+    "kind": "near-copy"
+  },
+  {
+    "id": "p067",
+    "reader": "r09",
+    "entry": "e067",
+    "kind": "unclear",
+    "readerSentence": "We will organise every agency in the borough, union or not, and we will not cross a picket line.",
+    "entrySentence": "We don't blame them either way, and we won't name anyone who works."
+  },
+  {
+    "id": "p068",
+    "reader": "r09",
+    "entry": "e068",
+    "kind": "passing-mention",
+    "readerSentence": "We are home care workers, mostly women, mostly on our own in other people's houses for most of the day.",
+    "entrySentence": "Thanks to the care workers who stayed late last year to help with the cocoa."
+  },
+  {
+    "id": "p069",
+    "reader": "r10",
+    "entry": "e069",
+    "kind": "shared-claim",
+    "readerSentence": "Everyone takes a turn visiting Grandad in the home, even the teenagers.",
+    "entrySentence": "A familiar face once a week matters more to a resident than any activity we could organise.",
+    "note": "regular visits to someone in a care home matter"
+  },
+  {
+    "id": "p070",
+    "reader": "r10",
+    "entry": "e070",
+    "kind": "unclear",
+    "readerSentence": "We don't do politics at the table.",
+    "entrySentence": "Argue, but argue kindly, and know when to pass the potatoes."
+  },
+  {
+    "id": "p071",
+    "reader": "r10",
+    "entry": "e071",
+    "kind": "word-sense-trap",
+    "readerSentence": "Sunday lunch is at Gran's, and phones go in the fruit bowl.",
+    "entrySentence": "Come and roll a few at the Hollin Cross Bowls Club on Saturday afternoon.",
+    "note": "fruit bowl vs the game of bowls"
+  },
+  {
+    "id": "p072",
+    "reader": "r10",
+    "entry": "e072",
+    "kind": "idiom",
+    "readerSentence": "You can believe what you like, but the gravy is neutral ground.",
+    "entrySentence": "The junior cup final will be played on neutral ground at the Harrow Creek rec.",
+    "note": "figurative on the reader side, literal on the entry side"
+  },
+  {
+    "id": "p073",
+    "reader": "r10",
+    "entry": "e073",
+    "kind": "near-copy"
+  },
+  {
+    "id": "p074",
+    "reader": "r10",
+    "entry": "e074",
+    "kind": "passing-mention",
+    "readerSentence": "Sunday lunch is at Gran's, and phones go in the fruit bowl.",
+    "entrySentence": "Prizes include a hamper, a voucher for the garden centre and Sunday lunch for four."
+  },
+  {
+    "id": "p075",
+    "reader": "r11",
+    "entry": "e075",
+    "kind": "shared-claim",
+    "readerSentence": "If someone is hurt, the game stops, and nobody is shamed for going off.",
+    "entrySentence": "If in doubt, sit them out, and no player should ever feel soft for coming off.",
+    "note": "stop play for injuries and never shame a player for leaving"
+  },
+  {
+    "id": "p076",
+    "reader": "r11",
+    "entry": "e076",
+    "kind": "unclear",
+    "readerSentence": "We raise our own money, we wash our own kit, and we would like the council to fix the floodlights.",
+    "entrySentence": "Some neighbours want them switched off by eight; others say the lights make the path feel safer."
+  },
+  {
+    "id": "p077",
+    "reader": "r11",
+    "entry": "e077",
+    "kind": "word-sense-trap",
+    "readerSentence": "We look after each other on and off the pitch.",
+    "entrySentence": "Hold the pitch on the long note in bar twelve; the altos keep drifting flat.",
+    "note": "sports pitch vs musical pitch"
+  },
+  {
+    "id": "p078",
+    "reader": "r11",
+    "entry": "e078",
+    "kind": "idiom",
+    "readerSentence": "The Herons play rugby for the joy of it.",
+    "entrySentence": "All we want is a level playing field."
+  },
+  {
+    "id": "p079",
+    "reader": "r11",
+    "entry": "e079",
+    "kind": "near-copy"
+  },
+  {
+    "id": "p080",
+    "reader": "r11",
+    "entry": "e080",
+    "kind": "passing-mention",
+    "readerSentence": "Any woman over eighteen can join, whatever her size, speed or experience.",
+    "entrySentence": "New this winter: Pilates at seven, aqua aerobics on Wednesdays, women's rugby fitness on Tuesday evenings and a toddler swim on Saturday mornings."
+  },
+  {
+    "id": "p081",
+    "reader": "r12",
+    "entry": "e081",
+    "kind": "shared-claim",
+    "readerSentence": "We are neighbours helping neighbours, not a charity, and nobody has to prove they deserve help.",
+    "entrySentence": "Nobody has to tell us their story to get a parcel.",
+    "note": "no means-testing, paraphrased"
+  },
+  {
+    "id": "p082",
+    "reader": "r12",
+    "entry": "e083",
+    "kind": "opposed",
+    "readerSentence": "We are neighbours helping neighbours, not a charity, and nobody has to prove they deserve help.",
+    "entrySentence": "To make sure parcels reach those in greatest need, every client needs a referral from a doctor, a school or a social worker."
+  },
+  {
+    "id": "p083",
+    "reader": "r12",
+    "entry": "e084",
+    "kind": "word-sense-trap",
+    "readerSentence": "We need two drivers for Thursday and someone who can fix a washing machine.",
+    "entrySentence": "Members selling old drivers and irons should list them on the clubhouse board.",
+    "note": "volunteer drivers vs golf clubs"
+  },
+  {
+    "id": "p084",
+    "reader": "r12",
+    "entry": "e085",
+    "kind": "idiom",
+    "readerSentence": "We do shopping runs, prescription pickups and lifts to appointments.",
+    "entrySentence": "A few weekends of painting will give the old hall a real lift."
+  },
+  {
+    "id": "p085",
+    "reader": "r12",
+    "entry": "e086",
+    "kind": "near-copy"
+  },
+  {
+    "id": "p086",
+    "reader": "r12",
+    "entry": "e087",
+    "kind": "passing-mention",
+    "readerSentence": "Tins of soup are always welcome.",
+    "entrySentence": "Soup and bread at the interval, and tins for the food bank on the door if you have them."
+  },
+  {
+    "id": "p087",
+    "reader": "r12",
+    "entry": "e088",
+    "kind": "unclear",
+    "readerSentence": "We are neighbours helping neighbours, not a charity, and nobody has to prove they deserve help.",
+    "entrySentence": "Registering as a charity would bring grants, and it would also bring paperwork, trustees and rules about who we can help."
+  },
+  {
+    "id": "p088",
+    "reader": "r13",
+    "entry": "e089",
+    "kind": "shared-claim",
+    "readerSentence": "We believe decisions are best made close to home, by the people who live with them.",
+    "entrySentence": "Power belongs in the street and the village, not in distant offices.",
+    "note": "rural conservatives and an urban collective agree on local power"
+  },
+  {
+    "id": "p089",
+    "reader": "r13",
+    "entry": "e090",
+    "kind": "opposed",
+    "readerSentence": "Low taxes and balanced books are a moral matter: money spent today is borrowed from our grandchildren.",
+    "entrySentence": "Borrowing to build homes and railways is how you leave something for your grandchildren."
+  },
+  {
+    "id": "p090",
+    "reader": "r13",
+    "entry": "e091",
+    "kind": "unclear",
+    "readerSentence": "Families, not governments, raise children.",
+    "entrySentence": "Parents know their children best, mostly; but when a child is in danger at home, someone has to be allowed to step in."
+  },
+  {
+    "id": "p091",
+    "reader": "r13",
+    "entry": "e092",
+    "kind": "word-sense-trap",
+    "readerSentence": "A parish council knows its lanes better than any ministry.",
+    "entrySentence": "All twelve lanes are rebuilt and the hire shoes have been, mercifully, replaced.",
+    "note": "country lanes vs bowling lanes"
+  },
+  {
+    "id": "p092",
+    "reader": "r13",
+    "entry": "e093",
+    "kind": "idiom",
+    "readerSentence": "We believe decisions are best made close to home, by the people who live with them.",
+    "entrySentence": "This month's prompt hits close to home: write about a kitchen you remember."
+  },
+  {
+    "id": "p093",
+    "reader": "r13",
+    "entry": "e094",
+    "kind": "near-copy"
+  },
+  {
+    "id": "p094",
+    "reader": "r13",
+    "entry": "e095",
+    "kind": "passing-mention",
+    "readerSentence": "We honour the farmers, the soldiers and the shopkeepers who built this county.",
+    "entrySentence": "There will be a hog roast, a raffle, and a toast to the farmers."
+  },
+  {
+    "id": "p095",
+    "reader": "r14",
+    "entry": "e096",
+    "kind": "shared-claim",
+    "readerSentence": "We will not shame people who drive to work.",
+    "entrySentence": "Out here a car isn't a luxury; it's the only way to get to work, and blaming us won't fix that.",
+    "note": "climate activists and rural drivers: don't blame people who must drive"
+  },
+  {
+    "id": "p096",
+    "reader": "r14",
+    "entry": "e097",
+    "kind": "opposed",
+    "readerSentence": "We block roads only when every other route has failed, and we always let ambulances through.",
+    "entrySentence": "Road blockers should face the full force of the law; ordinary drivers have places to be."
+  },
+  {
+    "id": "p097",
+    "reader": "r14",
+    "entry": "e098",
+    "kind": "opposed",
+    "readerSentence": "We want our county off coal, oil and gas within ten years.",
+    "entrySentence": "Gas heats this valley and pays its wages, and we're not ashamed of it."
+  },
+  {
+    "id": "p098",
+    "reader": "r14",
+    "entry": "e099",
+    "kind": "word-sense-trap",
+    "readerSentence": "Bring a flask, warm socks and a charged phone.",
+    "entrySentence": "We'll heat the flask over a burner until the solution turns blue, then cool it and watch it change back.",
+    "note": "drinks flask vs laboratory flask"
+  },
+  {
+    "id": "p099",
+    "reader": "r14",
+    "entry": "e100",
+    "kind": "idiom",
+    "readerSentence": "We block roads only when every other route has failed, and we always let ambulances through.",
+    "entrySentence": "Without a new grant by March, it may be the end of the road for the Friday youth club."
+  },
+  {
+    "id": "p100",
+    "reader": "r14",
+    "entry": "e101",
+    "kind": "near-copy"
+  },
+  {
+    "id": "p101",
+    "reader": "r14",
+    "entry": "e102",
+    "kind": "unclear",
+    "readerSentence": "We want our county off coal, oil and gas within ten years.",
+    "entrySentence": "Some of our members welcome the rent; others say food land should grow food."
+  },
+  {
+    "id": "p102",
+    "reader": "r14",
+    "entry": "e103",
+    "kind": "passing-mention",
+    "readerSentence": "We are ordinary people frightened about the climate and tired of being polite about it.",
+    "entrySentence": "We've gone plastic-free this year, for the climate and for our sanity."
+  },
+  {
+    "id": "p103",
+    "reader": "r15",
+    "entry": "e104",
+    "kind": "shared-claim",
+    "readerSentence": "Beginners are taught for free, and nobody laughs at a dropped stitch.",
+    "entrySentence": "Newcomers get lessons at no charge, and every expert here once ruined a perfectly good plank.",
+    "note": "free lessons and no mockery of beginners, paraphrased"
+  },
+  {
+    "id": "p104",
+    "reader": "r15",
+    "entry": "e105",
+    "kind": "idiom",
+    "readerSentence": "We're not a sewing circle; we are a coven of yarn.",
+    "entrySentence": "Our coven meets at the new moon in a member's garden.",
+    "note": "reader uses 'coven' only as a joke"
+  },
+  {
+    "id": "p105",
+    "reader": "r15",
+    "entry": "e106",
+    "kind": "word-sense-trap",
+    "readerSentence": "Beginners are taught for free, and nobody laughs at a dropped stitch.",
+    "entrySentence": "You'll learn when a cut needs stitches and when a plaster will do.",
+    "note": "knitting stitch vs surgical stitches"
+  },
+  {
+    "id": "p106",
+    "reader": "r15",
+    "entry": "e107",
+    "kind": "opposed",
+    "readerSentence": "Please don't donate anything that smells of cigarettes.",
+    "entrySentence": "Every donation is welcome here, whatever it smells of; we wash everything."
+  },
+  {
+    "id": "p107",
+    "reader": "r15",
+    "entry": "e108",
+    "kind": "near-copy"
+  },
+  {
+    "id": "p108",
+    "reader": "r15",
+    "entry": "e109",
+    "kind": "passing-mention",
+    "readerSentence": "We knit, crochet and gossip in the back room of the Brindlewood Institute every Thursday.",
+    "entrySentence": "Stalls for jewellery, pottery, woodturning, candles, knitted hats and much more."
+  },
+  {
+    "id": "p109",
+    "reader": "r15",
+    "entry": "e110",
+    "kind": "shared-claim",
+    "readerSentence": "Twice a year we make blankets for the night shelter.",
+    "entrySentence": "Warm bedding is what our guests ask for most, and handmade blankets are always welcome."
+  },
+  {
+    "id": "p110",
+    "reader": "r16",
+    "entry": "e111",
+    "kind": "shared-claim",
+    "readerSentence": "We want a twenty limit outside every school in the borough.",
+    "entrySentence": "Drivers need to slow down near the schools and the care home; a few seconds lost is nothing.",
+    "note": "parents and pensioners want slower traffic at schools"
+  },
+  {
+    "id": "p111",
+    "reader": "r16",
+    "entry": "e112",
+    "kind": "opposed",
+    "readerSentence": "We want a twenty limit outside every school in the borough.",
+    "entrySentence": "Blanket twenty limits slow everyone down and save nobody."
+  },
+  {
+    "id": "p112",
+    "reader": "r16",
+    "entry": "e113",
+    "kind": "unclear",
+    "readerSentence": "Helmets are encouraged but nobody is turned away without one.",
+    "entrySentence": "Some of us think they save lives; others think a law would put people off cycling altogether."
+  },
+  {
+    "id": "p113",
+    "reader": "r16",
+    "entry": "e114",
+    "kind": "word-sense-trap",
+    "readerSentence": "Every Wednesday we ride to school together, forty children and a dozen parents, ringing our bells down Copse Row.",
+    "entrySentence": "The Ferris Lane bells need ringers",
+    "note": "bicycle bells vs church bells"
+  },
+  {
+    "id": "p114",
+    "reader": "r16",
+    "entry": "e115",
+    "kind": "idiom",
+    "readerSentence": "Half of us drive to work after drop-off.",
+    "entrySentence": "The last speaker drove home the point that every vote counts in a ward this small."
+  },
+  {
+    "id": "p115",
+    "reader": "r16",
+    "entry": "e116",
+    "kind": "near-copy"
+  },
+  {
+    "id": "p116",
+    "reader": "r16",
+    "entry": "e117",
+    "kind": "passing-mention",
+    "readerSentence": "Every Wednesday we ride to school together, forty children and a dozen parents, ringing our bells down Copse Row.",
+    "entrySentence": "Bring a dish and a chair; bikes and scooters welcome."
+  },
+  {
+    "id": "p117",
+    "reader": "r17",
+    "entry": "e118",
+    "kind": "shared-claim",
+    "readerSentence": "Mistakes are reported without blame.",
+    "entrySentence": "Tell us about every near miss; nobody here gets in trouble for owning up.",
+    "note": "blame-free incident reporting in a hospital and a gliding club"
+  },
+  {
+    "id": "p118",
+    "reader": "r17",
+    "entry": "e120",
+    "kind": "opposed",
+    "readerSentence": "On Ward 6 nobody eats lunch alone at their desk.",
+    "entrySentence": "Lunch at your desk is fine if the work needs doing; flexibility cuts both ways."
+  },
+  {
+    "id": "p119",
+    "reader": "r17",
+    "entry": "e121",
+    "kind": "word-sense-trap",
+    "readerSentence": "On Ward 6 nobody eats lunch alone at their desk.",
+    "entrySentence": "Residents of Ward 6 can meet all three by-election candidates at the community centre on the 12th.",
+    "note": "hospital ward vs electoral ward"
+  },
+  {
+    "id": "p120",
+    "reader": "r17",
+    "entry": "e122",
+    "kind": "idiom",
+    "readerSentence": "We hand over at the bedside, so patients hear what is said about them.",
+    "entrySentence": "Our mechanics have a better bedside manner than most doctors."
+  },
+  {
+    "id": "p121",
+    "reader": "r17",
+    "entry": "e123",
+    "kind": "near-copy"
+  },
+  {
+    "id": "p122",
+    "reader": "r17",
+    "entry": "e124",
+    "kind": "unclear",
+    "readerSentence": "We hand over at the bedside, so patients hear what is said about them.",
+    "entrySentence": "Some said hearing the nurses talk about them protected their dignity; others said they heard things they weren't ready to hear."
+  },
+  {
+    "id": "p123",
+    "reader": "r18",
+    "entry": "e125",
+    "kind": "word-sense-trap",
+    "readerSentence": "We are short of boards and clocks.",
+    "entrySentence": "The Fennick housing board will hear residents' complaints about the lifts on the 4th.",
+    "note": "chess boards vs a housing board"
+  },
+  {
+    "id": "p124",
+    "reader": "r18",
+    "entry": "e126",
+    "kind": "shared-claim",
+    "readerSentence": "Juniors play free.",
+    "entrySentence": "Under-eighteens never pay; the grown-ups in the band chip in to cover them."
+  },
+  {
+    "id": "p125",
+    "reader": "r18",
+    "entry": "e127",
+    "kind": "shared-claim",
+    "readerSentence": "Never explain to your opponent why they lost unless they ask.",
+    "entrySentence": "Keep your opinions about the other fighter to yourself unless they ask for them.",
+    "note": "don't lecture a beaten opponent, chess vs boxing"
+  },
+  {
+    "id": "p126",
+    "reader": "r18",
+    "entry": "e128",
+    "kind": "idiom",
+    "readerSentence": "Our oldest member still plays the same pawn opening he learned as a boy.",
+    "entrySentence": "We will not be pawns in a game played at the town hall."
+  },
+  {
+    "id": "p127",
+    "reader": "r18",
+    "entry": "e129",
+    "kind": "passing-mention",
+    "readerSentence": "We play on Thursday nights in the upstairs room of the Lamb, from seven until the landlord coughs meaningfully.",
+    "entrySentence": "The upstairs room is free on Thursdays, chess club permitting."
+  },
+  {
+    "id": "p128",
+    "reader": "r18",
+    "entry": "e130",
+    "kind": "near-copy"
+  },
+  {
+    "id": "p129",
+    "reader": "r18",
+    "entry": "e131",
+    "kind": "unclear",
+    "readerSentence": "All ages, all ratings, and no one is too good to play a beginner.",
+    "entrySentence": "Some say it toughens children up; others say it puts them off for life."
+  },
+  {
+    "id": "p130",
+    "reader": "r19",
+    "entry": "e132",
+    "kind": "shared-claim",
+    "readerSentence": "We want employers to give new mothers proper paid leave and a job to come back to.",
+    "entrySentence": "A new mother should have months of paid leave and her job kept open for her, no arguments.",
+    "note": "pro-life group and a women's network agree on maternity leave"
+  },
+  {
+    "id": "p131",
+    "reader": "r19",
+    "entry": "e133",
+    "kind": "opposed",
+    "readerSentence": "We believe every human life is worth protecting, from conception to natural death.",
+    "entrySentence": "The decision to continue a pregnancy belongs to the pregnant person alone, and the law should keep it that way."
+  },
+  {
+    "id": "p132",
+    "reader": "r19",
+    "entry": "e134",
+    "kind": "opposed",
+    "readerSentence": "We believe every human life is worth protecting, from conception to natural death.",
+    "entrySentence": "Adults of sound mind facing the end of a terminal illness should be allowed to choose when to die."
+  },
+  {
+    "id": "p133",
+    "reader": "r19",
+    "entry": "e135",
+    "kind": "unclear",
+    "readerSentence": "We believe every human life is worth protecting, from conception to natural death.",
+    "entrySentence": "Some fear pressure on people like us; others want the choice for themselves."
+  },
+  {
+    "id": "p134",
+    "reader": "r19",
+    "entry": "e136",
+    "kind": "word-sense-trap",
+    "readerSentence": "We believe every human life is worth protecting, from conception to natural death.",
+    "entrySentence": "The conception of the mural took longer than the painting.",
+    "note": "conception of a life vs of a design"
+  },
+  {
+    "id": "p135",
+    "reader": "r19",
+    "entry": "e137",
+    "kind": "near-copy"
+  },
+  {
+    "id": "p136",
+    "reader": "r19",
+    "entry": "e138",
+    "kind": "passing-mention",
+    "readerSentence": "We give out cots, prams, nappies and, when we can, rent money.",
+    "entrySentence": "Clothes, books, toys, a pram in good nick and a box of mysterious cables."
+  },
+  {
+    "id": "p137",
+    "reader": "r20",
+    "entry": "e140",
+    "kind": "shared-claim",
+    "readerSentence": "Clubs belong to their towns, not to whoever owns them this year.",
+    "entrySentence": "A pub belongs to the people who drink in it, not to the company that happens to hold the deeds.",
+    "note": "community ownership: club vs pub"
+  },
+  {
+    "id": "p138",
+    "reader": "r20",
+    "entry": "e141",
+    "kind": "opposed",
+    "readerSentence": "We will never boo our own players.",
+    "entrySentence": "If the players won't run, the fans have every right to let them hear it."
+  },
+  {
+    "id": "p139",
+    "reader": "r20",
+    "entry": "e004",
+    "kind": "word-sense-trap",
+    "readerSentence": "Criticise the board, not the lad in the number nine shirt.",
+    "entrySentence": "We have forty members and only twelve boards, so Thursday nights turn into a queue.",
+    "note": "club board of directors vs chess boards"
+  },
+  {
+    "id": "p140",
+    "reader": "r20",
+    "entry": "e142",
+    "kind": "word-sense-trap",
+    "readerSentence": "Coaches leave the Lamb at eleven.",
+    "entrySentence": "Harrow Creek Athletics needs a qualified coach for the under-twelves on Saturday mornings.",
+    "note": "coach (bus) vs coach (trainer)"
+  },
+  {
+    "id": "p141",
+    "reader": "r20",
+    "entry": "e143",
+    "kind": "idiom",
+    "readerSentence": "The youth pitch needs new goalposts and nets, and the trust will pay for half.",
+    "entrySentence": "Every time we meet the council's conditions, they move the goalposts."
+  },
+  {
+    "id": "p142",
+    "reader": "r20",
+    "entry": "e144",
+    "kind": "near-copy"
+  },
+  {
+    "id": "p143",
+    "reader": "r20",
+    "entry": "e145",
+    "kind": "unclear",
+    "readerSentence": "Away fans are guests and should be treated as guests.",
+    "entrySentence": "Some think it's friendly; others think it's asking for trouble."
+  },
+  {
+    "id": "p144",
+    "reader": "r20",
+    "entry": "e146",
+    "kind": "passing-mention",
+    "readerSentence": "The supporters' trust owns a small share of the club and wants a bigger say.",
+    "entrySentence": "Roast until three, then the football on the big screen, then the quiz at eight."
+  },
+  {
+    "id": "p145",
+    "reader": "r21",
+    "entry": "e147",
+    "kind": "shared-claim",
+    "readerSentence": "We meet newcomers to Harrow Creek at the station and help them find their feet: a bus pass, a doctor, a school place, a cup of tea.",
+    "entrySentence": "We'll help you register with a doctor, get the children into school and find the cheapest bus fares.",
+    "note": "practical help for new arrivals, paraphrased"
+  },
+  {
+    "id": "p146",
+    "reader": "r21",
+    "entry": "e153",
+    "kind": "opposed",
+    "readerSentence": "Everyone who lives here is a neighbour, whatever papers they carry.",
+    "entrySentence": "They don't belong here and never will.",
+    "note": "hostile entry"
+  },
+  {
+    "id": "p147",
+    "reader": "r21",
+    "entry": "e149",
+    "kind": "word-sense-trap",
+    "readerSentence": "Everyone who lives here is a neighbour, whatever papers they carry.",
+    "entrySentence": "The papers must be through doors by seven, rain or shine.",
+    "note": "identity papers vs newspapers"
+  },
+  {
+    "id": "p148",
+    "reader": "r21",
+    "entry": "e150",
+    "kind": "idiom",
+    "readerSentence": "We meet newcomers to Harrow Creek at the station and help them find their feet: a bus pass, a doctor, a school place, a cup of tea.",
+    "entrySentence": "The free foot clinic checks feet, trims nails and spots problems early for anyone over sixty."
+  },
+  {
+    "id": "p149",
+    "reader": "r21",
+    "entry": "e151",
+    "kind": "near-copy"
+  },
+  {
+    "id": "p150",
+    "reader": "r21",
+    "entry": "e152",
+    "kind": "unclear",
+    "readerSentence": "We teach English on Monday evenings and learn the odd word back.",
+    "entrySentence": "Should they be compulsory, free, or both?"
+  },
+  {
+    "id": "p151",
+    "reader": "r21",
+    "entry": "e154",
+    "kind": "passing-mention",
+    "readerSentence": "We teach English on Monday evenings and learn the odd word back.",
+    "entrySentence": "Story time on Mondays, a brick-building club on Wednesdays, a crime-writing workshop and conversation English for beginners on Thursdays."
+  },
+  {
+    "id": "p152",
+    "reader": "r22",
+    "entry": "e155",
+    "kind": "shared-claim",
+    "readerSentence": "We remember the dead of every side every November, quietly and without speeches.",
+    "entrySentence": "In November we remember all who died in war, on every side, in silence.",
+    "note": "veterans and a peace group share a remembrance"
+  },
+  {
+    "id": "p153",
+    "reader": "r22",
+    "entry": "e157",
+    "kind": "word-sense-trap",
+    "readerSentence": "We meet on the first Saturday of the month in the hut behind the bowls green.",
+    "entrySentence": "The green belt around Hollin Cross must be protected.",
+    "note": "bowling green vs green belt"
+  },
+  {
+    "id": "p154",
+    "reader": "r22",
+    "entry": "e158",
+    "kind": "word-sense-trap",
+    "readerSentence": "The Old Comrades are men and women who served, and the families who waited for them.",
+    "entrySentence": "In a tie-break, whoever served last game receives first.",
+    "note": "military service vs serving in tennis"
+  },
+  {
+    "id": "p155",
+    "reader": "r22",
+    "entry": "e159",
+    "kind": "idiom",
+    "readerSentence": "We meet on the first Saturday of the month in the hut behind the bowls green.",
+    "entrySentence": "Every plot on the lane is green with envy."
+  },
+  {
+    "id": "p156",
+    "reader": "r22",
+    "entry": "e160",
+    "kind": "near-copy"
+  },
+  {
+    "id": "p157",
+    "reader": "r22",
+    "entry": "e161",
+    "kind": "passing-mention",
+    "readerSentence": "The Old Comrades are men and women who served, and the families who waited for them.",
+    "entrySentence": "Thanks to the old soldiers for the loan of their chairs."
+  },
+  {
+    "id": "p158",
+    "reader": "r23",
+    "entry": "e164",
+    "kind": "shared-claim",
+    "readerSentence": "We want every school in the borough to have a teacher a young person can talk to without fear.",
+    "entrySentence": "Every child should have at least one grown-up at school they can turn to when things go wrong.",
+    "note": "an LGBT youth group and a chapel scheme agree on a trusted adult at school"
+  },
+  {
+    "id": "p159",
+    "reader": "r23",
+    "entry": "e163",
+    "kind": "opposed",
+    "readerSentence": "We want every school in the borough to have a teacher a young person can talk to without fear.",
+    "entrySentence": "Schools must tell parents everything their child discusses with staff, no exceptions."
+  },
+  {
+    "id": "p160",
+    "reader": "r23",
+    "entry": "e168",
+    "kind": "opposed",
+    "readerSentence": "Nobody is outed here.",
+    "entrySentence": "Find out who they are and make sure everyone knows.",
+    "note": "hostile entry; it calls for outing, the reader forbids it"
+  },
+  {
+    "id": "p161",
+    "reader": "r23",
+    "entry": "e165",
+    "kind": "unclear",
+    "readerSentence": "We are a social group for lesbian, gay, bi, trans and questioning young people aged fourteen to twenty-one.",
+    "entrySentence": "We have members who want to go further and members who fear going too fast."
+  },
+  {
+    "id": "p162",
+    "reader": "r23",
+    "entry": "e167",
+    "kind": "word-sense-trap",
+    "readerSentence": "We are a social group for lesbian, gay, bi, trans and questioning young people aged fourteen to twenty-one.",
+    "entrySentence": "Anyone held for questioning has the right to free legal advice before answering anything.",
+    "note": "questioning one's identity vs police questioning"
+  },
+  {
+    "id": "p163",
+    "reader": "r23",
+    "entry": "e166",
+    "kind": "near-copy"
+  },
+  {
+    "id": "p164",
+    "reader": "r24",
+    "entry": "e169",
+    "kind": "shared-claim",
+    "readerSentence": "Restaurants: please let us use your toilet.",
+    "entrySentence": "Couriers waiting on our doorstep in the rain can come inside and use the loo; it costs us nothing.",
+    "note": "riders and restaurant owners agree on toilet access"
+  },
+  {
+    "id": "p165",
+    "reader": "r24",
+    "entry": "e171",
+    "kind": "opposed",
+    "readerSentence": "We want a minimum per hour, not per drop.",
+    "entrySentence": "Flexibility is the point: riders choose their hours and get paid for what they deliver."
+  },
+  {
+    "id": "p166",
+    "reader": "r24",
+    "entry": "e172",
+    "kind": "word-sense-trap",
+    "readerSentence": "We want a minimum per hour, not per drop.",
+    "entrySentence": "Wait for the drop at midnight; the bass will rattle your fillings.",
+    "note": "delivery drop vs the drop in dance music"
+  },
+  {
+    "id": "p167",
+    "reader": "r24",
+    "entry": "e068",
+    "kind": "idiom",
+    "readerSentence": "If someone's bike is stolen or they come off in the rain, the group chat lights up and somebody comes.",
+    "entrySentence": "The Kettle Lane lights go on at six on the 1st, with carols from the school choir and a slightly nervous Father Christmas.",
+    "note": "'lights up' is figurative on the reader side"
+  },
+  {
+    "id": "p168",
+    "reader": "r24",
+    "entry": "e173",
+    "kind": "near-copy"
+  },
+  {
+    "id": "p169",
+    "reader": "r24",
+    "entry": "e174",
+    "kind": "passing-mention",
+    "readerSentence": "If someone's bike is stolen or they come off in the rain, the group chat lights up and somebody comes.",
+    "entrySentence": "Two sheds broken into on Copse Row this month and a stolen bike recovered from the canal."
+  },
+  {
+    "id": "p170",
+    "reader": "r24",
+    "entry": "e175",
+    "kind": "unclear",
+    "readerSentence": "We ride for the apps in all weathers, and we are tired of being called self-employed by companies that control every minute.",
+    "entrySentence": "Being your own boss suits some riders and traps others, and we're not convinced one rule fits all."
+  },
+  {
+    "id": "p171",
+    "reader": "r25",
+    "entry": "e047",
+    "kind": "shared-claim",
+    "readerSentence": "We run a food parcel scheme every Friday for anyone in need, Muslim or not.",
+    "entrySentence": "Anyone who turns up hungry gets fed; we don't check papers, beliefs or reasons.",
+    "note": "a mosque and a secular food bank: food for anyone, whatever their faith"
+  },
+  {
+    "id": "p172",
+    "reader": "r25",
+    "entry": "e176",
+    "kind": "opposed",
+    "readerSentence": "Women and men pray in separate rooms.",
+    "entrySentence": "We think men and women should worship side by side, and we'd like our own congregation to say so."
+  },
+  {
+    "id": "p173",
+    "reader": "r25",
+    "entry": "e177",
+    "kind": "word-sense-trap",
+    "readerSentence": "We run a food parcel scheme every Friday for anyone in need, Muslim or not.",
+    "entrySentence": "Pass the parcel, musical chairs and a magician of uncertain skill.",
+    "note": "food parcel vs party game"
+  },
+  {
+    "id": "p174",
+    "reader": "r25",
+    "entry": "e178",
+    "kind": "idiom",
+    "readerSentence": "Our mosque is a converted shop with a green door and a very small car park.",
+    "entrySentence": "It turned out we were pushing at an open door: the council agreed in a week."
+  },
+  {
+    "id": "p175",
+    "reader": "r25",
+    "entry": "e179",
+    "kind": "near-copy"
+  },
+  {
+    "id": "p176",
+    "reader": "r25",
+    "entry": "e180",
+    "kind": "passing-mention",
+    "readerSentence": "Our mosque is a converted shop with a green door and a very small car park.",
+    "entrySentence": "Sixty people turned out on Sunday, including volunteers from the mosque, the scouts and the tenants' association."
+  },
+  {
+    "id": "p177",
+    "reader": "r25",
+    "entry": "e181",
+    "kind": "unclear",
+    "readerSentence": "We ask visitors to dress modestly and take their shoes off at the door.",
+    "entrySentence": "Our committee is divided: some see a welcome, some see a step backwards."
+  },
+  {
+    "id": "p178",
+    "reader": "r26",
+    "entry": "e182",
+    "kind": "opposed",
+    "readerSentence": "We support the Fennick fields scheme, all four hundred homes of it.",
+    "entrySentence": "Four hundred houses on the Fennick fields would bury the last open meadow in Brindlewood under tarmac."
+  },
+  {
+    "id": "p179",
+    "reader": "r26",
+    "entry": "e183",
+    "kind": "opposed",
+    "readerSentence": "Fields are pleasant; families are more important.",
+    "entrySentence": "They say Brindlewood needs every one of those houses; we say it needs the meadow more.",
+    "case": "quoted-opponent",
+    "note": "the entry quotes the housing case only to reject it"
+  },
+  {
+    "id": "p180",
+    "reader": "r26",
+    "entry": "e157",
+    "kind": "opposed",
+    "readerSentence": "Fields are pleasant; families are more important.",
+    "entrySentence": "Once a field is built on, it never comes back."
+  },
+  {
+    "id": "p181",
+    "reader": "r26",
+    "entry": "e184",
+    "kind": "shared-claim",
+    "readerSentence": "Our children cannot afford to live where they grew up.",
+    "entrySentence": "Our grandchildren should be able to rent a flat in the town they were born in."
+  },
+  {
+    "id": "p182",
+    "reader": "r26",
+    "entry": "e185",
+    "kind": "unclear",
+    "readerSentence": "Brindlewood needs homes, and it needs them on the edge of town, in the gaps, above the shops and anywhere else they'll fit.",
+    "entrySentence": "Some think it would bring life back to the street after six; others worry about parking and noise."
+  },
+  {
+    "id": "p183",
+    "reader": "r26",
+    "entry": "e186",
+    "kind": "word-sense-trap",
+    "readerSentence": "Bring a planning application you love or hate.",
+    "entrySentence": "Applications for the summer playscheme jobs close on Friday.",
+    "note": "planning application vs job application"
+  },
+  {
+    "id": "p184",
+    "reader": "r26",
+    "entry": "e187",
+    "kind": "idiom",
+    "readerSentence": "Fields are pleasant; families are more important.",
+    "entrySentence": "She is outstanding in her field, and occasionally out standing in a field.",
+    "note": "idiom plus a pun on the literal field"
+  },
+  {
+    "id": "p185",
+    "reader": "r26",
+    "entry": "e188",
+    "kind": "near-copy"
+  },
+  {
+    "id": "p186",
+    "reader": "r26",
+    "entry": "e189",
+    "kind": "passing-mention",
+    "readerSentence": "Brindlewood needs homes, and it needs them on the edge of town, in the gaps, above the shops and anywhere else they'll fit.",
+    "entrySentence": "Parking will be tight while the builders finish the new houses on the old orchard, so walk if you can."
+  },
+  {
+    "id": "p187",
+    "reader": "r27",
+    "entry": "e190",
+    "kind": "shared-claim",
+    "readerSentence": "Street lights should point down, not up, and nobody needs a floodlit car park at three in the morning.",
+    "entrySentence": "Bats and moths need dark nights, and shielded lamps that shine only downward would help them enormously.",
+    "note": "astronomers and a bat group want downward-shielded lighting"
+  },
+  {
+    "id": "p188",
+    "reader": "r27",
+    "entry": "e191",
+    "kind": "opposed",
+    "readerSentence": "We campaign for darker skies.",
+    "entrySentence": "Brighter street lighting on every path is the simplest way to help people feel safe walking home."
+  },
+  {
+    "id": "p189",
+    "reader": "r27",
+    "entry": "e192",
+    "kind": "word-sense-trap",
+    "readerSentence": "Last year one of us found a new variable star.",
+    "entrySentence": "Star of the week is Ruby in year four, for her brilliant poem about the canal.",
+    "note": "astronomical star vs star pupil"
+  },
+  {
+    "id": "p190",
+    "reader": "r27",
+    "entry": "e193",
+    "kind": "idiom",
+    "readerSentence": "We are mostly retired, partly obsessed and entirely willing to explain the moons of Jupiter to anyone who asks.",
+    "entrySentence": "We're over the moon."
+  },
+  {
+    "id": "p191",
+    "reader": "r27",
+    "entry": "e194",
+    "kind": "near-copy"
+  },
+  {
+    "id": "p192",
+    "reader": "r27",
+    "entry": "e195",
+    "kind": "passing-mention",
+    "readerSentence": "We campaign for darker skies.",
+    "entrySentence": "Agenda: water butts, the shed rota, the badger question, and a note on light pollution from the new car park."
+  },
+  {
+    "id": "p193",
+    "reader": "r27",
+    "entry": "e076",
+    "kind": "unclear",
+    "readerSentence": "Street lights should point down, not up, and nobody needs a floodlit car park at three in the morning.",
+    "entrySentence": "Some neighbours want them switched off by eight; others say the lights make the path feel safer."
+  },
+  {
+    "id": "p194",
+    "reader": "r28",
+    "entry": "e196",
+    "kind": "shared-claim",
+    "readerSentence": "A crooked carrot tastes exactly like a straight one.",
+    "entrySentence": "Odd-shaped produce is still good food, and throwing it away for its looks is madness.",
+    "note": "paraphrase with no shared key words"
+  },
+  {
+    "id": "p195",
+    "reader": "r28",
+    "entry": "e197",
+    "kind": "opposed",
+    "readerSentence": "We do not use the big supermarkets' contracts, and we never will.",
+    "entrySentence": "Supply contracts with the big chains give small growers a guaranteed income, and we'd urge every member to take them seriously."
+  },
+  {
+    "id": "p196",
+    "reader": "r28",
+    "entry": "e198",
+    "kind": "idiom",
+    "readerSentence": "A crooked carrot tastes exactly like a straight one.",
+    "entrySentence": "The council is trying the carrot instead of the stick: free parking for anyone who car-shares into town."
+  },
+  {
+    "id": "p197",
+    "reader": "r28",
+    "entry": "e199",
+    "kind": "word-sense-trap",
+    "readerSentence": "We split the stall fee and the takings fairly.",
+    "entrySentence": "After eleven years, the Copse Row Ramblers band has split, amicably.",
+    "note": "sharing costs vs a band breaking up"
+  },
+  {
+    "id": "p198",
+    "reader": "r28",
+    "entry": "e200",
+    "kind": "near-copy"
+  },
+  {
+    "id": "p199",
+    "reader": "r28",
+    "entry": "e095",
+    "kind": "passing-mention",
+    "readerSentence": "Twelve small farms within twenty miles of Hollin Cross sell together every Saturday under one awning.",
+    "entrySentence": "There will be a hog roast, a raffle, and a toast to the farmers."
+  },
+  {
+    "id": "p200",
+    "reader": "r28",
+    "entry": "e201",
+    "kind": "unclear",
+    "readerSentence": "We do not use the big supermarkets' contracts, and we never will.",
+    "entrySentence": "It pays the bills, and we hate it a bit."
+  },
+  {
+    "id": "p201",
+    "reader": "r01",
+    "entry": "e019",
+    "kind": "unrelated"
+  },
+  {
+    "id": "p202",
+    "reader": "r02",
+    "entry": "e057",
+    "kind": "unrelated"
+  },
+  {
+    "id": "p203",
+    "reader": "r03",
+    "entry": "e031",
+    "kind": "unrelated"
+  },
+  {
+    "id": "p204",
+    "reader": "r04",
+    "entry": "e092",
+    "kind": "unrelated"
+  },
+  {
+    "id": "p205",
+    "reader": "r05",
+    "entry": "e098",
+    "kind": "unrelated"
+  },
+  {
+    "id": "p206",
+    "reader": "r06",
+    "entry": "e136",
+    "kind": "unrelated"
+  },
+  {
+    "id": "p207",
+    "reader": "r07",
+    "entry": "e158",
+    "kind": "unrelated"
+  },
+  {
+    "id": "p208",
+    "reader": "r08",
+    "entry": "e033",
+    "kind": "unrelated"
+  },
+  {
+    "id": "p209",
+    "reader": "r09",
+    "entry": "e192",
+    "kind": "unrelated"
+  },
+  {
+    "id": "p210",
+    "reader": "r10",
+    "entry": "e099",
+    "kind": "unrelated"
+  },
+  {
+    "id": "p211",
+    "reader": "r11",
+    "entry": "e050",
+    "kind": "unrelated"
+  },
+  {
+    "id": "p212",
+    "reader": "r12",
+    "entry": "e193",
+    "kind": "unrelated"
+  },
+  {
+    "id": "p213",
+    "reader": "r13",
+    "entry": "e172",
+    "kind": "unrelated"
+  },
+  {
+    "id": "p214",
+    "reader": "r14",
+    "entry": "e199",
+    "kind": "unrelated"
+  },
+  {
+    "id": "p215",
+    "reader": "r15",
+    "entry": "e097",
+    "kind": "unrelated"
+  },
+  {
+    "id": "p216",
+    "reader": "r16",
+    "entry": "e026",
+    "kind": "unrelated"
+  },
+  {
+    "id": "p217",
+    "reader": "r17",
+    "entry": "e196",
+    "kind": "unrelated"
+  },
+  {
+    "id": "p218",
+    "reader": "r18",
+    "entry": "e090",
+    "kind": "unrelated"
+  },
+  {
+    "id": "p219",
+    "reader": "r19",
+    "entry": "e084",
+    "kind": "unrelated"
+  },
+  {
+    "id": "p220",
+    "reader": "r20",
+    "entry": "e106",
+    "kind": "unrelated"
+  },
+  {
+    "id": "p221",
+    "reader": "r21",
+    "entry": "e077",
+    "kind": "unrelated"
+  },
+  {
+    "id": "p222",
+    "reader": "r22",
+    "entry": "e040",
+    "kind": "unrelated"
+  },
+  {
+    "id": "p223",
+    "reader": "r23",
+    "entry": "e046",
+    "kind": "unrelated"
+  },
+  {
+    "id": "p224",
+    "reader": "r24",
+    "entry": "e105",
+    "kind": "unrelated"
+  },
+  {
+    "id": "p225",
+    "reader": "r25",
+    "entry": "e112",
+    "kind": "unrelated"
+  },
+  {
+    "id": "p226",
+    "reader": "r26",
+    "entry": "e114",
+    "kind": "unrelated"
+  },
+  {
+    "id": "p227",
+    "reader": "r27",
+    "entry": "e063",
+    "kind": "unrelated"
+  },
+  {
+    "id": "p228",
+    "reader": "r28",
+    "entry": "e121",
+    "kind": "unrelated"
+  },
+  {
+    "id": "p229",
+    "reader": "r29",
+    "entry": "e221",
+    "kind": "opposed",
+    "readerSentence": "We want the extension refused and the old workings flooded as a nature reserve.",
+    "entrySentence": "Forty jobs depend on the extension, and a village without work is just a museum."
+  },
+  {
+    "id": "p230",
+    "reader": "r29",
+    "entry": "e222",
+    "kind": "shared-claim",
+    "readerSentence": "Blasting cracks our walls and fills the school playground with dust.",
+    "entrySentence": "Our children shouldn't be breathing grit at playtime.",
+    "note": "dust in the playground, paraphrased as grit"
+  },
+  {
+    "id": "p231",
+    "reader": "r29",
+    "entry": "e223",
+    "kind": "shared-claim",
+    "readerSentence": "Blasting cracks our walls and fills the school playground with dust.",
+    "entrySentence": "The company says the dust is harmless; we say come and wipe our windowsills.",
+    "case": "quoted-opponent",
+    "note": "the entry quotes the company to reject it, so it agrees with the reader"
+  },
+  {
+    "id": "p232",
+    "reader": "r29",
+    "entry": "e224",
+    "kind": "word-sense-trap",
+    "readerSentence": "We hold our meetings in the chapel schoolroom and minute every decision.",
+    "entrySentence": "Tollby Town will hold a minute's silence before kick-off on Saturday.",
+    "note": "to minute (record) vs a minute of time"
+  },
+  {
+    "id": "p233",
+    "reader": "r29",
+    "entry": "e225",
+    "kind": "idiom",
+    "readerSentence": "The hill is solid rock, and it should stay that way.",
+    "entrySentence": "Small farmers are between a rock and a hard place: lose the payment, or plough up the margins."
+  },
+  {
+    "id": "p234",
+    "reader": "r29",
+    "entry": "e226",
+    "kind": "near-copy"
+  },
+  {
+    "id": "p235",
+    "reader": "r29",
+    "entry": "e227",
+    "kind": "unclear",
+    "readerSentence": "We want the extension refused and the old workings flooded as a nature reserve.",
+    "entrySentence": "They could become a lake for birds or a site for sixty homes."
+  },
+  {
+    "id": "p236",
+    "reader": "r29",
+    "entry": "e228",
+    "kind": "passing-mention",
+    "readerSentence": "We hold our meetings in the chapel schoolroom and minute every decision.",
+    "entrySentence": "Tickets three pounds at the door of the chapel schoolroom."
+  },
+  {
+    "id": "p237",
+    "reader": "r30",
+    "entry": "e229",
+    "kind": "shared-claim",
+    "readerSentence": "Everyone was new once.",
+    "entrySentence": "Nobody is asked to leave for playing a wrong note; every player here was once a beginner.",
+    "note": "nobody is pushed out for being a beginner"
+  },
+  {
+    "id": "p238",
+    "reader": "r30",
+    "entry": "e231",
+    "kind": "word-sense-trap",
+    "readerSentence": "We're recruiting tanks and healers.",
+    "entrySentence": "Bring photos of your tanks for the best-planted competition.",
+    "note": "game role vs fish tank"
+  },
+  {
+    "id": "p239",
+    "reader": "r30",
+    "entry": "e232",
+    "kind": "word-sense-trap",
+    "readerSentence": "Raids start at nine and end at eleven, because some of us have work in the morning.",
+    "entrySentence": "After last month's police raids on Quarry Row, residents want answers about the damage to their doors.",
+    "note": "game raid vs police raid"
+  },
+  {
+    "id": "p240",
+    "reader": "r30",
+    "entry": "e233",
+    "kind": "idiom",
+    "readerSentence": "Losing is fine; blaming the healer is not.",
+    "entrySentence": "They say time is a great healer; we say it helps to have company while it does its work."
+  },
+  {
+    "id": "p241",
+    "reader": "r30",
+    "entry": "e234",
+    "kind": "near-copy"
+  },
+  {
+    "id": "p242",
+    "reader": "r30",
+    "entry": "e235",
+    "kind": "passing-mention",
+    "readerSentence": "We are a guild of grown-ups who play after the kids are in bed.",
+    "entrySentence": "Pool table, tuck shop, art room and a couple of games consoles that have seen better days."
+  },
+  {
+    "id": "p243",
+    "reader": "r30",
+    "entry": "e236",
+    "kind": "unclear",
+    "readerSentence": "Loot is shared by roll, and nobody gets kicked for being bad at the game.",
+    "entrySentence": "Some say the best prizes should go to whoever needs them most; others swear by pure dice."
+  },
+  {
+    "id": "p244",
+    "reader": "r31",
+    "entry": "e237",
+    "kind": "shared-claim",
+    "readerSentence": "Sewage overflows after every heavy rain, and the trout are vanishing.",
+    "entrySentence": "We want to swim in the Wend without getting ill, and that means stopping raw waste going in at the source.",
+    "note": "anglers and swimmers both want sewage stopped"
+  },
+  {
+    "id": "p245",
+    "reader": "r31",
+    "entry": "e238",
+    "kind": "opposed",
+    "readerSentence": "We return every fish over the size limit we don't intend to eat, and most of us return them all.",
+    "entrySentence": "Catch and release still hooks a living creature through the mouth for fun; there is nothing kind about it."
+  },
+  {
+    "id": "p246",
+    "reader": "r31",
+    "entry": "e239",
+    "kind": "word-sense-trap",
+    "readerSentence": "Bank clearing party on the second Sunday.",
+    "entrySentence": "The Tollby food bank needs volunteers to sort donations on Sunday afternoons.",
+    "note": "river bank vs food bank"
+  },
+  {
+    "id": "p247",
+    "reader": "r31",
+    "entry": "e240",
+    "kind": "idiom",
+    "readerSentence": "The Wend Anglers have fished this stretch since before anyone can remember.",
+    "entrySentence": "Plenty more fish in the sea, as your aunt keeps telling you."
+  },
+  {
+    "id": "p248",
+    "reader": "r31",
+    "entry": "e241",
+    "kind": "near-copy"
+  },
+  {
+    "id": "p249",
+    "reader": "r31",
+    "entry": "e242",
+    "kind": "unclear",
+    "readerSentence": "We want the water company fined until it is cheaper to fix the pipes than to pay.",
+    "entrySentence": "Some say bigger fines just get passed on to our bills; others say nothing else will make them act."
+  },
+  {
+    "id": "p250",
+    "reader": "r31",
+    "entry": "e243",
+    "kind": "passing-mention",
+    "readerSentence": "The Wend Anglers have fished this stretch since before anyone can remember.",
+    "entrySentence": "Tombola, dog show, welly-throwing and a stall from the anglers selling hand-tied flies."
+  },
+  {
+    "id": "p251",
+    "reader": "r32",
+    "entry": "e244",
+    "kind": "shared-claim",
+    "readerSentence": "Empty homes should be brought back into use within a year, by compulsory purchase if necessary.",
+    "entrySentence": "It's a scandal that sound houses stand empty for years while families wait for a home; the council should act.",
+    "note": "a left housing campaign and a civic society agree on empty homes"
+  },
+  {
+    "id": "p252",
+    "reader": "r32",
+    "entry": "e245",
+    "kind": "opposed",
+    "readerSentence": "Housing is a human right, not an investment.",
+    "entrySentence": "For many small landlords a rented house is their only pension, and treating it as a sin is unfair."
+  },
+  {
+    "id": "p253",
+    "reader": "r32",
+    "entry": "e246",
+    "kind": "opposed",
+    "readerSentence": "We support tenants who withhold rent when landlords refuse to make homes safe.",
+    "entrySentence": "Withholding rent breaks a contract, and we can't support it, however bad the repair."
+  },
+  {
+    "id": "p254",
+    "reader": "r32",
+    "entry": "e247",
+    "kind": "opposed",
+    "readerSentence": "Housing is a human right, not an investment.",
+    "entrySentence": "Oh, of course, housing is a human right.",
+    "case": "irony",
+    "note": "sarcasm: literally repeats the reader's claim, really mocks it"
+  },
+  {
+    "id": "p255",
+    "reader": "r32",
+    "entry": "e248",
+    "kind": "word-sense-trap",
+    "readerSentence": "Saturday stall outside the market hall, ten till two.",
+    "entrySentence": "If the engine stalls on the hill start, don't panic.",
+    "note": "market stall vs an engine stalling"
+  },
+  {
+    "id": "p256",
+    "reader": "r32",
+    "entry": "e249",
+    "kind": "idiom",
+    "readerSentence": "A house should be somewhere to live, not a chip in someone's portfolio.",
+    "entrySentence": "Drinks are on the house for the first hour of the reopening."
+  },
+  {
+    "id": "p257",
+    "reader": "r32",
+    "entry": "e250",
+    "kind": "near-copy"
+  },
+  {
+    "id": "p258",
+    "reader": "r32",
+    "entry": "e251",
+    "kind": "unclear",
+    "readerSentence": "Empty homes should be brought back into use within a year, by compulsory purchase if necessary.",
+    "entrySentence": "It sounds simple; in practice it can take years and cost a fortune, and we're not sure it's the answer."
+  },
+  {
+    "id": "p259",
+    "reader": "r32",
+    "entry": "e252",
+    "kind": "passing-mention",
+    "readerSentence": "Empty homes should be brought back into use within a year, by compulsory purchase if necessary.",
+    "entrySentence": "Follow the trail of decorated windows along the high street, including the empty units the traders have dressed up for the season."
+  },
+  {
+    "id": "p260",
+    "reader": "r33",
+    "entry": "e253",
+    "kind": "shared-claim",
+    "readerSentence": "Every bus, shop and polling station in the borough should be step-free.",
+    "entrySentence": "Prams and pushchairs can't climb steps either, and every new shop front should have level access.",
+    "note": "disabled people and parents with prams want step-free access"
+  },
+  {
+    "id": "p261",
+    "reader": "r33",
+    "entry": "e254",
+    "kind": "shared-claim",
+    "readerSentence": "No one should face a stranger's form-filling interrogation alone.",
+    "entrySentence": "Nobody should walk into a benefits interview on their own; we'll send a volunteer to sit beside you."
+  },
+  {
+    "id": "p262",
+    "reader": "r33",
+    "entry": "e255",
+    "kind": "opposed",
+    "readerSentence": "Every bus, shop and polling station in the borough should be step-free.",
+    "entrySentence": "Listed buildings should keep their original steps and doors, and a ramp would ruin the frontage of the old library."
+  },
+  {
+    "id": "p263",
+    "reader": "r33",
+    "entry": "e261",
+    "kind": "opposed",
+    "readerSentence": "We support each other through benefit assessments.",
+    "entrySentence": "Half the people claiming disability benefits in this town are faking it, and the rest are milking it.",
+    "note": "hostile entry"
+  },
+  {
+    "id": "p264",
+    "reader": "r33",
+    "entry": "e256",
+    "kind": "word-sense-trap",
+    "readerSentence": "Our meetings are in a ground-floor room with a hearing loop.",
+    "entrySentence": "The five-kilometre loop starts at the boathouse and finishes at the cafe.",
+    "note": "hearing loop vs running loop"
+  },
+  {
+    "id": "p265",
+    "reader": "r33",
+    "entry": "e257",
+    "kind": "idiom",
+    "readerSentence": "Every bus, shop and polling station in the borough should be step-free.",
+    "entrySentence": "The new crossing on Wend Road is a step in the right direction, but only a step."
+  },
+  {
+    "id": "p266",
+    "reader": "r33",
+    "entry": "e258",
+    "kind": "near-copy"
+  },
+  {
+    "id": "p267",
+    "reader": "r33",
+    "entry": "e259",
+    "kind": "unclear",
+    "readerSentence": "We are disabled people running our own organisation, not a charity run on our behalf.",
+    "entrySentence": "Some say charities speak too much for disabled people; others say without us nobody would speak at all."
+  },
+  {
+    "id": "p268",
+    "reader": "r33",
+    "entry": "e260",
+    "kind": "passing-mention",
+    "readerSentence": "Every bus, shop and polling station in the borough should be step-free.",
+    "entrySentence": "From June the 14 runs every twenty minutes, and the new low-floor buses arrive in the autumn."
+  },
+  {
+    "id": "p269",
+    "reader": "r34",
+    "entry": "e262",
+    "kind": "shared-claim",
+    "readerSentence": "Nobody is beyond redemption.",
+    "entrySentence": "Even someone serving a life sentence can change, and the system should give them the chance.",
+    "note": "faith group and secular reformers agree"
+  },
+  {
+    "id": "p270",
+    "reader": "r34",
+    "entry": "e263",
+    "kind": "opposed",
+    "readerSentence": "We oppose the death penalty everywhere and always.",
+    "entrySentence": "Some crimes are so evil that the only just answer is the death penalty."
+  },
+  {
+    "id": "p271",
+    "reader": "r34",
+    "entry": "e264",
+    "kind": "shared-claim",
+    "readerSentence": "Bring your letters; we will read them with you.",
+    "entrySentence": "Bring your bills and final demands; we'll go through them line by line with you."
+  },
+  {
+    "id": "p272",
+    "reader": "r34",
+    "entry": "e265",
+    "kind": "word-sense-trap",
+    "readerSentence": "The debt advice table runs after the eleven o'clock Mass.",
+    "entrySentence": "Mass and weight are not the same thing, and this week's homework will prove it.",
+    "note": "church Mass vs physical mass"
+  },
+  {
+    "id": "p273",
+    "reader": "r34",
+    "entry": "e266",
+    "kind": "idiom",
+    "readerSentence": "The Lantern Street parish social action group believes faith shows itself in what you do on a wet Tuesday.",
+    "entrySentence": "Opening a second shop in a year like this was a leap of faith."
+  },
+  {
+    "id": "p274",
+    "reader": "r34",
+    "entry": "e267",
+    "kind": "near-copy"
+  },
+  {
+    "id": "p275",
+    "reader": "r34",
+    "entry": "e268",
+    "kind": "unclear",
+    "readerSentence": "We will speak up for refugees, for the unborn and for the dying, whether or not it makes us popular.",
+    "entrySentence": "We support giving people shelter, but we have real doubts about housing three hundred people on an isolated site."
+  },
+  {
+    "id": "p276",
+    "reader": "r34",
+    "entry": "e269",
+    "kind": "passing-mention",
+    "readerSentence": "We visit the prison, run a debt advice table and cook for the night shelter.",
+    "entrySentence": "Paperbacks wanted for the hospital, the hostel and the prison library."
+  },
+  {
+    "id": "p277",
+    "reader": "r34",
+    "entry": "e270",
+    "kind": "opposed",
+    "readerSentence": "We will speak up for refugees, for the unborn and for the dying, whether or not it makes us popular.",
+    "entrySentence": "They will never be one of us, and we should stop pretending they can be.",
+    "note": "hostile entry"
+  },
+  {
+    "id": "p278",
+    "reader": "r35",
+    "entry": "e271",
+    "kind": "opposed",
+    "readerSentence": "Skaters are not vandals; we're just young and loud.",
+    "entrySentence": "Skateboarders in the precinct are a menace to older shoppers and should be banned outright."
+  },
+  {
+    "id": "p279",
+    "reader": "r35",
+    "entry": "e272",
+    "kind": "shared-claim",
+    "readerSentence": "We want a proper concrete park instead of being moved on from every car park and bench in Tollby.",
+    "entrySentence": "Give teenagers somewhere to go and most of the trouble people complain about simply disappears.",
+    "note": "give young people a place of their own"
+  },
+  {
+    "id": "p280",
+    "reader": "r35",
+    "entry": "e273",
+    "kind": "word-sense-trap",
+    "readerSentence": "Session at the old bus depot Saturday, bring pads, no glass.",
+    "entrySentence": "The magistrates' court session on Thursday will hear the Ferryman's licensing appeal.",
+    "note": "skate session vs court session"
+  },
+  {
+    "id": "p281",
+    "reader": "r35",
+    "entry": "e274",
+    "kind": "idiom",
+    "readerSentence": "We want a proper concrete park instead of being moved on from every car park and bench in Tollby.",
+    "entrySentence": "It's time we all moved on from last year's row about the bins."
+  },
+  {
+    "id": "p282",
+    "reader": "r35",
+    "entry": "e275",
+    "kind": "near-copy"
+  },
+  {
+    "id": "p283",
+    "reader": "r35",
+    "entry": "e276",
+    "kind": "unclear",
+    "readerSentence": "We want a proper concrete park instead of being moved on from every car park and bench in Tollby.",
+    "entrySentence": "Residents near the Tollby rec are split over the skate park plan."
+  },
+  {
+    "id": "p284",
+    "reader": "r35",
+    "entry": "e277",
+    "kind": "passing-mention",
+    "readerSentence": "We skate.",
+    "entrySentence": "A climbing wall, a skate demo, a brass band and the famous duck race."
+  },
+  {
+    "id": "p285",
+    "reader": "r36",
+    "entry": "e278",
+    "kind": "shared-claim",
+    "readerSentence": "We do not want everything moved online.",
+    "entrySentence": "Close the ticket office and you shut out everyone without a smartphone."
+  },
+  {
+    "id": "p286",
+    "reader": "r36",
+    "entry": "e279",
+    "kind": "shared-claim",
+    "readerSentence": "Loneliness kills as surely as smoking.",
+    "entrySentence": "An empty afternoon with nobody to talk to can do as much harm as any illness.",
+    "note": "loneliness harms health, paraphrased"
+  },
+  {
+    "id": "p287",
+    "reader": "r36",
+    "entry": "e280",
+    "kind": "opposed",
+    "readerSentence": "We do not want everything moved online.",
+    "entrySentence": "Council services will move online-only from April."
+  },
+  {
+    "id": "p288",
+    "reader": "r36",
+    "entry": "e281",
+    "kind": "word-sense-trap",
+    "readerSentence": "We want a bus that runs after six, a bench every few hundred yards on the hill, and public toilets that are actually open.",
+    "entrySentence": "Each member gets a bench, a vice and access to the lathe.",
+    "note": "seat vs workbench"
+  },
+  {
+    "id": "p289",
+    "reader": "r36",
+    "entry": "e282",
+    "kind": "idiom",
+    "readerSentence": "Two courses, three pounds, pudding non-negotiable.",
+    "entrySentence": "The proof of the pudding will be whether anyone actually uses it."
+  },
+  {
+    "id": "p290",
+    "reader": "r36",
+    "entry": "e283",
+    "kind": "near-copy"
+  },
+  {
+    "id": "p291",
+    "reader": "r36",
+    "entry": "e284",
+    "kind": "unclear",
+    "readerSentence": "Some of us bank by post, book by phone and like to see a face.",
+    "entrySentence": "Some of our members welcome the van; others say it's no replacement at all."
+  },
+  {
+    "id": "p292",
+    "reader": "r36",
+    "entry": "e285",
+    "kind": "passing-mention",
+    "readerSentence": "We want a bus that runs after six, a bench every few hundred yards on the hill, and public toilets that are actually open.",
+    "entrySentence": "The route is flat, the coffee is hot, and the public toilets by the gate are open from eight."
+  },
+  {
+    "id": "p293",
+    "reader": "r37",
+    "entry": "e286",
+    "kind": "opposed",
+    "readerSentence": "We want proper control of the border and a fair, firm immigration system.",
+    "entrySentence": "The Tollby Sanctuary Network believes anyone fleeing danger should be able to make a home here without being treated as a problem to be controlled."
+  },
+  {
+    "id": "p294",
+    "reader": "r37",
+    "entry": "e287",
+    "kind": "shared-claim",
+    "readerSentence": "We teach children the history of the place they live.",
+    "entrySentence": "Every child in town should know the story of the mills, the strikes and the floods that made this place.",
+    "note": "a patriotic society and a labour-history group agree children should learn local history"
+  },
+  {
+    "id": "p295",
+    "reader": "r37",
+    "entry": "e288",
+    "kind": "opposed",
+    "readerSentence": "Our traditions matter: the May fair, the bell ringing, the Boxing Day hunt meet.",
+    "entrySentence": "A hunt meet glamorises chasing animals, and it has no place in a market square on Boxing Day."
+  },
+  {
+    "id": "p296",
+    "reader": "r37",
+    "entry": "e289",
+    "kind": "word-sense-trap",
+    "readerSentence": "We fly the flag on the town hall on national days.",
+    "entrySentence": "The assistant referee's flag went up and the whole stand groaned.",
+    "note": "national flag vs a linesman's flag"
+  },
+  {
+    "id": "p297",
+    "reader": "r37",
+    "entry": "e290",
+    "kind": "word-sense-trap",
+    "readerSentence": "We want proper control of the border and a fair, firm immigration system.",
+    "entrySentence": "The long border by the almshouses needs weeding before the open garden day.",
+    "note": "national border vs flower border"
+  },
+  {
+    "id": "p298",
+    "reader": "r37",
+    "entry": "e291",
+    "kind": "idiom",
+    "readerSentence": "Our traditions matter: the May fair, the bell ringing, the Boxing Day hunt meet.",
+    "entrySentence": "Does the name Ezra Pellingham ring a bell?"
+  },
+  {
+    "id": "p299",
+    "reader": "r37",
+    "entry": "e292",
+    "kind": "near-copy"
+  },
+  {
+    "id": "p300",
+    "reader": "r37",
+    "entry": "e293",
+    "kind": "unclear",
+    "readerSentence": "Our traditions matter: the May fair, the bell ringing, the Boxing Day hunt meet.",
+    "entrySentence": "The Tollby parish council has received letters for and against holding the hunt meet in the square."
+  },
+  {
+    "id": "p301",
+    "reader": "r37",
+    "entry": "e294",
+    "kind": "passing-mention",
+    "readerSentence": "Our traditions matter: the May fair, the bell ringing, the Boxing Day hunt meet.",
+    "entrySentence": "Florists, cake makers, a string quartet and a short demonstration from the bell ringing team."
+  },
+  {
+    "id": "p302",
+    "reader": "r38",
+    "entry": "e295",
+    "kind": "shared-claim",
+    "readerSentence": "We want every child to go on every trip, whether their family can pay or not.",
+    "entrySentence": "No scout misses camp because of money; the fund covers anyone who needs it, and nobody else ever knows.",
+    "note": "no child left out of trips for money"
+  },
+  {
+    "id": "p303",
+    "reader": "r38",
+    "entry": "e296",
+    "kind": "opposed",
+    "readerSentence": "Phones are banned in school, and we back the head on that.",
+    "entrySentence": "Children need their phones on the walk home, and banning them from school bags leaves them unreachable."
+  },
+  {
+    "id": "p304",
+    "reader": "r38",
+    "entry": "e297",
+    "kind": "word-sense-trap",
+    "readerSentence": "The Wendside Primary parents' association raises money for the things the budget won't cover: coaches for trips, instruments, a new reading corner.",
+    "entrySentence": "We conceded from a corner in the last minute again.",
+    "note": "reading corner vs a corner kick"
+  },
+  {
+    "id": "p305",
+    "reader": "r38",
+    "entry": "e298",
+    "kind": "word-sense-trap",
+    "readerSentence": "Phones are banned in school, and we back the head on that.",
+    "entrySentence": "If someone has fallen and might have hurt their neck, support the back of the head and keep them still.",
+    "note": "back (support) the headteacher vs the back of someone's head"
+  },
+  {
+    "id": "p306",
+    "reader": "r38",
+    "entry": "e299",
+    "kind": "idiom",
+    "readerSentence": "Phones are banned in school, and we back the head on that.",
+    "entrySentence": "The infants are head over heels about the new climbing frame."
+  },
+  {
+    "id": "p307",
+    "reader": "r38",
+    "entry": "e300",
+    "kind": "near-copy"
+  },
+  {
+    "id": "p308",
+    "reader": "r38",
+    "entry": "e301",
+    "kind": "unclear",
+    "readerSentence": "Phones are banned in school, and we back the head on that.",
+    "entrySentence": "Honestly, we can see both sides, and so can most of our members."
+  },
+  {
+    "id": "p309",
+    "reader": "r38",
+    "entry": "e302",
+    "kind": "passing-mention",
+    "readerSentence": "The Wendside Primary parents' association raises money for the things the budget won't cover: coaches for trips, instruments, a new reading corner.",
+    "entrySentence": "Thanks to the parents' association for paying for the new violins."
+  },
+  {
+    "id": "p310",
+    "reader": "r39",
+    "entry": "e303",
+    "kind": "opposed",
+    "readerSentence": "We are vegan, and we believe animals are not ours to eat, wear or use.",
+    "entrySentence": "Good meat comes from animals raised well and killed with care, and there's nothing shameful in eating it."
+  },
+  {
+    "id": "p311",
+    "reader": "r39",
+    "entry": "e304",
+    "kind": "shared-claim",
+    "readerSentence": "Every one of them will live out its life here.",
+    "entrySentence": "Every animal we take in stays with us until it finds a home or reaches the end of its days.",
+    "note": "a home for life, paraphrased"
+  },
+  {
+    "id": "p312",
+    "reader": "r39",
+    "entry": "e305",
+    "kind": "word-sense-trap",
+    "readerSentence": "We need straw, fencing wire and someone who knows about pig feet.",
+    "entrySentence": "Fencing for beginners",
+    "note": "fencing (wire) vs the sport of fencing"
+  },
+  {
+    "id": "p313",
+    "reader": "r39",
+    "entry": "e306",
+    "kind": "idiom",
+    "readerSentence": "Please don't feed the goats, whatever they tell you.",
+    "entrySentence": "What really gets our goat is the litter on the towpath."
+  },
+  {
+    "id": "p314",
+    "reader": "r39",
+    "entry": "e307",
+    "kind": "near-copy"
+  },
+  {
+    "id": "p315",
+    "reader": "r39",
+    "entry": "e308",
+    "kind": "unclear",
+    "readerSentence": "We are vegan, and we believe animals are not ours to eat, wear or use.",
+    "entrySentence": "Some members want stricter standards; others say small farms simply can't afford them."
+  },
+  {
+    "id": "p316",
+    "reader": "r39",
+    "entry": "e309",
+    "kind": "passing-mention",
+    "readerSentence": "Copper Hill Sanctuary is home to sixty animals rescued from farms, markets and roadsides.",
+    "entrySentence": "Follow the clues along the lane, past the duck pond, the sanctuary goats and the old mill."
+  },
+  {
+    "id": "p317",
+    "reader": "r40",
+    "entry": "e310",
+    "kind": "shared-claim",
+    "readerSentence": "Each worker has one share and one vote, whatever their job.",
+    "entrySentence": "Every household in the cooperative has exactly one vote, however long they have lived here.",
+    "note": "one member, one vote, in a workplace and a housing co-op"
+  },
+  {
+    "id": "p318",
+    "reader": "r40",
+    "entry": "e311",
+    "kind": "shared-claim",
+    "readerSentence": "Unsold bread goes to the shelter at closing time, every day.",
+    "entrySentence": "At the end of the day our leftover food goes straight to people who need it, never into a skip."
+  },
+  {
+    "id": "p319",
+    "reader": "r40",
+    "entry": "e312",
+    "kind": "opposed",
+    "readerSentence": "Everyone earns the same hourly rate.",
+    "entrySentence": "Equal pay for every role ignores skill and responsibility, and drives the best people away."
+  },
+  {
+    "id": "p320",
+    "reader": "r40",
+    "entry": "e313",
+    "kind": "word-sense-trap",
+    "readerSentence": "Unsold bread goes to the shelter at closing time, every day.",
+    "entrySentence": "The bus shelter on Wend Road has been smashed for the third time this year.",
+    "note": "homeless shelter vs bus shelter"
+  },
+  {
+    "id": "p321",
+    "reader": "r40",
+    "entry": "e314",
+    "kind": "idiom",
+    "readerSentence": "We start at four in the morning so the town has bread by seven.",
+    "entrySentence": "Repairs are the bread and butter of our garage; the restorations are a hobby."
+  },
+  {
+    "id": "p322",
+    "reader": "r40",
+    "entry": "e315",
+    "kind": "near-copy"
+  },
+  {
+    "id": "p323",
+    "reader": "r40",
+    "entry": "e316",
+    "kind": "unclear",
+    "readerSentence": "Nobody works more than five early shifts in a row.",
+    "entrySentence": "Some people thrive on early starts, some are quietly worn down by them, and the research isn't settled."
+  },
+  {
+    "id": "p324",
+    "reader": "r40",
+    "entry": "e317",
+    "kind": "passing-mention",
+    "readerSentence": "We are a bakery owned by the people who bake in it.",
+    "entrySentence": "Cheese, eggs, cider and a sourdough stall from the bakery co-op."
+  },
+  {
+    "id": "p325",
+    "reader": "r29",
+    "entry": "e231",
+    "kind": "unrelated"
+  },
+  {
+    "id": "p326",
+    "reader": "r30",
+    "entry": "e263",
+    "kind": "unrelated"
+  },
+  {
+    "id": "p327",
+    "reader": "r31",
+    "entry": "e297",
+    "kind": "unrelated"
+  },
+  {
+    "id": "p328",
+    "reader": "r32",
+    "entry": "e306",
+    "kind": "unrelated"
+  },
+  {
+    "id": "p329",
+    "reader": "r33",
+    "entry": "e240",
+    "kind": "unrelated"
+  },
+  {
+    "id": "p330",
+    "reader": "r34",
+    "entry": "e271",
+    "kind": "unrelated"
+  },
+  {
+    "id": "p331",
+    "reader": "r35",
+    "entry": "e265",
+    "kind": "unrelated"
+  },
+  {
+    "id": "p332",
+    "reader": "r36",
+    "entry": "e305",
+    "kind": "unrelated"
+  },
+  {
+    "id": "p333",
+    "reader": "r37",
+    "entry": "e233",
+    "kind": "unrelated"
+  },
+  {
+    "id": "p334",
+    "reader": "r38",
+    "entry": "e303",
+    "kind": "unrelated"
+  },
+  {
+    "id": "p335",
+    "reader": "r39",
+    "entry": "e248",
+    "kind": "unrelated"
+  },
+  {
+    "id": "p336",
+    "reader": "r40",
+    "entry": "e255",
+    "kind": "unrelated"
+  }
+]
