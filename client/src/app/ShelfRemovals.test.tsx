@@ -16,12 +16,12 @@ import { newSigningKeys } from '../crypto/sign';
 import type { ShelfRecord } from '../net/shelf';
 import { signNotice } from '../shelf/notices';
 import type { ShelfReader } from '../shelf/read';
-import { type NoticeBody, signShelfBody } from '../shelf/record';
+import { type NoticeDraft, signShelfBody } from '../shelf/record';
 import { nameSkeleton } from '../shelf/skeleton';
 import { openStore, type Store } from '../store/db';
 import { axeViolations } from '../test/axe';
 import { freshIndexedDBPerTest } from '../test/idb';
-import { STEWARD_ADDRESS, TEST_STEWARD } from '../test/steward';
+import { STEWARD_ADDRESS, stampAt, TEST_STEWARD } from '../test/steward';
 import { messages } from './messages';
 import { ShelfRemovals } from './ShelfRemovals';
 import { formatDay } from './time';
@@ -39,13 +39,16 @@ const DAY = formatDay(SENT_AT);
 
 const words = messages.removals;
 
-/** The steward's `notice`, as the relay serves it at `seq`. */
-const notice = (body: NoticeBody, seq: number): ShelfRecord => ({
-  seq,
-  received: RELAY_NOW - 100,
-  address: STEWARD_ADDRESS,
-  data: signNotice(TEST_STEWARD.signing, body),
-});
+/** The steward's `notice`, stamped with the day it arrives, as the relay serves it at `seq`. */
+const notice = (draft: NoticeDraft, seq: number): ShelfRecord => {
+  const received = RELAY_NOW - 100;
+  return {
+    seq,
+    received,
+    address: STEWARD_ADDRESS,
+    data: signNotice(TEST_STEWARD.signing, draft, stampAt(received)),
+  };
+};
 
 const RELEASE = notice({ v: 1, kind: 'notice', act: 'release', address: ADDRESS }, 2);
 const SUSPEND = notice({ v: 1, kind: 'notice', act: 'suspend', address: ADDRESS, clause: 'C3' }, 5);

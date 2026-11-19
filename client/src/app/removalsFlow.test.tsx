@@ -62,8 +62,8 @@ describe(
           covenant: base64url(new Uint8Array(32).fill(9)),
         }),
       );
-      await release(shelf, address);
-      await notify(shelf, { v: 1, kind: 'notice', act: 'suspend', address, clause: 'C2' });
+      await release(fakeShelf, address);
+      await notify(fakeShelf, { v: 1, kind: 'notice', act: 'suspend', address, clause: 'C2' });
 
       const fake = createFakeRelay();
       const device = await testDevice(fake, 'Nobody');
