@@ -54,6 +54,7 @@ import {
   test,
   visit,
 } from './support/fixtures';
+import { emptyShelf } from './support/relay';
 import { readRelayLater } from './support/relayNow';
 import {
   type Canary,
@@ -194,6 +195,8 @@ test('a reader reports an entry, the steward holds and upholds it and suspends i
   request,
 }) => {
   const requests: Request[] = [];
+  // The worker's earlier tests may have left the shelf full (`emptyShelf`).
+  emptyShelf(relay.db);
   const sam = await openProfile(NAMES.sam);
   const ana = await openProfile(NAMES.ana, { viewport: { width: 1280, height: 800 } });
   const ben = await openProfile(NAMES.ben, { viewport: PHONE, colorScheme: 'dark' });
