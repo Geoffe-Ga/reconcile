@@ -80,7 +80,7 @@ Use the GitHub MCP tools — never `gh` CLI. The goal is to determine whether a 
 
 6. Classify and route:
    - `LGTM` → skip to Step 6 (merge gate).
-   - `CHANGES_REQUESTED` → required fixes; continue to Step 2 with the **Security Concerns**, **Problems**, and any blocking items from the comment body.
+   - `CHANGES_REQUESTED` → required fixes; continue to Step 2 with the **Security Concerns**, **Problems**, and any blocking items from the comment body. If the PR has auto-merge on, turn it off first (see "Auto-merge must not outlive the gates" in Step 6).
    - `COMMENTS` → reviewer has signed off with non-blocking ideas; run Step 1A (file each actionable item as a P0–P3 follow-up issue), then jump to Step 6. **Do not enter the TDD loop, push, or re-request review.**
    - **No qualifying comment** (none after the latest push) → wait for the next review run; do not merge. If the action did not run, re-run the `Claude Code Review` workflow for the current HEAD (`gh workflow run code-review.yml -f pr_number=<N>`).
    - **Comment exists but no parseable Verdict line, or any value other than the three** → refuse: do not merge, do not iterate, surface it to the user. Do not infer a verdict from prose.
@@ -146,12 +146,12 @@ For each item, after the fix lands locally:
 
 ### Step 5: Push Once and Await the Next Verdict
 
-Push the branch (single push, not one per fix). Then delegate the wait to `await-claude-review` — it pins the new HEAD, calls `mcp__github__subscribe_pr_activity`, and ends the turn so the session wakes on the bot's verdict comment via `<github-webhook-activity>`. **Do not poll** with `sleep` or repeated `get_comments` calls, and do not wait on CI passes — the webhook does not deliver them; only the comment event is the wake signal.
+If the PR has auto-merge on, turn it off before you push (see "Auto-merge must not outlive the gates" in Step 6). Then push the branch (single push, not one per fix). Then delegate the wait to `await-claude-review` — it pins the new HEAD, calls `mcp__github__subscribe_pr_activity`, and ends the turn so the session wakes on the bot's verdict comment via `<github-webhook-activity>`. **Do not poll** with `sleep` or repeated `get_comments` calls, and do not wait on CI passes — the webhook does not deliver them; only the comment event is the wake signal.
 
 When the helper wakes the session:
 
 - Verdict `LGTM` for the current HEAD → continue to Step 6.
-- Verdict `CHANGES_REQUESTED` → loop back to Step 2 with the new comment body.
+- Verdict `CHANGES_REQUESTED` → turn off auto-merge if it is on, then loop back to Step 2 with the new comment body.
 - Verdict `COMMENTS` → run Step 1A, then Step 6. Never loop back to Step 2.
 - CI failure event for the current HEAD → if the failing job is the reviewer action, the helper retriggers it and stays subscribed; if it's other CI, hand off to `ci-debugging` and keep the subscription open. Either way, do not advance to merge.
 
@@ -163,7 +163,7 @@ Merge only when **every** condition is true. If any fails, stop and explain whic
 
 - Latest qualifying Claude review comment (allowlisted author, attested, unedited by others — Step 1) has `Verdict: LGTM`, **or** `Verdict: COMMENTS` with every actionable item filed or duplicate-linked per Step 1A.
 - That comment's `created_at >= head commit's committer.date` (verdict is for the current HEAD, not a pre-push state).
-- No check run has failed (`failure`, `cancelled`, `timed_out`, `action_required`), and every check is `success` unless GitHub itself is holding the merge on it (`mergeable_state: blocked`, see "Then turn on auto-merge" below):
+- No **required** check has failed, and every required check is `success` or still running while GitHub holds the merge on it (`mergeable_state: blocked`, see "Then Turn On Auto-Merge" below). You usually can't see which checks are required, so let `mergeable_state` decide: while it is `blocked`, treat **any** failed check (`failure`, `cancelled`, `timed_out`, `action_required`) as a required one and stop (hand off to `ci-debugging`); a check that has failed while the state is `unstable` is not required and does not block:
   - `mcp__github__pull_request_read` with `method: "get_status"` (combined commit status), and
   - `mcp__github__pull_request_read` with `method: "get_check_runs"` (per-job detail).
 - No unresolved line-level review threads (`mcp__github__pull_request_read` with `method: "get_review_comments"` — each thread has `isResolved`). For `COMMENTS`, threads are resolved by linking the follow-up issue, not by code change.
@@ -176,14 +176,14 @@ Once every gate above holds, hand the merge to GitHub. Re-fetch the PR (`pull_re
 
 | `mergeable_state` | Action |
 |---|---|
-| `blocked` | GitHub is holding the PR on its own requirements (required checks still running). **Turn on auto-merge.** GitHub merges the moment they pass. |
+| `blocked` | GitHub is holding the PR on its own requirements (required checks still running). If no check has failed, **turn on auto-merge**: GitHub merges the moment they pass. If any check has failed, do not: auto-merge would wait on it forever. |
 | `clean` or `behind` | Nothing is left to wait for, and GitHub refuses auto-merge on a clean PR. Squash-merge directly with `mcp__github__merge_pull_request` (`merge_method: "squash"`). |
-| `unstable` | A check that is not required is pending or failing. Auto-merge would not wait for it, so do neither: wait for it to finish, then re-enter this gate. |
+| `unstable` | Every required check has passed, and a check that is not required is pending or has failed. Auto-merge would ignore it, so don't use auto-merge here. If it is still running, wait for it to finish, then re-enter this gate. If it has already failed, it can't block the merge: squash-merge directly and name the failed check in your report. |
 
-Turn auto-merge on with the first route that works, always with the squash method:
+Both paths use the squash method: `squash` is required for the `COMMENTS` path so the follow-up issues are the only outstanding trail, and for `LGTM` use it unless the repo standard says otherwise. Turn auto-merge on with the first route that works:
 
 1. `mcp__github__enable_pr_auto_merge` with `owner`, `repo`, `pullNumber: <N>`, `mergeMethod: "SQUASH"`.
-2. Claude Code cloud session without that tool (GraphQL is blocked there): `gh api -X PUT repos/<owner>/<repo>/pulls/<N>/ccr/auto_merge -f merge_method=squash`.
+2. Claude Code cloud session without that tool (GraphQL is blocked there): `gh api -X PUT repos/<owner>/<repo>/pulls/<N>/ccr/auto_merge -f merge_method=squash`. This is a route of the Claude Code cloud session's GitHub proxy, not public GitHub REST, so it exists only inside those sessions. If it answers 404 or is refused, there is no further route in a cloud session: wait for every check to pass and squash-merge directly, and tell the user auto-merge could not be turned on.
 3. Local session: `gh pr merge <N> --auto --squash`. Only in the `blocked` state, because on a clean PR `gh` merges at once.
 
 Then re-fetch the PR and confirm `auto_merge` is set (or the PR already merged). Report that auto-merge is on and what GitHub is still waiting for; never report "merged" until it has. If the call says auto-merge is disabled for the repository, tell the user, don't change the setting yourself, and fall back to waiting for every check to pass and squash-merging directly.
@@ -207,6 +207,12 @@ Do not delete the remote branch unless the user asks.
 1. Same as Example 1, but `get_check_runs` shows the WebKit e2e job `in_progress` and none failed. `mergeable_state: blocked`.
 2. `enable_pr_auto_merge` with `mergeMethod: "SQUASH"`. Re-fetch: `auto_merge` is set.
 3. Report "auto-merge is on; GitHub merges once the e2e job passes." Stay subscribed until the PR merges or closes.
+
+### Example 1c: Current `Verdict: LGTM`, a Non-Required Check Already Failed — Merge Directly
+
+1. Same as Example 1, but `get_check_runs` shows one informational job concluded `failure` and nothing running. `mergeable_state: unstable`.
+2. `unstable` means every required check passed, so the failed job is not required and doesn't block. Auto-merge would have nothing to wait for.
+3. `merge_pull_request` with `squash`. Report the merge URL and name the failed job so the user can look at it.
 
 ### Example 2: Verdict Comment Predates the Latest Push (Stale)
 
@@ -252,4 +258,6 @@ Conflicts with the base branch. Rebase or merge `main` locally, resolve, re-run 
 
 - "Pull request is in clean status": nothing is pending, so squash-merge directly.
 - "Auto-merge is not allowed for this repository": the repo's **Allow auto-merge** setting is off. Tell the user; don't change it yourself. Fall back to waiting for green checks and merging directly.
-- The PR is `unstable`: a non-required check is pending or failing. Auto-merge would ignore it, so wait for it instead.
+- The PR is `unstable`: a non-required check is pending or failed. Auto-merge would ignore it. Wait for a pending one; a failed one doesn't block, so merge directly and name it.
+- The cloud `ccr/auto_merge` route answers 404 or is refused: wait for green checks and merge directly, and tell the user.
+- The PR is `blocked` and a check has failed: that check may be required, so auto-merge would never fire. Fix CI first (`ci-debugging`).
