@@ -40,4 +40,3 @@ ort-wasm-simd-threaded-4b884c20.wasm
 
 The Apache License, Version 2.0, as the npm package @huggingface/tokenizers
 ships it (the app's tokenizer code, under the same license):
-
