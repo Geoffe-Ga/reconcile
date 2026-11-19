@@ -60,6 +60,7 @@ import {
   type StewardProposalBody,
 } from '../engine/event';
 import { type GroupState, type Proposal, proposalTally } from '../engine/fold';
+import { listingHistory } from '../engine/frontDoor';
 import { displayName } from '../engine/names';
 import { isNarrowed, type OptIn, rulesChange, rulesChangeOf } from '../engine/optIns';
 import type { OwnBallot } from '../engine/ownBallot';
@@ -1115,7 +1116,7 @@ function waitingSteward(
 function waitingRules(state: GroupState, author: string, body: RulesProposalBody) {
   const change = rulesChange(state.rules.optIns, body.target.optIn, body.target.value);
   if (change === null) return { optIn: null, versions: [] };
-  const rules = rulesView(change);
+  const rules = rulesView(change, false, listingHistory(state));
   return { optIn: change.optIn, versions: [{ id: '', number: 1, author, text: '', rules }] };
 }
 

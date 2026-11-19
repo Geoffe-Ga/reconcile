@@ -1,10 +1,18 @@
 import { describe, expect, it } from 'vitest';
 
 import { OFF, rulesChange } from '../engine/optIns';
-import { COUNTED, COVENANT_HASH, DOOR, LISTED, RENEWED, ROTATED } from '../test/door';
+import { COUNTED, COVENANT_HASH, DOOR, LISTED, RELISTED, RENEWED, ROTATED } from '../test/door';
 import { authorOf } from '../test/keys';
 import { groupLog } from '../test/votes';
-import { directionOf, optInState, type RulesView, rulesView, webhookTail } from './optInLines';
+import {
+  directionOf,
+  listingChangeOf,
+  optInState,
+  type RulesView,
+  rulesView,
+  webhookTail,
+} from './optInLines';
+import { messages } from './messages';
 
 const W1 = 'https://discord.com/api/webhooks/1/abcdWXYZ';
 const W2 = 'https://discord.com/api/webhooks/2/efgh1234';
@@ -162,6 +170,40 @@ describe('rulesView of a listing (#485; listed-doors.md §3.1)', () => {
     expect(view.line).toBe(
       'If this passes, the front door changes. It moves to a new link, and the old link closes. Your group’s name goes on the public shelf, under the covenant below.',
     );
+    expect(view.passed).toBe('This passed. Your group’s front door is listed on the public shelf.');
+  });
+});
+
+describe('rulesView of a change after a narrowing ended the listing (#501; listed-doors.md §3.3)', () => {
+  const listed = { ...OFF, frontDoor: LISTED };
+  const ended = { ended: true, final: new Set([LISTED.sign]) };
+  const { listing } = messages.optIns;
+
+  it('words listing the door again at new keys as a listing, in one vote, with its covenant', () => {
+    expect(rulesView(change('frontDoor', RELISTED, listed), false, ended)).toEqual<RulesView>({
+      optIn: 'frontDoor',
+      title: listing.motions.list,
+      line: `If this passes, the front door changes. It moves to a new link, and the old link closes. ${listing.lines.list}`,
+      passed: listing.passed.list,
+      tail: null,
+      covenant: COVENANT_HASH,
+    });
+    expect(listingChangeOf(change('frontDoor', RELISTED, listed), ended)).toBe('list');
+  });
+
+  it('says a change at the ended listing’s address lists nothing, and shows no covenant', () => {
+    const view = rulesView(change('frontDoor', RENEWED, listed), false, ended);
+    expect(view).toMatchObject({ title: 'Change the front door', covenant: null });
+    expect(view.line).toBe(`If this passes, the front door changes. ${listing.lines.ended}`);
+  });
+
+  it('says nothing of a listing when it unlists or closes the door, or opens one from closed', () => {
+    expect(rulesView(change('frontDoor', false, listed), false, ended).line).toBe(
+      'If this passes, the front door closes.',
+    );
+    expect(listingChangeOf(change('frontDoor', DOOR, listed), ended)).toBeNull();
+    expect(listingChangeOf(change('frontDoor', LISTED), ended)).toBe('list');
+    expect(listingChangeOf(change('frontDoor', DOOR), ended)).toBeNull();
   });
 });
 

@@ -11,7 +11,10 @@ import {
   isNarrowed,
   isOff,
   listedUnder,
+  type ListingFound,
+  NEVER_ENDED,
   type OptIn,
+  relists,
   type RulesChange,
 } from '../engine/optIns';
 import { messages } from './messages';
@@ -56,20 +59,39 @@ function doorChanges(change: RulesChange): string[] {
   return [...moves, change.value.showCount ? doorCount.shows : doorCount.hides];
 }
 
-/** What a front door change does to its listing (#485), or null when it leaves it as it is. */
-export type ListingChange = 'list' | 'unlist' | 'renew';
+/**
+ * What a front door change does to its listing (#485), or null when it
+ * leaves it as it is. Once a steward's narrowing has ended the listing
+ * (#501), one that keeps the door listed at the ended address is `ended`:
+ * it lists nothing.
+ */
+export type ListingChange = 'list' | 'unlist' | 'renew' | 'ended';
 
 /**
  * How `change` moves the front door's listing: it lists a door that wasn't,
- * unlists or closes one that was, or accepts another covenant (#485).
+ * unlists or closes one that was, or accepts another covenant (#485). With
+ * `found`, the listing as the change found it (`listingHistory`, #501): once
+ * a steward's narrowing ended it, listing at a new address lists the door
+ * again (`relists`), keeping the ended address lists nothing, and unlisting
+ * or closing the door says nothing of a listing.
  */
-export function listingChangeOf(change: RulesChange): ListingChange | null {
+export function listingChangeOf(
+  change: RulesChange,
+  found: ListingFound = NEVER_ENDED,
+): ListingChange | null {
   if (change.optIn !== 'frontDoor') return null;
   const from = listedUnder(change.from);
+  if (found.ended && from !== null) return endedChangeOf(found, change.value);
   const to = listedUnder(change.value);
   if (from === to) return null;
   if (from === null) return 'list';
   return to === null ? 'unlist' : 'renew';
+}
+
+/** A change to a door whose listing a narrowing ended: `list` at a new address, `ended` at a final one, else null. */
+function endedChangeOf(found: ListingFound, value: unknown): ListingChange | null {
+  if (relists(found, value)) return 'list';
+  return listedUnder(value) === null ? null : 'ended';
 }
 
 /** True when `change` keeps an open door's keys and count, so only its listing changes. */
@@ -84,14 +106,20 @@ function onlyListing(change: RulesChange): boolean {
   );
 }
 
-/** The heading and the pass of `change`, when they're its listing's own (#485), or null. */
+/**
+ * The heading and the pass of `change`, when they're its listing's own
+ * (#485), or null. Listing a door again after a narrowing ended its listing
+ * moves it to new keys, and is headed as a listing all the same (#501).
+ */
 function listingWords(change: RulesChange, listing: ListingChange | null) {
   const { motions, passed, openedAndListed } = messages.optIns.listing;
-  if (listing === null) return null;
-  if (onlyListing(change)) return { title: motions[listing], passed: passed[listing] };
-  return listing === 'list' && isOff(change.optIn, change.from)
-    ? { title: wordsFor(messages.optIns.motions, change), passed: openedAndListed }
-    : null;
+  if (listing === null || listing === 'ended') return null;
+  const relisting = listing === 'list' && listedUnder(change.from) !== null;
+  if (onlyListing(change) || relisting) return { title: motions[listing], passed: passed[listing] };
+  if (listing !== 'list') return null;
+  // Listing beside another change keeps the general heading, and passes as listed (#501).
+  const title = wordsFor(messages.optIns.motions, change);
+  return { title, passed: isOff(change.optIn, change.from) ? openedAndListed : passed.list };
 }
 
 /** What a rules ballot decides, in words (#117). */
@@ -117,12 +145,18 @@ export interface RulesView {
  * The words for a rules change: its heading, what passing does, its pass, and
  * the webhook's last 4. A front door Proposal `exposed` when a member left
  * while it was open (#288) says that passing it opens no door, and its pass
- * that the door stays closed.
+ * that the door stays closed. `found` is the listing as it found it
+ * (`listingHistory`, #501), which says what it does to a listing a steward's
+ * narrowing ended.
  */
-export function rulesView(change: RulesChange, exposed = false): RulesView {
+export function rulesView(
+  change: RulesChange,
+  exposed = false,
+  found: ListingFound = NEVER_ENDED,
+): RulesView {
   const { motions, lines, passed } = messages.optIns;
   const left = exposed ? [messages.optIns.exposed.line] : [];
-  const listing = listingView(change);
+  const listing = listingView(change, found);
   const own = listing.words;
   return {
     optIn: change.optIn,
@@ -145,8 +179,8 @@ function tailOf(change: RulesChange): string | null {
  * sentence after the line, its own heading and pass when it has them, and
  * the covenant it asks the group to accept, when it lists or renews.
  */
-function listingView(change: RulesChange) {
-  const listing = listingChangeOf(change);
+function listingView(change: RulesChange, found: ListingFound) {
+  const listing = listingChangeOf(change, found);
   const accepts = listing === 'list' || listing === 'renew';
   return {
     line: listing === null ? [] : [messages.optIns.listing.lines[listing]],

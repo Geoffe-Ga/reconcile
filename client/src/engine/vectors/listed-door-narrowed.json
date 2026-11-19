@@ -1,0 +1,1232 @@
+{
+  "kind": "fold",
+  "vectors": [
+    {
+      "name": "listed-door-narrowed: a steward narrows a listed door beside her off-Proposal, which the group turns down, so the door reopens open and listed as it stood: the fold keeps the listing, and only listingInEffect reads it as ended for good (#501)",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29354840,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1761290400000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29354841,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761290460000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29354842,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1761290520000,
+            "body": {
+              "name": "Cal",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761290580000,
+            "body": {
+              "target": {
+                "kind": "rules",
+                "optIn": "frontDoor",
+                "value": {
+                  "sign": {
+                    "$base64url": [
+                      17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
+                      17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17
+                    ]
+                  },
+                  "box": {
+                    "$base64url": [
+                      34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34,
+                      34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34
+                    ]
+                  },
+                  "showCount": false,
+                  "listed": true,
+                  "covenant": {
+                    "$base64url": [
+                      90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90,
+                      90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90
+                    ]
+                  }
+                }
+              },
+              "title": "Open and list a front door",
+              "why": "Our group talked it over in the chat."
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761290640000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375012,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761290700000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375013,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1761290760000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761290820000,
+            "body": {
+              "target": {
+                "kind": "rules",
+                "optIn": "frontDoor",
+                "value": false
+              },
+              "title": "Close the front door",
+              "why": "Spam came through the door."
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "narrow",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761290880000,
+            "body": {
+              "optIn": "frontDoor",
+              "proposal": "@8"
+            }
+          }
+        },
+        {
+          "seq": 10,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761290940000,
+            "body": {
+              "proposal": "@8",
+              "scores": {
+                "@8": 0
+              },
+              "note": "Keep it open."
+            }
+          }
+        },
+        {
+          "seq": 11,
+          "received": 29375022,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761291000000,
+            "body": {
+              "proposal": "@8",
+              "scores": {
+                "@8": 0
+              },
+              "note": "Keep it open."
+            }
+          }
+        },
+        {
+          "seq": 12,
+          "received": 29375023,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1761291060000,
+            "body": {
+              "proposal": "@8",
+              "scores": {
+                "@8": 0
+              },
+              "note": "Keep it open."
+            }
+          }
+        }
+      ],
+      "relayNow": 29375030,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@4",
+            "class": "entrenched",
+            "final": true,
+            "outcome": {
+              "kind": "pass"
+            }
+          },
+          {
+            "id": "@8",
+            "class": "ordinary",
+            "final": true,
+            "outcome": {
+              "kind": "fail"
+            }
+          }
+        ],
+        "narrowings": [
+          {
+            "id": "@9",
+            "seq": 9,
+            "received": 29375020,
+            "by": "%ana",
+            "optIn": "frontDoor",
+            "proposal": "@8"
+          }
+        ],
+        "rules": {
+          "optIns": {
+            "chatBot": null,
+            "frontDoor": {
+              "sign": {
+                "$base64url": [
+                  17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
+                  17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17
+                ]
+              },
+              "box": {
+                "$base64url": [
+                  34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34,
+                  34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34
+                ]
+              },
+              "showCount": false,
+              "listed": true,
+              "covenant": {
+                "$base64url": [
+                  90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90,
+                  90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90
+                ]
+              }
+            }
+          }
+        },
+        "optIns": {
+          "chatBot": null,
+          "frontDoor": {
+            "sign": {
+              "$base64url": [
+                17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
+                17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17
+              ]
+            },
+            "box": {
+              "$base64url": [
+                34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34,
+                34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34
+              ]
+            },
+            "showCount": false,
+            "listed": true,
+            "covenant": {
+              "$base64url": [
+                90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90,
+                90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90
+              ]
+            }
+          }
+        },
+        "ignored": []
+      }
+    },
+    {
+      "name": "listed-door-relist: after the narrowing lapses, one Proposal lists the door again at new keys: the fold classes it entrenched, a listing, though the standing value it replaces still reads listed, and the door stands listed at its new address (#501)",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29354840,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1761290400000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29354841,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761290460000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29354842,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1761290520000,
+            "body": {
+              "name": "Cal",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761290580000,
+            "body": {
+              "target": {
+                "kind": "rules",
+                "optIn": "frontDoor",
+                "value": {
+                  "sign": {
+                    "$base64url": [
+                      17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
+                      17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17
+                    ]
+                  },
+                  "box": {
+                    "$base64url": [
+                      34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34,
+                      34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34
+                    ]
+                  },
+                  "showCount": false,
+                  "listed": true,
+                  "covenant": {
+                    "$base64url": [
+                      90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90,
+                      90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90
+                    ]
+                  }
+                }
+              },
+              "title": "Open and list a front door",
+              "why": "Our group talked it over in the chat."
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761290640000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375012,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761290700000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375013,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1761290760000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761290820000,
+            "body": {
+              "target": {
+                "kind": "rules",
+                "optIn": "frontDoor",
+                "value": false
+              },
+              "title": "Close the front door",
+              "why": "Spam came through the door."
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "narrow",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761290880000,
+            "body": {
+              "optIn": "frontDoor",
+              "proposal": "@8"
+            }
+          }
+        },
+        {
+          "seq": 10,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761290940000,
+            "body": {
+              "proposal": "@8",
+              "scores": {
+                "@8": 0
+              },
+              "note": "Keep it open."
+            }
+          }
+        },
+        {
+          "seq": 11,
+          "received": 29375022,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761291000000,
+            "body": {
+              "proposal": "@8",
+              "scores": {
+                "@8": 0
+              },
+              "note": "Keep it open."
+            }
+          }
+        },
+        {
+          "seq": 12,
+          "received": 29375023,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1761291060000,
+            "body": {
+              "proposal": "@8",
+              "scores": {
+                "@8": 0
+              },
+              "note": "Keep it open."
+            }
+          }
+        },
+        {
+          "seq": 13,
+          "received": 29375040,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761291120000,
+            "body": {
+              "target": {
+                "kind": "rules",
+                "optIn": "frontDoor",
+                "value": {
+                  "sign": {
+                    "$base64url": [
+                      51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51,
+                      51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51
+                    ]
+                  },
+                  "box": {
+                    "$base64url": [
+                      68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68,
+                      68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68
+                    ]
+                  },
+                  "showCount": false,
+                  "listed": true,
+                  "covenant": {
+                    "$base64url": [
+                      90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90,
+                      90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90
+                    ]
+                  }
+                }
+              },
+              "title": "Move the front door",
+              "why": "Our group talked it over in the chat."
+            }
+          }
+        },
+        {
+          "seq": 14,
+          "received": 29375041,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761291180000,
+            "body": {
+              "proposal": "@13",
+              "scores": {
+                "@13": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 15,
+          "received": 29375042,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761291240000,
+            "body": {
+              "proposal": "@13",
+              "scores": {
+                "@13": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 16,
+          "received": 29375043,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1761291300000,
+            "body": {
+              "proposal": "@13",
+              "scores": {
+                "@13": 4
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29375050,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@4"
+          },
+          {
+            "id": "@8"
+          },
+          {
+            "id": "@13",
+            "class": "entrenched",
+            "final": true,
+            "outcome": {
+              "kind": "pass",
+              "bar": {
+                "avgAtLeast": 3,
+                "zerosUnderPercent": 5
+              }
+            },
+            "target": {
+              "kind": "rules",
+              "optIn": "frontDoor",
+              "value": {
+                "sign": {
+                  "$base64url": [
+                    51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51,
+                    51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51
+                  ]
+                },
+                "box": {
+                  "$base64url": [
+                    68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68,
+                    68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68
+                  ]
+                },
+                "showCount": false,
+                "listed": true,
+                "covenant": {
+                  "$base64url": [
+                    90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90,
+                    90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90
+                  ]
+                }
+              },
+              "from": {
+                "sign": {
+                  "$base64url": [
+                    17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
+                    17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17
+                  ]
+                },
+                "box": {
+                  "$base64url": [
+                    34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34,
+                    34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34
+                  ]
+                },
+                "showCount": false,
+                "listed": true,
+                "covenant": {
+                  "$base64url": [
+                    90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90,
+                    90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90
+                  ]
+                }
+              }
+            }
+          }
+        ],
+        "rules": {
+          "optIns": {
+            "chatBot": null,
+            "frontDoor": {
+              "sign": {
+                "$base64url": [
+                  51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51,
+                  51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51
+                ]
+              },
+              "box": {
+                "$base64url": [
+                  68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68,
+                  68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68
+                ]
+              },
+              "showCount": false,
+              "listed": true,
+              "covenant": {
+                "$base64url": [
+                  90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90,
+                  90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90
+                ]
+              }
+            }
+          }
+        },
+        "ignored": [],
+        "optIns": {
+          "chatBot": null,
+          "frontDoor": {
+            "sign": {
+              "$base64url": [
+                51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51,
+                51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51
+              ]
+            },
+            "box": {
+              "$base64url": [
+                68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68,
+                68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68
+              ]
+            },
+            "showCount": false,
+            "listed": true,
+            "covenant": {
+              "$base64url": [
+                90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90,
+                90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "listed-door-relist-bar: the same relisting scored 3, 2 and 3 fails at the entrenched bar, so the listing stays ended at its old address; builds from before this change class it ordinary and pass it, so a group's devices must all run this change before it relists (#501)",
+      "records": [
+        {
+          "seq": 1,
+          "received": 29354840,
+          "event": {
+            "v": 1,
+            "type": "genesis",
+            "group": "",
+            "author": "%ana",
+            "ts": 1761290400000,
+            "body": {
+              "name": "Riverside Tenants",
+              "founder": "Ana",
+              "documents": [
+                {
+                  "title": "House rules",
+                  "atoms": ["Quiet after 11pm.\n", "Bins out on Sunday.\n"]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "seq": 2,
+          "received": 29354841,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761290460000,
+            "body": {
+              "name": "Ben",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 3,
+          "received": 29354842,
+          "event": {
+            "v": 1,
+            "type": "join",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1761290520000,
+            "body": {
+              "name": "Cal",
+              "level": "co-creator"
+            }
+          }
+        },
+        {
+          "seq": 4,
+          "received": 29375010,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761290580000,
+            "body": {
+              "target": {
+                "kind": "rules",
+                "optIn": "frontDoor",
+                "value": {
+                  "sign": {
+                    "$base64url": [
+                      17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
+                      17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17
+                    ]
+                  },
+                  "box": {
+                    "$base64url": [
+                      34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34,
+                      34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34
+                    ]
+                  },
+                  "showCount": false,
+                  "listed": true,
+                  "covenant": {
+                    "$base64url": [
+                      90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90,
+                      90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90
+                    ]
+                  }
+                }
+              },
+              "title": "Open and list a front door",
+              "why": "Our group talked it over in the chat."
+            }
+          }
+        },
+        {
+          "seq": 5,
+          "received": 29375011,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761290640000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 6,
+          "received": 29375012,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761290700000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 7,
+          "received": 29375013,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1761290760000,
+            "body": {
+              "proposal": "@4",
+              "scores": {
+                "@4": 4
+              }
+            }
+          }
+        },
+        {
+          "seq": 8,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761290820000,
+            "body": {
+              "target": {
+                "kind": "rules",
+                "optIn": "frontDoor",
+                "value": false
+              },
+              "title": "Close the front door",
+              "why": "Spam came through the door."
+            }
+          }
+        },
+        {
+          "seq": 9,
+          "received": 29375020,
+          "event": {
+            "v": 1,
+            "type": "narrow",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761290880000,
+            "body": {
+              "optIn": "frontDoor",
+              "proposal": "@8"
+            }
+          }
+        },
+        {
+          "seq": 10,
+          "received": 29375021,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761290940000,
+            "body": {
+              "proposal": "@8",
+              "scores": {
+                "@8": 0
+              },
+              "note": "Keep it open."
+            }
+          }
+        },
+        {
+          "seq": 11,
+          "received": 29375022,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761291000000,
+            "body": {
+              "proposal": "@8",
+              "scores": {
+                "@8": 0
+              },
+              "note": "Keep it open."
+            }
+          }
+        },
+        {
+          "seq": 12,
+          "received": 29375023,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1761291060000,
+            "body": {
+              "proposal": "@8",
+              "scores": {
+                "@8": 0
+              },
+              "note": "Keep it open."
+            }
+          }
+        },
+        {
+          "seq": 13,
+          "received": 29375040,
+          "event": {
+            "v": 1,
+            "type": "proposal",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761291120000,
+            "body": {
+              "target": {
+                "kind": "rules",
+                "optIn": "frontDoor",
+                "value": {
+                  "sign": {
+                    "$base64url": [
+                      51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51,
+                      51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51
+                    ]
+                  },
+                  "box": {
+                    "$base64url": [
+                      68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68,
+                      68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68
+                    ]
+                  },
+                  "showCount": false,
+                  "listed": true,
+                  "covenant": {
+                    "$base64url": [
+                      90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90,
+                      90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90
+                    ]
+                  }
+                }
+              },
+              "title": "Move the front door",
+              "why": "Our group talked it over in the chat."
+            }
+          }
+        },
+        {
+          "seq": 14,
+          "received": 29375041,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ana",
+            "ts": 1761291180000,
+            "body": {
+              "proposal": "@13",
+              "scores": {
+                "@13": 3
+              }
+            }
+          }
+        },
+        {
+          "seq": 15,
+          "received": 29375042,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%ben",
+            "ts": 1761291240000,
+            "body": {
+              "proposal": "@13",
+              "scores": {
+                "@13": 2
+              }
+            }
+          }
+        },
+        {
+          "seq": 16,
+          "received": 29375043,
+          "event": {
+            "v": 1,
+            "type": "vote",
+            "group": "@1",
+            "author": "%cal",
+            "ts": 1761291300000,
+            "body": {
+              "proposal": "@13",
+              "scores": {
+                "@13": 3
+              }
+            }
+          }
+        }
+      ],
+      "relayNow": 29375050,
+      "expect": {
+        "proposals": [
+          {
+            "id": "@4"
+          },
+          {
+            "id": "@8"
+          },
+          {
+            "id": "@13",
+            "class": "entrenched",
+            "final": true,
+            "outcome": {
+              "kind": "fail",
+              "bar": {
+                "avgAtLeast": 3,
+                "zerosUnderPercent": 5
+              }
+            },
+            "target": {
+              "kind": "rules",
+              "optIn": "frontDoor",
+              "value": {
+                "sign": {
+                  "$base64url": [
+                    51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51,
+                    51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51, 51
+                  ]
+                },
+                "box": {
+                  "$base64url": [
+                    68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68,
+                    68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68, 68
+                  ]
+                },
+                "showCount": false,
+                "listed": true,
+                "covenant": {
+                  "$base64url": [
+                    90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90,
+                    90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90
+                  ]
+                }
+              },
+              "from": {
+                "sign": {
+                  "$base64url": [
+                    17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
+                    17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17
+                  ]
+                },
+                "box": {
+                  "$base64url": [
+                    34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34,
+                    34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34
+                  ]
+                },
+                "showCount": false,
+                "listed": true,
+                "covenant": {
+                  "$base64url": [
+                    90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90,
+                    90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90
+                  ]
+                }
+              }
+            }
+          }
+        ],
+        "rules": {
+          "optIns": {
+            "chatBot": null,
+            "frontDoor": {
+              "sign": {
+                "$base64url": [
+                  17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
+                  17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17
+                ]
+              },
+              "box": {
+                "$base64url": [
+                  34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34,
+                  34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34
+                ]
+              },
+              "showCount": false,
+              "listed": true,
+              "covenant": {
+                "$base64url": [
+                  90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90,
+                  90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90
+                ]
+              }
+            }
+          }
+        },
+        "ignored": [],
+        "optIns": {
+          "chatBot": null,
+          "frontDoor": {
+            "sign": {
+              "$base64url": [
+                17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
+                17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17
+              ]
+            },
+            "box": {
+              "$base64url": [
+                34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34,
+                34, 34, 34, 34, 34, 34, 34, 34, 34, 34, 34
+              ]
+            },
+            "showCount": false,
+            "listed": true,
+            "covenant": {
+              "$base64url": [
+                90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90,
+                90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90
+              ]
+            }
+          }
+        }
+      }
+    }
+  ]
+}

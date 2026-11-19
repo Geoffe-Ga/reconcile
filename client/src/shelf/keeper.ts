@@ -15,14 +15,16 @@
  *   days after its last post, so a listing nobody keeps lapses.
  * - **Final.** Once that door closes in effect, for any reason a door closes
  *   (a vote, unlisting, a rotation, a steward's narrowing, a membership's end
- *   (#288) or a dissolve (#108)), the device posts the final listing, and
- *   again whenever it is {@link REFRESH_MINUTES} old, so one stays while the
- *   group goes on. The relay drops the door's entries, and no device shows
- *   any copy after it (`fold.ts`), so a final listing is never followed by
- *   an open one: the device posts none over it, and relisting takes a new
- *   opening Proposal, with a new door (§3.3).
+ *   (#288) or a dissolve (#108)), or a narrowing has ended its listing for
+ *   good though the door has reopened (#501), the device posts the final
+ *   listing, and again whenever it is {@link REFRESH_MINUTES} old, so one
+ *   stays while the group goes on. The relay drops the door's entries, and
+ *   no device shows any copy after it (`fold.ts`), so a final listing is
+ *   never followed by an open one: the device posts none over it, and
+ *   relisting takes a new Proposal, at a new door's keys (§3.3).
  *
- * While the door is open and listed, the device also keeps its entries
+ * While the door is open and its listing is in effect ({@link listedAddress};
+ * not once a narrowing ended it, #501), the device also keeps its entries
  * (#431):
  *
  * - **An entry** for each Dispatch the group published ({@link entriesDue}):
@@ -73,6 +75,7 @@ import { addressOf, REFRESH_MINUTES } from '../door/page';
 import { can, isOusted } from '../engine/capabilities';
 import { publishedBy } from '../engine/dispatches';
 import type { GroupState } from '../engine/fold';
+import { listingInEffect } from '../engine/frontDoor';
 import { type FrontDoor, isFrontDoor, listedUnder, rulesChangeOf } from '../engine/optIns';
 import { codePointLength } from '../engine/text';
 import { clip } from '../invite/envelope';
@@ -157,14 +160,17 @@ function listedDoors(state: GroupState): FrontDoor[] {
 
 /**
  * The listings to keep now: for each door the group ever listed, the open
- * listing while that door is open in effect and listed, else the final one.
- * The open listing names the group (cut to 120 code points) and the covenant
- * the door is listed under, with the name's skeleton (#487), which every
- * reader's fold checks.
+ * listing while that door is open in effect and its listing is in effect,
+ * else the final one. A listing a steward's narrowing ended stays final even
+ * once the narrowing lapses and the door reopens listed, so no device posts
+ * an open listing at an address the shelf holds final (#501;
+ * `listingInEffect`). The open listing names the group (cut to 120 code
+ * points) and the covenant the door is listed under, with the name's skeleton
+ * (#487), which every reader's fold checks.
  */
 export function listingsDue(state: GroupState): (readonly [FrontDoor, ListingBody])[] {
   const open = openDoor(state);
-  const covenant = listedUnder(open);
+  const covenant = open === null ? null : listingInEffect(state);
   return listedDoors(state).map((door) => {
     if (open === null || covenant === null || open.sign !== door.sign) {
       return [door, FINAL_LISTING] as const;
@@ -239,12 +245,14 @@ export function entriesDue(state: GroupState): EntryBody[] {
 
 /**
  * The address of the door `state` lists now, while it is open in effect and
- * listed; else null. Discover shows its entries at once on this device, and
- * Group home reads what it withdrew (#431).
+ * its listing is in effect; else null, so none once a steward's narrowing
+ * ended it, though the door reopened (#501; `listingInEffect`). Discover
+ * shows its entries at once on this device, and Group home reads what it
+ * withdrew (#431).
  */
 export function listedAddress(state: GroupState): string | null {
   const open = openDoor(state);
-  return open === null || listedUnder(open) === null ? null : base64url(addressOf(open));
+  return open === null || listingInEffect(state) === null ? null : base64url(addressOf(open));
 }
 
 /**

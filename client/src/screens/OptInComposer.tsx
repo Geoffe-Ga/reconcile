@@ -13,6 +13,7 @@ import { base64url } from '../crypto/base64url';
 import { addressOf, newFrontDoor } from '../door/page';
 import { can, isSuspended } from '../engine/capabilities';
 import { type GroupState, TITLE_MAX, WHY_MAX } from '../engine/fold';
+import { listingHistory } from '../engine/frontDoor';
 import {
   type FrontDoor,
   isFrontDoor,
@@ -107,26 +108,39 @@ function withListing(door: FrontDoor, listed: boolean): FrontDoor {
 /**
  * What a listing composer proposes (#485): a listed door unlisted, written as
  * a door was before #485 so an older build still reads it, or an unlisted
- * one listed under the covenant this app carries.
+ * one listed under the covenant this app carries. A door whose address a
+ * listing has used is listed at `fresh` keys instead, since the shelf holds
+ * that address's final listing (#501).
  */
-function listingValue(door: FrontDoor): FrontDoor {
-  const { sign, box, showCount } = door;
-  return withListing({ sign, box, showCount }, door.listed !== true);
+function listingValue(state: GroupState, door: FrontDoor, fresh: FrontDoor): FrontDoor {
+  const { sign, box } = moves(state) ? fresh : door;
+  return withListing({ sign, box, showCount: door.showCount }, lists(state));
 }
 
-/** Whether this composer, a listing composer, lists the door rather than unlisting it. */
+/**
+ * Whether this composer, a listing composer, lists the door rather than
+ * unlisting it: the door isn't listed, or a steward's narrowing ended its
+ * listing for good, so one vote lists it again (#501).
+ */
 function lists(state: GroupState): boolean {
-  return standingDoor(state)?.listed !== true;
+  return standingDoor(state)?.listed !== true || listingHistory(state).ended;
+}
+
+/** Whether listing the standing door moves it to new keys: a listing has used its address (#501). */
+function moves(state: GroupState): boolean {
+  const door = standingDoor(state);
+  return door !== null && lists(state) && listingHistory(state).final.has(door.sign);
 }
 
 /**
  * The class `targetClass` gives the change, which bounds its voting time
- * (#106): entrenched to turn an opt-in on, ordinary to turn it off. A webhook
+ * (#106): entrenched to turn an opt-in on, or to list the door again once a
+ * narrowing ended its listing (#501), ordinary to turn it off. A webhook
  * still being typed counts as on.
  */
 function classOf(state: GroupState, optIn: OptIn, value: OptInValue): ProposalClass {
   const target = { kind: 'rules', optIn, value } as const;
-  return targetClass(state, { target, title: '', why: '' });
+  return targetClass({ ...state, listing: listingHistory(state) }, { target, title: '', why: '' });
 }
 
 /** The motion this composer proposes, as its ballot will be headed. */
@@ -205,6 +219,9 @@ function Context(props: OptInComposerProps) {
         <p className="caption">{optIns.higherBar(formatAverageLine(bar), formatZeroLine(bar))}</p>
       ) : null}
       {narrow ? <p className="opt-in-narrowed">{optIns.nowLine}</p> : null}
+      {props.listing === true && moves(state) ? (
+        <p className="caption">{optIns.listing.newLink}</p>
+      ) : null}
     </div>
   );
 }
@@ -280,7 +297,7 @@ function useValue(props: OptInComposerProps, webhook: string) {
   const opening = withListing({ ...secrets, showCount }, listed);
   const value =
     props.listing === true && standing !== null
-      ? listingValue(standing)
+      ? listingValue(state, standing, secrets)
       : valueOf(optIn, on, webhook, opening);
   const choices =
     on && optIn === 'frontDoor' ? (

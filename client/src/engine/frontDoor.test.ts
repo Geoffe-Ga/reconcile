@@ -1,8 +1,20 @@
+import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import { base64url } from '../crypto/base64url';
-import { COVENANT_HASH, DOOR, LISTED, ROTATED } from '../test/door';
+import {
+  COVENANT_HASH,
+  DOOR,
+  doorOf,
+  lapsedNarrowing,
+  LISTED,
+  RELISTED,
+  RENEWED,
+  ROTATED,
+  secretOf,
+} from '../test/door';
 import { authorOf } from '../test/keys';
+import { vector } from '../test/vectors';
 import { groupLog, type LogBuilder } from '../test/votes';
 import { LEVELS } from './capabilities';
 import { parseRecord } from './event';
@@ -12,10 +24,13 @@ import {
   cardClosedFor,
   inviteFor,
   isApplicationId,
+  listingHistory,
   listingInEffect,
+  type ListingState,
   mayCloseCard,
   mayRecordInvite,
 } from './frontDoor';
+import { type FrontDoor, listedUnder } from './optIns';
 
 /** The follower level, which reads but doesn't invite, by place, so no level id is spelled out here. */
 const [FOLLOWING, VOTING] = LEVELS;
@@ -79,6 +94,320 @@ describe('listingInEffect: a listing ends with its door (#485; listed-doors.md �
     log.narrow('Ana', 'frontDoor', off);
     log.minute += 1;
     expect(listingInEffect(log.state())).toBeNull();
+  });
+});
+
+/** Adds a front door change to `value` by Ben that everyone passes, returning its id. */
+function passed(log: LogBuilder, value: unknown): string {
+  // Its own title, so no two changes are the same event.
+  const proposal = log.rules('Ben', 'frontDoor', value, { title: `Change ${String(log.minute)}` });
+  for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, proposal, 4);
+  log.minute += 1;
+  return proposal;
+}
+
+describe('listingInEffect: a steward’s narrowing ends a listing for good (#501; listed-doors.md §3.3)', () => {
+  it('stays ended once the narrowing lapses and the door reopens, listed as it stood', () => {
+    const state = lapsedNarrowing(opened(LISTED)).state();
+    expect(state.proposals.map((p) => p.outcome.kind)).toEqual(['pass', 'fail']);
+    // The door stands open and listed again in effect: only the listing has ended.
+    expect(state.optIns.frontDoor).toEqual(LISTED);
+    expect(listingInEffect(state)).toBeNull();
+    expect(listingHistory(state)).toEqual({
+      address: LISTED.sign,
+      ended: true,
+      final: new Set([LISTED.sign]),
+    });
+  });
+
+  it('stays ended through changes at its final address: the count, another covenant', () => {
+    const log = lapsedNarrowing(opened(LISTED));
+    passed(log, { ...LISTED, showCount: true });
+    passed(log, { ...RENEWED, showCount: true });
+    expect(log.state().rules.optIns.frontDoor).toEqual({ ...RENEWED, showCount: true });
+    expect(listingInEffect(log.state())).toBeNull();
+    expect(listingHistory(log.state())).toEqual({
+      address: LISTED.sign,
+      ended: true,
+      final: new Set([LISTED.sign]),
+    });
+  });
+
+  it('lists again by one entrenched Proposal at new keys, though the standing value reads listed', () => {
+    const log = lapsedNarrowing(opened(LISTED));
+    const relist = passed(log, RELISTED);
+    const state = log.state();
+    expect(state.proposals.find((p) => p.id === relist)?.class).toBe('entrenched');
+    expect(listingInEffect(state)).toBe(COVENANT_HASH);
+    expect(listingHistory(state)).toEqual({
+      address: ROTATED.sign,
+      ended: false,
+      final: new Set([LISTED.sign]),
+    });
+  });
+
+  it('holds a relisting to the entrenched bar: 2.67 that an ordinary change would pass fails it', () => {
+    const log = lapsedNarrowing(opened(LISTED));
+    const relist = log.rules('Ben', 'frontDoor', RELISTED);
+    log.vote('Ana', relist, 3);
+    log.vote('Ben', relist, 2);
+    log.vote('Cal', relist, 3);
+    log.minute += 20_160;
+    const state = log.state();
+    expect(state.proposals.find((p) => p.id === relist)?.outcome.kind).toBe('fail');
+    expect(state.rules.optIns.frontDoor).toEqual(LISTED);
+    expect(listingInEffect(state)).toBeNull();
+  });
+
+  it('begins again only from an unlisted door, at an address no listing has used', () => {
+    const log = lapsedNarrowing(opened(LISTED));
+    passed(log, DOOR);
+    expect(listingHistory(log.state())).toEqual({
+      address: null,
+      ended: false,
+      final: new Set([LISTED.sign]),
+    });
+    // Listing the same address again shows nothing: the shelf's copy there is final.
+    const same = passed(log, LISTED);
+    expect(listingInEffect(log.state())).toBeNull();
+    expect(listingHistory(log.state()).ended).toBe(true);
+    expect(log.state().proposals.find((p) => p.id === same)?.class).toBe('entrenched');
+    passed(log, DOOR);
+    passed(log, RELISTED);
+    expect(listingInEffect(log.state())).toBe(COVENANT_HASH);
+  });
+
+  it('orders by relay order, not relay minute: a narrowing, its turn-down and a relisting in one minute', () => {
+    const log = opened(LISTED);
+    const off = log.rules('Ana', 'frontDoor', false, { title: 'Close the front door' });
+    log.narrow('Ana', 'frontDoor', off);
+    for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, off, 0, 'Keep it open.');
+    const minute = log.minute;
+    for (const value of [DOOR, RELISTED]) {
+      const change = log.rules('Ben', 'frontDoor', value, {
+        title: `To ${listedUnder(value) ?? 'unlisted'}`,
+      });
+      for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, change, 4);
+    }
+    const state = log.state();
+    expect(log.minute).toBe(minute);
+    expect(state.proposals.map((p) => p.outcome.kind)).toEqual(['pass', 'fail', 'pass', 'pass']);
+    expect(listingInEffect(state)).toBe(COVENANT_HASH);
+  });
+
+  it('reads the history a Proposal found when it opened, leaving out what came at or after it', () => {
+    const log = lapsedNarrowing(opened(LISTED));
+    const unlist = log.rules('Ben', 'frontDoor', DOOR);
+    const state = log.state();
+    const proposal = state.proposals.find((p) => p.id === unlist);
+    if (proposal === undefined) throw new Error('expected the unlisting Proposal');
+    expect(listingHistory(state, proposal).ended).toBe(true);
+    const off = state.proposals.find((p) => p.target.kind === 'rules' && p.target.value === false);
+    if (off === undefined) throw new Error('expected the off-Proposal');
+    // The off-Proposal opened before its narrowing, onto a listing in effect.
+    expect(listingHistory(state, off)).toEqual({
+      address: LISTED.sign,
+      ended: false,
+      final: new Set(),
+    });
+  });
+
+  it('ends with the door when a membership ends, leaving its address final (#288)', () => {
+    const log = lapsedNarrowing(opened(LISTED));
+    log.leave('Cal');
+    log.minute += 1;
+    expect(listingHistory(log.state())).toEqual({
+      address: null,
+      ended: false,
+      final: new Set([LISTED.sign]),
+    });
+  });
+
+  it('ends nothing when the narrowed door wasn’t listed, and counts no exposed pass', () => {
+    const state = lapsedNarrowing(opened(DOOR)).state();
+    expect(listingHistory(state)).toEqual({ address: null, ended: false, final: new Set() });
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    const listing = log.rules('Ana', 'frontDoor', LISTED);
+    log.vote('Ana', listing, 4);
+    log.leave('Cal');
+    log.vote('Ben', listing, 4);
+    log.minute += 20_160;
+    const exposed = log.state();
+    expect(exposed.exposedDoors).toEqual([listing]);
+    expect(listingHistory(exposed).address).toBeNull();
+  });
+
+  it('keeps a listing that moves to new keys while it shows, and finalizes the address it left', () => {
+    const log = opened(LISTED);
+    passed(log, { ...doorOf(0x55, 0x66), listed: true, covenant: COVENANT_HASH });
+    expect(listingInEffect(log.state())).toBe(COVENANT_HASH);
+    expect(listingHistory(log.state()).final).toEqual(new Set([LISTED.sign]));
+  });
+});
+
+/** A step of a made-up history: a front door change that passed, or a steward's narrowing that lapsed. */
+type Step =
+  { readonly kind: 'narrow' } | { readonly kind: 'pass'; readonly value: FrontDoor | false };
+
+/** The listing state `steps` leave, each ten minutes after the last, with every pass closed at once. */
+function historyOf(steps: readonly Step[]): ListingState {
+  let standing: FrontDoor | false = false;
+  const proposals: ListingState['proposals'][number][] = [];
+  const narrowings: ListingState['narrowings'][number][] = [];
+  for (const [index, step] of steps.entries()) {
+    const at = (index + 1) * 10;
+    const id = `@${String(index + 1)}`;
+    if (step.kind === 'narrow') {
+      // Its off-Proposal is nowhere among the passes: the narrowing has lapsed.
+      narrowings.push({
+        id,
+        seq: index + 1,
+        received: at,
+        by: 'ana',
+        optIn: 'frontDoor',
+        proposal: 'off',
+      });
+      continue;
+    }
+    const target = {
+      kind: 'rules',
+      optIn: 'frontDoor',
+      value: step.value,
+      from: standing,
+    } as const;
+    proposals.push({
+      id,
+      author: 'ana',
+      seq: index + 1,
+      received: at,
+      deadline: at + 5,
+      closedAt: at + 1,
+      final: true,
+      outcome: { kind: 'pass' },
+      target,
+    });
+    standing = step.value;
+  }
+  const optIns = { chatBot: null, frontDoor: standing };
+  return {
+    rules: { optIns },
+    proposals,
+    narrowings,
+    exposedDoors: [],
+    at: steps.length * 10 + 100,
+  };
+}
+
+const byte = fc.integer({ min: 0, max: 3 });
+/** A door at one of four addresses, listed or not. */
+const doorStep = fc
+  .record({ sign: byte, listed: fc.boolean() })
+  .map(({ sign, listed }): FrontDoor => {
+    const door = doorOf(sign, 0x22);
+    return listed ? { ...door, listed: true, covenant: COVENANT_HASH } : door;
+  });
+const step: fc.Arbitrary<Step> = fc.oneof(
+  fc.constant<Step>({ kind: 'narrow' }),
+  fc.oneof(fc.constant<false>(false), doorStep).map((value): Step => ({ kind: 'pass', value })),
+);
+/** A change that keeps {@link LISTED}'s address listed: the count, another covenant. */
+const keepsAddress = fc
+  .record({ count: fc.boolean(), covenant: fc.constantFrom(COVENANT_HASH, secretOf(0x5b)) })
+  .map(({ count, covenant }): Step => ({
+    kind: 'pass',
+    value: { ...LISTED, showCount: count, covenant },
+  }));
+const LISTS: Step = { kind: 'pass', value: LISTED };
+
+describe('listingInEffect: the golden vectors (#501; listed-door-narrowed.json)', () => {
+  const ADDRESS = base64url(new Uint8Array(32).fill(17));
+  const MOVED = base64url(new Uint8Array(32).fill(51));
+  /** The vector named `name`, folded at its relay `now`. */
+  const folded = (name: string) => {
+    const { records, relayNow } = vector(name);
+    return fold(records, relayNow);
+  };
+
+  it('reads the listing a lapsed narrowing met as ended, while the door stands listed', () => {
+    const state = folded('listed-door-narrowed');
+    expect(listingInEffect(state)).toBeNull();
+    expect(listingHistory(state)).toEqual({
+      address: ADDRESS,
+      ended: true,
+      final: new Set([ADDRESS]),
+    });
+  });
+
+  it('lists the door again at its new address by one entrenched Proposal', () => {
+    const state = folded('listed-door-relist');
+    expect(state.proposals.at(-1)?.class).toBe('entrenched');
+    expect(listingInEffect(state)).toBe(base64url(new Uint8Array(32).fill(90)));
+    expect(listingHistory(state)).toEqual({
+      address: MOVED,
+      ended: false,
+      final: new Set([ADDRESS]),
+    });
+  });
+
+  it('holds that relisting to the entrenched bar, where older builds held it to the ordinary one', () => {
+    const state = folded('listed-door-relist-bar');
+    expect(state.proposals.at(-1)?.class).toBe('entrenched');
+    expect(state.proposals.at(-1)?.outcome.kind).toBe('fail');
+    expect(listingInEffect(state)).toBeNull();
+    expect(listingHistory(state)).toEqual({
+      address: ADDRESS,
+      ended: true,
+      final: new Set([ADDRESS]),
+    });
+  });
+});
+
+describe('listingHistory: properties (#501; listed-doors.md §3.3)', () => {
+  it('never reads a listing in effect at an address a listing left', () => {
+    fc.assert(
+      fc.property(fc.array(step, { maxLength: 12 }), (steps) => {
+        const state = historyOf(steps);
+        const door = state.rules.optIns.frontDoor;
+        if (listingInEffect(state) === null || door === false) return;
+        expect(listingHistory(state).final.has(door.sign)).toBe(false);
+      }),
+    );
+  });
+
+  it('reads a listing a narrowing met as ended for good, through every change that keeps its address', () => {
+    fc.assert(
+      fc.property(
+        fc.array(step, { maxLength: 8 }),
+        fc.array(keepsAddress, { maxLength: 6 }),
+        (before, after) => {
+          const narrowed = [...before, LISTS, { kind: 'narrow' } as const];
+          expect(listingInEffect(historyOf([...narrowed, ...after]))).toBeNull();
+        },
+      ),
+    );
+  });
+
+  it('lists again at an address no listing has used, straight from the ended listing or from unlisted', () => {
+    const off = fc.constantFrom<Step[]>(
+      [],
+      [{ kind: 'pass', value: false }],
+      [{ kind: 'pass', value: DOOR }],
+    );
+    fc.assert(
+      fc.property(
+        fc.array(step, { maxLength: 8 }),
+        off,
+        fc.array(keepsAddress, { maxLength: 3 }),
+        (before, unlists, kept) => {
+          const fresh: Step = {
+            kind: 'pass',
+            value: { ...doorOf(0x99, 0x98), listed: true, covenant: COVENANT_HASH },
+          };
+          const steps = [...before, LISTS, { kind: 'narrow' } as const, ...kept, ...unlists, fresh];
+          expect(listingInEffect(historyOf(steps))).toBe(COVENANT_HASH);
+        },
+      ),
+    );
   });
 });
 

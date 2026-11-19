@@ -12,7 +12,9 @@
  * coalition above can vote on it in turn. While the group's front door is
  * listed (#430; ADR-0081), it also offers to ask for the public shelf, never
  * ticked: that puts the Dispatch to the group's vote, whatever its reach,
- * with a second line on the ballot, as the fold takes one (listingInEffect).
+ * with a second line on the ballot. It offers it only while the listing is
+ * in effect (listingInEffect), so not once a steward's narrowing ended it
+ * (#501), though the fold still takes one then.
  */
 import { type SyntheticEvent, useState } from 'react';
 import { Button, CheckboxButton, CheckboxField, Form, Text } from 'react-aria-components';

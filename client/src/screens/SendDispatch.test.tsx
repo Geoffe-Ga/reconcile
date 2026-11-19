@@ -14,7 +14,7 @@ import type { GroupState } from '../engine/fold';
 import { axeViolations } from '../test/axe';
 import { authorOf } from '../test/keys';
 import { held, pastPressFallback } from '../test/press';
-import { DOOR, LISTED } from '../test/door';
+import { DOOR, lapsedNarrowing, LISTED } from '../test/door';
 import { groupLog } from '../test/votes';
 import { SendDispatch } from './SendDispatch';
 
@@ -286,6 +286,10 @@ describe('SendDispatch', () => {
     it.each([
       ['a group with no door', () => group().state()],
       ['a door open but not listed', () => listedGroup(DOOR).state()],
+      [
+        'a listing a steward’s narrowing ended, though the door reopened (#501)',
+        () => lapsedNarrowing(listedGroup()).state(),
+      ],
     ])('offers nothing for %s', (_label, state) => {
       renderSend(state());
       expect(screen.queryByRole('checkbox')).toBeNull();
