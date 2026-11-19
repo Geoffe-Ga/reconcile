@@ -6,10 +6,11 @@
  * test-only route, flag or hook, and `page.clock` would close every vote
  * early. So a spec that must see a pass become final reads the relay's own
  * answers later instead: {@link readRelayLater} routes a profile's mailbox
- * GETs through Playwright, fetches each from the real relay, and adds
- * `minutes` to the `now` it answered, leaving its records, their `received`
- * minutes and every other request untouched. The relay, its database and the
- * app's code never see the difference.
+ * GETs, and its reads of the public shelf (#434), whose entries show a relay
+ * day after they arrive (#431), through Playwright, fetches each from the
+ * real relay, and adds `minutes` to the `now` it answered, leaving its
+ * records, their `received` minutes and every other request untouched. The
+ * relay, its database and the app's code never see the difference.
  *
  * The app takes its relay week from that `now` (#110), so every profile must
  * read the same later clock, and only once nothing more needs to cross: a
@@ -38,23 +39,28 @@ export async function relayMinute(request: APIRequestContext): Promise<number> {
 
 /** A profile reading the relay's clock later. */
 export interface LaterRelay {
-  /** How many mailbox GETs this profile has read with the later `now` so far. */
+  /** How many mailbox and shelf GETs this profile has read with the later `now` so far. */
   rewritten(): number;
   /** Stops moving the clock, before the spec takes the profile offline or stops the relay. */
   stop(): Promise<void>;
 }
 
-/** True for the relay's mailbox route, `/v1/mailbox/{id}`, on the app's own origin. */
+/**
+ * True for the relay's reads that answer its `now`, on the app's own origin:
+ * a mailbox, `/v1/mailbox/{id}`, and the public shelf, `/v1/shelf` and the
+ * steward's `/v1/shelf/held` (#434).
+ */
 function isMailbox(url: URL): boolean {
-  return url.pathname.startsWith('/v1/mailbox/');
+  const path = url.pathname;
+  return path.startsWith('/v1/mailbox/') || path === '/v1/shelf' || path === '/v1/shelf/held';
 }
 
-/** A mailbox GET's JSON answer, `{records, now, instance}`, as the relay sends it. */
+/** A mailbox or shelf GET's JSON answer, `{records, now, instance}`, as the relay sends it. */
 interface MailboxPage {
   readonly now: number;
 }
 
-/** True for a body shaped like a mailbox page: an object whose `now` is a whole number. */
+/** True for a body shaped like a mailbox or shelf page: an object whose `now` is a whole number. */
 function isMailboxPage(body: unknown): body is MailboxPage {
   return (
     typeof body === 'object' && body !== null && 'now' in body && Number.isSafeInteger(body.now)
@@ -62,8 +68,8 @@ function isMailboxPage(body: unknown): body is MailboxPage {
 }
 
 /**
- * From now on, `person`'s profile reads every mailbox GET's `now` as
- * `minutes` later than the relay answered it. Any other request, and any
+ * From now on, `person`'s profile reads every mailbox and shelf GET's `now`
+ * as `minutes` later than the relay answered it. Any other request, and any
  * answer that isn't a mailbox page, goes through as the relay sent it. A
  * request the relay doesn't answer fails in the page, as it would unrouted.
  */

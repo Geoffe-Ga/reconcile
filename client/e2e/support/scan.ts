@@ -6,10 +6,16 @@
  * list the unit tests scan with too: its own bytes, hex in either case, and
  * standard and URL-safe base64 at all three byte alignments. It also makes
  * a run's canary tag, and the control blob a scan must find (#127).
+ *
+ * The public shelf's records are the one thing the relay may hold readable
+ * (#434; ADR-0081): {@link shelfRecords} reads them from the stopped relay's
+ * database, and {@link scanOutside} scans what's left once every copy of each
+ * is set aside, so a published word found anywhere else is a leak.
  */
 import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { basename } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 
 import { type APIRequestContext, expect } from '@playwright/test';
 
@@ -95,4 +101,68 @@ export async function putControl(request: APIRequestContext, control: string): P
     headers: { 'Content-Type': 'application/octet-stream' },
   });
   expect(response.status()).toBe(201);
+}
+
+/** One file the scan read, whole, as raw bytes. */
+export interface ReadFile {
+  readonly file: string;
+  readonly bytes: Buffer;
+}
+
+/** Each of `files` that exists, read whole now: what a later scan looks through. */
+export function readFiles(files: readonly string[]): ReadFile[] {
+  return files
+    .filter((file) => existsSync(file))
+    .map((file) => ({ file, bytes: readFileSync(file) }));
+}
+
+/**
+ * Every shelf record the stopped relay's SQLite file at `db` holds, as the
+ * relay stored it (#434; ADR-0081): the only bytes it may hold readable,
+ * since a listed group publishes them. Read with `node:sqlite`, after
+ * {@link readFiles} took what the scan reads, since opening the file may
+ * change its `-wal` and `-shm`.
+ */
+export function shelfRecords(db: string): Buffer[] {
+  const sqlite = new DatabaseSync(db, { timeout: 10_000 });
+  try {
+    return sqlite
+      .prepare('SELECT body FROM shelf ORDER BY seq')
+      .all()
+      .map(({ body }) => {
+        if (!(body instanceof Uint8Array)) throw new Error('A shelf record’s body is a BLOB.');
+        return Buffer.from(body);
+      });
+  } finally {
+    sqlite.close();
+  }
+}
+
+/** `haystack` with every copy of each of `records` zeroed. */
+export function withoutRecords(haystack: Buffer, records: readonly Uint8Array[]): Buffer {
+  const left = Buffer.from(haystack);
+  for (const record of records) {
+    if (record.length === 0) continue;
+    for (let at = left.indexOf(record); at !== -1; at = left.indexOf(record, at + 1)) {
+      left.fill(0, at, at + record.length);
+    }
+  }
+  return left;
+}
+
+/**
+ * Every canary found in `read` once each copy of the shelf's `records` is set
+ * aside (#434): what the relay holds readable outside what was published.
+ */
+export function scanOutside(
+  read: readonly ReadFile[],
+  canaries: readonly Canary[],
+  records: readonly Uint8Array[],
+): Finding[] {
+  return read.flatMap(({ file, bytes }) => findIn(withoutRecords(bytes, records), file, canaries));
+}
+
+/** Every canary found in `read`, as {@link scan} finds it in files. */
+export function scanRead(read: readonly ReadFile[], canaries: readonly Canary[]): Finding[] {
+  return read.flatMap(({ file, bytes }) => findIn(bytes, file, canaries));
 }
