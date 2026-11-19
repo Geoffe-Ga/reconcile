@@ -88,7 +88,11 @@ RECONCILE_DEPLOY_HOST=deploy@<vm>
 RECONCILE_SITE=<domain>
 ```
 
-`deploy/.env` may also hold the steward's two public keys, `RECONCILE_STEWARD_PIN_SIGN` and `RECONCILE_STEWARD_PIN_BOX`, once the shelf is on (see [The public shelf](#the-public-shelf)).
+Every deploy also says who the steward is (see [The public shelf](#the-public-shelf)): either the steward's two public keys, `RECONCILE_STEWARD_PIN_SIGN` and `RECONCILE_STEWARD_PIN_BOX`, or `RECONCILE_NO_STEWARD=1` for an app that pins no steward, in `deploy/.env` or the environment. `deploy/deploy.sh` refuses to build without one of them, and refuses `RECONCILE_NO_STEWARD=1` beside either pin. Until the shelf is on, add:
+
+```bash
+RECONCILE_NO_STEWARD=1
+```
 
 ## Deploying
 
@@ -132,12 +136,12 @@ The public shelf ([ADR-0081](../docs/adr/0081-listed-doors-and-exception-moderat
 
 `RECONCILE_RELAY_SHELF_MAX_BYTES` caps the shelf (default 64 MiB).
 
-**The app's pins are a build setting** (#505, [ADR-0081's amendment](../docs/adr/0081-listed-doors-and-exception-moderation.md#amendment-2026-11-18-the-stewards-pins-are-a-build-setting)). The build reads the steward's two public keys from `RECONCILE_STEWARD_PIN_SIGN` and `RECONCILE_STEWARD_PIN_BOX` (`client/plugins/stewardPins.ts`). With neither set the app pins nothing, so no device takes a release and nothing a person sees changes; one without the other, or a malformed key, fails the build. `client/scripts/e2e.sh` builds with the tests' key, whose secret anyone can derive, so `deploy/deploy.sh` checks the finished build and refuses one that holds either of its keys.
+**The app's pins are a build setting** (#505, [ADR-0081's amendment](../docs/adr/0081-listed-doors-and-exception-moderation.md#amendment-2026-11-18-the-stewards-pins-are-a-build-setting)). The build reads the steward's two public keys from `RECONCILE_STEWARD_PIN_SIGN` and `RECONCILE_STEWARD_PIN_BOX` (`client/plugins/stewardPins.ts`). With neither set the app pins nothing, so no device takes a release and nothing a person sees changes; one without the other, or a malformed key, fails the build. So that no deploy ships an app that pins nothing by a missing `deploy/.env` line, `deploy/deploy.sh` refuses to start without both pins unless `RECONCILE_NO_STEWARD=1` says there's no steward, and refuses that setting beside either pin (the founder's decision of 2026-11-19). It takes only `1`; an empty value counts as unset. The refusal names the setting that's missing. `client/scripts/e2e.sh` builds with the tests' key, whose secret anyone can derive, so `deploy/deploy.sh` checks the finished build and refuses one that holds either of its keys.
 
 To turn the shelf on (HUMAN ACTION):
 
 1. Make the steward's key offline with `python -m scripts.steward_key`. It prints the secret once, the two lines for the deploy build and the relay's line.
-2. Put `RECONCILE_STEWARD_PIN_SIGN=…` and `RECONCILE_STEWARD_PIN_BOX=…` in `deploy/.env` (or export them) and run `deploy/deploy.sh`. Keep them there: a deploy without them builds an app that pins nothing.
+2. Put `RECONCILE_STEWARD_PIN_SIGN=…` and `RECONCILE_STEWARD_PIN_BOX=…` in `deploy/.env` (or export them), remove `RECONCILE_NO_STEWARD=1` from it, and run `deploy/deploy.sh`. Keep the pins there: every later deploy refuses to run without them.
 3. Add `Environment=RECONCILE_RELAY_SHELF_STEWARD_KEY=<sign key>` to a drop-in of `reconcile-relay.service` (for instance `/etc/systemd/system/reconcile-relay.service.d/shelf.conf`), `systemctl daemon-reload` and restart the relay.
 4. Import the secret in Settings › Steward key on the steward's one device. The secret never goes on the VM or in `deploy/.env`: the relay and the build hold only the public keys.
 

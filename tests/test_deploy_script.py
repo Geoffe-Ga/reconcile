@@ -325,7 +325,8 @@ NO_PINS = "deploy: couldn't derive the tests' steward pins to check the build.\n
 REFUSED = (
     "deploy: the build pins the tests' steward key, whose secret anyone can"
     " derive. Set RECONCILE_STEWARD_PIN_SIGN and RECONCILE_STEWARD_PIN_BOX to the"
-    " real steward's keys, or leave both unset (deploy/README.md).\n"
+    " real steward's keys, or leave both unset and set RECONCILE_NO_STEWARD=1"
+    " (deploy/README.md).\n"
 )
 
 
@@ -401,3 +402,142 @@ def test_deploy_env_may_hold_the_two_pins(tmp_path: Path) -> None:
 
     assert (result.returncode, result.stderr) == (0, "")
     assert result.stdout == "sign-key box-key\n"
+
+
+# --- A deploy with no steward pins says so (#505, the founder's 2026-11-19) --
+
+SIGN = "RECONCILE_STEWARD_PIN_SIGN"
+BOX = "RECONCILE_STEWARD_PIN_BOX"
+NO_STEWARD = "RECONCILE_NO_STEWARD"
+SET_PINS = (
+    " Set both to the steward's public keys (python -m scripts.steward_key"
+    " prints them) in the environment or deploy/.env, or set"
+    " RECONCILE_NO_STEWARD=1 to deploy an app that pins no steward"
+    " (deploy/README.md).\n"
+)
+
+
+def _check_pins(settings: dict[str, str]) -> subprocess.CompletedProcess[str]:
+    """Run deploy.sh's check_pins with ``settings`` as the environment."""
+    script = "\n".join([_vm_function("die"), _vm_function("check_pins"), "check_pins"])
+    return subprocess.run(  # nosec B603 - fixed argv, no shell
+        [BASH, "-c", script],
+        env={"PATH": os.environ["PATH"], **settings},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+@pytest.mark.parametrize(
+    ("settings", "missing"),
+    [
+        ({}, f"{SIGN} and {BOX} aren't set."),
+        ({SIGN: "", BOX: "", NO_STEWARD: ""}, f"{SIGN} and {BOX} aren't set."),
+        ({SIGN: "sign-key"}, f"{BOX} isn't set."),
+        ({BOX: "box-key", SIGN: ""}, f"{SIGN} isn't set."),
+    ],
+)
+def test_a_deploy_without_both_pins_is_refused(
+    settings: dict[str, str], missing: str
+) -> None:
+    """Unset or empty pins, with no word that there's no steward, stop the deploy."""
+    result = _check_pins(settings)
+
+    assert (result.returncode, result.stderr) == (1, f"deploy: {missing}{SET_PINS}")
+
+
+@pytest.mark.parametrize(
+    "settings",
+    [
+        {SIGN: "sign-key", BOX: "box-key"},
+        {SIGN: "sign-key", BOX: "box-key", NO_STEWARD: ""},
+        {NO_STEWARD: "1"},
+        {NO_STEWARD: "1", SIGN: "", BOX: ""},
+    ],
+)
+def test_both_pins_or_the_no_steward_setting_lets_it_deploy(
+    settings: dict[str, str],
+) -> None:
+    """Both pins deploy with the steward; RECONCILE_NO_STEWARD=1 deploys without."""
+    result = _check_pins(settings)
+
+    assert (result.returncode, result.stderr, result.stdout) == (0, "", "")
+
+
+@pytest.mark.parametrize(
+    ("settings", "named"),
+    [
+        ({NO_STEWARD: "1", SIGN: "sign-key", BOX: "box-key"}, f"{SIGN} and {BOX} are"),
+        ({NO_STEWARD: "1", SIGN: "sign-key"}, f"{SIGN} is"),
+        ({NO_STEWARD: "1", BOX: "box-key"}, f"{BOX} is"),
+    ],
+)
+def test_no_steward_beside_a_pin_is_refused(
+    settings: dict[str, str], named: str
+) -> None:
+    """Saying there's no steward while setting a pin contradicts itself."""
+    result = _check_pins(settings)
+
+    assert (result.returncode, result.stderr) == (
+        1,
+        f"deploy: RECONCILE_NO_STEWARD=1 says there's no steward, but {named} set."
+        f" Unset RECONCILE_NO_STEWARD to deploy with the steward's pins, or unset"
+        f" both pins to deploy with no steward.\n",
+    )
+
+
+@pytest.mark.parametrize("value", ["0", "true", "yes", " 1", "2"])
+def test_no_steward_takes_only_1(value: str) -> None:
+    """Only 1 opts out, so a 0 or false can't be read as yes."""
+    result = _check_pins({NO_STEWARD: value})
+
+    assert (result.returncode, result.stderr) == (
+        1,
+        f"deploy: RECONCILE_NO_STEWARD must be 1 or unset, not: {value}\n",
+    )
+
+
+def test_the_pins_are_checked_before_anything_is_built(tree: Path) -> None:
+    """With the host and site set but no pins, nothing runs: not git, npm or ssh."""
+    result = subprocess.run(  # nosec B603 - fixed argv, no shell
+        [BASH, str(tree / "deploy" / "deploy.sh")],
+        env={
+            "PATH": str(tree / "bin"),
+            "RECONCILE_DEPLOY_HOST": "deploy@vm.example",
+            "RECONCILE_SITE": "site.example",
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert result.stderr == f"deploy: {SIGN} and {BOX} aren't set.{SET_PINS}"
+    assert STUB_RAN not in result.stdout
+
+
+def test_deploy_env_may_say_there_is_no_steward(tmp_path: Path) -> None:
+    """deploy/.env takes RECONCILE_NO_STEWARD; the environment's own value wins."""
+    (tmp_path / ".env").write_text("RECONCILE_NO_STEWARD=1\n", encoding="utf-8")
+    script = "\n".join(
+        [
+            _vm_function("die"),
+            _vm_function("load_env_file"),
+            _vm_function("check_pins"),
+            f'DEPLOY_DIR="{tmp_path}"',
+            "load_env_file",
+            "check_pins",
+            'printf "%s\\n" "$RECONCILE_NO_STEWARD"',
+        ]
+    )
+
+    result = subprocess.run(  # nosec B603 - fixed argv, no shell
+        [BASH, "-c", script],
+        env={"PATH": os.environ["PATH"]},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert (result.returncode, result.stderr, result.stdout) == (0, "", "1\n")
