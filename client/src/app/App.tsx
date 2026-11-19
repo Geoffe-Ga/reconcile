@@ -195,6 +195,7 @@ import { useRecovery } from './useRecovery';
 import { useRecoveryAlert } from './useRecoveryAlert';
 import { useSentApplications } from './useSent';
 import { useRelayBackupStatus } from './useRelayBackup';
+import { useNewVersionReady } from './pwa/newVersion';
 
 /** Props for {@link App}. */
 export interface AppProps {
@@ -253,6 +254,7 @@ function StartScreen(props: StartScreenProps) {
     (bytes: Uint8Array, passphrase: string) => restoreBackup(services, bytes, passphrase),
     [services],
   );
+  const newVersionReady = useNewVersionReady(services.newVersion);
   return groups === null || sent === null ? null : (
     <Start
       groups={groups}
@@ -260,6 +262,7 @@ function StartScreen(props: StartScreenProps) {
       onOpenInvite={onOpenInvite}
       following={following}
       persistence={persistence}
+      newVersionReady={newVersionReady}
       onRestore={onRestore}
       alert={alert}
       removals={<ShelfRemovals store={services.store} shelf={services.shelf} now={services.now} />}
@@ -410,7 +413,8 @@ function notifyGroupOf(group: Group): NotifyGroup | null {
 /**
  * Settings (#78, #95, #96, #99, #109): Notifications, Save a backup with the
  * relay backup's line (#97), Recovery contacts (#109), Restore a backup, Link
- * a new device, Lock with a passkey, and Erase.
+ * a new device, Lock with a passkey, and Erase; then a new version waiting
+ * and the build's version (#513).
  */
 function SettingsScreen({ services }: { readonly services: AppServices }) {
   const groups = useGroupList(services.store);
@@ -421,6 +425,7 @@ function SettingsScreen({ services }: { readonly services: AppServices }) {
   const passkeyState = usePasskeyState(passkey, services.store);
   const stewardHeld = useHoldsStewardKey(services.store);
   const offersSteward = useOffersStewardKey(stewardHeld, services.shelf);
+  const newVersionReady = useNewVersionReady(services.newVersion);
   const loaded = groups !== null && switches !== null && relayBackup !== null && recovery !== null;
   return !loaded || passkeyState === null ? null : (
     <Settings
@@ -457,6 +462,8 @@ function SettingsScreen({ services }: { readonly services: AppServices }) {
             }
           : undefined
       }
+      version={services.version}
+      newVersionReady={newVersionReady}
     />
   );
 }

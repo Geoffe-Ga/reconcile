@@ -16,6 +16,7 @@
 
 **Updates**
 - App-only changes install in the background and apply on the next launch.
+  - **Amendment ([ADR-0073](0073-mvp-scope.md), 2026-11-19, #513):** while a new version waits, Start and Settings say "A new version is ready. Close and reopen Reconcile.", and Settings names the running build's version. Nothing hurries the update: it still applies only at the next launch.
 - **The validation rules change only through a new protocol version `v`, never retroactively.** Devices reject events with an unknown `v` and show "Update Reconcile to keep up with your group."
 - Old events keep validating under their own version's rules. Every version has its own test vectors.
 

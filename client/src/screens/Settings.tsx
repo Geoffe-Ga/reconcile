@@ -6,6 +6,7 @@ import { EraseCard } from '../app/EraseCard';
 import { HeldShares } from '../app/HeldShares';
 import { holdPresses } from '../app/holdPresses';
 import { messages } from '../app/messages';
+import { NewVersionLine } from '../app/NewVersionLine';
 import type { Protection } from '../app/passkey';
 import { PasskeySetup } from '../app/PasskeySetup';
 import { hasRecoveryPath, type RecoveryPath } from '../app/recoveryPath';
@@ -102,6 +103,26 @@ export interface SettingsProps {
    * no steward key or the relay has no shelf, unless this device holds it.
    */
   readonly steward?: StewardSettings | undefined;
+  /** The build's version (#513), or null where no build wrote one, as in development. */
+  readonly version?: string | null | undefined;
+  /** Whether a new version is installed and waiting for the next launch (#513). */
+  readonly newVersionReady?: boolean | undefined;
+}
+
+/**
+ * The page's last, quiet lines (#513): that a new version is ready while one
+ * waits, then the build's version, so the founder can compare devices before
+ * a protocol change. With neither, nothing.
+ */
+function BuildLines(props: Pick<SettingsProps, 'version' | 'newVersionReady'>) {
+  const { version = null, newVersionReady = false } = props;
+  if (version === null && !newVersionReady) return null;
+  return (
+    <div className="stack">
+      <NewVersionLine ready={newVersionReady} />
+      {version === null ? null : <p className="caption">{messages.update.version(version)}</p>}
+    </div>
+  );
 }
 
 /** The relay backup's words for `status`, or null while the device keeps none. */
@@ -401,7 +422,8 @@ function ClearBedfellows({ onClear }: { readonly onClear: () => Promise<void> })
  * backup's line once the device keeps one (#97), Recovery contacts (#109),
  * Restore a backup, Link a new device, Lock with a passkey, the steward's
  * key where it applies (#488), and Erase Reconcile from this device behind a
- * 3-second press and hold.
+ * 3-second press and hold; last, a new version waiting and the build's
+ * version, each in one quiet line (#513).
  * Protective features live here, not promoted elsewhere (ADR-0018), apart
  * from group home's quiet backup card.
  */
@@ -460,6 +482,7 @@ export function Settings(props: SettingsProps) {
           <EraseCard onErase={props.onErase} />
         </Section>
       </div>
+      <BuildLines version={props.version} newVersionReady={props.newVersionReady} />
     </main>
   );
 }

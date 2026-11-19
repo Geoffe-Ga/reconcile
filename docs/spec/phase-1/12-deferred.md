@@ -18,7 +18,7 @@ Each item here waits for pilot feedback, and returns only through a new ADR that
 - **The Python reference implementation** ([ADR-0007](../../adr/0007-thin-python-relay.md), [ADR-0060](../../adr/0060-how-phase-1-is-built.md), ADR-0075 §6): a Python validator and tally sharing test vectors with the client. The TypeScript engine and its golden vectors stand in.
 - **Unique names** ([ADR-0045](../../adr/0045-names-in-groups.md)): renames, "formerly X" and lookalike detection. Key suffixes stand in.
 - **Per-member mailboxes and delivery jitter** ([ADR-0019](../../adr/0019-sealed-sender-relay.md)). One mailbox per group, rotating weekly after #110, stands in.
-- **Staging and production, and WebSockets** ([ADR-0057](../../adr/0057-environments-updates-retention.md), [ADR-0028](../../adr/0028-relay-fastapi-sqlite.md)): CI deploys, the update prompt and the staging smoke run. One VM and polling stand in.
+- **Staging and production, and WebSockets** ([ADR-0057](../../adr/0057-environments-updates-retention.md), [ADR-0028](../../adr/0028-relay-fastapi-sqlite.md)): CI deploys and the staging smoke run. One VM and polling stand in. The update prompt is back as one line, "A new version is ready. Close and reopen Reconcile." (§8, #513; ADR-0073's 2026-11-19 amendment).
 
 ADR-0074's clarifications and ADR-0073's table also leave these out:
 
