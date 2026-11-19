@@ -120,6 +120,7 @@ describe('vector files', () => {
       'levels-eligible-count.json',
       'levels-step-down.json',
       'levels-step-up-after-open.json',
+      'listed-door-narrowed.json',
       'listed-door.json',
       'move-anchor-removed.json',
       'move-chat-thread.json',
@@ -285,6 +286,7 @@ describe('vector files', () => {
       'fold',
       'fold',
       'keys',
+      'fold',
       'fold',
       'fold',
       'fold',
@@ -693,7 +695,10 @@ describe('vector files', () => {
     'listed-door-unlist',
     'listed-door-leave',
     'listed-door-shape',
-  ])('include the front door vector "%s" (#121, #288, #426, #485)', (name) => {
+    'listed-door-narrowed',
+    'listed-door-relist',
+    'listed-door-relist-bar',
+  ])('include the front door vector "%s" (#121, #288, #426, #485, #501)', (name) => {
     expect(FOLD_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
   });
 

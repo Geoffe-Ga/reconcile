@@ -21,13 +21,26 @@
  * A front door may also be listed in the public registry (#485; ADR-0081):
  * its value carries the covenant its group accepted. The listing is part of
  * the door, so it ends whenever the door closes, by a vote, by a steward's
- * narrowing or when a membership ends (#288), and relisting takes a new
- * opening Proposal, with fresh secrets and a new address
- * ({@link listingInEffect}; docs/spec/listed-doors.md §3.3).
+ * narrowing or when a membership ends (#288). A narrowing ends it for good,
+ * even once the narrowing lapses and the door reopens (#501): the shelf holds
+ * that address's final listing, so the group lists again by one fresh
+ * entrenched vote, under a new address, which the fold classes as a listing
+ * though the standing value still reads listed ({@link listingHistory},
+ * {@link listingInEffect}, optIns.ts's `relists`; docs/spec/listed-doors.md
+ * §3.3).
  */
 import { base64url, fromBase64url } from '../crypto/base64url';
 import { can, type Roster } from './capabilities';
-import { effectiveOptIn, listedUnder, type OptInState } from './optIns';
+import {
+  effectiveOptIn,
+  isFrontDoor,
+  listedUnder,
+  type ListingFound,
+  type OptInProposalState,
+  type OptInState,
+  type RulesChange,
+  rulesChangeOf,
+} from './optIns';
 
 /** A SHA-256 in unpadded base64url: 43 characters. */
 const DIGEST = /^[A-Za-z0-9_-]{43}$/;
@@ -124,13 +137,155 @@ export function mayCloseCard(state: DoorCardState, author: string, card: string)
   );
 }
 
+/** What a listing's history reads of a Proposal: a front door change's pass, and where it sits in relay order. */
+export interface ListingProposal extends Pick<
+  OptInProposalState,
+  'id' | 'author' | 'target' | 'deadline' | 'closedAt'
+> {
+  readonly seq: number;
+  readonly received: number;
+  readonly final: boolean;
+  readonly outcome: { readonly kind: string };
+}
+
+/** What a listing's history reads of a group, at relay minute `at` (#501). */
+export interface ListingState extends Pick<OptInState, 'rules' | 'narrowings' | 'at'> {
+  readonly proposals: readonly ListingProposal[];
+  /** Front door Proposals a membership end exposed while open, whose pass opened nothing (#288). */
+  readonly exposedDoors: readonly string[];
+}
+
+/**
+ * Where a group's listings stand (#501; docs/spec/listed-doors.md §3.3):
+ * the address the standing door is listed at, whether that listing has ended
+ * for good, and every address whose listing is final on the shelf.
+ */
+export interface ListingHistory extends ListingFound {
+  /** The standing door's address (its `sign`) while it is listed, else null. */
+  readonly address: string | null;
+  /**
+   * True once a steward's narrowing ended the listing at `address`, or when
+   * it stands at an address already final: it never shows again there, even
+   * once the narrowing lapses and the door reopens.
+   */
+  readonly ended: boolean;
+  /** Every address a listing left, by any change or a narrowing: the shelf holds its final listing. */
+  readonly final: ReadonlySet<string>;
+}
+
+/** A place in relay order: history up to it leaves out what came at or after it. */
+export interface Place {
+  readonly seq: number;
+  readonly received: number;
+}
+
+/** One step of a listing's history: a front door change's pass, or a narrowing of the door. */
+type Step =
+  | { readonly seq: number; readonly kind: 'pass'; readonly change: RulesChange }
+  | { readonly seq: number; readonly kind: 'narrow' };
+
+/** True when `proposal` passed and its change stood: no membership's end exposed it (#288). */
+function stood(state: ListingState, proposal: ListingProposal): boolean {
+  const passed = proposal.final && proposal.outcome.kind === 'pass';
+  return passed && !state.exposedDoors.includes(proposal.id);
+}
+
+/** True when what came at `seq` and took effect at relay minute `at` came before `before`. */
+function isBefore(before: Place | undefined, seq: number, at: number): boolean {
+  return before === undefined || (seq < before.seq && at <= before.received);
+}
+
+/** The front door changes that passed and stood, by close, before `before` when given. */
+function passes(state: ListingState, before: Place | undefined): Step[] {
+  const steps: Step[] = [];
+  for (const proposal of state.proposals) {
+    const change = rulesChangeOf(proposal);
+    const at = proposal.closedAt ?? proposal.deadline;
+    const earlier = isBefore(before, proposal.seq, at);
+    if (change?.optIn === 'frontDoor' && stood(state, proposal) && earlier) {
+      steps.push({ seq: proposal.seq, kind: 'pass', change });
+    }
+  }
+  return steps;
+}
+
+/**
+ * Every pass and narrowing of the front door, in relay order of the record
+ * each came from: a pass by its Proposal's, a narrowing by its own. A group
+ * has one front door Proposal open at a time, so its passes come in the
+ * order they opened, and a narrowing comes while its off-Proposal is open:
+ * after every earlier pass and before every later one, whatever relay minute
+ * each closed in. Its off-Proposal's own pass closes the door, so which of
+ * the two comes first changes nothing.
+ */
+function stepsOf(state: ListingState, before: Place | undefined): Step[] {
+  const narrowings: Step[] = state.narrowings
+    .filter((n) => n.optIn === 'frontDoor' && isBefore(before, n.seq, n.received))
+    .map((n) => ({ seq: n.seq, kind: 'narrow' }));
+  return [...passes(state, before), ...narrowings].sort((a, b) => a.seq - b.seq);
+}
+
+/** The address a front door value is listed at, or null when it isn't listed. */
+function listedAt(value: unknown): string | null {
+  return isFrontDoor(value) && listedUnder(value) !== null ? value.sign : null;
+}
+
+/**
+ * The listing after a passed front door change: the address it left goes
+ * final, and the door stands listed at the address it lists, if any, ended
+ * there exactly when that address is final. So a change that keeps the
+ * address (the count, another covenant) leaves an ended listing ended, and
+ * one that lists at an address no listing has used shows: from an unlisted
+ * or closed door, from a live listing that moves, or from an ended one,
+ * which the fold classes entrenched (optIns.ts's `relists`).
+ */
+function afterPass(
+  history: ListingHistory,
+  final: Set<string>,
+  change: RulesChange,
+): ListingHistory {
+  const to = listedAt(change.value);
+  if (history.address !== null && history.address !== to) final.add(history.address);
+  return to === null
+    ? { address: null, ended: false, final }
+    : { address: to, ended: final.has(to), final };
+}
+
+/**
+ * The group's listing history (#501), from every front door change that
+ * passed and stood and every narrowing of the door, up to `state.at`, or
+ * only those before `before` in relay order: how a Proposal found it when it
+ * opened. A narrowing ends the listing it meets for good, and its address is
+ * final; the door is listed again only by a pass that lists it at an address
+ * no listing has used, which is entrenched (`relists`), though the standing
+ * value it replaces reads listed. A membership's end, which closes the
+ * standing door (#288), ends the listing too.
+ */
+export function listingHistory(state: ListingState, before?: Place): ListingHistory {
+  const final = new Set<string>();
+  let history: ListingHistory = { address: null, ended: false, final };
+  for (const step of stepsOf(state, before)) {
+    if (step.kind === 'pass') history = afterPass(history, final, step.change);
+    else if (history.address !== null) {
+      final.add(history.address);
+      history = { ...history, ended: true };
+    }
+  }
+  // A membership's end closes the standing door, listing and all (#288).
+  const closed = before === undefined && listedAt(state.rules.optIns.frontDoor) === null;
+  if (!closed || history.address === null) return history;
+  final.add(history.address);
+  return { address: null, ended: false, final };
+}
+
 /**
  * The covenant the front door is listed under at `state.at` (#485), or null
  * when it isn't listed: the door is closed, a steward's narrowing holds it
- * shut, or its group never listed it. A listing ends with its door.
+ * shut, its group never listed it, or a narrowing ended its listing for good,
+ * even once the narrowing lapsed and the door reopened as it stood (#501;
+ * listed-doors.md §3.3).
  */
-export function listingInEffect(
-  state: Pick<OptInState, 'rules' | 'proposals' | 'narrowings' | 'at'>,
-): string | null {
-  return listedUnder(effectiveOptIn(state, 'frontDoor'));
+export function listingInEffect(state: ListingState): string | null {
+  const covenant = listedUnder(effectiveOptIn(state, 'frontDoor'));
+  return covenant !== null && !listingHistory(state).ended ? covenant : null;
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { COUNTED, DOOR, ROTATED } from '../test/door';
+import { COUNTED, DOOR, LISTED, RELISTED, RENEWED, ROTATED } from '../test/door';
 import type {
   AddProposalBody,
   ClassProposalBody,
@@ -323,6 +323,28 @@ describe('targetClass: how hard a change is', () => {
     expect(targetClass(standing({ frontDoor: COUNTED }), rules('frontDoor', DOOR))).toBe(
       'ordinary',
     );
+  });
+
+  it('makes listing the door again after a narrowing ended its listing entrenched, though it reads listed (#501)', () => {
+    // A steward's narrowing ended the listing at LISTED's address, which the shelf holds final.
+    const ended = {
+      ...standing({ frontDoor: LISTED }),
+      listing: { ended: true, final: new Set([LISTED.sign]) },
+    };
+    expect(targetClass(ended, rules('frontDoor', RELISTED))).toBe('entrenched');
+    // At the final address it lists nothing, and unlisting or closing lists nothing either.
+    expect(targetClass(ended, rules('frontDoor', RENEWED))).toBe('ordinary');
+    expect(targetClass(ended, rules('frontDoor', ROTATED))).toBe('ordinary');
+    expect(targetClass(ended, rules('frontDoor', false))).toBe('ordinary');
+    // A listing no narrowing ended moves to new keys at the ordinary bar, as before.
+    expect(targetClass(standing({ frontDoor: LISTED }), rules('frontDoor', RELISTED))).toBe(
+      'ordinary',
+    );
+    const live = {
+      ...standing({ frontDoor: LISTED }),
+      listing: { ended: false, final: new Set<string>() },
+    };
+    expect(targetClass(live, rules('frontDoor', RELISTED))).toBe('ordinary');
   });
 
   it('makes a rules target for an opt-in it doesn’t know ordinary, which the fold ignores anyway', () => {

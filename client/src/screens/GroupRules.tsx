@@ -10,7 +10,7 @@ import { BackLink, PageHeader } from '../app/ui';
 import { addressOf, doorLinkOf } from '../door/page';
 import { can, isSuspended } from '../engine/capabilities';
 import type { GroupState } from '../engine/fold';
-import { listingInEffect } from '../engine/frontDoor';
+import { listingHistory, listingInEffect } from '../engine/frontDoor';
 import { displayName } from '../engine/names';
 import { isOff, listedUnder, OPT_INS, type OptIn, openRulesProposal } from '../engine/optIns';
 import { mayTurnOffNow } from '../engine/stewards';
@@ -130,20 +130,33 @@ function DoorLink({ state, origin, copyText }: GroupRulesProps) {
   );
 }
 
-/** "Listed on the public shelf…" while the front door is listed in effect (#485; ADR-0081). */
+/**
+ * "Listed on the public shelf…" while the front door is listed in effect
+ * (#485; ADR-0081), or, once a steward's narrowing has ended its listing for
+ * good, that it is off the shelf and how to list it again (#501).
+ */
 function Listed({ state }: { readonly state: GroupState }) {
+  const { listing } = messages.optIns;
+  if (listingHistory(state).ended) return <p className="caption">{listing.ended}</p>;
   if (listingInEffect(state) === null) return null;
-  return <p className="caption">{messages.optIns.listing.listed}</p>;
+  return <p className="caption">{listing.listed}</p>;
+}
+
+/** The listing link's words: list the door, again too once a narrowing ended its listing (#501), or take it off the shelf. */
+function listingLinkLabel(state: GroupState): string {
+  const { listing } = messages.optIns;
+  const unlisted = listedUnder(state.rules.optIns.frontDoor) === null;
+  return unlisted || listingHistory(state).ended ? listing.proposeList : listing.proposeUnlist;
 }
 
 /**
  * For someone who may propose, while the front door stands open and no
  * Proposal on it is open, a link to propose listing it or taking it off the
- * shelf (#485). It never asks a group to list: it is one quiet link here, and
- * nowhere else.
+ * shelf (#485), and to list it again, in one vote, once a steward's
+ * narrowing ended its listing (#501). It never asks a group to list: it is
+ * one quiet link here, and nowhere else.
  */
 function ListingLink({ state, me }: GroupRulesProps) {
-  const { listing } = messages.optIns;
   const standing = state.rules.optIns.frontDoor;
   const offer = can(state, me, 'propose') && openRulesProposal(state, 'frontDoor') === undefined;
   if (standing === false || !offer) return null;
@@ -158,7 +171,7 @@ function ListingLink({ state, me }: GroupRulesProps) {
   return (
     <div className="row opt-in-actions">
       <Link className="button button-secondary" href={routeHref(route)}>
-        {listedUnder(standing) === null ? listing.proposeList : listing.proposeUnlist}
+        {listingLinkLabel(state)}
       </Link>
     </div>
   );

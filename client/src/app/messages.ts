@@ -1378,6 +1378,9 @@ export const messages = {
         unlist: 'Your group comes off the public shelf.',
         renew:
           'Your group’s listing accepts the covenant below in place of the one it accepted before.',
+        /** A change that keeps a door at the address whose listing a narrowing ended (#501). */
+        ended:
+          'A steward’s narrowing took your group off the public shelf for good at this link, so passing this doesn’t list the door again.',
       },
       motions: {
         list: 'List the front door on the public shelf',
@@ -1399,6 +1402,12 @@ export const messages = {
       proposeUnlist: 'Propose taking it off the shelf',
       /** Group rules, under an open front door that is listed. */
       listed: 'Listed on the public shelf, under the covenant your group accepted.',
+      /** Group rules, once a steward's narrowing ended the door's listing for good (#501). */
+      ended:
+        'Not listed. A steward’s narrowing took this door off the public shelf for good. Your group can vote afresh to list it again, at a new link.',
+      /** The listing composer, when listing again moves the door to new keys (#501). */
+      newLink:
+        'The shelf keeps this door’s old listing final, so listing it again moves it to a new link, and the old link closes.',
       unavailable:
         'Only an open front door can be listed. Go back to your group’s rules to see where it stands.',
       /** Before a listing vote, when a listed group already holds a name like this one (#487). */

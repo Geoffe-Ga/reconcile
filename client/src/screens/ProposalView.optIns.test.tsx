@@ -13,7 +13,7 @@ import { createEvent, type ParsedEvent, parseEvent, type Score } from '../engine
 import type { GroupState } from '../engine/fold';
 import { axeViolations } from '../test/axe';
 import { COVENANT } from '../shelf/covenant';
-import { DOOR } from '../test/door';
+import { DOOR, lapsedNarrowing, LISTED, RELISTED } from '../test/door';
 import { authorOf } from '../test/keys';
 import { groupLog } from '../test/votes';
 import { ProposalView, type ProposalViewProps } from './ProposalView';
@@ -245,5 +245,42 @@ describe('ProposalView: a Proposal that lists the front door (#485; ADR-0081)', 
     const words = screen.getByRole('region', { name: /The covenant/ });
     expect(within(words).getByText(covenant.unknown)).toBeVisible();
     expect(within(words).queryByText(COVENANT.clauses[0] ?? '')).toBeNull();
+  });
+});
+
+describe('ProposalView: listing a door again after a narrowing ended its listing (#501)', () => {
+  const { listing } = messages.optIns;
+
+  /** A listed door whose narrowing lapsed, and Ben's Proposal listing it again at new keys. */
+  function relisting() {
+    const log = groupLog({ members: ['Ben', 'Cal'] });
+    const open = log.rules('Ana', 'frontDoor', LISTED);
+    for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, open, 4);
+    log.minute += 1;
+    lapsedNarrowing(log);
+    const relisted = { ...RELISTED, covenant: COVENANT.hash };
+    const id = log.rules('Ben', 'frontDoor', relisted, { title: listing.motions.list });
+    return { log, id };
+  }
+
+  it('words the ballot as a listing at a new link, at the higher bar, with the covenant', async () => {
+    const { log, id } = relisting();
+    const state = log.state();
+    expect(state.proposals.find((p) => p.id === id)?.class).toBe('entrenched');
+    setup(state, id, 'cal');
+    const card = screen.getByRole('region', { name: listing.motions.list });
+    expect(within(card).getByText(new RegExp(listing.lines.list))).toBeVisible();
+    expect(within(card).getByText(/It moves to a new link/)).toBeVisible();
+    expect(within(card).getByText(COVENANT.clauses[0] ?? '')).toBeVisible();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('words its pass as listed, read as it opened even once it has passed', () => {
+    const { log, id } = relisting();
+    for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, id, 4);
+    log.minute += 1;
+    setup(log.state(), id, 'ana');
+    const result = screen.getByRole('region', { name: 'Result' });
+    expect(within(result).getByText(listing.passed.list)).toBeVisible();
   });
 });

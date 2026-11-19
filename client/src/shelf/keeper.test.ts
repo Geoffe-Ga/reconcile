@@ -14,11 +14,26 @@ import { shelfLineId } from '../engine/dispatches';
 import type { FrontDoor } from '../engine/optIns';
 import { createShelf, type Shelf } from '../net/shelf';
 import { RelayError } from '../net/relay';
-import { COVENANT_HASH, DOOR, LISTED, RENEWED, ROTATED, secretOf } from '../test/door';
+import {
+  COVENANT_HASH,
+  DOOR,
+  lapsedNarrowing,
+  LISTED,
+  RELISTED,
+  RENEWED,
+  ROTATED,
+  secretOf,
+} from '../test/door';
 import { createFakeShelf, type FakeShelf, notify } from '../test/fakeShelf';
 import { authorOf } from '../test/keys';
 import { groupLog, type LogBuilder } from '../test/votes';
-import { createShelfKeeper, entriesDue, type KeptGroup, listingsDue } from './keeper';
+import {
+  createShelfKeeper,
+  entriesDue,
+  type KeptGroup,
+  listedAddress,
+  listingsDue,
+} from './keeper';
 import { parseShelfBody, type ShelfBody, signShelfBody } from './record';
 
 const GROUP = 'group-1';
@@ -186,6 +201,44 @@ describe('listingsDue: what a listed group keeps on the shelf (§4.5)', () => {
       [expect.objectContaining({ sign: LISTED.sign }), FINAL],
       [next, OPEN],
     ]);
+  });
+
+  it('keeps the final listing once a steward’s narrowing lapses and the door reopens listed (#501)', () => {
+    const log = opened();
+    lapsedNarrowing(log);
+    expect(log.state().optIns.frontDoor).toEqual(LISTED);
+    expect(listingsDue(log.state())).toEqual([
+      [expect.objectContaining({ sign: LISTED.sign }), FINAL],
+    ]);
+  });
+
+  it('keeps the listing one fresh vote makes at a new address after a narrowing, beside the old final (#501)', () => {
+    const log = opened();
+    lapsedNarrowing(log);
+    passes(log, RELISTED);
+    expect(listingsDue(log.state())).toEqual([
+      [expect.objectContaining({ sign: LISTED.sign }), FINAL],
+      [RELISTED, OPEN],
+    ]);
+  });
+
+  it('names the listed door’s address while its listing is in effect (#431)', () => {
+    const log = opened();
+    expect(listedAddress(log.state())).toBe(base64url(addressOf(LISTED)));
+  });
+
+  it('names no address once a steward’s narrowing ended the listing, though the door reopened listed (#501)', () => {
+    const log = opened();
+    lapsedNarrowing(log);
+    expect(log.state().optIns.frontDoor).toEqual(LISTED);
+    expect(listedAddress(log.state())).toBeNull();
+  });
+
+  it('names the new address once one fresh vote lists the door again after a narrowing (#501)', () => {
+    const log = opened();
+    lapsedNarrowing(log);
+    passes(log, RELISTED);
+    expect(listedAddress(log.state())).toBe(base64url(addressOf(RELISTED)));
   });
 
   it('keeps a final listing once the group dissolves (#108)', () => {
@@ -397,6 +450,29 @@ describe('createShelfKeeper: the final listing (§4.2, §4.5)', () => {
 
     expect(puts(fake)).toBe(1);
     expect(bodiesAt(fake, LISTED)).toEqual([FINAL]);
+  });
+
+  it('never posts an open listing at the address a lapsed narrowing finalized, only at the new one (#501)', async () => {
+    const log = opened();
+    const fake = shelfAt(log);
+    const ana = device(fake, log);
+    await ana.run();
+    expect(bodiesAt(fake, LISTED)).toEqual([OPEN]);
+
+    lapsedNarrowing(log);
+    fake.minute = log.minute;
+    await ana.run();
+    // A device that slept through the narrowing posts the final listing too, never an open one.
+    await device(fake, log).run();
+    inStep(fake, log, 2 * REFRESH_MINUTES);
+    await ana.run();
+    expect(bodiesAt(fake, LISTED)).toEqual([FINAL]);
+
+    passes(log, RELISTED);
+    fake.minute = log.minute;
+    await ana.run();
+    expect(bodiesAt(fake, LISTED)).toEqual([FINAL]);
+    expect(bodiesAt(fake, RELISTED)).toEqual([OPEN]);
   });
 
   it('stops for good when the relay answers that the listing is final', async () => {

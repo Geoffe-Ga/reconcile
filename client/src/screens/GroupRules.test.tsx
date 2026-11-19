@@ -12,7 +12,7 @@ import { addressOf } from '../door/page';
 import { LEVELS } from '../engine/capabilities';
 import type { GroupState } from '../engine/fold';
 import { axeViolations } from '../test/axe';
-import { DOOR, doorOf, LISTED } from '../test/door';
+import { DOOR, doorOf, lapsedNarrowing, LISTED, RELISTED } from '../test/door';
 import { authorOf } from '../test/keys';
 import { groupLog } from '../test/votes';
 import { GroupRules } from './GroupRules';
@@ -316,6 +316,41 @@ describe('GroupRules: listing the front door (#485; ADR-0081)', () => {
     renderRules(log.state(), 'cal');
     expect(within(door()).getByText(listing.listed)).toBeVisible();
     expect(within(door()).queryByRole('link', { name: listing.proposeUnlist })).toBeNull();
+  });
+
+  it('says a door whose listing a lapsed narrowing ended is off the shelf, and offers listing it again (#501)', async () => {
+    const log = lapsedNarrowing(doorOpen(LISTED));
+    renderRules(log.state(), 'ben');
+    expect(within(door()).getByText('Open')).toBeVisible();
+    expect(within(door()).getByText(listing.ended)).toBeVisible();
+    expect(within(door()).queryByText(listing.listed)).toBeNull();
+    expect(within(door()).getByRole('link', { name: listing.proposeList })).toHaveAttribute(
+      'href',
+      `#/g/${log.group}/list/frontDoor`,
+    );
+    expect(within(door()).queryByRole('link', { name: listing.proposeUnlist })).toBeNull();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('says the door is listed again once one vote lists it at new keys (#501)', async () => {
+    const log = lapsedNarrowing(doorOpen(LISTED));
+    const relist = log.rules('Ben', 'frontDoor', RELISTED);
+    for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, relist, 4);
+    log.minute += 1;
+    renderRules(log.state(), 'ben');
+    expect(within(door()).queryByText(listing.ended)).toBeNull();
+    expect(within(door()).getByText(listing.listed)).toBeVisible();
+    expect(within(door()).getByRole('link', { name: listing.proposeUnlist })).toBeVisible();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('says the listing ended for good the moment a steward’s narrowing holds the door shut (#501)', () => {
+    const log = doorOpen(LISTED);
+    const off = log.rules('Ana', 'frontDoor', false);
+    log.narrow('Ana', 'frontDoor', off);
+    renderRules(log.state(), 'ben');
+    expect(within(door()).getByText(listing.ended)).toBeVisible();
+    expect(within(door()).queryByRole('link', { name: listing.proposeList })).toBeNull();
   });
 
   it('says nothing of a listing once a steward’s narrowing holds the door shut', () => {

@@ -21,8 +21,9 @@ import {
   isRemovalProposal,
   isRulesProposal,
   type ProposalEventBody,
+  type RulesProposalBody,
 } from './event';
-import { isOptIn, isWider, type OptIns } from './optIns';
+import { isOptIn, isWider, type ListingFound, NEVER_ENDED, type OptIns, relists } from './optIns';
 
 /**
  * How hard a change is: the class whose bar and window a Proposal gets.
@@ -237,6 +238,12 @@ export function classOfSection(
 export interface ClassState {
   readonly rules: Rules;
   readonly atoms: readonly ClassedSection[];
+  /**
+   * The front door's listing as the Proposal finds it (#501): the fold and
+   * the opt-in composer give it, and a state without it reads as one no
+   * steward's narrowing has met. Only a rules Proposal reads it.
+   */
+  readonly listing?: ListingFound;
 }
 
 /** How a Proposal's class is found, from the group's state when it opens and the Proposal's own body. */
@@ -253,12 +260,25 @@ function sectionChanged(proposal: ProposalEventBody): string | null {
 }
 
 /**
+ * A rules Proposal's class (#117): entrenched when it widens its opt-in from
+ * the standing value (ADR-0040), or lists the front door again after a
+ * steward's narrowing ended its listing (#501, `relists`); else ordinary.
+ */
+function rulesClass(state: ClassState, proposal: RulesProposalBody): ProposalClass {
+  const { optIn, value } = proposal.target;
+  const wider = isOptIn(optIn) && isWider(optIn, state.rules.optIns[optIn], value);
+  const relisting = optIn === 'frontDoor' && relists(state.listing ?? NEVER_ENDED, value);
+  return wider || relisting ? 'entrenched' : 'ordinary';
+}
+
+/**
  * The class of the change a Proposal makes, computed from state when it opens
  * and never from a field the proposer writes, so nobody can understate a
  * change. The fold stores it as the Proposal's `class`. Removing a member has
  * its own class, with its own bar and a fixed window (ADR-0075 §3, #115).
  * Dissolving the group is entrenched (ADR-0051, #108), and so is a rules
- * Proposal that widens an opt-in from its standing value (ADR-0040, #117). A
+ * Proposal that widens an opt-in from its standing value (ADR-0040, #117),
+ * or lists the front door again after a narrowing ended its listing (#501). A
  * class Proposal is entrenched whatever it asks, so entrenchment is itself
  * entrenched, and so is a change, a removal or a move of an entrenched
  * section (ADR-0015, #116). Every other target is ordinary, steward elections
@@ -267,11 +287,7 @@ function sectionChanged(proposal: ProposalEventBody): string | null {
 export const targetClass: TargetClassifier = (state, proposal) => {
   if (isRemovalProposal(proposal)) return 'removal';
   if (isDissolveProposal(proposal) || isClassProposal(proposal)) return 'entrenched';
-  if (isRulesProposal(proposal)) {
-    const { optIn, value } = proposal.target;
-    const wider = isOptIn(optIn) && isWider(optIn, state.rules.optIns[optIn], value);
-    return wider ? 'entrenched' : 'ordinary';
-  }
+  if (isRulesProposal(proposal)) return rulesClass(state, proposal);
   const section = sectionChanged(proposal);
   const entrenched = section !== null && classOfSection(state, section) === 'entrenched';
   return entrenched ? 'entrenched' : 'ordinary';

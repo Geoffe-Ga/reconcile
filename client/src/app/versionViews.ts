@@ -13,8 +13,9 @@ import { WIPE_DAYS } from '../engine/dissolve';
 import type { MoveTarget } from '../engine/event';
 import { shelfLineOf } from '../engine/dispatches';
 import type { GroupState, Proposal } from '../engine/fold';
+import { listingHistory } from '../engine/frontDoor';
 import { displayName } from '../engine/names';
-import { rulesChangeOf } from '../engine/optIns';
+import { type RulesChange, rulesChangeOf } from '../engine/optIns';
 import { type ProposalTarget, type StewardChange, stewardChangeOf } from '../engine/stewards';
 import { messages } from './messages';
 import { type RulesView, rulesView } from './optInLines';
@@ -216,6 +217,16 @@ export function stewardView(
 }
 
 /**
+ * A rules Proposal's words (#117): whether a member's leave exposed it while
+ * open (#288), and whether a steward's narrowing had ended the front door's
+ * listing when it opened (#501).
+ */
+function rulesViewOf(state: GroupState, proposal: Proposal, change: RulesChange): RulesView {
+  const exposed = state.exposedDoors.includes(proposal.id);
+  return rulesView(change, exposed, listingHistory(state, proposal));
+}
+
+/**
  * A Proposal's versions in ballot order, each numbered and named by `names`:
  * the group's members, or for a coalition motion (#120), the coalition's
  * participants, whose names the group's own fold doesn't hold.
@@ -237,9 +248,7 @@ export function versionViews(
       text: version.text,
       ...(does === null ? {} : { does }),
       ...(change === null ? {} : { steward: stewardView(state, change) }),
-      ...(rules === null
-        ? {}
-        : { rules: rulesView(rules, state.exposedDoors.includes(proposal.id)) }),
+      ...(rules === null ? {} : { rules: rulesViewOf(state, proposal, rules) }),
       ...(target.kind === 'dissolve' ? { dissolve: dissolveView(target.wipe) } : {}),
       ...(target.kind === 'move' ? { move: moveView(state, target) } : {}),
       ...(target.kind === 'class' ? { protect: protectView(state, target) } : {}),

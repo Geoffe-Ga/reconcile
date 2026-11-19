@@ -174,7 +174,7 @@ import {
 import {
   type DoorCardClosed,
   type DoorInvite,
-  listingInEffect,
+  listingHistory,
   mayCloseCard,
   mayRecordInvite,
 } from './frontDoor';
@@ -183,13 +183,16 @@ import { isOpenAt } from './open';
 import {
   type DoorClosure,
   doorIn,
+  effectiveOptIn,
   effectiveOptIns,
   type FrontDoor,
   isFrontDoor,
   isOptIn,
   listedUnder,
+  type ListingFound,
   mayProposeRules,
   type Narrowing,
+  NEVER_ENDED,
   type OptIns,
   rulesChange,
   rulesChangeOf,
@@ -1054,10 +1057,22 @@ function mayChange(draft: Draft, id: string, received: number): boolean {
 
 /**
  * The class a Proposal received at `received` opens at (`targetClass`), from
- * the group's rules and the Atoms it finds, with their classes (#116).
+ * the group's rules and the Atoms it finds, with their classes (#116), and,
+ * for a rules Proposal, the front door's listing as it finds it (#501).
  */
 function classAt(draft: Draft, body: ProposalEventBody, received: number): ProposalClass {
-  return targetClass({ rules: draft.rules, atoms: atomsAt(draft, received) }, body);
+  const listing = isRulesProposal(body) ? listingFound(draft) : NEVER_ENDED;
+  return targetClass({ rules: draft.rules, atoms: atomsAt(draft, received), listing }, body);
+}
+
+/**
+ * The front door's listing as a Proposal received now finds it (#501;
+ * `listingHistory`): from the front door changes settled by `draft.at`, as
+ * {@link advanceOptIns} applied them, and every narrowing so far.
+ */
+function listingFound(draft: Draft): ListingFound {
+  const doors = draft.proposals.filter((p) => rulesChangeOf(p)?.optIn === 'frontDoor');
+  return listingHistory({ ...draft, proposals: doors.map((p) => settle(p, draft, draft.at)) });
 }
 
 function proposalIsValid(draft: Draft, body: ProposalBody, author: string, at: Receipt): boolean {
@@ -1942,7 +1957,8 @@ function applyDocumentChange(
  * to its Document ({@link advanceDispatches}). One that asks for the public
  * shelf (#430) opens only while the front door is listed in effect, and its
  * ballot has a second version with no text, the shelf line, under
- * `${id}.shelf` ({@link decideShelves}).
+ * `${id}.shelf` ({@link decideShelves}). It reads the standing door, not
+ * whether a narrowing ended the listing (#501), as builds before #501 do.
  */
 function applyDispatchProposal(
   draft: Draft,
@@ -1955,7 +1971,7 @@ function applyDispatchProposal(
   const state = { ...draft, documents: documentsAt(draft, at.received) };
   if (!fieldsAreValid(body) || !maySendDispatch(state, author, sent)) return false;
   const shelf = shelfLineOf({ id: at.id, target: body.target });
-  if (shelf !== null && listingInEffect(draft) === null) return false;
+  if (shelf !== null && listedUnder(effectiveOptIn(draft, 'frontDoor')) === null) return false;
   const cls = classAt(draft, body, at.received);
   const window = chosenWindow(draft.rules, cls, body.window);
   if (window === null) return false;

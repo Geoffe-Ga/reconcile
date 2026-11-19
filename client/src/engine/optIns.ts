@@ -7,7 +7,9 @@
  * front door, a public page where people can ask to join (ADR-0038), which
  * the group may also list in the public registry (#485; ADR-0081). Each
  * changes only by a rules Proposal, never by a toggle (ADR-0040). Opening one
- * up is entrenched and closing it is ordinary ({@link isWider}), and a
+ * up is entrenched and closing it is ordinary ({@link isWider}), and so is
+ * listing the front door again after a steward's narrowing ended its listing
+ * ({@link relists}, #501). A
  * steward can close one at once beside their own off-Proposal, until the
  * group decides (stewards.ts, `mayNarrow`).
  *
@@ -172,6 +174,34 @@ export function isFrontDoor(value: unknown): value is FrontDoor {
 /** The covenant a front door value is listed under, or null when it is closed, unlisted or no door. */
 export function listedUnder(value: unknown): string | null {
   return isFrontDoor(value) && value.covenant !== undefined ? value.covenant : null;
+}
+
+/**
+ * Where the front door's listing stands as a Proposal finds it (#501;
+ * docs/spec/listed-doors.md §3.3): whether a steward's narrowing ended the
+ * standing door's listing for good, and every address whose listing is final
+ * on the shelf. `listingHistory` (frontDoor.ts) reads it from the log.
+ */
+export interface ListingFound {
+  readonly ended: boolean;
+  readonly final: ReadonlySet<string>;
+}
+
+/** A listing no narrowing has ended, at no final address. */
+export const NEVER_ENDED: ListingFound = { ended: false, final: new Set() };
+
+/**
+ * True when `value` lists the front door again after a steward's narrowing
+ * ended its listing (#501): listed, at an address no listing has left. It is
+ * a listing, so it is entrenched like listing an unlisted door, though the
+ * standing value it replaces still reads listed. Builds from before #501
+ * class it ordinary: the founder accepted that split on 2026-11-19, since
+ * every device updates before the pilot (listed-doors.md §3.3).
+ */
+export function relists(found: ListingFound, value: unknown): boolean {
+  return (
+    found.ended && isFrontDoor(value) && listedUnder(value) !== null && !found.final.has(value.sign)
+  );
 }
 
 /** Each opt-in's validator: true for a value that opt-in can hold. */

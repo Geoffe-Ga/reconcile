@@ -10,7 +10,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { DOOR, LISTED } from '../test/door';
+import { DOOR, lapsedNarrowing, LISTED, RELISTED } from '../test/door';
 import { deadlineOf, groupLog, type LogBuilder } from '../test/votes';
 import { publishedBy, shelfLineId } from './dispatches';
 import type { Score } from './event';
@@ -108,6 +108,25 @@ describe('the shelf line (#430)', () => {
     log.rising('Ana', 0, WORDS, undefined, true);
     log.rising('Ana', 1, WORDS, undefined, true);
     expect(log.state().proposals.map((p) => p.id)).toEqual([open]);
+  });
+
+  it('still takes a shelf line once a steward’s narrowing ended the listing and lapsed, as builds before #501 do', () => {
+    // The fold reads the standing door here, not listingInEffect: reading the
+    // ended listing would refuse what older builds take, a split (#501). Send
+    // a Dispatch doesn't offer the line then, and the keeper posts no entry.
+    const log = lapsedNarrowing(listedGroup());
+    expect(log.state().optIns.frontDoor).toEqual(LISTED);
+    const id = log.rising('Ana', 0, WORDS, undefined, true);
+    expect(proposalIn(log.state(), id).versions.map((v) => v.id)).toEqual([id, `${id}.shelf`]);
+  });
+
+  it('opens a shelf line again once one fresh vote lists the door at new keys (#501)', () => {
+    const log = lapsedNarrowing(listedGroup());
+    const relist = log.rules('Ana', 'frontDoor', RELISTED, { title: 'List our door again' });
+    for (const name of ['Ana', 'Ben', 'Cal']) log.vote(name, relist, 4);
+    log.minute += 1;
+    const id = log.rising('Ana', 0, WORDS, undefined, true);
+    expect(proposalIn(log.state(), id).versions.map((v) => v.id)).toEqual([id, `${id}.shelf`]);
   });
 
   it('takes a shelf line only on a Dispatch that stays in the group, and a ceiling of 0 only with one', () => {

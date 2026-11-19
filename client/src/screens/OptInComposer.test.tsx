@@ -17,7 +17,7 @@ import { base64url } from '../crypto/base64url';
 import { addressOf } from '../door/page';
 import { COVENANT, COVENANT_HASH } from '../shelf/covenant';
 import type { ShelfState } from '../shelf/fold';
-import { DOOR, LISTED, secretOf } from '../test/door';
+import { DOOR, lapsedNarrowing, LISTED, secretOf } from '../test/door';
 import { authorOf } from '../test/keys';
 import { held, pastPressFallback } from '../test/press';
 import { groupLog } from '../test/votes';
@@ -428,6 +428,46 @@ describe('OptInComposer: listing the front door (#485; ADR-0081)', () => {
     const [[values]] = onPropose.mock.calls as [[RulesValues]];
     expect(values).toMatchObject({ window: 7, title: 'Take the front door off the public shelf' });
     expect(values.value).toStrictEqual(DOOR);
+  });
+
+  it('lists a door again in one vote at new keys and the higher bar, once a lapsed narrowing ended its listing (#501)', async () => {
+    const { user, onPropose } = renderComposer(lapsedNarrowing(doorAt(LISTED)).state(), {
+      optIn: 'frontDoor',
+      listing: true,
+      me: 'ben',
+    });
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
+      optIns.listing.motions.list,
+    );
+    expect(screen.getByText(optIns.listing.newLink)).toBeVisible();
+    expect(screen.getByText(/higher bar: an average of 3\.0 or more/)).toBeVisible();
+    expectCovenant();
+    await type(user, 'Why', 'We want to be found again.');
+    await user.click(screen.getByRole('button', { name: 'Propose this change' }));
+    const [[values]] = onPropose.mock.calls as [[RulesValues]];
+    expect(values).toMatchObject({
+      optIn: 'frontDoor',
+      window: 14,
+      title: optIns.listing.motions.list,
+    });
+    if (!isFrontDoor(values.value)) throw new Error('expected a front door');
+    expect(values.value).toMatchObject({ showCount: false, listed: true, covenant: COVENANT_HASH });
+    // The shelf holds the old address's listing final, so the door moves.
+    expect(values.value.sign).not.toBe(DOOR.sign);
+    expect(values.value.box).not.toBe(DOOR.box);
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('keeps an open door’s keys when no listing has used its address', async () => {
+    const { user, onPropose } = renderComposer(doorAt(DOOR).state(), {
+      optIn: 'frontDoor',
+      listing: true,
+    });
+    expect(screen.queryByText(optIns.listing.newLink)).toBeNull();
+    await type(user, 'Why', 'We want to be found.');
+    await user.click(screen.getByRole('button', { name: 'Propose this change' }));
+    const [[values]] = onPropose.mock.calls as [[RulesValues]];
+    expect(values.value).toMatchObject({ sign: DOOR.sign, box: DOOR.box });
   });
 
   it('offers no listing while the door is closed', () => {
