@@ -15,11 +15,17 @@
  * box secret is derived from the steward's secret for the read and zeroed
  * after, as a notice's signing key is. The steward may dismiss an item there,
  * on this device only, and may lift a suspension with an `unsuspend`.
+ *
+ * It is the one module that reaches the shelf classifier (#493; ADR-0082;
+ * dependency-cruiser's `only-the-steward-console-reaches-the-classifier`):
+ * {@link readFlags} runs it over the console's entries, on this device, and
+ * only while it is switched on; nothing it finds is sent or kept.
  */
 import { base64url } from '../crypto/base64url';
 import { stewardKeysOf, stewardSecretFrom } from '../crypto/steward';
 import type { Relay } from '../net/relay';
 import type { Shelf } from '../net/shelf';
+import { flagEntries, type ShelfClassifier, shelfClassifier } from '../shelf/classify';
 import { foldShelf, standingHolds, waitingListings } from '../shelf/fold';
 import { dismissInboxItem, type InboxItem, type InboxKeep, readStewardInbox } from '../shelf/inbox';
 import { foldNotices, signNotice } from '../shelf/notices';
@@ -27,7 +33,7 @@ import type { NoticeDraft } from '../shelf/record';
 import { STEWARD_PINS, type StewardPins } from '../shelf/steward';
 import { type StewardKeyStore, VaultLocked } from '../store/db';
 import type { StewardImport } from './StewardKeyCard';
-import type { StewardQueue, StewardView } from '../screens/Steward';
+import type { ShelfFlags, StewardQueue, StewardView } from '../screens/Steward';
 
 /** Whether `secret` derives exactly the two keys `pins` holds. */
 export function derivesPins(secret: Uint8Array, pins: StewardPins | null = STEWARD_PINS): boolean {
@@ -170,4 +176,24 @@ export function releaseListing(
   address: string,
 ): Promise<boolean> {
   return sendNotice(store, shelf, { v: 1, kind: 'notice', act: 'release', address });
+}
+
+/**
+ * What the shelf classifier flags among `queue`'s entries, in their order
+ * (#493; ADR-0082): `off`, classifying nothing, while `classifier` is null,
+ * as the app's is until the re-measure turns it on, or when the console has
+ * nothing to show; `failed` when the model can't load or run. Called only
+ * by the console, on a device that holds the steward's key, so no reader's
+ * device loads the model. Nothing it finds leaves this device or is kept.
+ */
+export async function readFlags(
+  queue: StewardQueue,
+  classifier: ShelfClassifier | null = shelfClassifier,
+): Promise<ShelfFlags> {
+  if (classifier === null || typeof queue === 'string') return 'off';
+  try {
+    return await flagEntries(queue.entries, classifier);
+  } catch {
+    return 'failed';
+  }
 }

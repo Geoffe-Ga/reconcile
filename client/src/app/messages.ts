@@ -1891,6 +1891,18 @@ export const messages = {
      */
     dismiss: 'Dismiss',
     dismissFailed: 'It wasn’t dismissed. You can try again.',
+    /**
+     * Entries the shelf classifier flagged (#493; ADR-0082), shown only while
+     * it is switched on: the rule's name, never a score, in the shelf's order.
+     */
+    flaggedHeading: 'Flagged by the classifier',
+    flaggedLede:
+      'Read on this device only. A flag hides nothing, no reader sees it, and the list keeps the shelf’s order. The classifier misses most of what the covenant names, so reports come first.',
+    flaggedBy: (rule: 'threat' | 'identity-hate') =>
+      `Flagged by the ${rule === 'threat' ? 'threat' : 'identity hate'} rule`,
+    noFlagged: 'The classifier flagged nothing.',
+    flagsFailed:
+      'The classifier couldn’t run on this device. Nothing was hidden or held because of it.',
     aboutSuspended: (clause: string) => `About a listing you suspended: ${clause}`,
     suspendedHeading: 'Suspended',
     noSuspended: 'Nothing is suspended.',

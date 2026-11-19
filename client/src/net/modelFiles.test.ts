@@ -3,10 +3,13 @@ import { describe, expect, it, vi } from 'vitest';
 import { sha256 } from '../crypto/hash';
 import { fetchPinned, MODEL_DOWNLOAD_BYTES, modelUrl, PinMismatchError } from './modelFiles';
 import {
+  BEDFELLOWS_FILES,
+  MINILM_TOXIC_JIGSAW,
   MODEL_FILES,
   type PinnedFile,
   SERVED_FILES,
   servedFiles,
+  SHELF_CLASSIFIER,
   STANCE_MODEL,
   type StanceModel,
 } from './modelPins';
@@ -127,5 +130,48 @@ describe('the stance model’s files (#478)', () => {
 
     expect(servedFiles(stance)).toEqual([...Object.values(MODEL_FILES), network]);
     expect(servedFiles(null)).toEqual(Object.values(MODEL_FILES));
+  });
+});
+
+describe('the shelf classifier’s files (#493; ADR-0082)', () => {
+  it('pins none: the classifier is built behind a flag that stays off until the re-measure, so no device downloads it', () => {
+    expect(SHELF_CLASSIFIER).toBeNull();
+    expect(SERVED_FILES).toEqual(Object.values(MODEL_FILES));
+  });
+
+  it('records the measured model: MiniLMv2-toxic-jigsaw, 8-bit, about 23.6 MB, Apache-2.0, at the spike’s revision', () => {
+    const { model, tokenizer, runtime } = MINILM_TOXIC_JIGSAW.files;
+
+    expect(model.sha256.slice(0, 8)).toBe('bcd9dfb4');
+    expect(model.sha256.slice(-4)).toBe('69a0');
+    expect(model.bytes).toBe(22_864_978);
+    expect(tokenizer.bytes).toBe(711_649);
+    expect(model.bytes + tokenizer.bytes).toBe(23_576_627);
+    expect(runtime).toBe(MODEL_FILES.runtime);
+    for (const pin of [model, tokenizer]) {
+      expect(pin.sha256).toMatch(/^[0-9a-f]{64}$/);
+      expect(pin.file).toContain(`-${pin.sha256.slice(0, 8)}.`);
+      expect(pin.license).toBe('Apache-2.0');
+      expect(pin.source).toMatch(
+        /^https:\/\/huggingface\.co\/minuva\/MiniLMv2-toxic-jigsaw-onnx\/resolve\/c035f27b6a6d68770f8069a4829f1715a48b8d51\//,
+      );
+    }
+  });
+
+  it('reads the narrow rule’s two labels where the model’s config puts them: threat 3, identity_hate 5', () => {
+    expect(MINILM_TOXIC_JIGSAW.labels).toEqual({ threat: 3, identityHate: 5 });
+  });
+
+  it('serves a pinned classifier’s files after Bedfellows’, each once, the shared runtime included', () => {
+    expect(servedFiles(null, MINILM_TOXIC_JIGSAW)).toEqual([
+      ...Object.values(MODEL_FILES),
+      MINILM_TOXIC_JIGSAW.files.model,
+      MINILM_TOXIC_JIGSAW.files.tokenizer,
+    ]);
+  });
+
+  it('never counts the classifier in what a reader is told Bedfellows downloads', () => {
+    expect(BEDFELLOWS_FILES).toEqual(servedFiles(STANCE_MODEL));
+    expect(MODEL_DOWNLOAD_BYTES).toBe(BEDFELLOWS_FILES.reduce((sum, pin) => sum + pin.bytes, 0));
   });
 });

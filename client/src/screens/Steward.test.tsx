@@ -10,7 +10,7 @@ import type { InboxItem } from '../shelf/inbox';
 import type { NoticeRemoval } from '../shelf/notices';
 import type { NoticeDraft } from '../shelf/record';
 import { axeViolations } from '../test/axe';
-import { Steward, type StewardQueue, type StewardView } from './Steward';
+import { type ShelfFlags, Steward, type StewardQueue, type StewardView } from './Steward';
 
 const words = messages.shelfSteward;
 const OAK = 'O'.repeat(43);
@@ -68,8 +68,16 @@ function setup(
   queue: StewardQueue,
   onNotice = vi.fn<(notice: NoticeDraft) => Promise<boolean>>(() => Promise.resolve(true)),
   onDismiss = vi.fn<(key: string) => Promise<boolean>>(() => Promise.resolve(true)),
+  flags?: ShelfFlags,
 ) {
-  render(<Steward queue={queue} onNotice={onNotice} onDismiss={onDismiss} />);
+  render(
+    <Steward
+      queue={queue}
+      onNotice={onNotice}
+      onDismiss={onDismiss}
+      {...(flags === undefined ? {} : { flags })}
+    />,
+  );
   return { user: userEvent.setup(), onNotice, onDismiss };
 }
 
@@ -422,5 +430,98 @@ describe('Steward: suspensions (#490)', () => {
   it('says when nothing is suspended', () => {
     setup(viewOf());
     expect(within(section(words.suspendedHeading)).getByText(words.noSuspended)).toBeVisible();
+  });
+});
+
+describe('Steward: entries the classifier flagged (#493; ADR-0082)', () => {
+  const FIRST: ShelfEntry = { ...ENTRY, id: 'F'.repeat(43), title: 'Bake sale', text: '' };
+  const SECOND: ShelfEntry = { ...ENTRY, title: 'Garden day', text: 'Bring gloves.' };
+  const shelf = viewOf({ listings: [listingOf('Elm Co-op', ELM)], entries: [FIRST, SECOND] });
+
+  it('shows no flag and no section while the classifier is off: nothing a person sees changes', () => {
+    setup(shelf);
+    expect(screen.queryByRole('region', { name: words.flaggedHeading })).toBeNull();
+
+    setup(shelf, undefined, undefined, 'off');
+    expect(screen.queryByRole('region', { name: words.flaggedHeading })).toBeNull();
+  });
+
+  it('lists each flagged entry in the shelf’s order with the rule’s name only, never a score, and passes axe', async () => {
+    render(
+      <Steward
+        queue={shelf}
+        onNotice={vi.fn()}
+        onDismiss={vi.fn()}
+        flags={[
+          { address: ELM, id: FIRST.id, rule: 'identity-hate', clause: 'C1' },
+          { address: ELM, id: SECOND.id, rule: 'threat', clause: 'C1' },
+        ]}
+      />,
+    );
+
+    const flagged = section(words.flaggedHeading);
+    const items = within(flagged).getAllByRole('listitem');
+    expect(items.map((item) => within(item).getByRole('heading').textContent)).toEqual([
+      'Bake sale',
+      'Garden day',
+    ]);
+    expect(
+      within(items[0] as HTMLElement).getByText(words.flaggedBy('identity-hate')),
+    ).toBeTruthy();
+    expect(within(items[1] as HTMLElement).getByText(words.flaggedBy('threat'))).toBeTruthy();
+    expect(within(items[1] as HTMLElement).getByText('Bring gloves.')).toBeTruthy();
+    expect(flagged.textContent).not.toMatch(/\d\.\d|%/);
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('offers Hold and Uphold on a flagged entry with its suggested clause chosen, and sends only what the steward presses', async () => {
+    const onNotice = vi.fn<(notice: NoticeDraft) => Promise<boolean>>(() => Promise.resolve(true));
+    const { user } = setup(shelf, onNotice, undefined, [
+      { address: ELM, id: SECOND.id, rule: 'threat', clause: 'C1' },
+    ]);
+    const card = within(section(words.flaggedHeading)).getByRole('listitem');
+
+    expect(
+      within(card).getByRole('radio', { name: words.clauseOption('C1', CLAUSE_WORDS.C1) }),
+    ).toHaveProperty('checked', true);
+    expect(onNotice).not.toHaveBeenCalled();
+    await user.click(within(card).getByRole('button', { name: words.hold }));
+
+    expect(onNotice).toHaveBeenCalledExactlyOnceWith({
+      v: 1,
+      kind: 'notice',
+      act: 'hold',
+      address: ELM,
+      id: SECOND.id,
+      clause: 'C1',
+    });
+    expect(within(card).getByRole('button', { name: words.uphold })).toBeTruthy();
+  });
+
+  it('leaves the rest of the console as it was: a flag holds, hides and reorders nothing', () => {
+    setup(shelf, undefined, undefined, [
+      { address: ELM, id: SECOND.id, rule: 'threat', clause: 'C1' },
+    ]);
+
+    const onShelf = within(section(words.shelfHeading)).getAllByRole('heading', { level: 4 });
+    expect(onShelf.map((heading) => heading.textContent)).toEqual(['Bake sale', 'Garden day']);
+  });
+
+  it('says when nothing is flagged', () => {
+    setup(shelf, undefined, undefined, []);
+    expect(within(section(words.flaggedHeading)).getByText(words.noFlagged)).toBeTruthy();
+  });
+
+  it('says when the classifier couldn’t run, and that nothing was hidden because of it', () => {
+    setup(shelf, undefined, undefined, 'failed');
+    expect(within(section(words.flaggedHeading)).getByText(words.flagsFailed)).toBeTruthy();
+  });
+
+  it('skips a flag whose entry has left the shelf since it was read', () => {
+    setup(shelf, undefined, undefined, [
+      { address: ELM, id: 'G'.repeat(43), rule: 'threat', clause: 'C1' },
+    ]);
+    expect(within(section(words.flaggedHeading)).queryAllByRole('listitem')).toEqual([]);
+    expect(within(section(words.flaggedHeading)).getByText(words.noFlagged)).toBeTruthy();
   });
 });

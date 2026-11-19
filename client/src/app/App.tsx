@@ -58,7 +58,12 @@ import { type NotifyGroup, Settings } from '../screens/Settings';
 import { Steward } from '../screens/Steward';
 import { appealFrom, reportEntry, stewardPinned } from './reports';
 import { dismissItem, importStewardKey, readInbox, sendNotice } from './steward';
-import { useHoldsStewardKey, useOffersStewardKey, useStewardQueue } from './useSteward';
+import {
+  useHoldsStewardKey,
+  useOffersStewardKey,
+  useShelfFlags,
+  useStewardQueue,
+} from './useSteward';
 import { SharedPage } from '../screens/SharedPage';
 import type { SeatNumber } from '../engine/stewards';
 import type { GuideRecord } from '../platform/guide';
@@ -459,13 +464,15 @@ function SettingsScreen({ services }: { readonly services: AppServices }) {
 /**
  * The steward's console (#488, `#/steward`): only on a device that holds the
  * steward's key; any other device goes to Start, as for an unknown page. It
- * reads the steward's inbox too (#490).
+ * reads the steward's inbox too (#490), and, once the shelf classifier is
+ * switched on, what it flags (#493).
  */
 function ConsoleScreen({ services }: { readonly services: AppServices }) {
   const held = useHoldsStewardKey(services.store);
   const { stewardShelf } = services;
   const inbox = useCallback(() => readInbox(services.store, services.relay), [services]);
   const { queue } = useStewardQueue(held === true ? stewardShelf : undefined, inbox);
+  const flags = useShelfFlags(queue);
   useEffect(() => {
     if (held === false) replaceRoute({ name: 'start' });
   }, [held]);
@@ -479,6 +486,7 @@ function ConsoleScreen({ services }: { readonly services: AppServices }) {
           : sendNotice(services.store, stewardShelf, notice)
       }
       onDismiss={(key) => dismissItem(services.store, key)}
+      flags={flags}
     />
   );
 }

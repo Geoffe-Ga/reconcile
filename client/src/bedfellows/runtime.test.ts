@@ -11,7 +11,13 @@ import {
   tinyTokenizerJson,
   tinyVectorOf,
 } from '../test/tinyModel';
-import { MAX_TOKENS, type RuntimeFiles, startEncoder, startPairClassifier } from './runtime';
+import {
+  MAX_TOKENS,
+  type RuntimeFiles,
+  startEncoder,
+  startPairClassifier,
+  startTextClassifier,
+} from './runtime';
 
 const WASM = ortWasm();
 
@@ -165,6 +171,51 @@ describe('startPairClassifier (#478)', () => {
   it('refuses a model that asks for an input it can’t feed', async () => {
     await expect(
       startPairClassifier(classifierFiles(tinyModelOnnx(['pixel_values']))),
+    ).rejects.toThrow('The model asks for an input the encoder can’t feed: pixel_values.');
+  });
+});
+
+/** The tiny classifier's per-label sigmoids for one sentence, all of the first token type. */
+function expectedSigmoids(tokens: readonly string[]): number[] {
+  const logits = [0, 1, 2].map(
+    (i) =>
+      tokens.reduce((sum, token) => sum + (tinyLogitsOf(id(token))[i] ?? 0), 0) / tokens.length,
+  );
+  return logits.map((x) => 1 / (1 + Math.exp(-x)));
+}
+
+describe('startTextClassifier (#493)', () => {
+  /** The tiny classifier's files with the real runtime. */
+  function classifierFiles(model = tinyClassifierOnnx()): RuntimeFiles {
+    return { ...tinyFiles(model), model };
+  }
+
+  it('reads one text as [CLS] text [SEP] and answers each label’s own probability, as a multi-label model’s sigmoid', async () => {
+    const classifier = await startTextClassifier(classifierFiles());
+
+    const scores = await classifier.scores('Keep the library open.');
+
+    expectClose(
+      scores,
+      expectedSigmoids(['[CLS]', 'keep', 'the', 'library', 'open', '.', '[SEP]']),
+    );
+  });
+
+  it(`keeps at most ${String(MAX_TOKENS)} tokens, its closing [SEP] included`, async () => {
+    const classifier = await startTextClassifier(classifierFiles());
+    const long = Array.from({ length: 400 }, () => 'room').join(' ');
+
+    const scores = await classifier.scores(long);
+
+    expectClose(
+      scores,
+      expectedSigmoids(['[CLS]', ...Array.from({ length: MAX_TOKENS - 2 }, () => 'room'), '[SEP]']),
+    );
+  });
+
+  it('refuses a model that asks for an input it can’t feed', async () => {
+    await expect(
+      startTextClassifier(classifierFiles(tinyModelOnnx(['pixel_values']))),
     ).rejects.toThrow('The model asks for an input the encoder can’t feed: pixel_values.');
   });
 });
