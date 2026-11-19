@@ -256,6 +256,7 @@ test('refuses a file that doesn’t match its pin', async ({ browser }) => {
 
 test('control: without wasm-unsafe-eval the runtime can’t compile, and the worker sees the violation', async ({
   browser,
+  browserName,
 }) => {
   expect(cspOf(started(deploy))).toContain("script-src 'self' 'wasm-unsafe-eval';");
   expect(cspOf(started(control))).not.toContain('wasm-unsafe-eval');
@@ -266,10 +267,15 @@ test('control: without wasm-unsafe-eval the runtime can’t compile, and the wor
 
     const got = await embedOn(page, PINS);
 
-    expect(got).not.toHaveProperty('vectors');
+    // The same page under the deploy CSP embeds (the tests above, in every browser), so
+    // the keyword is the whole difference: here the run fails with a named error.
+    expect(got).toEqual({ failed: expect.any(String) });
     const violations = await violationsOn(page);
-    expect(violations, 'CSP violations').not.toEqual([]);
     for (const line of violations) expect(line).toMatch(/^script-src blocked wasm-eval$/);
+    // Chromium reports the blocked compile as a securitypolicyviolation event. WebKit
+    // refuses the compile just the same but fires no event for it (seen in CI), so the
+    // report is checked where the browser makes one.
+    if (browserName === 'chromium') expect(violations, 'CSP violations').not.toEqual([]);
   } finally {
     await context.close();
   }
