@@ -17,6 +17,10 @@
  * 5. Its tier comes from strangeness, one minus coverage, or for an entry
  *    under three claims from its best pair and its nearest Document
  *    (`tiers.ts`).
+ * 6. An entry with candidate pairs in two of the reader's Documents unlike
+ *    each other bridges them (`bridge.ts`) and goes first in its tier.
+ * 7. With a view (#479), each tier's order is turned by the view's date and
+ *    seed, and the dial's mix (`mix.ts`) picks how many of each tier show.
  *
  * Term overlap (`fallback.ts`) places, unverified, every entry while the
  * model hasn't loaded (no embedder), an entry the model doesn't cover against
@@ -33,8 +37,12 @@
  * given, unsealed, so a caller that left out the reader's own groups' entries
  * would leave a gap in it the shape of those groups. A caller drops its own
  * groups' entries from the rows that come back, never from what goes in
- * (ADR-0080 §5, as #477 amends it).
+ * (ADR-0080 §5, as #477 amends it). A view (#479) mixes the rows it picks, so
+ * it can't be trimmed after: the caller names those entries in `view.own`,
+ * and the view leaves them out before the mix.
  */
+import { bridges, documentsOf } from './bridge';
+import { dayOf } from './clock';
 import {
   CHUNK,
   embedInChunks,
@@ -44,12 +52,14 @@ import {
 } from './entryVectors';
 import { covers, type RankedRow, termOverlapRow } from './fallback';
 import { byText, type Candidate, type Claim, matchEntry } from './match';
+import { mix, rotate, turn } from './mix';
 import { claimsIn, splitClaims } from './split';
 import { THRESHOLDS, type Thresholds } from './thresholds';
-import { nearestDocument, tierByStrangeness, tierOfShortEntry } from './tiers';
+import { centroid, nearestDocument, tierByStrangeness, tierOfShortEntry } from './tiers';
 import type {
   BedfellowsEntry,
   BedfellowsInput,
+  BedfellowsView,
   Embedder,
   Models,
   Reason,
@@ -88,7 +98,14 @@ interface EntryClaims {
 /** The reader, as the model sees the Documents it covers. */
 interface ModelReader {
   readonly claims: readonly Claim[];
+  /** Each covered Document's claims, and their vectors, in the same order. */
+  readonly documents: readonly (readonly string[])[];
   readonly byDocument: readonly (readonly Vector[])[];
+}
+
+/** A ranked row, and whether it bridges the reader's Documents. */
+interface PlacedRow extends RankedRow {
+  readonly bridges: boolean;
 }
 
 /** Everything a run places entries with. */
@@ -99,6 +116,8 @@ interface Context {
   /** The claims of the Documents the model doesn't cover. */
   readonly uncovered: readonly (readonly string[])[];
   readonly vectors: ReadonlyMap<string, Vector[]>;
+  /** The centroid of each covered Document's vectors, for the bridging bonus. */
+  readonly centroids: readonly Vector[];
   readonly judge: StanceJudge;
   readonly thresholds: Thresholds;
 }
@@ -112,10 +131,11 @@ function claimsOf(sentences: readonly string[]): string[] {
   return [...new Set(trimmed)].sort(byText);
 }
 
-/** Close kin first, then middle, then strange; stronger reasons first, then by entry id. */
-function byRank(a: RankedRow, b: RankedRow): number {
+/** Close kin first, then middle, then strange; bridges first in a tier, then stronger reasons, then by entry id. */
+function byRank(a: PlacedRow, b: PlacedRow): number {
   const tier = TIER_ORDER.indexOf(a.row.tier) - TIER_ORDER.indexOf(b.row.tier);
   if (tier !== 0) return tier;
+  if (a.bridges !== b.bridges) return a.bridges ? -1 : 1;
   if (a.strength !== b.strength) return b.strength - a.strength;
   return byText(a.row.entryId, b.row.entryId);
 }
@@ -144,12 +164,19 @@ async function reasonOf(
     : { reason: reasonFrom(unsure, false), strength: unsure.similarity };
 }
 
+/** Whether `candidates` reach two of the reader's covered Documents unlike each other. */
+function bridgesDocuments(candidates: readonly Candidate[], context: Context): boolean {
+  const sentences = candidates.map((pair) => pair.readerSentence);
+  const hit = documentsOf(sentences, context.reader.documents);
+  return bridges(hit, context.centroids, context.thresholds.bridge.unlikeBelow);
+}
+
 /** `entry`'s row by the model, from its claims' `vectors`, or null when it stays out. */
 async function placeByModel(
   entry: EntryClaims,
   vectors: readonly Vector[],
   context: Context,
-): Promise<RankedRow | null> {
+): Promise<PlacedRow | null> {
   const t = context.thresholds;
   const claims = entry.claims.map((sentence, i) => ({ sentence, vector: vectors[i] ?? [] }));
   const found = matchEntry(claims, context.reader.claims, t);
@@ -161,20 +188,29 @@ async function placeByModel(
   const tier = short
     ? tierOfShortEntry(best.strength, nearestDocument(vectors, context.reader.byDocument), t)
     : tierByStrangeness(1 - found.coverage, t);
-  return { row: { entryId: entry.id, tier, reason: best.reason }, strength: best.strength };
+  return {
+    row: { entryId: entry.id, tier, reason: best.reason },
+    strength: best.strength,
+    bridges: bridgesDocuments(found.candidates, context),
+  };
 }
 
-/** `entry`'s row: by the model where it covers the entry, else by term overlap. */
-async function place(entry: EntryClaims, context: Context): Promise<RankedRow | null> {
+/**
+ * `entry`'s row: by the model where it covers the entry, else by term overlap.
+ * Term overlap has no vectors to tell Documents apart, so its rows never bridge.
+ */
+async function place(entry: EntryClaims, context: Context): Promise<PlacedRow | null> {
   const vectors = context.vectors.get(entry.id);
   if (vectors !== undefined) {
     const row = await placeByModel(entry, vectors, context);
     if (row !== null) return row;
   }
   const documents = vectors === undefined ? context.allDocuments : context.uncovered;
-  return documents.length === 0
-    ? null
-    : termOverlapRow(entry.id, entry.claims, documents, context.thresholds);
+  const row =
+    documents.length === 0
+      ? null
+      : termOverlapRow(entry.id, entry.claims, documents, context.thresholds);
+  return row === null ? null : { ...row, bridges: false };
 }
 
 /** The reader's covered claims embedded, in memory for this run only, and each Document's vectors. */
@@ -184,12 +220,15 @@ async function modelReader(
   signal: AbortSignal | undefined,
 ): Promise<ModelReader> {
   const covered = documents.filter((doc) => doc.covered);
-  if (embedder === undefined || covered.length === 0) return { claims: [], byDocument: [] };
+  if (embedder === undefined || covered.length === 0) {
+    return { claims: [], documents: [], byDocument: [] };
+  }
   const sentences = claimsOf(covered.flatMap((doc) => doc.claims));
   const vectors = await embedInChunks(sentences, embedder, CHUNK, signal);
   const vectorOf = (sentence: string): Vector => vectors.get(sentence) ?? [];
   return {
     claims: sentences.map((sentence) => ({ sentence, vector: vectorOf(sentence) })),
+    documents: covered.map((doc) => doc.claims),
     byDocument: covered.map((doc) => doc.claims.map(vectorOf)),
   };
 }
@@ -223,12 +262,32 @@ async function coveredEntryVectors(
 }
 
 /**
- * The rows Bedfellows would show `input.reader` from `input.entries`, ranked:
- * close kin first, then middle, then strange, and stronger reasons first
- * within a tier. A reader with no Documents gets none. `input.dial` is not
- * read yet (#479).
+ * `ranked`, in rank order, as one view: the reader's own groups' entries left
+ * out, each tier's bridges and the rest each turned by the view's day and
+ * seed, then the dial's mix of the tiers.
+ */
+function pickView(ranked: readonly PlacedRow[], dial: number, view: BedfellowsView): Row[] {
+  const day = dayOf(view.date);
+  const own = new Set(view.own);
+  const shown = ranked.filter((r) => !own.has(r.row.entryId));
+  const turned = (tier: Tier, bridging: boolean): Row[] => {
+    const rows = shown.filter((r) => r.row.tier === tier && r.bridges === bridging);
+    const by = turn(day, view.seed, `${tier}|${bridging ? 'bridge' : 'rest'}`);
+    return rotate(rows, by).map(({ row }) => row);
+  };
+  const tierOf = (tier: Tier): Row[] => [...turned(tier, true), ...turned(tier, false)];
+  const byTier = { close: tierOf('close'), middle: tierOf('middle'), strange: tierOf('strange') };
+  return mix(byTier, dial, view.size).shown;
+}
+
+/**
+ * The rows Bedfellows would show `input.reader` from `input.entries`. Without
+ * `input.view`, every row, ranked: close kin first, then middle, then strange,
+ * and within a tier bridges first, then stronger reasons. With one, the view's
+ * pick at `input.dial` (`pickView`). A reader with no Documents gets none.
  *
  * @throws {DOMException} an AbortError, between entries or embedding chunks, once `signal` is aborted.
+ * @throws {RangeError} when `input.view.date` isn't a YYYY-MM-DD date.
  */
 export async function bedfellows(
   input: BedfellowsInput,
@@ -249,18 +308,22 @@ export async function bedfellows(
   const reader = await modelReader(documents, embedder, signal);
   const context: Context = {
     reader,
+    centroids: reader.byDocument.map(centroid),
     allDocuments: documents.map((doc) => doc.claims),
     uncovered: documents.filter((doc) => !doc.covered).map((doc) => doc.claims),
     vectors: await coveredEntryVectors(entries, reader, embedder, options),
     judge: models.judge,
     thresholds: t,
   };
-  const ranked: RankedRow[] = [];
+  const ranked: PlacedRow[] = [];
   for (const entry of entries) {
     stopIfAborted(signal);
     const row = await place(entry, context);
     if (row !== null) ranked.push(row);
   }
   stopIfAborted(signal);
-  return ranked.sort(byRank).map(({ row }) => row);
+  ranked.sort(byRank);
+  return input.view === undefined
+    ? ranked.map(({ row }) => row)
+    : pickView(ranked, input.dial, input.view);
 }

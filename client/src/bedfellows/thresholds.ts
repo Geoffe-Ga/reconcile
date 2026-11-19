@@ -29,6 +29,11 @@ export interface Thresholds {
   readonly strangeness: { readonly closeBelow: number; readonly strangeFrom: number };
   /** Tier cuts by closeness for a shorter entry (`tiers.ts`). */
   readonly shortEntry: { readonly claims: number; readonly close: number; readonly middle: number };
+  /**
+   * The bridging bonus (`bridge.ts`, #479): two of the reader's Documents
+   * whose centroids' cosine is below `unlikeBelow` are unlike each other.
+   */
+  readonly bridge: { readonly unlikeBelow: number };
   /** Term overlap (`fallback.ts`): content words a pair must share to be a candidate. */
   readonly fallback: { readonly shared: number };
   /** What the model covers (`fallback.ts`'s `covers`). */
@@ -110,6 +115,17 @@ export const THRESHOLDS: Thresholds = {
    * the entry is middle, and close needs a pair and a Document well past it.
    */
   shortEntry: { claims: 3, close: 0.6, middle: 0.45 },
+  /**
+   * Not tuned (#479). 0.5, the `counterpart` line: two Documents less alike
+   * than a claim and its restatement count as unlike, so an entry with pairs
+   * in both finds common ground across them. The corpus doesn't label which
+   * Documents share a subject, so it can't tune this, and the line doesn't
+   * carry over from claims to centroids: all 56 pairs of one reader's
+   * Documents in it, one community's each, sit between 0.04 and 0.50 (most
+   * near 0.3) by the real model, so at 0.5 any entry with pairs in two of a
+   * reader's Documents bridges.
+   */
+  bridge: { unlikeBelow: 0.5 },
   /**
    * Two shared content words, #474's baseline's line for common ground. Term
    * overlap alone on `tune` at 2: shared claims 11/33, traps 3/31, idioms

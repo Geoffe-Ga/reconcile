@@ -72,6 +72,7 @@ ADR-0077 §4's rules stand: everything runs on the reader's device; no text, ter
 - **Bridging bonus:** an entry anchored in two or more of the reader's Documents that are themselves unlike each other ranks ahead in its tier.
 - **No shared-enemy anchors:** a claim that is mainly hostility toward a group of people can't be the anchor. It ships only once it's measured (§8); until then it's off.
 - No per-group cap. **Trigger to revisit:** one publisher fills a pilot reader's view.
+- **Amended (#479): first values.** The dial runs from 0 to 8: 70% close, 20% middle, 10% strange at 0, to 15%, 25%, 60% at 8 (`client/src/bedfellows/mix.ts`). The floors are 15% close kin and 10% strange, rounded down in a small view, and the ceiling is 70% of any tier, rounded up; a short tier's room goes to the others up to that ceiling, so a view comes up short rather than all one tier. The clock steps once per week opened, however long the reader was away (`clock.ts`). The bonus counts candidate pairs, not only anchors, since the stance check is off (§3), and two Documents are unlike below a centroid cosine of 0.5 (`bridge.ts`). That line is untuned and, by the corpus, too high: every pair of one reader's Documents in it, all one community's, sits below it (0.04 to 0.50, by the real model), so for now any entry with pairs in two of a reader's Documents bridges. A view mixes the rows it picks, so it can't be trimmed after: the caller hands the whole shelf as §5 says and names the reader's own groups' and coalitions' entries in the view (`own`), which leaves them out before the mix. Within a tier, order turns by the calendar date and a seed the caller keeps. Each value's reason is beside it in the code; all are untested by simulation.
 
 ### 7. The reason, in words
 
@@ -148,5 +149,5 @@ ADR-0077 §4's rules stand: everything runs on the reader's device; no text, ter
 
 - Whether a small inference model can read implied values at all. The opposed-pair set in §8 answers it: at 13 to 87 MB, no (#478, §8). A larger model, or one trained on stance rather than inference, is the next thing to try, measured by the same harness.
 - Whether a zero-shot use of the stance model is enough for the shared-enemy check, or it needs a classifier of its own.
-- The pace of the clock and the size of each tier's floor. The simulation proposes first values, and the pilot corrects them.
+- The pace of the clock and the size of each tier's floor. #479 set first values (§6); the simulation tests them, and the pilot corrects them.
 - The model files' licenses, checked before either ships (ADR-0024). The embedding model's are (#476, §2). No stance model ships (#478, §3); of the candidates, MobileBERT-MNLI's author states no license, so it can't ship whatever it scores.

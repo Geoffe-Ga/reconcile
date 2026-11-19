@@ -9,6 +9,7 @@ import fc from 'fast-check';
 import { describe, expect, it, vi } from 'vitest';
 
 import { memoryVectorStore } from './entryVectors';
+import { TOP } from './mix';
 import { bedfellows } from './pipeline';
 import { standInEmbedder, standInJudge } from './standIns';
 import { THRESHOLDS } from './thresholds';
@@ -469,7 +470,7 @@ describe('bedfellows (#475)', () => {
     expect(rows.map((row) => row.entryId)).toEqual(['strong', 'tie', 'two', 'weak']);
   });
 
-  it('ignores the dial for now (#479 reads it)', async () => {
+  it('returns every row when no view is asked for, whatever the dial', async () => {
     const input = {
       reader: [doc('Keep the library open on Sundays.')],
       entries: [entry('e1', 'We want the library open.')],
@@ -477,6 +478,7 @@ describe('bedfellows (#475)', () => {
 
     const rows = await bedfellows({ ...input, dial: 0 }, STAND_INS);
 
+    expect(rows).toHaveLength(1);
     expect(await bedfellows({ ...input, dial: 5 }, STAND_INS)).toEqual(rows);
   });
 
@@ -575,5 +577,163 @@ describe('bedfellows (#475)', () => {
       ),
     ).rejects.toMatchObject({ name: 'AbortError' });
     expect(embed).not.toHaveBeenCalled();
+  });
+});
+
+describe('bedfellows picks and orders a view (#479)', () => {
+  const toDegrees = (cos: number): number => (Math.acos(cos) * 180) / Math.PI;
+  // One claim each, so closeness is the pair's strength (`tiers.ts`): C close, M middle, W strange.
+  const embedder = scripted({
+    R: at(0),
+    C: at(10),
+    M: at(toDegrees(0.5)),
+    W: at(toDegrees((THRESHOLDS.match + THRESHOLDS.shortEntry.middle) / 2)),
+  });
+  const models: Models = {
+    embedder,
+    judge: standInJudge,
+    splitter: (text) => text.split(' '),
+  };
+  const shelf = (sentence: string, prefix: string): BedfellowsEntry[] =>
+    Array.from({ length: 12 }, (_, i) => entry(`${prefix}${String(i).padStart(2, '0')}`, sentence));
+  const entries = [...shelf('C', 'c'), ...shelf('M', 'm'), ...shelf('W', 'w')];
+  const tiersOf = (rows: readonly { tier: string }[]) => rows.map((row) => row.tier);
+
+  it('shows the dial’s mix: mostly close kin at 0, mostly strange at the top, close kin first', async () => {
+    const view = { size: 10, date: '2026-11-18', seed: 7 };
+
+    const at0 = await bedfellows({ reader: [doc('R')], entries, dial: 0, view }, models);
+    const atTop = await bedfellows({ reader: [doc('R')], entries, dial: TOP, view }, models);
+
+    expect(tiersOf(at0)).toEqual([
+      ...Array<string>(7).fill('close'),
+      'middle',
+      'middle',
+      'strange',
+    ]);
+    expect(tiersOf(atTop)).toEqual([
+      ...Array<string>(2).fill('close'),
+      'middle',
+      'middle',
+      ...Array<string>(6).fill('strange'),
+    ]);
+    expect(new Set(atTop.map((row) => row.entryId)).size).toBe(10);
+  });
+
+  it('gives the same view for the same input, date and seed, in any order, and leads with others on other days', async () => {
+    const view = { size: 4, date: '2026-11-18', seed: 7 };
+    const one = await bedfellows({ reader: [doc('R')], entries, dial: 0, view }, models);
+    const two = await bedfellows(
+      { reader: [doc('R')], entries: [...entries].reverse(), dial: 0, view },
+      models,
+    );
+    expect(two).toEqual(one);
+
+    const leaders = new Set<string>();
+    for (let day = 1; day <= 28; day += 1) {
+      const date = `2026-02-${String(day).padStart(2, '0')}`;
+      const [first] = await bedfellows(
+        { reader: [doc('R')], entries, dial: 0, view: { ...view, date } },
+        models,
+      );
+      leaders.add(first?.entryId ?? '');
+    }
+    expect(leaders.size).toBeGreaterThan(1);
+  });
+
+  it('holds the dial’s floors in the pipeline’s view for any dial, date and seed', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.integer({ min: 0, max: TOP }),
+        fc.integer({ min: 0, max: 400 }),
+        fc.integer(),
+        async (dial, day, seed) => {
+          const date = new Date(Date.UTC(2026, 0, 1 + day)).toISOString().slice(0, 10);
+          const view = { size: 10, date, seed };
+          const rows = await bedfellows({ reader: [doc('R')], entries, dial, view }, models);
+          const again = await bedfellows({ reader: [doc('R')], entries, dial, view }, models);
+          expect(again).toEqual(rows);
+          expect(rows).toHaveLength(10);
+          expect(new Set(rows.map((row) => row.entryId)).size).toBe(10);
+          expect(tiersOf(rows).filter((tier) => tier === 'close').length).toBeGreaterThanOrEqual(1);
+          expect(tiersOf(rows).filter((tier) => tier === 'strange').length).toBeGreaterThanOrEqual(
+            1,
+          );
+        },
+      ),
+      { numRuns: 30 },
+    );
+  });
+
+  it('leaves the reader’s own groups’ entries out of the view before it mixes, and still keeps their vectors', async () => {
+    const own = ['c00', 'c01', 'c02', 'c03', 'c04'];
+    const store = memoryVectorStore();
+    const view = { size: 10, date: '2026-11-18', seed: 7, own };
+
+    const kept: Models = { ...models, embedder: { ...embedder, model: 'scripted' } };
+
+    const rows = await bedfellows({ reader: [doc('R')], entries, dial: 0, view }, kept, { store });
+
+    expect(rows).toHaveLength(10);
+    expect(rows.filter((row) => own.includes(row.entryId))).toEqual([]);
+    expect(tiersOf(rows).filter((tier) => tier === 'close')).toHaveLength(7);
+    const cached = new Set(store.records().map((record) => record.entryId));
+    expect(own.filter((id) => cached.has(id))).toEqual(own);
+  });
+
+  describe('the bridging bonus', () => {
+    // P and Q are unlike (cosine 0). A sits near P, B near Q; S sits nearer P than A does.
+    const bridging: Models = {
+      embedder: scripted({ P: at(0), Q: at(90), A: at(30), B: at(60), S: at(1) }),
+      judge: standInJudge,
+      splitter: (text) => text.split(' '),
+    };
+    const shelfOf = [entry('bridge', 'A B'), entry('solo', 'S')];
+
+    it('puts an entry with pairs in two unlike Documents first in its tier', async () => {
+      const rows = await bedfellows(
+        { reader: [doc('P'), doc('Q')], entries: shelfOf, dial: 0 },
+        bridging,
+      );
+
+      expect(rows.map((row) => [row.entryId, row.tier])).toEqual([
+        ['bridge', 'close'],
+        ['solo', 'close'],
+      ]);
+    });
+
+    it('puts it first in its tier in a view too', async () => {
+      const rows = await bedfellows(
+        {
+          reader: [doc('P'), doc('Q')],
+          entries: shelfOf,
+          dial: 0,
+          view: { size: 2, date: '2026-11-18', seed: 1 },
+        },
+        bridging,
+      );
+
+      expect(rows.map((row) => row.entryId)).toEqual(['bridge', 'solo']);
+    });
+
+    it('gives a reader with one Document no bonus, and no error', async () => {
+      const rows = await bedfellows({ reader: [doc('P Q')], entries: shelfOf, dial: 0 }, bridging);
+
+      expect(rows.map((row) => row.entryId)).toEqual(['solo', 'bridge']);
+    });
+
+    it('gives no bonus for pairs in two Documents alike each other', async () => {
+      const alike: Models = {
+        ...bridging,
+        embedder: scripted({ P: at(0), Q: at(20), A: at(5), B: at(15), S: at(1) }),
+      };
+
+      const rows = await bedfellows(
+        { reader: [doc('P'), doc('Q')], entries: shelfOf, dial: 0 },
+        alike,
+      );
+
+      expect(rows.map((row) => row.entryId)).toEqual(['solo', 'bridge']);
+    });
   });
 });
