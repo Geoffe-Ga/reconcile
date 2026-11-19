@@ -34,7 +34,24 @@ module.exports = {
           '^src/(app|ui|screens|net|store)/',
           'node_modules/(react|react-dom|react-aria-components)/',
         ],
+        pathNot: '^src/net/model(Files|Pins)\\.ts$',
       },
+    },
+    {
+      name: 'only-embedder-ts-fetches-the-model',
+      comment:
+        "The one door from Bedfellows to the network is src/net/modelFiles.ts, which fetches only a pinned model file by name from our own origin and checks its hash (#476, ADR-0080 §2): no word, vector or score of the reader's can ride on it. Only src/bedfellows/embedder.ts, and its test, may use it.",
+      severity: 'error',
+      from: { path: '^src/bedfellows/', pathNot: '^src/bedfellows/embedder(\\.test)?\\.ts$' },
+      to: { path: '^src/net/' },
+    },
+    {
+      name: 'only-runtime-ts-imports-the-runtime',
+      comment:
+        "ONNX Runtime Web and Hugging Face's tokenizer, pinned exactly, are the app's first machine-learning dependency (#476, ADR-0080). Only src/bedfellows/runtime.ts imports them, tests included, so the runtime can be audited and swapped in one place.",
+      severity: 'error',
+      from: { pathNot: '^src/bedfellows/runtime\\.ts$' },
+      to: { path: 'node_modules/(onnxruntime-web|onnxruntime-common|@huggingface/tokenizers)/' },
     },
     {
       name: 'engine-does-no-io',

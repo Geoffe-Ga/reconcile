@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      A test-only page (#476): e2e/bedfellows-model.spec.ts builds it to run
+      the model under the deploy CSP, and scripts/measure-model.sh builds it
+      for the founder to measure the real model on a phone. It is never part
+      of the app's build.
+    -->
+    <title>Bedfellows model (test page)</title>
+  </head>
+  <body>
+    <main>
+      <h1>Bedfellows model</h1>
+      <p>
+        Measures the sentence-embedding model on this device: the download, the first vector, each
+        sentence, and two shelves. Nothing leaves the device.
+      </p>
+      <p>
+        <button type="button" id="measure">Measure</button>
+        <button type="button" id="harness">Measure, then run the harness</button>
+      </p>
+      <p id="status" role="status">Not started.</p>
+      <table id="numbers"></table>
+      <pre id="report"></pre>
+    </main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

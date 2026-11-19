@@ -9,7 +9,14 @@
  * - **Fetch** answers page loads with the app shell (`/`, which is
  *   index.html) and the build's own files from that cache. Everything else
  *   goes to the network untouched. Nothing under `/v1`, the relay, is ever
- *   cached or answered here (spec §7), and nothing is cached at run time.
+ *   cached or answered here (spec §7).
+ * - **Kept on first use** (#476): the Bedfellows model's files are part of
+ *   the build but not of the install, so the app never downloads them at
+ *   start. The first time something asks for one, the worker fetches it and
+ *   keeps it in `reconcile-models`, which outlives versions; every later ask,
+ *   offline too, is answered from there. Activate drops a kept file the
+ *   build no longer lists. The page checks each file's hash itself
+ *   (`src/net/modelFiles.ts`), whichever answered it.
  *
  * - **Push** (#99) shows one fixed notification, "Something new in Reconcile",
  *   whatever the push carries (the relay's carry nothing), closing the last
@@ -41,6 +48,8 @@ export interface Precache {
   readonly version: string;
   /** Every file of the build as a root-relative URL. `/` is index.html, the app shell. */
   readonly urls: readonly string[];
+  /** Files of the build kept only once something asks for them: the model's (#476). */
+  readonly lazy: readonly string[];
 }
 
 /** The parts of an `ExtendableEvent` the worker uses. */
@@ -77,10 +86,13 @@ export interface WorkerScope {
 }
 
 /** How the worker answers a request. */
-export type Answer = 'network' | 'app-shell' | 'precached';
+export type Answer = 'network' | 'app-shell' | 'precached' | 'lazy';
 
 /** Every cache this worker owns starts with this, so activate deletes only its own. */
 const CACHE_PREFIX = 'reconcile-app-';
+
+/** The cache of files kept on first use (#476). Its name has no version: it outlives them. */
+const KEPT_ON_USE = 'reconcile-models';
 
 /** The key of the app shell, which every page load gets. */
 const APP_SHELL = '/';
@@ -95,19 +107,23 @@ function cacheName(precache: Precache): string {
 /**
  * How to answer `request`: the network for anything that isn't a same-origin
  * GET, and always for the relay; the app shell for any page load; the cache
- * for a file of this build, asked for exactly.
+ * for a file of this build, asked for exactly, kept at install (`urls`) or on
+ * first use (`lazy`).
  */
 export function answerFor(
   request: Pick<Request, 'url' | 'method' | 'mode'>,
   origin: string,
   urls: ReadonlySet<string>,
+  lazy: ReadonlySet<string> = new Set(),
 ): Answer {
   const url = new URL(request.url);
   if (request.method !== 'GET' || url.origin !== origin || RELAY.test(url.pathname)) {
     return 'network';
   }
   if (request.mode === 'navigate') return 'app-shell';
-  return url.search === '' && urls.has(url.pathname) ? 'precached' : 'network';
+  if (url.search !== '') return 'network';
+  if (urls.has(url.pathname)) return 'precached';
+  return lazy.has(url.pathname) ? 'lazy' : 'network';
 }
 
 async function install(scope: WorkerScope, precache: Precache): Promise<void> {
@@ -124,6 +140,26 @@ async function activate(scope: WorkerScope, precache: Precache): Promise<void> {
     (name) => name.startsWith(CACHE_PREFIX) && name !== current,
   );
   await Promise.all(stale.map((name) => scope.caches.delete(name)));
+  await dropUnlisted(scope, precache);
+}
+
+/** Deletes every file kept on first use that this version doesn't list. */
+async function dropUnlisted(scope: WorkerScope, precache: Precache): Promise<void> {
+  const listed = new Set(precache.lazy);
+  const cache = await scope.caches.open(KEPT_ON_USE);
+  const gone = (await cache.keys()).filter((kept) => !listed.has(new URL(kept.url).pathname));
+  await Promise.all(gone.map((kept) => cache.delete(kept)));
+}
+
+/** The file `request` asks for, from the cache, or else from the network, kept if it came. */
+async function keptOnUse(scope: WorkerScope, request: Request): Promise<Response> {
+  const cache = await scope.caches.open(KEPT_ON_USE);
+  const key = new URL(new URL(request.url).pathname, scope.location.origin).href;
+  const kept = await cache.match(key);
+  if (kept !== undefined) return kept;
+  const response = await scope.fetch(request);
+  if (response.ok) await cache.put(key, response.clone());
+  return response;
 }
 
 /** The kept file at `path`, or the network's answer if it's missing from the cache. */
@@ -141,6 +177,7 @@ async function fromCache(
 /** Starts the worker on `scope` for this build's `precache`. */
 export function startServiceWorker(scope: WorkerScope, precache: Precache): void {
   const urls = new Set(precache.urls);
+  const lazy = new Set(precache.lazy);
   scope.addEventListener('install', (event) => {
     event.waitUntil(install(scope, precache));
   });
@@ -149,8 +186,12 @@ export function startServiceWorker(scope: WorkerScope, precache: Precache): void
   });
   scope.addEventListener('fetch', (event) => {
     const { request } = event;
-    const answer = answerFor(request, scope.location.origin, urls);
+    const answer = answerFor(request, scope.location.origin, urls, lazy);
     if (answer === 'network') return;
+    if (answer === 'lazy') {
+      event.respondWith(keptOnUse(scope, request));
+      return;
+    }
     const path = answer === 'app-shell' ? APP_SHELL : new URL(request.url).pathname;
     event.respondWith(fromCache(scope, precache, path, request));
   });

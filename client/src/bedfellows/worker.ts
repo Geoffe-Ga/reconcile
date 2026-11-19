@@ -11,6 +11,10 @@
  * answers to the page (ADR-0080 §5).
  *
  * The models are the stand-ins until each later issue in #473 replaces one.
+ * The real embedder (#476) is wired as a choice, {@link embedderFor}`('model')`,
+ * which imports `embedder.ts`, and with it the runtime, only when a run first
+ * asks it for a vector; this issue keeps the stand-in ({@link WORKER_EMBEDDER}),
+ * and #477 switches matching to the model.
  */
 import { bedfellows } from './pipeline';
 import { standInEmbedder, standInJudge } from './standIns';
@@ -33,6 +37,40 @@ export function yielding(embedder: Embedder): Embedder {
     embed: async (sentences) => {
       await new Promise((resolve) => setTimeout(resolve, 0));
       return embedder.embed(sentences);
+    },
+  };
+}
+
+/** Which embedder the worker runs: #475's stand-in, or the real model (#476). */
+export type EmbedderChoice = 'stand-in' | 'model';
+
+/** The worker's embedder in this issue: the stand-in. #477 switches matching to the model. */
+export const WORKER_EMBEDDER: EmbedderChoice = 'stand-in';
+
+/** Imports the real embedder's module and loads the model: fetched, checked and started. */
+async function loadModel(): Promise<Embedder> {
+  const { loadEmbedder } = await import('./embedder');
+  return loadEmbedder();
+}
+
+/**
+ * The embedder for `choice`. The model is loaded with `load` when it is first
+ * asked for a vector, never before, and once; a call after a failed load
+ * tries again.
+ */
+export function embedderFor(
+  choice: EmbedderChoice,
+  load: () => Promise<Embedder> = loadModel,
+): Embedder {
+  if (choice === 'stand-in') return yielding(standInEmbedder);
+  let loading: Promise<Embedder> | null = null;
+  return {
+    embed: async (sentences) => {
+      loading ??= load().catch((error: unknown) => {
+        loading = null;
+        throw error;
+      });
+      return (await loading).embed(sentences);
     },
   };
 }
@@ -64,7 +102,7 @@ export function createRunner(models: Models, post: (message: FromWorker) => void
 }
 
 const runner = createRunner(
-  { embedder: yielding(standInEmbedder), judge: standInJudge },
+  { embedder: embedderFor(WORKER_EMBEDDER), judge: standInJudge },
   (message) => {
     self.postMessage(message);
   },

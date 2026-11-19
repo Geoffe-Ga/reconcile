@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { standInEmbedder, standInJudge } from './standIns';
 import type { BedfellowsInput, Embedder, FromWorker, Models, ToWorker } from './types';
-import { createRunner, yielding } from './worker';
+import { createRunner, embedderFor, WORKER_EMBEDDER, yielding } from './worker';
 
 const INPUT: BedfellowsInput = {
   reader: [{ title: 'Ours', text: 'Keep the library open on Sundays.' }],
@@ -141,6 +141,60 @@ describe('yielding (#475)', () => {
 
     expect(order).toEqual(['task', 'embed']);
     expect(await vectors).toEqual(await standInEmbedder.embed(['Keep it open.']));
+  });
+});
+
+describe('embedderFor (#476)', () => {
+  afterEach(() => {
+    vi.doUnmock('./embedder');
+    vi.resetModules();
+  });
+
+  it('runs the stand-in in this issue: #477 switches matching to the model', () => {
+    expect(WORKER_EMBEDDER).toBe('stand-in');
+  });
+
+  it('gives the stand-in’s vectors for the stand-in, loading no model', async () => {
+    const load = vi.fn();
+    await expect(embedderFor('stand-in', load).embed(['Keep it open.'])).resolves.toEqual(
+      await standInEmbedder.embed(['Keep it open.']),
+    );
+    expect(load).not.toHaveBeenCalled();
+  });
+
+  it('loads the model only when first asked for a vector, and only once', async () => {
+    const load = vi.fn(() => Promise.resolve(standInEmbedder));
+    const embedder = embedderFor('model', load);
+    expect(load).not.toHaveBeenCalled();
+
+    await embedder.embed(['Keep it open.']);
+    const vectors = await embedder.embed(['Keep it open.']);
+
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(vectors).toEqual(await standInEmbedder.embed(['Keep it open.']));
+  });
+
+  it('asks the model again after a load fails', async () => {
+    const load = vi
+      .fn<() => Promise<Embedder>>()
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValue(standInEmbedder);
+    const embedder = embedderFor('model', load);
+
+    await expect(embedder.embed(['Keep it open.'])).rejects.toThrow('offline');
+    await expect(embedder.embed(['Keep it open.'])).resolves.toHaveLength(1);
+    expect(load).toHaveBeenCalledTimes(2);
+  });
+
+  it('imports the model’s module, embedder.ts, only on that first ask', async () => {
+    const loadEmbedder = vi.fn(() => Promise.resolve(standInEmbedder));
+    vi.doMock('./embedder', () => ({ loadEmbedder }));
+
+    const embedder = embedderFor('model');
+    expect(loadEmbedder).not.toHaveBeenCalled();
+    await embedder.embed(['Keep it open.']);
+
+    expect(loadEmbedder).toHaveBeenCalledTimes(1);
   });
 });
 
