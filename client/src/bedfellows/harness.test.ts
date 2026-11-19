@@ -7,7 +7,15 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Corpus, Entry, Pair, PairKind, Reader } from './corpus';
-import { harness, heldOutReport, type Matcher, type Verdict } from './harness';
+import {
+  type AsyncMatcher,
+  harness,
+  harnessAsync,
+  heldOutReport,
+  heldOutReportAsync,
+  type Matcher,
+  type Verdict,
+} from './harness';
 
 /** A reader with one Document, `text`, in `split`. */
 function reader(id: string, text: string, split: Reader['split'] = 'tune'): Reader {
@@ -125,5 +133,54 @@ describe('harness (#474)', () => {
     const broken: Corpus = { ...TINY, pairs: [pair('px', 'r9', 'e1', 'opposed')] };
 
     expect(() => harness(fixed({}), 'tune', broken)).toThrow('Pair px names a reader or entry');
+  });
+});
+
+describe('harnessAsync (#475)', () => {
+  /** `fixed`'s answers, a microtask late, as a model's would be. */
+  function later(verdicts: Readonly<Record<string, Verdict>>): AsyncMatcher {
+    const now = fixed(verdicts);
+    return (r, e) => Promise.resolve(now(r, e));
+  }
+
+  it('gives an async matcher the same report a sync one with the same answers gets', async () => {
+    const verdicts = { e1: 'common-ground', e2: 'shared-subject', e3: 'common-ground' } as const;
+
+    const report = await harnessAsync(later(verdicts), 'tune', TINY);
+
+    expect(report).toEqual(harness(fixed(verdicts), 'tune', TINY));
+  });
+
+  it('asks about one pair at a time, in the corpus’s order, and only on the split asked for', async () => {
+    const asked: string[] = [];
+    let open = 0;
+    const matcher: AsyncMatcher = async (r, e) => {
+      open += 1;
+      expect(open).toBe(1);
+      asked.push(`${r.id}:${e.id}`);
+      await Promise.resolve();
+      open -= 1;
+      return 'nothing';
+    };
+
+    await harnessAsync(matcher, 'tune', TINY);
+
+    expect(asked).toEqual(['r1:e1', 'r1:e2', 'r1:e3']);
+  });
+
+  it('refuses held-out numbers unless they are asked for by name', async () => {
+    await expect(harnessAsync(later({}), 'held-out', TINY)).rejects.toThrow(
+      'Held-out numbers come only from heldOutReportAsync.',
+    );
+    const report = await heldOutReportAsync(later({ e4: 'common-ground' }), TINY);
+    expect(report).toEqual(heldOutReport(fixed({ e4: 'common-ground' }), TINY));
+  });
+
+  it('fails loudly on a pair whose reader or entry isn’t in the corpus', async () => {
+    const broken: Corpus = { ...TINY, pairs: [pair('px', 'r9', 'e1', 'opposed')] };
+
+    await expect(harnessAsync(later({}), 'tune', broken)).rejects.toThrow(
+      'Pair px names a reader or entry',
+    );
   });
 });

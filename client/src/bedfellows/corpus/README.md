@@ -57,3 +57,5 @@ housing, libraries, hunting, animals, environment, belief, labour, business, rec
 ## Privacy
 
 Everything here is invented: groups, people, places (Brindlewood, Harrow Creek, the Fennick estate, Tollby, Velmarsh, the Wend) and texts. No real group, organisation, person, brand or place is named, and no real mission statement, slogan or scripture is quoted.
+
+**The second pass** (the founder's review, 2026-11-19, #474) changed no pair's kind. It fixed one named sentence (p312), renamed a publisher that had a real organisation's name (g062), the county (now Velmarsh) and a family publisher (now The Family at Number Twelve), and toned down six hostile entries (e168, e203, e208, e211, e215, e319) that went further than a test case needs, each still `hostile: true`. The full list, with reasons and the borderline items left as labelled, is in PR #519.

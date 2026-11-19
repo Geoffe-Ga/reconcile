@@ -13,7 +13,9 @@
  *
  * Thresholds are tuned on `tune` alone. `held-out` numbers come only from
  * {@link heldOutReport}, asked for by name, so they're never read by accident
- * while tuning. The harness imports no React and reaches no network.
+ * while tuning; {@link harnessAsync} and {@link heldOutReportAsync} do the
+ * same for a matcher that answers later, as the pipeline (#475) does. The
+ * harness imports no React and reaches no network.
  */
 import {
   type Corpus,
@@ -30,6 +32,9 @@ export type Verdict = 'common-ground' | 'shared-subject' | 'nothing';
 
 /** A matcher: one reader's Documents and one shelf entry in, a verdict out. */
 export type Matcher = (reader: Reader, entry: Entry) => Verdict;
+
+/** A matcher that answers later, as one running models does (#475's pipeline). */
+export type AsyncMatcher = (reader: Reader, entry: Entry) => Promise<Verdict>;
 
 /** How a matcher did on one kind of pair. */
 export interface KindCounts {
@@ -63,21 +68,43 @@ function empty(): Record<PairKind, { -readonly [K in keyof KindCounts]: number }
   ) as Record<PairKind, { -readonly [K in keyof KindCounts]: number }>;
 }
 
-/** `matcher`'s report on `split` of `corpus`. */
-function report(matcher: Matcher, split: Split, corpus: Corpus): Report {
+/** A labelled pair on the split being read, with its reader and entry. */
+interface Labelled {
+  readonly kind: PairKind;
+  readonly reader: Reader;
+  readonly entry: Entry;
+}
+
+/**
+ * `corpus`'s pairs on `split`, in the corpus's order, each with its reader and entry.
+ *
+ * @throws {Error} for a pair that names a reader or entry the corpus doesn't hold.
+ */
+function labelled(split: Split, corpus: Corpus): Labelled[] {
   const readers = new Map(corpus.readers.map((r) => [r.id, r]));
   const entries = new Map(corpus.entries.map((e) => [e.id, e]));
-  const byKind = empty();
+  const found: Labelled[] = [];
   for (const pair of corpus.pairs) {
     const reader = readers.get(pair.reader);
     const entry = entries.get(pair.entry);
     if (reader === undefined || entry === undefined) {
       throw new Error(`Pair ${pair.id} names a reader or entry the corpus doesn't hold.`);
     }
-    if (reader.split !== split) continue;
-    const counts = byKind[pair.kind];
+    if (reader.split === split) found.push({ kind: pair.kind, reader, entry });
+  }
+  return found;
+}
+
+/** The report on `split` from each pair's kind and the verdict it got. */
+function tally(
+  split: Split,
+  verdicts: readonly { readonly kind: PairKind; readonly verdict: Verdict }[],
+): Report {
+  const byKind = empty();
+  for (const { kind, verdict } of verdicts) {
+    const counts = byKind[kind];
     counts.pairs += 1;
-    counts[COUNTER[matcher(reader, entry)]] += 1;
+    counts[COUNTER[verdict]] += 1;
   }
   const commonGround = PAIR_KINDS.reduce((sum, kind) => sum + byKind[kind].commonGround, 0);
   const { opposed } = byKind;
@@ -87,6 +114,26 @@ function report(matcher: Matcher, split: Split, corpus: Corpus): Report {
     precision: commonGround === 0 ? null : byKind['shared-claim'].commonGround / commonGround,
     falseAgreement: opposed.pairs === 0 ? 0 : opposed.commonGround / opposed.pairs,
   };
+}
+
+/** `matcher`'s report on `split` of `corpus`. */
+function report(matcher: Matcher, split: Split, corpus: Corpus): Report {
+  return tally(
+    split,
+    labelled(split, corpus).map(({ kind, reader, entry }) => ({
+      kind,
+      verdict: matcher(reader, entry),
+    })),
+  );
+}
+
+/** `matcher`'s report on `split` of `corpus`, asking about one pair at a time. */
+async function reportAsync(matcher: AsyncMatcher, split: Split, corpus: Corpus): Promise<Report> {
+  const verdicts: { kind: PairKind; verdict: Verdict }[] = [];
+  for (const { kind, reader, entry } of labelled(split, corpus)) {
+    verdicts.push({ kind, verdict: await matcher(reader, entry) });
+  }
+  return tally(split, verdicts);
 }
 
 /**
@@ -106,4 +153,31 @@ export function harness(matcher: Matcher, split: Split, corpus: Corpus = loadCor
  */
 export function heldOutReport(matcher: Matcher, corpus: Corpus = loadCorpus()): Report {
   return report(matcher, 'held-out', corpus);
+}
+
+/**
+ * {@link harness} for an {@link AsyncMatcher}: `matcher`'s report on `split`,
+ * which must be `tune`, asking about one pair at a time. Held-out numbers
+ * come only from {@link heldOutReportAsync}.
+ *
+ * @throws {Error} for `held-out`, or a pair that names a reader or entry the corpus doesn't hold.
+ */
+export async function harnessAsync(
+  matcher: AsyncMatcher,
+  split: Split,
+  corpus: Corpus = loadCorpus(),
+): Promise<Report> {
+  if (split === 'held-out') throw new Error('Held-out numbers come only from heldOutReportAsync.');
+  return reportAsync(matcher, split, corpus);
+}
+
+/**
+ * {@link heldOutReport} for an {@link AsyncMatcher}: the numbers a threshold
+ * is judged by, read only once it's set on `tune`.
+ */
+export function heldOutReportAsync(
+  matcher: AsyncMatcher,
+  corpus: Corpus = loadCorpus(),
+): Promise<Report> {
+  return reportAsync(matcher, 'held-out', corpus);
 }
