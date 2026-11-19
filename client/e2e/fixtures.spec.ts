@@ -54,6 +54,17 @@ test('visit leaves a page already at the URL as it is, and goes to any other', a
   const settings = new URL('/#/settings', here).href;
   await visit(page, settings);
   expect(page.url()).toBe(settings);
+
+  // A path relative to the app, as the steps pass, names the same page: no navigation at all,
+  // since WebKit reloads a page sent to its own URL, and the reloaded page comes under the
+  // service worker, where `context.route` no longer sees its requests (#494).
+  let navigated = 0;
+  page.on('framenavigated', () => {
+    navigated += 1;
+  });
+  await visit(page, '/#/settings');
+  expect(navigated).toBe(0);
+  expect(await page.evaluate(() => Reflect.get(window, 'e2eSamePage') as unknown)).toBe(true);
 });
 
 test('the Discord watch names each request the fixture never answered', async ({ browser }) => {

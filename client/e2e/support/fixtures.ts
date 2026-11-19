@@ -273,7 +273,11 @@ export const test = base.extend<
  * requests WebKit never lets `context.route` see.
  */
 export async function visit(page: Page, url: string): Promise<void> {
-  if (page.url() !== url) await page.goto(url);
+  const here = page.url();
+  // A path like '/#/steward' names the page it resolves to, so compare whole URLs (#494). A
+  // blank page has no origin to resolve against, so it always navigates.
+  const target = here.startsWith('http') ? new URL(url, here).href : url;
+  if (here !== target) await page.goto(url);
 }
 
 /** The screen's one `h1`. */
