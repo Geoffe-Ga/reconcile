@@ -238,3 +238,22 @@ describe('Start: following (#124)', () => {
     expect(screen.queryByRole('region', { name: 'Following' })).not.toBeInTheDocument();
   });
 });
+
+describe('Start: a new version (#513)', () => {
+  const READY = 'A new version is ready. Close and reopen Reconcile.';
+
+  it('says a new version is ready in one quiet line just above Settings, and passes axe', async () => {
+    render(<Start groups={GROUPS} onOpenInvite={vi.fn()} newVersionReady />);
+    const line = screen.getByText(READY);
+    expect(line).toHaveAttribute('role', 'status');
+    expect(line).toHaveClass('caption');
+    const settings = screen.getByRole('link', { name: 'Settings' });
+    expect(line.compareDocumentPosition(settings) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('says nothing of versions while none waits', () => {
+    render(<Start groups={GROUPS} onOpenInvite={vi.fn()} />);
+    expect(screen.queryByText(READY)).toBeNull();
+  });
+});

@@ -25,7 +25,8 @@
  *
  * It never calls `skipWaiting()` or `clients.claim()`: a new version installs
  * in the background and takes over at the next launch, once every Reconcile
- * window has closed (ADR-0057; ADR-0073 drops the update prompt).
+ * window has closed (ADR-0057). The page only says that one waits (#513,
+ * `src/app/pwa/registerServiceWorker.ts`; ADR-0073's 2026-11-19 amendment).
  *
  * This lives in src/net/ because it handles the app's requests (spec §2).
  * `./sw.ts` starts it on the worker's global scope; the build writes the

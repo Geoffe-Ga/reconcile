@@ -573,3 +573,38 @@ describe('Settings › Steward key (#488)', () => {
     expect(within(section).queryByLabelText('Steward secret')).toBeNull();
   });
 });
+
+describe('Settings: the build and a new version (#513)', () => {
+  const READY = 'A new version is ready. Close and reopen Reconcile.';
+
+  it('ends with the build’s version in one quiet line, and passes axe', async () => {
+    setup({ version: '0123456789abcdef' });
+    const line = screen.getByText('Version 0123456789abcdef');
+    expect(line).toHaveClass('caption');
+    const last = screen.getByRole('main').lastElementChild;
+    expect(last?.contains(line)).toBe(true);
+    expect(screen.queryByText(READY)).toBeNull();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('names no version where the build wrote none, as in development', () => {
+    setup({ version: null });
+    expect(screen.queryByText(/^Version /)).toBeNull();
+  });
+
+  it('still says a new version is ready where the build named none', () => {
+    setup({ version: null, newVersionReady: true });
+    expect(screen.getByText(READY)).toBeVisible();
+    expect(screen.queryByText(/^Version /)).toBeNull();
+  });
+
+  it('says a new version is ready above the version, as a status, and passes axe', async () => {
+    setup({ version: '0123456789abcdef', newVersionReady: true });
+    const line = screen.getByText(READY);
+    expect(line).toHaveAttribute('role', 'status');
+    expect(line).toHaveClass('caption');
+    const version = screen.getByText('Version 0123456789abcdef');
+    expect(line.compareDocumentPosition(version) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(await axeViolations()).toEqual([]);
+  });
+});

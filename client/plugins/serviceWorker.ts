@@ -19,7 +19,8 @@
  *   an installed app would otherwise download and keep for nothing (ADR-0078).
  * - Its version hashes every URL and file, so `/sw.js` changes, and the
  *   browser installs the new version in the background, whenever any file
- *   does.
+ *   does. The page's chunks carry the same version, for Settings
+ *   (`plugins/buildVersion.ts`, #513).
  *
  * A small hand-written worker stands in for vite-plugin-pwa, whose
  * workbox-build dependency fails `npm audit` with no patched release.
@@ -29,7 +30,12 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import type { Plugin, ResolvedConfig } from 'vite';
+import type { Plugin, ResolvedConfig, Rollup } from 'vite';
+
+type OutputChunk = Rollup.OutputChunk;
+type OutputAsset = Rollup.OutputAsset;
+
+import { stampVersion } from './buildVersion.ts';
 
 /**
  * The worker's entry, found from this file rather than from the build's
@@ -90,6 +96,19 @@ function precacheFor(files: readonly BuiltFile[]): {
   };
 }
 
+/**
+ * Writes `version` into every chunk of the page that names its placeholder
+ * (#513). The version hashed those chunks with the placeholder still in
+ * them, so writing it in can't change the version.
+ */
+function stampChunks(files: readonly (OutputChunk | OutputAsset)[], version: string): void {
+  for (const file of files) {
+    if (file.type === 'chunk' && file.fileName !== OUTPUT) {
+      file.code = stampVersion(file.code, version);
+    }
+  }
+}
+
 /** The Vite plugin that emits `/sw.js` and writes its precache list into it. */
 export function serviceWorker(): Plugin {
   let config: ResolvedConfig | undefined;
@@ -132,7 +151,9 @@ export function serviceWorker(): Plugin {
       if (parts.length !== 2) {
         return this.error(`${OUTPUT} must name ${PLACEHOLDER} exactly once.`);
       }
-      worker.code = parts.join(JSON.stringify(precacheFor([...built, ...kept])));
+      const precache = precacheFor([...built, ...kept]);
+      worker.code = parts.join(JSON.stringify(precache));
+      stampChunks(Object.values(bundle), precache.version);
     },
   };
 }

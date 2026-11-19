@@ -21,6 +21,8 @@ import './styles/landing.css';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
+import { buildVersion } from './app/pwa/buildVersion';
+import { createNewVersion, type NewVersion } from './app/pwa/newVersion';
 import { afterLoad, registerServiceWorker } from './app/pwa/registerServiceWorker';
 import { botNotice, botThreadName } from './app/chatMessages';
 import { openDeviceLock, passkeyOn, whenOpen } from './app/passkey';
@@ -84,9 +86,10 @@ if (root === null) {
  * group's key change or freeze touches it. A device whose keys are locked
  * with a passkey (#95) sweeps, syncs, and so refreshes the relay backup, and
  * posts shares only once the passkey unlocks them (`openDeviceLock`); the
- * relying party is this host.
+ * relying party is this host. Settings names this build's version, and Start
+ * and Settings say when a new one waits (`newVersion`, #513).
  */
-async function start(container: HTMLElement): Promise<void> {
+async function start(container: HTMLElement, newVersion: NewVersion): Promise<void> {
   const store = await openStore();
   const relay = createRelay();
   const notice = botNotice(window.location.origin);
@@ -141,6 +144,8 @@ async function start(container: HTMLElement): Promise<void> {
     passkey: passkeyOn(keys),
     shelf: createShelfReader({ shelf: shelfClient, keep: store, now }),
     stewardShelf: shelfClient,
+    version: buildVersion(),
+    newVersion,
   };
   const firstRun = {
     platform,
@@ -175,10 +180,13 @@ function startShared(container: HTMLElement): void {
 if (parseRoute(window.location.hash).name === 'shared') {
   startShared(root);
 } else {
-  void start(root);
+  // The service worker reports a new version waiting; Start and Settings say so (#513).
+  const newVersion = createNewVersion();
+  void start(root, newVersion);
   registerServiceWorker({
     production: import.meta.env.PROD,
     container: 'serviceWorker' in navigator ? navigator.serviceWorker : undefined,
     afterLoad,
+    onWaiting: newVersion.markWaiting,
   });
 }

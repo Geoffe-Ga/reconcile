@@ -2,6 +2,7 @@ import { type ReactNode, useId } from 'react';
 import { Button, Link } from 'react-aria-components';
 
 import { messages } from '../app/messages';
+import { NewVersionLine } from '../app/NewVersionLine';
 import { RestoreBackup, type RestoreBackupProps } from '../app/RestoreBackup';
 import { routeHref } from '../app/router';
 import { formatDay } from '../app/time';
@@ -47,6 +48,8 @@ export interface StartProps {
   readonly onOpenInvite: (seed: Uint8Array) => void;
   /** What the browser said about keeping this site's data, or null before it answered. */
   readonly persistence?: Persistence | null;
+  /** Whether a new version is installed and waiting for the next launch (#513). */
+  readonly newVersionReady?: boolean;
   /** Restores a backup file (#78); without it, Start offers no Restore. */
   readonly onRestore?: RestoreBackupProps['onRestore'];
   /** The recovery alert (#118), first on the page while a recovery of this person waits; none when absent. */
@@ -256,7 +259,8 @@ function RecoverSection() {
  * Settings. While a recovery of this person waits, its alert comes first
  * (#118), then any word that a door this device sent to was removed from
  * the public shelf (#491). When the browser may clear the app's data, one
- * quiet line says so (ADR-0029).
+ * quiet line says so (ADR-0029), and while a new version waits, one more
+ * says to close and reopen Reconcile (#513).
  */
 export function Start(props: StartProps) {
   const { groups, requests = [], onOpenInvite } = props;
@@ -295,6 +299,7 @@ export function Start(props: StartProps) {
       {persistence === null || persistence === 'granted' ? null : (
         <p className="caption">{messages.start.mayClear}</p>
       )}
+      <NewVersionLine ready={props.newVersionReady === true} />
       <div>
         <Link className="forward-link" href={routeHref({ name: 'settings' })}>
           {messages.start.settings}

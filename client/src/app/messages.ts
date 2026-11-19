@@ -1803,6 +1803,13 @@ export const messages = {
     eraseHeading: 'Erase this device',
     stewardHeading: 'Steward key',
   },
+  // The build a device runs, and a new one waiting (#513; ADR-0073's 2026-11-19 amendment).
+  update: {
+    /** Settings' last line: the build's version, so devices can be compared before a protocol change. */
+    version: (id: string) => `Version ${id}`,
+    /** On Start and Settings while a new version is installed and waits for the next launch. */
+    ready: 'A new version is ready. Close and reopen Reconcile.',
+  },
   // The steward's key (#488; docs/spec/listed-doors.md §6.2, §6.4): quiet in
   // Settings, for the one device of the platform's steward, the founder during
   // the pilot. The console lists listings waiting for release, holds, what
