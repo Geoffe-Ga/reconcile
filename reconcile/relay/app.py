@@ -63,6 +63,16 @@ steward key and signed by it; one under any other address gets 403
 ``bad_signature``. A notice is kept 180 days, a release at least as long as
 the listing it released.
 
+The steward's other notices (#489, listed-doors.md §6.1). A ``hold`` hides an
+address's records, or one entry, for 10,080 relay minutes: each is served
+again once that minute comes, unless an ``uphold`` deleted it, and whatever
+is PUT under a held address meanwhile waits with it. A release leaves a hold
+that stands. An ``uphold`` deletes the entry it names (409 ``no_entry``
+without one) and is kept exactly as long as the entry would have been; until
+then the entry is refused again with 403 ``upheld``. A ``suspend`` deletes an
+address's records, and while it stands every PUT under that address gets 403
+``suspended``. A ``pause`` is stored and does nothing else here.
+
 Nothing here logs. Error bodies are a constant ``{"error": "<code>"}`` that
 never echoes the request. The privacy middleware wraps everything.
 """
@@ -118,6 +128,8 @@ SHELF_KEEP_DAYS = 30
 # A steward's notice is kept 180 whole days after the day it arrived (§4.2,
 # proposed); a release, at least as long as the listing it released (#488).
 NOTICE_KEEP_DAYS = 180
+# A steward's hold lapses 10,080 relay minutes after it arrived (§6.1, #489).
+HOLD_MINUTES = 10_080
 # An address's entries (#431, §4.2, proposed): at most 4 live, 1 new a relay day.
 MAX_LIVE_ENTRIES = 4
 MAX_NEW_ENTRIES_A_DAY = 1
@@ -420,6 +432,8 @@ class _Shelf:
         key = key_bytes(address)
         if key is None:
             raise RelayError(400, "invalid_address")
+        if self._stands(f"{shelf.SUSPEND}:{address}"):
+            raise RelayError(403, "suspended")
         _check_media_type(request.headers, OCTET_STREAM)
         length = _declared_length(request.headers, shelf.MAX_RECORD_BYTES)
         _check_space(self.store, self.settings)
@@ -441,14 +455,11 @@ class _Shelf:
         """File ``record`` by its kind; its seq, and 201, or 200 for a repeat.
 
         In held mode a first listing waits, and so does whatever comes under
-        it before a release (#488).
+        it before a release (#488) or while a hold stands (#489).
         """
         received, today = minute_of(now), day_of(now)
-        if record.kind == "notice":
-            when = ShelfWhen(received=received, expiry=today + NOTICE_KEEP_DAYS + 1)
-            seq = self.store.add_shelf(address, record.kind, record.ref, body, when)
-            self.store.release(record.ref)
-            return seq, 201
+        if record.notice is not None:
+            return self._act(address, record.notice, body, (received, today)), 201
         expiry = today + SHELF_KEEP_DAYS + 1
         if record.kind == "listing":
             when = ShelfWhen(received, expiry, held_until=HELD_UNTIL_RELEASED)
@@ -456,9 +467,46 @@ class _Shelf:
         first = self._first_of(address, record, today)
         if first is not None:
             return first, 200
-        held = HELD_UNTIL_RELEASED if self.store.listing_held(address) else 0
-        when = ShelfWhen(received, expiry, held_until=held)
+        waits = self.store.listing_held_until(address)
+        when = ShelfWhen(received, expiry, held_until=waits if waits > received else 0)
         return self.store.add_shelf(address, record.kind, record.ref, body, when), 201
+
+    def _act(
+        self, steward: str, notice: shelf.Notice, body: bytes, at: tuple[int, int]
+    ) -> int:
+        """Store the steward's ``notice`` and act on it (§6.1); its seq.
+
+        A release clears the wait for one, leaving any hold that stands; a
+        hold holds for 10,080 relay minutes; an uphold deletes its entry
+        (409 ``no_entry`` without one) and is kept as long as the entry would
+        have been; a suspend deletes its address's records; a pause does
+        nothing here. ``at`` is the relay minute and day it arrived.
+        """
+        received, today = at
+        expiry = today + NOTICE_KEEP_DAYS + 1
+        if notice.act == shelf.UPHOLD:
+            kept = self.store.entry_expiry(notice.address, notice.entry, today=today)
+            if kept is None:
+                raise RelayError(409, "no_entry")
+            expiry = kept
+        when = ShelfWhen(received=received, expiry=expiry)
+        seq = self.store.add_shelf(steward, "notice", notice.ref, body, when)
+        if notice.act == shelf.RELEASE:
+            held = self._hold_ends(notice.address, received, today)
+            self.store.release(notice.address, held_until=held)
+        elif notice.act == shelf.HOLD:
+            self.store.hold(notice.address, notice.entry, until=received + HOLD_MINUTES)
+        elif notice.act == shelf.UPHOLD:
+            self.store.drop_entry(notice.address, notice.entry)
+        elif notice.act == shelf.SUSPEND:
+            self.store.drop_address(notice.address)
+        return seq
+
+    def _hold_ends(self, address: str, minute: int, today: int) -> int:
+        """The minute a hold on ``address`` that stands at ``minute`` lapses, else 0."""
+        held = self.store.latest_notice(f"{shelf.HOLD}:{address}", today=today)
+        ends = 0 if held is None else held + HOLD_MINUTES
+        return ends if ends > minute else 0
 
     def _first_of(
         self, address: str, record: shelf.ShelfRecord, today: int
@@ -480,10 +528,17 @@ class _Shelf:
             if self.store.shelf_seq(address, "entry", record.ref, today=today) is None:
                 raise RelayError(409, "no_entry")
             return None
+        if self._stands(f"{shelf.UPHOLD}:{address}:{record.ref}"):
+            raise RelayError(403, "upheld")
         counts = self.store.entry_counts(address, today=today)
         if counts.live >= MAX_LIVE_ENTRIES or counts.today >= MAX_NEW_ENTRIES_A_DAY:
             raise RelayError(429, "too_many_entries")
         return None
+
+    def _stands(self, ref: str) -> bool:
+        """Whether a notice filed under ``ref`` stands today (#489)."""
+        today = day_of(self.clock())
+        return self.store.latest_notice(ref, today=today) is not None
 
     def _list(
         self, address: str, record: shelf.ShelfRecord, body: bytes, when: ShelfWhen

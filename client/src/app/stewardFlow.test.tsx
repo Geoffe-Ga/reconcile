@@ -60,7 +60,7 @@ async function deviceOn(shelf: Shelf | undefined) {
   return { ...device.services, shelf: reader, stewardShelf: shelf };
 }
 
-describe('the steward through the app (#488)', { timeout: 60_000 }, () => {
+describe('the steward through the app (#488, #489)', { timeout: 60_000 }, () => {
   it('shows nothing of the steward in Settings while the relay has no shelf', async () => {
     const shelf = createShelf({ fetch: createFakeShelf({ available: false }).fetch });
     const services = await deviceOn(shelf);
@@ -107,12 +107,22 @@ describe('the steward through the app (#488)', { timeout: 60_000 }, () => {
     await user.click(await within(section).findByRole('link', { name: words.open }));
 
     expect(await view.findByRole('heading', { level: 1, name: words.title })).toBeVisible();
-    const card = await view.findByRole('listitem');
+    const waiting = await view.findByRole('region', { name: words.waitingHeading });
+    const card = within(waiting).getByRole('listitem');
     expect(within(card).getByRole('heading', { name: 'EASTSIDE TENANTS UNI0N' })).toBeVisible();
     expect(within(card).getByText('Eastside Tenants Union')).toBeVisible();
     await user.click(within(card).getByRole('button', { name: words.release }));
     expect(await within(card).findByText(words.released)).toBeVisible();
-    expect(fake.records.every((record) => !record.held)).toBe(true);
+    expect(fake.records.every((record) => record.heldUntil === 0)).toBe(true);
     expect(await services.store.holdsStewardKey()).toBe(true);
+
+    // #489: a hold on the live look-alike, from what stands on the shelf.
+    const shelved = view.getByRole('region', { name: words.shelfHeading });
+    const [hold] = within(shelved).getAllByRole('button', { name: words.hold });
+    if (hold === undefined) throw new Error('Hold');
+    await user.click(hold);
+    await within(shelved).findByText(words.sent);
+    const birchRecords = fake.records.filter((r) => r.address === base64url(birch.publicKey));
+    expect(birchRecords.map((r) => r.heldUntil)).toEqual([fake.minute + 10_080]);
   });
 });

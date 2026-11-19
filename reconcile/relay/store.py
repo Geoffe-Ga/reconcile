@@ -29,6 +29,12 @@ reaches, and a ``release`` notice clears that hold. A notice's ``ref`` is the
 address it names, so a listing's renewal can carry its release's expiry with
 it: a release lasts as long as the listing it released.
 
+The steward's later notices (#489, §6.1): a ``hold`` sets ``held_until`` to
+the minute it lapses, on an address's records or one entry, never
+shortening a longer wait; an ``uphold`` deletes an entry and a ``suspend``
+an address's records. Each notice is filed under a ``ref`` naming what it
+acts on, so the relay finds a standing one without reading a body.
+
 Each mailbox has a byte cap (#141). ``blobs_by_mailbox_size`` indexes each
 blob's length beside its mailbox and expiry, so summing a mailbox's unexpired
 bytes reads that index alone and never a blob.
@@ -267,20 +273,71 @@ class BlobStore:
             return int(rows[0][0])
         return self.add_shelf(address, "listing", "", body, when)
 
-    def listing_held(self, address: str) -> bool:
-        """Whether ``address``'s listing waits for a release (#488)."""
+    def listing_held_until(self, address: str) -> int:
+        """The minute ``address``'s listing is held until, or 0 with none (#489)."""
         row = self._db.execute(
-            "SELECT 1 FROM shelf"
-            " WHERE address = ? AND kind = 'listing' AND held_until = ?",
-            (address, HELD_UNTIL_RELEASED),
+            "SELECT held_until FROM shelf WHERE address = ? AND kind = 'listing'",
+            (address,),
         ).fetchone()
-        return row is not None
+        return 0 if row is None else int(row[0])
 
-    def release(self, address: str) -> int:
-        """Clear the hold on every record under ``address``; return how many (#488)."""
+    def release(self, address: str, *, held_until: int = 0) -> int:
+        """Clear the wait for a release under ``address``; return how many records.
+
+        Each record waiting for a release is held until ``held_until`` instead:
+        0, or the minute a hold that still stands lapses (#489).
+        """
         return self._db.execute(
-            "UPDATE shelf SET held_until = 0 WHERE address = ? AND held_until = ?",
-            (address, HELD_UNTIL_RELEASED),
+            "UPDATE shelf SET held_until = ? WHERE address = ? AND held_until = ?",
+            (held_until, address, HELD_UNTIL_RELEASED),
+        ).rowcount
+
+    def hold(self, address: str, entry: str, *, until: int) -> int:
+        """Hold ``address``'s records, or only its entry ``entry``, until ``until``.
+
+        A record already held longer keeps its own minute. Returns how many.
+        """
+        if entry:
+            return self._db.execute(
+                "UPDATE shelf SET held_until = max(held_until, ?)"
+                " WHERE address = ? AND kind = 'entry' AND ref = ?",
+                (until, address, entry),
+            ).rowcount
+        return self._db.execute(
+            "UPDATE shelf SET held_until = max(held_until, ?) WHERE address = ?",
+            (until, address),
+        ).rowcount
+
+    def latest_notice(self, ref: str, *, today: int) -> int | None:
+        """The receipt minute of the newest live notice under ``ref``, or ``None``."""
+        (received,) = self._db.execute(
+            "SELECT max(received) FROM shelf"
+            " WHERE kind = 'notice' AND ref = ? AND expiry > ?",
+            (ref, today),
+        ).fetchone()
+        return None if received is None else int(received)
+
+    def entry_expiry(self, address: str, entry: str, *, today: int) -> int | None:
+        """The expiry day of ``address``'s live entry ``entry``, or ``None``."""
+        row = self._db.execute(
+            "SELECT expiry FROM shelf"
+            " WHERE address = ? AND kind = 'entry' AND ref = ? AND expiry > ?",
+            (address, entry, today),
+        ).fetchone()
+        return None if row is None else int(row[0])
+
+    def drop_entry(self, address: str, entry: str) -> int:
+        """Delete ``address``'s entry ``entry`` and any withdraw of it; how many."""
+        return self._db.execute(
+            "DELETE FROM shelf WHERE address = ? AND kind IN ('entry', 'withdraw')"
+            " AND ref = ?",
+            (address, entry),
+        ).rowcount
+
+    def drop_address(self, address: str) -> int:
+        """Delete every record under ``address``; return how many (#489)."""
+        return self._db.execute(
+            "DELETE FROM shelf WHERE address = ?", (address,)
         ).rowcount
 
     def drop_entries(self, address: str) -> int:

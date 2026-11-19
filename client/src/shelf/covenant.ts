@@ -14,6 +14,7 @@
  */
 import { base64url } from '../crypto/base64url';
 import { sha256 } from '../crypto/hash';
+import type { Clause } from './record';
 
 /** One version of the covenant, as the app carries it. */
 export interface Covenant {
@@ -38,6 +39,19 @@ export const COVENANT_CLAUSES: readonly string[] = [
   'A listed group does not post spam.',
   'A listed group does not pretend to be another group or person.',
 ];
+
+/**
+ * Each clause in a few words, as a tombstone or a hold names it (#489;
+ * listed-doors.md §6.1): "Removed: impersonation of another group or
+ * person". They name what the clause forbids, from its own wording, and are
+ * no part of the text a group votes on, so the covenant's hash doesn't
+ * cover them; they are a draft with it.
+ */
+export const CLAUSE_WORDS: Readonly<Record<Clause, string>> = {
+  C1: 'a call for violence, or speech that denies a group’s humanity',
+  C2: 'spam',
+  C3: 'impersonation of another group or person',
+};
 
 /** The SHA-256 of `text`'s UTF-8, in unpadded base64url. */
 export function covenantHash(text: string): string {

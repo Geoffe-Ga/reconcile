@@ -1,12 +1,20 @@
 {
   "kind": "notices",
-  "about": "The steward's release on the shelf (#488, shelf/fold.ts rules 1 and 8, shelf/notices.ts, docs/spec/listed-doors.md §4.3 and §6.1). Each door's record is signed by its door's key, made from the door's label (fold.test.ts), as in ownership.json. A record under `release` is a release notice naming that door, signed by the steward's key the tests pin (src/test/steward.ts) and served under its address, or, with `signer`, signed by that door's own key and served under that door's address, which every device ignores. A record under `later` is a later notice (hold, uphold, suspend or pause) naming that door, signed by the steward, which parses and changes nothing until #489. These records are folded as given, with no release added. `listings` are the doors whose listings show, each with its name; `entries` the doors and ids that show, newest first; `held` the doors whose listing the device sees but no release names.",
+  "about": "The steward's notices on the shelf (#488, #489; shelf/fold.ts rules 1 and 8, shelf/notices.ts, docs/spec/listed-doors.md §4.3 and §6.1). Each door's record is signed by its door's key, made from the door's label (fold.test.ts), as in ownership.json. A record under `release`, `hold`, `uphold` or `suspend` is that notice naming that door, with `id` naming one of its entries by label and `clause` the covenant clause; one under `pause` is a pause, on or off. Each is signed by the steward's key the tests pin (src/test/steward.ts) and served under its address, or, with `signer`, signed by that door's own key and served under that door's address, which every device ignores. A record arrives at `received`, else a day and a minute before the minute the fold runs at, fold.test.ts's NOW (29,000,000); a hold lapses 10,080 relay minutes after it arrives. These records are folded as given, with no release added. `listings` are the doors whose listings show, each with its name; `entries` the doors and ids that show, newest first; `held` the doors whose listing a door's page counts as held (no release, a hold that stands, or a suspend); `tombstones`, when given, each tombstone as its door, the entry it replaced or null for a listing, and its clause, newest first; `holds`, when given, each hold that stands; `paused`, when given, whether a pause stands, which every reader's screen shows in place of the shelf.",
   "cases": [
     {
       "about": "a listing no release names shows nowhere, nor do its entries",
       "records": [
-        { "seq": 1, "door": "oak", "listing": "Oak St Tenants" },
-        { "seq": 2, "door": "oak", "entry": "d1" }
+        {
+          "seq": 1,
+          "door": "oak",
+          "listing": "Oak St Tenants"
+        },
+        {
+          "seq": 2,
+          "door": "oak",
+          "entry": "d1"
+        }
       ],
       "listings": [],
       "entries": [],
@@ -15,9 +23,20 @@
     {
       "about": "a release lets the listing and its entries show",
       "records": [
-        { "seq": 1, "door": "oak", "listing": "Oak St Tenants" },
-        { "seq": 2, "door": "oak", "entry": "d1" },
-        { "seq": 3, "release": "oak" }
+        {
+          "seq": 1,
+          "door": "oak",
+          "listing": "Oak St Tenants"
+        },
+        {
+          "seq": 2,
+          "door": "oak",
+          "entry": "d1"
+        },
+        {
+          "seq": 3,
+          "release": "oak"
+        }
       ],
       "listings": [["oak", "Oak St Tenants"]],
       "entries": [["oak", "d1"]],
@@ -26,8 +45,15 @@
     {
       "about": "a release folds the same whatever its seq",
       "records": [
-        { "seq": 1, "release": "oak" },
-        { "seq": 2, "door": "oak", "listing": "Oak St Tenants" }
+        {
+          "seq": 1,
+          "release": "oak"
+        },
+        {
+          "seq": 2,
+          "door": "oak",
+          "listing": "Oak St Tenants"
+        }
       ],
       "listings": [["oak", "Oak St Tenants"]],
       "entries": [],
@@ -36,10 +62,26 @@
     {
       "about": "a release a door signs, even of itself, releases nothing",
       "records": [
-        { "seq": 1, "door": "oak", "listing": "Oak St Tenants" },
-        { "seq": 2, "release": "oak", "signer": "oak" },
-        { "seq": 3, "door": "birch", "listing": "Birch Ave" },
-        { "seq": 4, "release": "birch", "signer": "oak" }
+        {
+          "seq": 1,
+          "door": "oak",
+          "listing": "Oak St Tenants"
+        },
+        {
+          "seq": 2,
+          "release": "oak",
+          "signer": "oak"
+        },
+        {
+          "seq": 3,
+          "door": "birch",
+          "listing": "Birch Ave"
+        },
+        {
+          "seq": 4,
+          "release": "birch",
+          "signer": "oak"
+        }
       ],
       "listings": [],
       "entries": [],
@@ -48,46 +90,485 @@
     {
       "about": "a release lets only the address it names show",
       "records": [
-        { "seq": 1, "door": "oak", "listing": "Oak St Tenants" },
-        { "seq": 2, "door": "birch", "listing": "Birch Ave" },
-        { "seq": 3, "release": "birch" }
+        {
+          "seq": 1,
+          "door": "oak",
+          "listing": "Oak St Tenants"
+        },
+        {
+          "seq": 2,
+          "door": "birch",
+          "listing": "Birch Ave"
+        },
+        {
+          "seq": 3,
+          "release": "birch"
+        }
       ],
       "listings": [["birch", "Birch Ave"]],
       "entries": [],
       "held": ["oak"]
     },
     {
-      "about": "a listing no release names claims no name, so a later released look-alike holds it",
+      "about": "a hold on a listing hides it and its entries: still held at 10,079 relay minutes",
       "records": [
-        { "seq": 1, "door": "oak", "listing": "Eastside Tenants Union" },
-        { "seq": 2, "door": "birch", "listing": "EASTSIDE TENANTS UNI0N" },
-        { "seq": 3, "door": "birch", "entry": "d1" },
-        { "seq": 4, "release": "birch" }
+        {
+          "seq": 1,
+          "door": "oak",
+          "listing": "Oak St Tenants"
+        },
+        {
+          "seq": 2,
+          "door": "oak",
+          "entry": "d1"
+        },
+        {
+          "seq": 3,
+          "release": "oak"
+        },
+        {
+          "seq": 4,
+          "hold": "oak",
+          "clause": "C2",
+          "received": 28989921
+        }
       ],
-      "listings": [["birch", "EASTSIDE TENANTS UNI0N"]],
-      "entries": [["birch", "d1"]],
-      "held": ["oak"]
+      "listings": [],
+      "entries": [],
+      "held": ["oak"],
+      "holds": [["oak", null, "C2"]],
+      "tombstones": []
     },
     {
-      "about": "a later notice parses and changes nothing until #489",
+      "about": "a hold that lapses at 10,080 relay minutes with no uphold shows the listing and its entries again",
       "records": [
-        { "seq": 1, "door": "oak", "listing": "Oak St Tenants" },
-        { "seq": 2, "door": "oak", "entry": "d1" },
-        { "seq": 3, "release": "oak" },
-        { "seq": 4, "later": "oak" },
-        { "seq": 5, "door": "birch", "listing": "Birch Ave" },
-        { "seq": 6, "later": "birch" }
+        {
+          "seq": 1,
+          "door": "oak",
+          "listing": "Oak St Tenants"
+        },
+        {
+          "seq": 2,
+          "door": "oak",
+          "entry": "d1"
+        },
+        {
+          "seq": 3,
+          "release": "oak"
+        },
+        {
+          "seq": 4,
+          "hold": "oak",
+          "clause": "C2",
+          "received": 28989920
+        }
       ],
       "listings": [["oak", "Oak St Tenants"]],
       "entries": [["oak", "d1"]],
-      "held": ["birch"]
+      "held": [],
+      "holds": [],
+      "tombstones": []
+    },
+    {
+      "about": "a held listing keeps its name, so a look-alike stays shadowed while the hold stands",
+      "records": [
+        {
+          "seq": 1,
+          "door": "oak",
+          "listing": "Eastside Tenants Union"
+        },
+        {
+          "seq": 2,
+          "door": "birch",
+          "listing": "EASTSIDE TENANTS UNI0N"
+        },
+        {
+          "seq": 3,
+          "door": "birch",
+          "entry": "d1"
+        },
+        {
+          "seq": 4,
+          "release": "oak"
+        },
+        {
+          "seq": 5,
+          "release": "birch"
+        },
+        {
+          "seq": 6,
+          "hold": "oak",
+          "clause": "C3",
+          "received": 28989921
+        }
+      ],
+      "listings": [],
+      "entries": [],
+      "held": ["oak"],
+      "holds": [["oak", null, "C3"]]
+    },
+    {
+      "about": "a hold on an entry hides only that entry: still held at 10,079 relay minutes",
+      "records": [
+        {
+          "seq": 1,
+          "door": "oak",
+          "listing": "Oak St Tenants"
+        },
+        {
+          "seq": 2,
+          "door": "oak",
+          "entry": "d1"
+        },
+        {
+          "seq": 3,
+          "door": "oak",
+          "entry": "d2"
+        },
+        {
+          "seq": 4,
+          "release": "oak"
+        },
+        {
+          "seq": 5,
+          "hold": "oak",
+          "id": "d1",
+          "clause": "C2",
+          "received": 28989921
+        }
+      ],
+      "listings": [["oak", "Oak St Tenants"]],
+      "entries": [["oak", "d2"]],
+      "held": [],
+      "holds": [["oak", "d1", "C2"]],
+      "tombstones": []
+    },
+    {
+      "about": "a hold on an entry lapses at 10,080 relay minutes, and the entry shows in its place again",
+      "records": [
+        {
+          "seq": 1,
+          "door": "oak",
+          "listing": "Oak St Tenants"
+        },
+        {
+          "seq": 2,
+          "door": "oak",
+          "entry": "d1"
+        },
+        {
+          "seq": 3,
+          "door": "oak",
+          "entry": "d2"
+        },
+        {
+          "seq": 4,
+          "release": "oak"
+        },
+        {
+          "seq": 5,
+          "hold": "oak",
+          "id": "d1",
+          "clause": "C2",
+          "received": 28989920
+        }
+      ],
+      "listings": [["oak", "Oak St Tenants"]],
+      "entries": [
+        ["oak", "d2"],
+        ["oak", "d1"]
+      ],
+      "held": [],
+      "holds": []
+    },
+    {
+      "about": "an uphold takes the entry down for good and leaves a tombstone naming its clause in its place",
+      "records": [
+        {
+          "seq": 1,
+          "door": "oak",
+          "listing": "Oak St Tenants"
+        },
+        {
+          "seq": 2,
+          "door": "oak",
+          "entry": "d1"
+        },
+        {
+          "seq": 3,
+          "door": "oak",
+          "entry": "d2"
+        },
+        {
+          "seq": 4,
+          "release": "oak"
+        },
+        {
+          "seq": 5,
+          "hold": "oak",
+          "id": "d1",
+          "clause": "C2",
+          "received": 28989920
+        },
+        {
+          "seq": 6,
+          "uphold": "oak",
+          "id": "d1",
+          "clause": "C2"
+        }
+      ],
+      "listings": [["oak", "Oak St Tenants"]],
+      "entries": [["oak", "d2"]],
+      "held": [],
+      "holds": [],
+      "tombstones": [["oak", "d1", "C2"]]
+    },
+    {
+      "about": "an uphold's tombstone stands with the entry gone from the relay, in the notice's place",
+      "records": [
+        {
+          "seq": 1,
+          "door": "oak",
+          "listing": "Oak St Tenants"
+        },
+        {
+          "seq": 2,
+          "door": "oak",
+          "entry": "d2"
+        },
+        {
+          "seq": 3,
+          "release": "oak"
+        },
+        {
+          "seq": 4,
+          "uphold": "oak",
+          "id": "d1",
+          "clause": "C3"
+        }
+      ],
+      "listings": [["oak", "Oak St Tenants"]],
+      "entries": [["oak", "d2"]],
+      "held": [],
+      "tombstones": [["oak", "d1", "C3"]]
+    },
+    {
+      "about": "an uphold's tombstone ends with the entry's 30 days, counted from the uphold once the entry is gone",
+      "records": [
+        {
+          "seq": 1,
+          "door": "oak",
+          "listing": "Oak St Tenants"
+        },
+        {
+          "seq": 2,
+          "release": "oak"
+        },
+        {
+          "seq": 3,
+          "uphold": "oak",
+          "id": "d1",
+          "clause": "C2",
+          "received": 28950000
+        }
+      ],
+      "listings": [["oak", "Oak St Tenants"]],
+      "entries": [],
+      "held": [],
+      "tombstones": []
+    },
+    {
+      "about": "a suspend ends the listing with its name and entries, leaves a tombstone, and a look-alike takes the name",
+      "records": [
+        {
+          "seq": 1,
+          "door": "oak",
+          "listing": "Eastside Tenants Union"
+        },
+        {
+          "seq": 2,
+          "door": "oak",
+          "entry": "d1"
+        },
+        {
+          "seq": 3,
+          "door": "birch",
+          "listing": "EASTSIDE TENANTS UNI0N"
+        },
+        {
+          "seq": 4,
+          "release": "oak"
+        },
+        {
+          "seq": 5,
+          "release": "birch"
+        },
+        {
+          "seq": 6,
+          "suspend": "oak",
+          "clause": "C3"
+        }
+      ],
+      "listings": [["birch", "EASTSIDE TENANTS UNI0N"]],
+      "entries": [],
+      "held": ["oak"],
+      "tombstones": [["oak", null, "C3"]]
+    },
+    {
+      "about": "a suspend of a listing never released leaves no tombstone: nobody saw it",
+      "records": [
+        {
+          "seq": 1,
+          "door": "oak",
+          "listing": "Oak St Tenants"
+        },
+        {
+          "seq": 2,
+          "suspend": "oak",
+          "clause": "C3"
+        }
+      ],
+      "listings": [],
+      "entries": [],
+      "held": ["oak"],
+      "tombstones": []
+    },
+    {
+      "about": "a pause stands on its newest notice: every screen hides the shelf behind one line, and the fold still says what stands beneath it",
+      "records": [
+        {
+          "seq": 1,
+          "door": "oak",
+          "listing": "Oak St Tenants"
+        },
+        {
+          "seq": 2,
+          "door": "oak",
+          "entry": "d1"
+        },
+        {
+          "seq": 3,
+          "door": "oak",
+          "entry": "d2"
+        },
+        {
+          "seq": 4,
+          "release": "oak"
+        },
+        {
+          "seq": 5,
+          "uphold": "oak",
+          "id": "d1",
+          "clause": "C2"
+        },
+        {
+          "seq": 6,
+          "pause": true
+        }
+      ],
+      "listings": [["oak", "Oak St Tenants"]],
+      "entries": [["oak", "d2"]],
+      "held": [],
+      "tombstones": [["oak", "d1", "C2"]],
+      "paused": true
+    },
+    {
+      "about": "a pause that is off shows the shelf again",
+      "records": [
+        {
+          "seq": 1,
+          "door": "oak",
+          "listing": "Oak St Tenants"
+        },
+        {
+          "seq": 2,
+          "door": "oak",
+          "entry": "d1"
+        },
+        {
+          "seq": 3,
+          "release": "oak"
+        },
+        {
+          "seq": 4,
+          "pause": true
+        },
+        {
+          "seq": 5,
+          "pause": false
+        }
+      ],
+      "listings": [["oak", "Oak St Tenants"]],
+      "entries": [["oak", "d1"]],
+      "held": [],
+      "paused": false
+    },
+    {
+      "about": "a hold, uphold, suspend or pause a door signs changes nothing",
+      "records": [
+        {
+          "seq": 1,
+          "door": "oak",
+          "listing": "Oak St Tenants"
+        },
+        {
+          "seq": 2,
+          "door": "oak",
+          "entry": "d1"
+        },
+        {
+          "seq": 3,
+          "release": "oak"
+        },
+        {
+          "seq": 4,
+          "hold": "oak",
+          "clause": "C2",
+          "signer": "oak"
+        },
+        {
+          "seq": 5,
+          "uphold": "oak",
+          "id": "d1",
+          "clause": "C2",
+          "signer": "oak"
+        },
+        {
+          "seq": 6,
+          "suspend": "oak",
+          "clause": "C2",
+          "signer": "oak"
+        },
+        {
+          "seq": 7,
+          "pause": true,
+          "signer": "oak"
+        }
+      ],
+      "listings": [["oak", "Oak St Tenants"]],
+      "entries": [["oak", "d1"]],
+      "held": [],
+      "holds": [],
+      "tombstones": [],
+      "paused": false
     },
     {
       "about": "a final listing ends a released listing as it ends any",
       "records": [
-        { "seq": 1, "door": "oak", "listing": "Oak St Tenants" },
-        { "seq": 2, "release": "oak" },
-        { "seq": 3, "door": "oak", "final": true }
+        {
+          "seq": 1,
+          "door": "oak",
+          "listing": "Oak St Tenants"
+        },
+        {
+          "seq": 2,
+          "release": "oak"
+        },
+        {
+          "seq": 3,
+          "door": "oak",
+          "final": true
+        }
       ],
       "listings": [],
       "entries": [],

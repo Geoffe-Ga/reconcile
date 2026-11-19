@@ -15,7 +15,7 @@ import type { FrontDoor } from '../engine/optIns';
 import { createShelf, type Shelf } from '../net/shelf';
 import { RelayError } from '../net/relay';
 import { COVENANT_HASH, DOOR, LISTED, RENEWED, ROTATED, secretOf } from '../test/door';
-import { createFakeShelf, type FakeShelf } from '../test/fakeShelf';
+import { createFakeShelf, type FakeShelf, notify } from '../test/fakeShelf';
 import { authorOf } from '../test/keys';
 import { groupLog, type LogBuilder } from '../test/votes';
 import { createShelfKeeper, entriesDue, type KeptGroup, listingsDue } from './keeper';
@@ -246,7 +246,7 @@ describe('createShelfKeeper: posting and refreshing the listing (§4.2, §4.5)',
     await device(fake, log).run();
 
     expect(puts(fake)).toBe(2);
-    expect(fake.records.map((r) => [r.seq, r.held])).toEqual([[1, true]]);
+    expect(fake.records.map((r) => [r.seq, r.heldUntil])).toEqual([[1, Infinity]]);
   });
 
   it('refreshes the listing when its newest copy is 10,080 relay minutes old', async () => {
@@ -489,6 +489,64 @@ describe('entriesDue: the Dispatches a listed group keeps on the shelf (§4.5)',
 });
 
 describe('createShelfKeeper: entries (§4.2, §4.5)', () => {
+  it('never posts again an entry the steward upheld (#489)', async () => {
+    const log = opened();
+    const id = publish(log);
+    const fake = shelfAt(log);
+    await device(fake, log).run();
+    const address = addressOfDoor(LISTED);
+    const shelf = createShelf({ fetch: fake.fetch });
+    await notify(shelf, { v: 1, kind: 'notice', act: 'uphold', address, id, clause: 'C2' });
+    inStep(fake, log, 1440);
+    const before = puts(fake);
+
+    await device(fake, log).run();
+
+    expect(bodiesAt(fake, LISTED)).toEqual([OPEN]);
+    expect(puts(fake)).toBe(before);
+  });
+
+  it('posts nothing more under a door the steward suspended, even once its listing comes due (#489)', async () => {
+    const log = opened();
+    publish(log);
+    const fake = shelfAt(log);
+    const ana = device(fake, log);
+    await ana.run();
+    const address = addressOfDoor(LISTED);
+    const shelf = createShelf({ fetch: fake.fetch });
+    await notify(shelf, { v: 1, kind: 'notice', act: 'suspend', address, clause: 'C3' });
+    inStep(fake, log, REFRESH_MINUTES);
+    publish(log, 'Another');
+    const before = puts(fake);
+
+    await ana.run();
+    await device(fake, log).run();
+
+    expect(bodiesAt(fake, LISTED)).toEqual([]);
+    expect(puts(fake)).toBe(before);
+  });
+
+  it('stops, without failing, when the relay refuses a suspended door it can’t verify (#489)', async () => {
+    const log = opened();
+    publish(log);
+    const fake = shelfAt(log);
+    const real = fake.fetch;
+    const refused = {
+      ...fake,
+      fetch: (async (input, init) =>
+        init?.method === 'PUT'
+          ? Response.json({ error: 'suspended' }, { status: 403 })
+          : real(input, init)) as FakeShelf['fetch'],
+    };
+    const ana = device(refused, log);
+
+    await expect(ana.run()).resolves.toBeUndefined();
+    const before = refused.urls.length;
+    await ana.run();
+
+    expect(fake.urls.length).toBe(before);
+  });
+
   it('posts an entry once the shelf line has passed, after the listing', async () => {
     const log = opened();
     const fake = shelfAt(log);

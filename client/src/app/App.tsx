@@ -6,7 +6,13 @@
  */
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { apply, type ApplyValues, forgetJoined, takesDocuments } from '../door/apply';
+import {
+  apply,
+  type ApplyValues,
+  forgetJoined,
+  listingRemoved,
+  takesDocuments,
+} from '../door/apply';
 import { sendInvite } from '../door/inbox';
 import { type OpenPage, parseDoorPayload } from '../door/page';
 import { can, type Level } from '../engine/capabilities';
@@ -50,7 +56,7 @@ import { AddSection, RemoveSection } from '../screens/SectionComposer';
 import { SendDispatch } from '../screens/SendDispatch';
 import { type NotifyGroup, Settings } from '../screens/Settings';
 import { Steward } from '../screens/Steward';
-import { importStewardKey, releaseListing } from './steward';
+import { importStewardKey, sendNotice } from './steward';
 import { useHoldsStewardKey, useOffersStewardKey, useStewardQueue } from './useSteward';
 import { SharedPage } from '../screens/SharedPage';
 import type { SeatNumber } from '../engine/stewards';
@@ -167,6 +173,7 @@ import { usePasskeyState } from './usePasskeyState';
 import { usePublicShelf } from './usePublicShelf';
 import { useHeardRelay, usePersonalList } from './usePersonalList';
 import { DiscoverScreen, ShelfEntryScreen } from './DiscoverScreen';
+import { ShelfHolds } from './ShelfHolds';
 import { ShelfStrays } from './ShelfStrays';
 import { chooseContacts } from '../store/recovery';
 import { approveRecovery, holdViews, resendRelease } from '../recovery/holder';
@@ -329,6 +336,10 @@ function DoorScreen({
     (address: string) => takesDocuments(services.shelf, address),
     [services],
   );
+  const removed = useCallback(
+    (address: string) => listingRemoved(services.shelf, address),
+    [services],
+  );
   return sent === null || documents === null ? null : (
     <FrontDoor
       payload={payload}
@@ -337,6 +348,7 @@ function DoorScreen({
       onApply={onApply}
       documents={documents}
       takesDocuments={takes}
+      listingRemoved={removed}
       cardGroups={cardGroups}
       onMakeCard={onMakeCard}
     />
@@ -450,10 +462,10 @@ function ConsoleScreen({ services }: { readonly services: AppServices }) {
   return (
     <Steward
       queue={queue}
-      onRelease={(address) =>
+      onNotice={(notice) =>
         stewardShelf === undefined
           ? Promise.resolve(false)
-          : releaseListing(services.store, stewardShelf, address)
+          : sendNotice(services.store, stewardShelf, notice)
       }
     />
   );
@@ -863,7 +875,12 @@ function GroupScreen({ services, groupId }: GroupScreenProps) {
             ) : null
           }
           alertCard={alert === null ? null : <div className="backup-slot">{alert}</div>}
-          shelfNote={<ShelfStrays state={group.state} shelf={services.shelf} />}
+          shelfNote={
+            <>
+              <ShelfHolds state={group.state} shelf={services.shelf} />
+              <ShelfStrays state={group.state} shelf={services.shelf} />
+            </>
+          }
           recoveryCard={
             <HeldShareCard
               held={group.newShares}

@@ -12,7 +12,7 @@ import { nameSkeleton } from '../shelf/skeleton';
 import { VaultLocked } from '../store/db';
 import { createFakeShelf, release } from '../test/fakeShelf';
 import { STEWARD_ADDRESS, TEST_PINS, TEST_STEWARD_SECRET } from '../test/steward';
-import { derivesPins, importStewardKey, readQueue, releaseListing } from './steward';
+import { derivesPins, importStewardKey, readQueue, releaseListing, sendNotice } from './steward';
 
 const COVENANT = base64url(new Uint8Array(32).fill(9));
 
@@ -87,6 +87,54 @@ describe('importStewardKey', () => {
   });
 });
 
+describe('readQueue and sendNotice (#489)', () => {
+  it('lists what stands, entries at once; holds one with its lapse; and leaves a held listing out of the waiting', async () => {
+    const fake = createFakeShelf();
+    const shelf = createShelf({ fetch: fake.fetch });
+    const oak = newSigningKeys();
+    const address = base64url(oak.publicKey);
+    await shelf.put(address, listingBy(oak, 'Oak St Tenants'));
+    await release(shelf, address);
+    const id = base64url(new Uint8Array(32).fill(4));
+    await shelf.put(
+      address,
+      signShelfBody(oak, { v: 1, kind: 'entry', id, title: 'Rent', text: '' }),
+    );
+    const store = keyStore(TEST_STEWARD_SECRET);
+
+    const before = await readQueue(shelf);
+    expect(typeof before === 'string' ? null : before.entries.map((e) => e.title)).toEqual([
+      'Rent',
+    ]);
+    expect(typeof before === 'string' ? null : before.listings.map((l) => l.name)).toEqual([
+      'Oak St Tenants',
+    ]);
+    const hold = { v: 1, kind: 'notice', act: 'hold', address, clause: 'C3' } as const;
+    expect(await sendNotice(store, shelf, hold)).toBe(true);
+    expect(await sendNotice(store, shelf, { v: 1, kind: 'notice', act: 'pause', on: true })).toBe(
+      true,
+    );
+
+    const after = await readQueue(shelf);
+    if (typeof after === 'string') throw new Error('a view');
+    expect(after.waiting).toEqual([]);
+    expect(after.listings).toEqual([]);
+    expect(after.paused).toBe(true);
+    expect(after.holds).toMatchObject([
+      {
+        hold: {
+          address,
+          id: null,
+          clause: 'C3',
+          until: fake.minute + 10_080,
+        },
+        name: 'Oak St Tenants',
+        title: null,
+      },
+    ]);
+  });
+});
+
 describe('readQueue and releaseListing', () => {
   it('lists each held listing beside the live one holding its name, and releases it', async () => {
     const fake = createFakeShelf();
@@ -99,14 +147,16 @@ describe('readQueue and releaseListing', () => {
 
     const queue = await readQueue(shelf);
 
-    const waiting = typeof queue === 'string' ? [] : queue;
+    const waiting = typeof queue === 'string' ? [] : queue.waiting;
     expect(waiting.map((w) => [w.listing.name, w.holder?.name])).toEqual([
       ['EASTSIDE TENANTS UNI0N', 'Eastside Tenants Union'],
     ]);
     expect(
       await releaseListing(keyStore(TEST_STEWARD_SECRET), shelf, base64url(oak.publicKey)),
     ).toBe(true);
-    expect(await readQueue(shelf)).toEqual([]);
+    expect(await readQueue(shelf)).toEqual(
+      expect.objectContaining({ waiting: [], holds: [], paused: false }),
+    );
     expect(fake.records.at(-1)?.address).toBe(STEWARD_ADDRESS);
   });
 

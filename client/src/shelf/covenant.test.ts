@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { base64url } from '../crypto/base64url';
 import { sha256 } from '../crypto/hash';
 import {
+  CLAUSE_WORDS,
   COVENANT,
   COVENANT_CLAUSES,
   COVENANT_HASH,
@@ -62,5 +63,12 @@ describe('the covenant a listing accepts (ADR-0081 §3)', () => {
     expect(covenantOf(COVENANT_HASH)).toBe(COVENANT);
     expect(covenantOf(base64url(new Uint8Array(32)))).toBeNull();
     expect(covenantOf(undefined)).toBeNull();
+  });
+
+  it('names each clause in a few words for a tombstone or a hold, one per clause (#489)', () => {
+    expect(Object.keys(CLAUSE_WORDS)).toEqual(['C1', 'C2', 'C3']);
+    expect(CLAUSE_WORDS.C2).toBe('spam');
+    expect(CLAUSE_WORDS.C3).toBe('impersonation of another group or person');
+    expect(COVENANT.text).not.toContain(CLAUSE_WORDS.C1);
   });
 });

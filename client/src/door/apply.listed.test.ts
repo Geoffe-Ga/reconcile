@@ -19,14 +19,14 @@ import { createRelay } from '../net/relay';
 import { createShelf } from '../net/shelf';
 import { NEW_LISTING_MINUTES } from '../shelf/fold';
 import { createShelfReader, type KeptShelf, type ShelfReader } from '../shelf/read';
-import { signShelfBody } from '../shelf/record';
+import { type NoticeBody, signShelfBody } from '../shelf/record';
 import { nameSkeleton } from '../shelf/skeleton';
 import { openStore } from '../store/db';
 import { COVENANT_HASH, DOOR } from '../test/door';
 import { createFakeRelay } from '../test/fakeRelay';
-import { createFakeShelf, release } from '../test/fakeShelf';
+import { createFakeShelf, notify, release } from '../test/fakeShelf';
 import { freshIndexedDBPerTest } from '../test/idb';
-import { apply, takesDocuments } from './apply';
+import { apply, listingRemoved, takesDocuments } from './apply';
 import { addressOf, type OpenPage } from './page';
 
 freshIndexedDBPerTest();
@@ -66,7 +66,10 @@ function memoryKeep() {
  * A shelf where the door was listed at {@link LISTED_AT} and is read
  * `minutes` later by the fake relay's clock; or one that doesn't list it.
  */
-async function shelfAfter(minutes: number, { listed = true } = {}): Promise<ShelfReader> {
+async function shelfAfter(
+  minutes: number,
+  { listed = true, notices = [] as readonly NoticeBody[] } = {},
+): Promise<ShelfReader> {
   const fake = createFakeShelf({ minute: LISTED_AT });
   const shelf = createShelf({ fetch: fake.fetch });
   if (listed) {
@@ -85,6 +88,7 @@ async function shelfAfter(minutes: number, { listed = true } = {}): Promise<Shel
     await release(shelf, DOOR_ADDRESS);
   }
   fake.minute = LISTED_AT + minutes;
+  for (const notice of notices) await notify(shelf, notice);
   return createShelfReader({ shelf, keep: memoryKeep(), now: () => 0 });
 }
 
@@ -130,6 +134,41 @@ describe('takesDocuments: whether the shelf lets a door take personal Documents'
       now: () => 0,
     });
     expect(await takesDocuments(reader, DOOR_ADDRESS)).toBe(true);
+  });
+});
+
+describe('a door the steward holds or removes (#489, §6.1)', () => {
+  const hold: NoticeBody = {
+    v: 1,
+    kind: 'notice',
+    act: 'hold',
+    address: DOOR_ADDRESS,
+    clause: 'C2',
+  };
+  const suspend: NoticeBody = {
+    v: 1,
+    kind: 'notice',
+    act: 'suspend',
+    address: DOOR_ADDRESS,
+    clause: 'C3',
+  };
+
+  it('takes no Documents while a hold on its listing stands, however long it was listed', async () => {
+    const shelf = await shelfAfter(43_200, { notices: [hold] });
+    expect(await takesDocuments(shelf, DOOR_ADDRESS)).toBe(false);
+    expect(await listingRemoved(shelf, DOOR_ADDRESS)).toBeNull();
+  });
+
+  it('takes no Documents once suspended, and names the clause its listing was removed under', async () => {
+    const shelf = await shelfAfter(43_200, { notices: [suspend] });
+    expect(await takesDocuments(shelf, DOOR_ADDRESS)).toBe(false);
+    expect(await listingRemoved(shelf, DOOR_ADDRESS)).toBe('C3');
+  });
+
+  it('names no removal for a listing that stands, an unlisted door, or with no shelf', async () => {
+    expect(await listingRemoved(await shelfAfter(43_200), DOOR_ADDRESS)).toBeNull();
+    expect(await listingRemoved(await shelfAfter(0, { listed: false }), DOOR_ADDRESS)).toBeNull();
+    expect(await listingRemoved(undefined, DOOR_ADDRESS)).toBeNull();
   });
 });
 

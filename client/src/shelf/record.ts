@@ -12,11 +12,18 @@
  *   most 500), with no name, author, count or time of its own;
  * - a `withdraw`, naming an entry's id.
  *
- * The steward signs the fifth kind, a `notice` (#488, §6.1):
- * `{v, kind, act, address?, id?, clause?}`. A `release` names exactly the
- * address it releases. Every later act (`hold`, `uphold`, `suspend` and
- * `pause`) reads back as a stub, its fields checked but none required, and
- * the fold ignores it until #489 folds it.
+ * The steward signs the fifth kind, a `notice` (#488, #489, §6.1):
+ * `{v, kind, act, address?, id?, clause?, on?}`, naming exactly what its act
+ * acts on:
+ *
+ * - `release`: the `address` it releases;
+ * - `hold`: an `address` and a `clause`, and an entry's `id` when it holds
+ *   one entry rather than the whole listing;
+ * - `uphold`: an `address`, an entry's `id` and a `clause`;
+ * - `suspend`: an `address` and a `clause`;
+ * - `pause`: `on`, true to pause the shelf and false to end the pause. §6.1
+ *   says a pause is "on or off" and §4.1 had no field for it, so #489 adds
+ *   `on`, on a pause only.
  *
  * A body with any other key, or one missing, reads as none: a reader never
  * guesses at what a signer meant.
@@ -91,24 +98,52 @@ export interface ReleaseNoticeBody {
   readonly address: string;
 }
 
-/** The acts #489 folds: each parses now, and is ignored until then. */
-export type LaterAct = 'hold' | 'uphold' | 'suspend' | 'pause';
-
 /** A covenant clause a notice may name (§6.1). */
 export type Clause = 'C1' | 'C2' | 'C3';
 
-/** A later notice (#489): what it names, as far as it names it. */
-export interface LaterNoticeBody {
+/** The steward's word that an address's listing, or one of its entries, hides for a while (#489). */
+export interface HoldNoticeBody {
   readonly v: typeof SHELF_VERSION;
   readonly kind: 'notice';
-  readonly act: LaterAct;
-  readonly address?: string;
+  readonly act: 'hold';
+  /** The listing's address. */
+  readonly address: string;
+  /** The entry it holds; absent, it holds the whole listing. */
   readonly id?: string;
-  readonly clause?: Clause;
+  readonly clause: Clause;
+}
+
+/** The steward's word that an entry broke a clause, and comes down (#489). */
+export interface UpholdNoticeBody {
+  readonly v: typeof SHELF_VERSION;
+  readonly kind: 'notice';
+  readonly act: 'uphold';
+  readonly address: string;
+  /** The entry it removes. */
+  readonly id: string;
+  readonly clause: Clause;
+}
+
+/** The steward's word that a listing broke a clause, and comes down with its entries (#489). */
+export interface SuspendNoticeBody {
+  readonly v: typeof SHELF_VERSION;
+  readonly kind: 'notice';
+  readonly act: 'suspend';
+  readonly address: string;
+  readonly clause: Clause;
+}
+
+/** The steward's word that the whole shelf hides (`on`), or shows again (#489). */
+export interface PauseNoticeBody {
+  readonly v: typeof SHELF_VERSION;
+  readonly kind: 'notice';
+  readonly act: 'pause';
+  readonly on: boolean;
 }
 
 /** A record the steward signs. */
-export type NoticeBody = ReleaseNoticeBody | LaterNoticeBody;
+export type NoticeBody =
+  ReleaseNoticeBody | HoldNoticeBody | UpholdNoticeBody | SuspendNoticeBody | PauseNoticeBody;
 
 /** Any record a door, or the steward, signs. */
 export type ShelfBody = OpenListingBody | FinalListingBody | EntryBody | WithdrawBody | NoticeBody;
@@ -132,22 +167,21 @@ function ordered(body: ShelfBody): ShelfBody {
 
 /** A notice with its keys in the spec's order, leaving out those it lacks. */
 function orderedNotice(body: NoticeBody): NoticeBody {
-  return body.act === 'release'
-    ? { v: body.v, kind: body.kind, act: body.act, address: body.address }
-    : orderedLater(body);
-}
-
-/** A later notice with its keys in the spec's order, leaving out those it lacks. */
-function orderedLater(body: LaterNoticeBody): LaterNoticeBody {
-  const { v, kind, act, address, id, clause } = body;
-  return {
-    v,
-    kind,
-    act,
-    ...(address === undefined ? {} : { address }),
-    ...(id === undefined ? {} : { id }),
-    ...(clause === undefined ? {} : { clause }),
-  };
+  const { v, kind } = body;
+  switch (body.act) {
+    case 'release':
+      return { v, kind, act: body.act, address: body.address };
+    case 'hold': {
+      const { address, id, clause } = body;
+      return { v, kind, act: body.act, address, ...(id === undefined ? {} : { id }), clause };
+    }
+    case 'uphold':
+      return { v, kind, act: body.act, address: body.address, id: body.id, clause: body.clause };
+    case 'suspend':
+      return { v, kind, act: body.act, address: body.address, clause: body.clause };
+    case 'pause':
+      return { v, kind, act: body.act, on: body.on };
+  }
 }
 
 /** `body` as the bytes a door signs: compact JSON, keys in the spec's order, in UTF-8. */
@@ -186,12 +220,10 @@ const FINAL_KEYS = ['v', 'kind', 'open', 'final'];
 const ENTRY_KEYS = ['v', 'kind', 'id', 'title', 'text'];
 const WITHDRAW_KEYS = ['v', 'kind', 'id'];
 const RELEASE_KEYS = ['v', 'kind', 'act', 'address'];
-const NOTICE_KEYS: ReadonlySet<string> = new Set(['v', 'kind', 'act', 'address', 'id', 'clause']);
-const LATER_ACTS: ReadonlySet<unknown> = new Set<LaterAct>(['hold', 'uphold', 'suspend', 'pause']);
+const ENTRY_HOLD_KEYS = ['v', 'kind', 'act', 'address', 'id', 'clause'];
+const ADDRESS_HOLD_KEYS = ['v', 'kind', 'act', 'address', 'clause'];
+const PAUSE_KEYS = ['v', 'kind', 'act', 'on'];
 const CLAUSES: ReadonlySet<unknown> = new Set<Clause>(['C1', 'C2', 'C3']);
-
-/** Whether `value` is an act #489 folds. */
-const isLaterAct = (value: unknown): value is LaterAct => LATER_ACTS.has(value);
 
 /** Whether `value` is one of the covenant's clauses. */
 const isClause = (value: unknown): value is Clause => CLAUSES.has(value);
@@ -240,35 +272,56 @@ function releaseOf(fields: Readonly<Record<string, unknown>>): ReleaseNoticeBody
     : null;
 }
 
-/** Whether `value` is absent, or passes `check`. */
-const absentOr = (value: unknown, check: (value: unknown) => boolean): boolean =>
-  value === undefined || check(value);
-
-/**
- * A later notice's fields as its body, or null (#489's stub): an act it
- * knows, keys it knows, and each field it has well formed.
- */
-function laterOf(fields: Readonly<Record<string, unknown>>): LaterNoticeBody | null {
-  const { act, address, id, clause } = fields;
-  const fits =
-    Object.keys(fields).every((key) => NOTICE_KEYS.has(key)) &&
-    absentOr(address, isKey) &&
-    absentOr(id, isHash) &&
-    absentOr(clause, isClause);
-  if (!fits || !isLaterAct(act)) return null;
-  return orderedLater({
-    v: SHELF_VERSION,
-    kind: 'notice',
-    act,
-    ...(typeof address === 'string' ? { address } : {}),
-    ...(typeof id === 'string' ? { id } : {}),
-    ...(isClause(clause) ? { clause } : {}),
-  });
+/** A pause's fields as its body, or null. */
+function pauseOf(fields: Readonly<Record<string, unknown>>): PauseNoticeBody | null {
+  const { on } = fields;
+  return hasKeys(fields, PAUSE_KEYS) && typeof on === 'boolean'
+    ? { v: SHELF_VERSION, kind: 'notice', act: 'pause', on }
+    : null;
 }
 
-/** A notice's fields as its body: a release, a later act, or null. */
+/** A hold's fields as its body, of an entry or a whole listing, or null. */
+function holdOf(fields: Readonly<Record<string, unknown>>): HoldNoticeBody | null {
+  const { address, id, clause } = fields;
+  if (!isKey(address) || !isClause(clause)) return null;
+  if (hasKeys(fields, ADDRESS_HOLD_KEYS)) {
+    return { v: SHELF_VERSION, kind: 'notice', act: 'hold', address, clause };
+  }
+  return hasKeys(fields, ENTRY_HOLD_KEYS) && isHash(id)
+    ? { v: SHELF_VERSION, kind: 'notice', act: 'hold', address, id, clause }
+    : null;
+}
+
+/** An uphold's fields as its body, or null. */
+function upholdOf(fields: Readonly<Record<string, unknown>>): UpholdNoticeBody | null {
+  const { address, id, clause } = fields;
+  const fits = hasKeys(fields, ENTRY_HOLD_KEYS) && isKey(address) && isHash(id) && isClause(clause);
+  return fits ? { v: SHELF_VERSION, kind: 'notice', act: 'uphold', address, id, clause } : null;
+}
+
+/** A suspend's fields as its body, or null. */
+function suspendOf(fields: Readonly<Record<string, unknown>>): SuspendNoticeBody | null {
+  const { address, clause } = fields;
+  const fits = hasKeys(fields, ADDRESS_HOLD_KEYS) && isKey(address) && isClause(clause);
+  return fits ? { v: SHELF_VERSION, kind: 'notice', act: 'suspend', address, clause } : null;
+}
+
+/** A notice's fields as its body, by its act, or null for an act it doesn't know. */
 function noticeOf(fields: Readonly<Record<string, unknown>>): NoticeBody | null {
-  return fields.act === 'release' ? releaseOf(fields) : laterOf(fields);
+  switch (fields.act) {
+    case 'release':
+      return releaseOf(fields);
+    case 'hold':
+      return holdOf(fields);
+    case 'uphold':
+      return upholdOf(fields);
+    case 'suspend':
+      return suspendOf(fields);
+    case 'pause':
+      return pauseOf(fields);
+    default:
+      return null;
+  }
 }
 
 /**

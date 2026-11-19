@@ -52,6 +52,7 @@ import { codePointLength } from '../engine/text';
 import type { Relay } from '../net/relay';
 import { doorListing, newlyListed } from '../shelf/fold';
 import type { ShelfReader } from '../shelf/read';
+import type { Clause } from '../shelf/record';
 import {
   type ApplicationDocument,
   SENT_DAYS,
@@ -268,8 +269,9 @@ export function documentCopies(documents: readonly ApplicationDocument[]): Appli
 
 /**
  * Whether the door at `address` may be sent personal Documents (§5.3): yes
- * unless the shelf lists it and it's held or was first listed under 43,200
- * relay minutes ago, by the relay's minute at the shelf's last read. With
+ * unless the shelf lists it and it's held (#488, #489), was removed (#489)
+ * or was first listed under 43,200 relay minutes ago, by the relay's minute
+ * at the shelf's last read. With
  * no shelf, or while the relay has none, every door is unlisted. Rejects
  * when the shelf can't be read.
  */
@@ -279,7 +281,22 @@ export async function takesDocuments(
 ): Promise<boolean> {
   const read = await shelf?.current();
   if (read === undefined || read === null) return true;
-  return !newlyListed(doorListing(read.records, address, read.since), read.now);
+  return !newlyListed(doorListing(read.records, address, read.now, read.since), read.now);
+}
+
+/**
+ * The clause the steward removed the door at `address`'s listing under
+ * (#489; listed-doors.md §6.1), by the shelf's last read, or null while it
+ * stands, while it isn't listed, or with no shelf. Rejects when the shelf
+ * can't be read.
+ */
+export async function listingRemoved(
+  shelf: Pick<ShelfReader, 'current'> | undefined,
+  address: string,
+): Promise<Clause | null> {
+  const read = await shelf?.current();
+  if (read === undefined || read === null) return null;
+  return doorListing(read.records, address, read.now, read.since)?.removed ?? null;
 }
 
 /** Whether `documents` may go to the door at `address`: none always may; else as the shelf says. */

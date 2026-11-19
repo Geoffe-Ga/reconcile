@@ -35,7 +35,7 @@ import { type TestDevice, testDevice } from '../test/appServices';
 import { axeViolations } from '../test/axe';
 import { createFakeRelay } from '../test/fakeRelay';
 import { COVENANT_HASH, DOOR } from '../test/door';
-import { createFakeShelf, release } from '../test/fakeShelf';
+import { createFakeShelf, notify, release } from '../test/fakeShelf';
 import { freshIndexedDBPerTest } from '../test/idb';
 import { newPersonalId } from '../store/personal';
 import { foundAnother, go, members, type MountedApp, mountApp } from '../test/members';
@@ -186,6 +186,51 @@ describe('The public shelf on Discover through the app (#484)', { timeout: 60_00
 
     expect(await view.findByText(messages.shelfEntry.gone)).toBeVisible();
     expect(view.queryByRole('textbox')).toBeNull();
+  });
+
+  it('shows a tombstone in place of an entry the steward upheld, naming its clause (#489)', async () => {
+    const { shelf, address, id } = await stockedShelf();
+    await notify(shelf, {
+      v: 1,
+      kind: 'notice',
+      act: 'uphold',
+      address: String(address),
+      id: String(id),
+      clause: 'C2',
+    });
+    const device = await testDevice(createFakeRelay(), 'Nobody');
+    opened.push(device);
+    const services = { ...device.services, shelf: readerOf(shelf, device) };
+
+    go('#/discover');
+    const app = mountApp(services, 'u');
+    mounted.push(app);
+    const view = within(app.container);
+    const section = await view.findByRole('region', { name: messages.discover.shelfHeading });
+
+    expect(within(section).getByRole('heading', { level: 3 })).toHaveTextContent('Removed: spam');
+    expect(within(section).queryByText('Rent strike vote')).toBeNull();
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('hides the shelf, and an entry’s own page, behind the pause (#489)', async () => {
+    const { shelf, address, id } = await stockedShelf();
+    await notify(shelf, { v: 1, kind: 'notice', act: 'pause', on: true });
+    const device = await testDevice(createFakeRelay(), 'Nobody');
+    opened.push(device);
+    const services = { ...device.services, shelf: readerOf(shelf, device) };
+
+    go('#/discover');
+    const app = mountApp(services, 'p');
+    mounted.push(app);
+    const view = within(app.container);
+    const section = await view.findByRole('region', { name: messages.discover.shelfHeading });
+    expect(within(section).getByText(messages.discover.paused)).toBeVisible();
+    expect(within(section).queryByText('Rent strike vote')).toBeNull();
+
+    go(`#/discover/${String(address)}/${String(id)}`);
+    expect(await view.findByText(messages.shelfEntry.gone)).toBeVisible();
+    expect(view.queryByText('Rent strike vote')).toBeNull();
   });
 
   it('shows nothing of the shelf when the relay has none', async () => {

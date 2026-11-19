@@ -18,8 +18,12 @@
  * device in the entry's own group before its relay day has passed, "Shows
  * publicly tomorrow", and a link to the entry's own page, whose Share and
  * Copy pass its link along (#431). `DiscoverScreen` reads the shelf; this
- * screen only shows it. The section shows only while the shelf holds an
- * entry, so on a relay without the steward's key nothing of it appears.
+ * screen only shows it. A tombstone (#489) takes the place of what the
+ * steward removed, "Removed: {clause in words}", naming neither the group
+ * nor anyone who reported it, and while the steward's pause stands the
+ * section shows one line and nothing else. The section shows only while the
+ * shelf holds an entry or a tombstone, or is paused, so on a relay without
+ * the steward's key nothing of it appears.
  */
 import { useId } from 'react';
 import { Link } from 'react-aria-components';
@@ -30,7 +34,8 @@ import { messages } from '../app/messages';
 import { routeHref } from '../app/router';
 import { ShelfCard } from '../app/ShelfCard';
 import { PageHeader } from '../app/ui';
-import type { ShelfEntry, ShelfState } from '../shelf/fold';
+import { CLAUSE_WORDS } from '../shelf/covenant';
+import type { ShelfEntry, ShelfState, ShelfTombstone } from '../shelf/fold';
 
 /** Props for {@link Discover}. */
 export interface DiscoverProps {
@@ -79,8 +84,54 @@ function Feed({ feed }: { readonly feed: readonly FeedItem[] }) {
   );
 }
 
-/** "On the public shelf": its heading and one line, then each entry, newest first (#484). */
-function Shelf({ entries }: { readonly entries: readonly ShelfEntry[] }) {
+/** A tombstone (#489): "Removed: {clause in words}", and what came down, an entry or a listing. */
+function Tombstone({ tombstone }: { readonly tombstone: ShelfTombstone }) {
+  const words = messages.discover;
+  const heading = useId();
+  return (
+    <article className="card dispatch tombstone" aria-labelledby={heading}>
+      <h3 id={heading} className="heading-3 dispatch-title">
+        {words.removed(CLAUSE_WORDS[tombstone.clause])}
+      </h3>
+      <p className="meta">{tombstone.id === null ? words.removedListing : words.removedEntry}</p>
+    </article>
+  );
+}
+
+/** One place in the shelf's list: an entry, or the tombstone in place of what came down. */
+type Shelved =
+  | { readonly key: string; readonly seq: number; readonly entry: ShelfEntry }
+  | { readonly key: string; readonly seq: number; readonly tombstone: ShelfTombstone };
+
+/** The entries and tombstones in one list, newest first, each in its place in the shelf's order. */
+function shelvedOf({ entries, tombstones }: ShelfState): Shelved[] {
+  const shelved: Shelved[] = [
+    ...entries.map((entry) => ({ key: `${entry.address} ${entry.id}`, seq: entry.seq, entry })),
+    ...tombstones.map((tombstone) => ({
+      key: `removed ${tombstone.address} ${tombstone.id ?? ''}`,
+      seq: tombstone.seq,
+      tombstone,
+    })),
+  ];
+  return shelved.sort((a, b) => b.seq - a.seq);
+}
+
+/** One entry's card, with the link to its own page. */
+function EntryItem({ entry }: { readonly entry: ShelfEntry }) {
+  return (
+    <ShelfCard entry={entry} level={3}>
+      <Link href={routeHref({ name: 'shelfEntry', address: entry.address, id: entry.id })}>
+        {messages.discover.passAlong}
+      </Link>
+    </ShelfCard>
+  );
+}
+
+/**
+ * "On the public shelf": its heading and one line, then each entry and
+ * tombstone, newest first (#484, #489); or, while paused, one line alone.
+ */
+function Shelf({ shelf }: { readonly shelf: ShelfState }) {
   const words = messages.discover;
   const heading = useId();
   return (
@@ -88,31 +139,37 @@ function Shelf({ entries }: { readonly entries: readonly ShelfEntry[] }) {
       <h2 id={heading} className="eyebrow section-heading">
         {words.shelfHeading}
       </h2>
-      {/* One body beside the heading: `.section` lays out two columns. */}
-      <div className="stack">
-        <p>{words.shelfLede}</p>
-        <ul className="dispatch-list" aria-labelledby={heading}>
-          {entries.map((entry) => (
-            <li key={`${entry.address} ${entry.id}`}>
-              <ShelfCard entry={entry} level={3}>
-                <Link
-                  href={routeHref({ name: 'shelfEntry', address: entry.address, id: entry.id })}
-                >
-                  {words.passAlong}
-                </Link>
-              </ShelfCard>
-            </li>
-          ))}
-        </ul>
-      </div>
+      {shelf.paused ? (
+        <p>{words.paused}</p>
+      ) : (
+        // One body beside the heading: `.section` lays out two columns.
+        <div className="stack">
+          <p>{words.shelfLede}</p>
+          <ul className="dispatch-list" aria-labelledby={heading}>
+            {shelvedOf(shelf).map((item) => (
+              <li key={item.key}>
+                {'entry' in item ? (
+                  <EntryItem entry={item.entry} />
+                ) : (
+                  <Tombstone tombstone={item.tombstone} />
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </section>
   );
 }
 
+/** Whether the shelf has anything to show: an entry, a tombstone, or its pause. */
+const showsShelf = (shelf: ShelfState | null): shelf is ShelfState =>
+  shelf !== null && (shelf.paused || shelf.entries.length > 0 || shelf.tombstones.length > 0);
+
 /**
  * The eyebrow and heading, then the feed; or, with none, the empty state's
  * one sentence and where a card or link opens: the link bar (#444). Then the
- * public shelf, while it holds an entry (#484).
+ * public shelf, while it holds an entry or a tombstone, or is paused (#484, #489).
  */
 export function Discover({ feed, shelf = null }: DiscoverProps) {
   const words = messages.discover;
@@ -127,7 +184,7 @@ export function Discover({ feed, shelf = null }: DiscoverProps) {
       ) : (
         <Feed feed={feed} />
       )}
-      {shelf === null || shelf.entries.length === 0 ? null : <Shelf entries={shelf.entries} />}
+      {showsShelf(shelf) ? <Shelf shelf={shelf} /> : null}
     </main>
   );
 }

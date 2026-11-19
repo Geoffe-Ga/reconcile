@@ -276,10 +276,10 @@ def test_a_notice_under_the_steward_address_signed_by_another_is_refused(
         {"v": 1, "kind": "notice", "address": "A" * 43},
     ],
 )
-def test_the_relay_takes_only_a_release_naming_a_key(
+def test_a_notice_missing_what_it_names_is_no_record(
     shelf_client: TestClient, db_path: Path, steward: ShelfSigner, body: dict[str, Any]
 ) -> None:
-    """Later notices come with #489; until then they, and a bad release, are none."""
+    """A release names a key; a later act with no clause, or no ``on``, is none."""
     response = put_shelf(shelf_client, steward.address, steward.record(body))
 
     assert response.status_code == 400
