@@ -198,10 +198,12 @@ ADR-0080 (Bedfellows, which owns #476's runtime and its `'wasm-unsafe-eval'`) ha
 - The steward's device needs #476's runtime, which has merged with ADR-0080, so #493 can start.
 - ADR-0081 §4 stands as written: the classifier is bundled with the app. C is not built. If a listed group writes in a language other than English, C with Detoxify `multilingual` is the only option measured that reads one, and choosing it would amend ADR-0081 §4.
 - Turning the flag on needs the re-measure, which needs ADR-0035's final wording and a second labeller.
+- **The flag is a null pin** (#493, amendment). `SHELF_CLASSIFIER` in `client/src/net/modelPins.ts` is null, as `STANCE_MODEL` is for Bedfellows' stance judge: no device fetches or builds the classifier's files, the console shows no flagged section, and nothing a person sees changes. The measured model is pinned beside it as `MINILM_TOXIC_JIGSAW` (model `model_optimized_quantized.onnx`, 22,864,978 bytes, SHA-256 `bcd9dfb4…69a0`; `tokenizer.json`, 711,649 bytes, SHA-256 `91f1def9…1854`; revision `c035f27`), so turning the flag on is one line, setting `SHELF_CLASSIFIER` to it or to the model the re-measure picks. Only `client/src/app/steward.ts` may import the classifier (dependency-cruiser's `only-the-steward-console-reaches-the-classifier`).
 - None of the measured models flags spam. The covenant's spam rule rests on ADR-0081's limits and readers' reports.
 
 ## Open questions
 
 - **ADR-0035's final wording** (deferred). It sets the labels the re-measure uses.
 - **Who votes on the moderation policy** (ADR-0081 §5, open). Choosing the classifier and its rule is moderation policy. The founder's steward seat decides it for the pilot, and the body ADR-0081 §5 names should ratify it.
+- **The model's provenance** (follow-up, from #493's review). The pinned ONNX file is a third party's export (`minuva/MiniLMv2-toxic-jigsaw-onnx`). Exporting and quantizing our own copy from the Apache-2.0 checkpoint `minuva/MiniLMv2-toxic-jigsaw` would take that party out of the chain; do it before the flag turns on, and re-measure with that file.
 - **TensorFlow.js `toxicity`** is unmeasured, because its weights' hosts are refused here. Measuring it needs a session that can reach them.

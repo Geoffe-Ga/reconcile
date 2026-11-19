@@ -223,7 +223,7 @@ The steward signs each notice. The relay acts on it so that held records aren't 
 
 ### 6.4 The steward's console
 
-**Built: the waiting listings and Release** (#488), standing holds and the four other notices (#489), and reports and appeals (#490), with, decided there by the founder (2026-11-19), Dismiss on each item, kept on the steward's device only and forgotten with the item at 32 days, and the suspensions that stand, each with Lift the suspension, which an appeal about a suspended listing offers too. The inbox's device record isn't cleared when the steward's key is dropped, and the inbox has no cap beyond the relay's mailbox cap. Flagged entries wait for §6.6. The contract lives in [`phase-1/08-screens.md`](phase-1/08-screens.md) (item 12).
+**Built: the waiting listings and Release** (#488), standing holds and the four other notices (#489), and reports and appeals (#490), with, decided there by the founder (2026-11-19), Dismiss on each item, kept on the steward's device only and forgotten with the item at 32 days, and the suspensions that stand, each with Lift the suspension, which an appeal about a suspended listing offers too. The inbox's device record isn't cleared when the steward's key is dropped, and the inbox has no cap beyond the relay's mailbox cap. Flagged entries are built behind the classifier's flag (#493, §6.6). The contract lives in [`phase-1/08-screens.md`](phase-1/08-screens.md) (item 12).
 
 `#/steward`, shown only on a device that holds the steward's secret key. It lists:
 
@@ -245,6 +245,8 @@ Its actions are the six notices, and Dismiss on a report or appeal. Each asks fo
 - The device keeps no record of which entries its reader looked at.
 
 ### 6.6 The classifier
+
+**Built behind a flag that stays off** (#493). `SHELF_CLASSIFIER` in `client/src/net/modelPins.ts` is null until the re-measure below, so no device fetches the model and the console shows no flag; turning it on is pinning the measured model (`MINILM_TOXIC_JIGSAW`) there. The contract lives in [`phase-1/08-screens.md`](phase-1/08-screens.md) (item 12, the steward's console).
 
 - **It only flags.** A flag puts an entry in the console's queue. It hides nothing, and no reader sees it.
 - **It reads only shelf entries**, which are public, and only on the steward's device. It never runs on a group's sealed content (ADR-0020, as ADR-0081 clarifies).
