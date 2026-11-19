@@ -1,0 +1,1109 @@
+{
+  "id": "2026-11-14-shelf-spike",
+  "title": "Public Shelf Spike Calls",
+  "prompt": "Spike #427: how the public shelf is stored, proven, kept clean and taken down. Put the covenant gate on the sheet, with any other fork the ADRs don't settle.",
+  "context": "Settled by ADR-0077 and not reopened here: the shelf lists single Dispatches, never groups or people; a group opts in by an entrenched rules Proposal; each level publishes by its own shelf line on the Dispatch's ballot; an entry holds the title, the text, the publishing levels' names and their open-door addresses; the shelf is pull only. This sheet decides who may publish, the covenant gate, where entries live, what stops forgery by people holding a group's key, how long an entry stays, and what the steward may do to entries. The draft amendment (spike427/amendment-0077.md) assumes each recommendation.",
+  "created": "2026-11-14",
+  "theme": {
+    "source": "DESIGN.md",
+    "light": {
+      "bg": "#f6f1e7",
+      "surface": "#fffdf8",
+      "sunken": "#ece5d6",
+      "fg": "#1d1c19",
+      "muted": "#6b665b",
+      "line": "#ddd5c4",
+      "accent": "#1f4a33",
+      "accent-ink": "#f6f1e7",
+      "accent-soft": "#dfe8dc",
+      "rec": "#7a5410",
+      "rec-soft": "#f1e3c4",
+      "sev-low": "#2f6b45",
+      "sev-med": "#85560f",
+      "sev-high": "#b3362a"
+    },
+    "dark": {
+      "bg": "#15140f",
+      "surface": "#1e1d17",
+      "sunken": "#26241d",
+      "fg": "#f1ece0",
+      "muted": "#a39d8f",
+      "line": "#3a372d",
+      "accent": "#8fbf98",
+      "accent-ink": "#10170f",
+      "accent-soft": "#233a2a",
+      "rec": "#e2b663",
+      "rec-soft": "#3a2f18",
+      "sev-low": "#7fbf8e",
+      "sev-med": "#e0b25c",
+      "sev-high": "#e0705f"
+    },
+    "fonts": {
+      "display": "\"Newsreader\", \"Iowan Old Style\", Georgia, serif",
+      "body": "\"Public Sans\", system-ui, -apple-system, \"Segoe UI\", sans-serif",
+      "mono": "\"JetBrains Mono\", ui-monospace, \"SF Mono\", Menlo, monospace"
+    },
+    "fontsUrl": "https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400..600&family=Public+Sans:wght@400..700&family=JetBrains+Mono:wght@400;500&display=swap",
+    "radius": "10px"
+  },
+  "decisions": [
+    {
+      "id": "admission",
+      "title": "Who may publish",
+      "question": "What stops one person founding empty groups to flood the shelf, or publishing under a name that looks like another group's?",
+      "summary": "There's no global identity (ADR-0009), so a reader can check that a group's key signed an entry, but not that the group is real or more than one person. Something scarce has to stand between a free key and a reader's screen: a person's judgment, a device's computation, or other groups' trust. This decides which. The covenant gate (next) and storage (decision 3) both assume the answer here.",
+      "options": [
+        {
+          "id": "steward-roll",
+          "label": "Steward's signed list",
+          "summary": "The steward adds each level's shelf address by hand to a signed list, the roll, that every reader fetches. Readers show only the levels it lists.",
+          "pros": [
+            "A flood or a look-alike needs a person's yes",
+            "In the pilot, the steward is you, adding only your own groups",
+            "The roll is opaque keys and name commitments, not a directory"
+          ],
+          "cons": [
+            "One person's judgment and time",
+            "The steward learns who asked to be added, and how to reach them",
+            "A stolen steward key could list a look-alike"
+          ]
+        },
+        {
+          "id": "proof-of-work",
+          "label": "Work per entry",
+          "summary": "Anyone may publish if their device spends about 30 seconds computing a hash puzzle per entry. Readers check the work.",
+          "pros": [
+            "No gatekeeper",
+            "Runs with no person deciding anything"
+          ],
+          "cons": [
+            "A phone pays the same toll as a rented GPU that's far faster",
+            "Does nothing about look-alike names",
+            "Readers still download every record in a flood"
+          ]
+        },
+        {
+          "id": "open-capped",
+          "label": "Open, capped per key",
+          "summary": "No admission. Readers show each key's few newest entries and nothing more.",
+          "pros": [
+            "Nothing to run",
+            "No one decides who speaks"
+          ],
+          "cons": [
+            "A new key costs nothing, so the cap stops no one",
+            "Floods and look-alikes reach every reader",
+            "Still needs a relay change to stop the flood itself"
+          ]
+        },
+        {
+          "id": "vouched",
+          "label": "Listed levels vouch",
+          "summary": "A level reaches readers once two levels already on the shelf vouch for it with their keys.",
+          "pros": [
+            "No single gatekeeper after the first few levels",
+            "Growth follows real relationships (ADR-0001)"
+          ],
+          "cons": [
+            "Each vouch is a public edge between two groups: the coalition graph the threat model protects",
+            "Two colluding groups can vouch in a hundred more",
+            "Still needs a steward to seed the first levels"
+          ]
+        }
+      ],
+      "recommended": "steward-roll",
+      "recommendation_reason": "It's the only option that stops both the flood and the look-alike without a global identity. It costs almost nothing in the pilot, because the steward is you adding your own groups. ADR-0013 and ADR-0035 already give a steward the reach decisions, so this adds a duty, not a new authority.",
+      "tradeoffs": [
+        {
+          "dimension": "Flood of empty groups",
+          "values": {
+            "steward-roll": "Stopped: each needs a person's yes",
+            "proof-of-work": "Slowed for phones, not for rented hardware",
+            "open-capped": "Not stopped: keys are free",
+            "vouched": "Stopped only until two groups collude"
+          }
+        },
+        {
+          "dimension": "Look-alike names",
+          "values": {
+            "steward-roll": "Checked by hand at admission, then fixed to the key",
+            "proof-of-work": "Not addressed",
+            "open-capped": "Not addressed",
+            "vouched": "Only as careful as the vouchers"
+          }
+        },
+        {
+          "dimension": "Privacy and weaponization",
+          "values": {
+            "steward-roll": "The roll lists no names; the steward learns who asked",
+            "proof-of-work": "Nothing new learned, but a hostile writer can fill the shelf",
+            "open-capped": "Nothing new learned, but a hostile writer can fill the shelf",
+            "vouched": "Publishes who vouches for whom: a group-to-group graph"
+          }
+        },
+        {
+          "dimension": "Who can capture it",
+          "values": {
+            "steward-roll": "One person, acting in public; an election after ADR-0035's threshold",
+            "proof-of-work": "Whoever has the most compute",
+            "open-capped": "Whoever posts the most",
+            "vouched": "The first groups become gatekeepers"
+          }
+        },
+        {
+          "dimension": "Fit for the pilot",
+          "values": {
+            "steward-roll": "Yes: add a handful of your own groups",
+            "proof-of-work": "Yes, but every publishing phone waits",
+            "open-capped": "Only while nobody hostile notices",
+            "vouched": "Needs a steward to start it anyway"
+          }
+        }
+      ],
+      "costs": [
+        {
+          "item": "Build time",
+          "values": {
+            "steward-roll": "Small: the roll record, the reader's check, a steward script",
+            "proof-of-work": "Small to medium: the puzzle and its tuning",
+            "open-capped": "None beyond the reader cap",
+            "vouched": "Medium: vouch records, rules, withdrawal"
+          }
+        },
+        {
+          "item": "Running cost",
+          "values": {
+            "steward-roll": "You add each level and post the roll again every three weeks",
+            "proof-of-work": "Battery and time on every publishing phone",
+            "open-capped": "None",
+            "vouched": "Groups' time spent vouching"
+          }
+        },
+        {
+          "item": "Complexity",
+          "values": {
+            "steward-roll": "Low",
+            "proof-of-work": "Medium: the difficulty must keep pace with hardware",
+            "open-capped": "Low",
+            "vouched": "High: what a withdrawn vouch does to entries"
+          }
+        },
+        {
+          "item": "Reversibility",
+          "values": {
+            "steward-roll": "High: the roll can later list everyone or no one, with no change to records",
+            "proof-of-work": "Medium: records carry the work",
+            "open-capped": "Hard to tighten once groups expect to publish freely",
+            "vouched": "Low: published vouches can't be unpublished"
+          }
+        }
+      ],
+      "risks": [
+        {
+          "risk": "The steward's key is stolen and used to list a look-alike under a group's name",
+          "severity": "high",
+          "mitigation": "Keep the key on your own computer, never on the relay. Every roll change is public. A level's devices warn their members when another key holds their name. Replace the key by an app release.",
+          "options": ["steward-roll"]
+        },
+        {
+          "risk": "The steward becomes a bottleneck or a gatekeeper",
+          "severity": "medium",
+          "mitigation": "Public reason codes, and ADR-0035's election threshold moves the seat. The roll fails closed after 30 days, so an absent steward can't leave a stale list up.",
+          "options": ["steward-roll"]
+        },
+        {
+          "risk": "A sock-puppet group gets admitted",
+          "severity": "medium",
+          "mitigation": "The pilot admits only your own groups. After it, the admission checks the covenant gate requires apply.",
+          "options": ["steward-roll", "vouched"]
+        },
+        {
+          "risk": "A flood reaches every reader's phone",
+          "severity": "high",
+          "mitigation": "None within the option",
+          "options": ["proof-of-work", "open-capped"]
+        },
+        {
+          "risk": "Vouches publish a map of which groups trust which",
+          "severity": "high",
+          "mitigation": "None within the option",
+          "options": ["vouched"]
+        }
+      ],
+      "examples": [
+        {
+          "title": "Mastodon Server Covenant",
+          "detail": "joinmastodon.org lists only servers whose admins commit to its moderation rules. A server that won't commit still runs; it just isn't listed. That's reach, not existence, as in ADR-0013.",
+          "url": "https://joinmastodon.org/covenant"
+        },
+        {
+          "title": "Usenet moderated newsgroups",
+          "detail": "A moderated group's posts reach readers only after its moderator approves them. Anyone can still start an unmoderated group."
+        },
+        {
+          "title": "Twitter Blue's paid checkmarks (November 2022)",
+          "detail": "Once anyone could buy verification, an account posing as Eli Lilly announced that insulin was free, and the company's stock fell. A name check that costs nothing stops nothing."
+        },
+        {
+          "title": "Hashcash and Nostr NIP-13",
+          "detail": "Proof of work per message, with tunable difficulty (Adam Back, 1997; Nostr's NIP-13). Senders with better hardware pay far less than phones.",
+          "url": "https://github.com/nostr-protocol/nips/blob/master/13.md"
+        },
+        {
+          "title": "The PGP web of trust",
+          "detail": "Keys vouched for by other keys. It never reached ordinary users, and it publishes who signed whose key."
+        }
+      ]
+    },
+    {
+      "id": "covenant-gate",
+      "title": "The covenant gate",
+      "question": "Does publishing wait for the worded covenant, or may a pilot limited to your own groups go first?",
+      "summary": "ADR-0035 says the eternal core must be worded, and read by counsel, before discovery or reach enforcement ships. ADR-0077 made shelf publishing wait on it. Before groups outside your circle publish, five things must be written: the eternal core; the shelf clause a group agrees to when it turns the shelf on; the steward's rules (who holds the seat, what they may do, that every act is public, how to appeal); the admission checks; and counsel's answers on hosting public text, such as whether a DMCA agent is needed. This decides whether a pilot where the roll lists only levels you belong to may publish first. It assumes the steward's list from decision 1.",
+      "options": [
+        {
+          "id": "own-groups-first",
+          "label": "Your groups first",
+          "summary": "Publishing ships now, but the steward adds only levels you belong to. Outside groups wait on the five items and the outside review (ADR-0058).",
+          "pros": [
+            "Tests the whole loop with real, consenting groups",
+            "No reach decisions about strangers before the rules exist",
+            "Lifting the limit is a roll change, not a rebuild"
+          ],
+          "cons": [
+            "You're member and steward at once",
+            "Pilot groups' names go public, by their own entrenched vote",
+            "The wording can keep slipping while the pilot runs"
+          ]
+        },
+        {
+          "id": "wait-for-wording",
+          "label": "Wait for the wording",
+          "summary": "No group publishes until all five items are written and read. The opt-in and the ballot line (#430) can still merge.",
+          "pros": [
+            "Nothing goes public under a group's name before the rules exist",
+            "Matches ADR-0035 as written"
+          ],
+          "cons": [
+            "The shelf, Ask to join from it, and Bedfellows go untested in the pilot",
+            "Delays the epic's success criteria",
+            "The wording session isn't scheduled yet"
+          ]
+        },
+        {
+          "id": "interim-covenant",
+          "label": "Interim covenant",
+          "summary": "Ship the placeholder line as a provisional, non-eternal shelf rule, and admit outside groups by hand now.",
+          "pros": [
+            "Real outside groups in the pilot",
+            "Gives the steward a written rule to apply"
+          ],
+          "cons": [
+            "People will treat a provisional rule as the real one",
+            "You judge strangers' words with no appeal rules and no counsel",
+            "Brings forward the outside review, due before outside groups use the app"
+          ]
+        }
+      ],
+      "recommended": "own-groups-first",
+      "recommendation_reason": "It's the only option that runs the shelf for real while no stranger's group gains reach under rules that don't exist yet. It's reversible with a roll change, and lifting it can share #435's trigger: before any group outside your circle, or before the outside review.",
+      "tradeoffs": [
+        {
+          "dimension": "Who is exposed",
+          "values": {
+            "own-groups-first": "Only groups you're in, by their own entrenched vote",
+            "wait-for-wording": "No one",
+            "interim-covenant": "Any group you admit"
+          }
+        },
+        {
+          "dimension": "Reach decided without rules",
+          "values": {
+            "own-groups-first": "None about strangers",
+            "wait-for-wording": "None",
+            "interim-covenant": "Yes, by one person under a placeholder"
+          }
+        },
+        {
+          "dimension": "What the pilot learns",
+          "values": {
+            "own-groups-first": "The full loop with real groups",
+            "wait-for-wording": "Reading and voting only",
+            "interim-covenant": "The full loop, more widely"
+          }
+        },
+        {
+          "dimension": "Privacy and weaponization",
+          "values": {
+            "own-groups-first": "A few consenting groups' names are public; a hostile reader learns little",
+            "wait-for-wording": "Nothing public",
+            "interim-covenant": "A hostile group could publish under an untested provisional rule"
+          }
+        },
+        {
+          "dimension": "Conflict of interest",
+          "values": {
+            "own-groups-first": "You hold the roll and vote in every group on it",
+            "wait-for-wording": "None",
+            "interim-covenant": "You judge strangers' words alone"
+          }
+        }
+      ],
+      "costs": [
+        {
+          "item": "Build time",
+          "values": {
+            "own-groups-first": "Same code as the full shelf, plus a line of copy",
+            "wait-for-wording": "Same code, left unused",
+            "interim-covenant": "Same code, plus provisional-rule copy"
+          }
+        },
+        {
+          "item": "Your time",
+          "values": {
+            "own-groups-first": "Add your own groups; post the roll again every three weeks",
+            "wait-for-wording": "The wording session comes first",
+            "interim-covenant": "Judge every outside request and appeal"
+          }
+        },
+        {
+          "item": "Complexity",
+          "values": {
+            "own-groups-first": "Low",
+            "wait-for-wording": "Low",
+            "interim-covenant": "Medium: a provisional rule to retire later"
+          }
+        },
+        {
+          "item": "Reversibility",
+          "values": {
+            "own-groups-first": "High: drop a level from the roll",
+            "wait-for-wording": "High",
+            "interim-covenant": "Low: outside groups' expectations, and the precedent of a provisional rule"
+          }
+        }
+      ],
+      "risks": [
+        {
+          "risk": "Being steward of groups you vote in looks like control",
+          "severity": "medium",
+          "mitigation": "Every roll change is public with a reason code, and the pilot notice says so. The seat converts by ADR-0035's threshold.",
+          "options": ["own-groups-first", "interim-covenant"]
+        },
+        {
+          "risk": "The wording keeps slipping, and the pilot limit becomes permanent",
+          "severity": "medium",
+          "mitigation": "Name the trigger: lift the limit only with the five items done and the outside review booked.",
+          "options": ["own-groups-first"]
+        },
+        {
+          "risk": "Counsel finds a hosting duty, such as a DMCA agent, after outside text is already up",
+          "severity": "medium",
+          "mitigation": "Ask counsel before lifting the gate",
+          "options": ["interim-covenant"]
+        },
+        {
+          "risk": "A vulnerable group turns the shelf on without understanding it",
+          "severity": "medium",
+          "mitigation": "The opt-in sits only in Rules, at the entrenched bar, with a plain line on what it exposes (#430)"
+        }
+      ],
+      "examples": [
+        {
+          "title": "Bluesky's invite-only beta",
+          "detail": "The network stayed invite-only through 2023 while its moderation tools and policies were built, and opened to everyone in February 2024."
+        },
+        {
+          "title": "Mastodon Server Covenant",
+          "detail": "Listing on joinmastodon.org comes with written commitments a server makes before it's listed. Reach waits on the rules.",
+          "url": "https://joinmastodon.org/covenant"
+        },
+        {
+          "title": "Gmail's invite-only years (2004–2007)",
+          "detail": "Access was staged by invitation while the service grew, and opened fully only later."
+        },
+        {
+          "title": "#366 and #435 in this repo",
+          "detail": "You accepted a closed door's gaps for the pilot inside your circle, and set a trigger to harden it before outside groups or the outside review.",
+          "url": "https://github.com/Geoffe-Ga/reconcile/issues/435"
+        }
+      ]
+    },
+    {
+      "id": "storage",
+      "title": "Where entries live",
+      "question": "Does the relay change to hold the shelf, and how much does it get to know?",
+      "summary": "Shelf entries are the first bytes the relay holds that anyone may read. Today a mailbox id is both the right to read and the right to write, so a mailbox everyone reads is one anyone can fill. This decides how the relay stops that, and how much it knows. It assumes the steward's list from decision 1; with an open shelf, only the checked shelf works.",
+      "options": [
+        {
+          "id": "write-keys",
+          "label": "Public mailboxes",
+          "summary": "Two routes and a DELETE. The relay stores a record under the hash of a write key and serves reads by that hash. Each listed level has one mailbox, and the roll has one.",
+          "pros": [
+            "The relay checks a hash and counts bytes, nothing else",
+            "Strangers can't put a byte in front of a reader",
+            "Small: no new table and no signature check; #435 can reuse it"
+          ],
+          "cons": [
+            "Readers make one request per listed level",
+            "The shelf's rules live in every reader",
+            "Anyone holding a level's key can fill that level's 512 KiB"
+          ]
+        },
+        {
+          "id": "signed-shelf",
+          "label": "One checked shelf",
+          "summary": "New /v1/shelf routes. The relay checks each record's signature against the steward's roll, caps each level and keeps key retirements. Readers make one request.",
+          "pros": [
+            "One request reads everything",
+            "The relay refuses retired and unlisted keys",
+            "Per-level caps at the relay"
+          ],
+          "cons": [
+            "The relay parses public records and holds the steward's key: policy at the relay",
+            "Ties the relay's operator to the steward",
+            "About three times the code on the security-critical service"
+          ]
+        },
+        {
+          "id": "plain-mailbox",
+          "label": "Ordinary mailbox",
+          "summary": "No relay change in the pilot: a well-known weekly mailbox for entries, another for the roll, and readers filter. Public mailboxes come later, on a trigger.",
+          "pros": [
+            "No relay work now",
+            "The relay stays exactly as it is"
+          ],
+          "cons": [
+            "Anyone who reads the app's code can fill the week's 64 MiB, and every reader's phone downloads it",
+            "No DELETE, so a takedown only hides the entry",
+            "A migration later"
+          ]
+        }
+      ],
+      "recommended": "write-keys",
+      "recommendation_reason": "The relay stays blind to what it holds: it hashes a key and counts bytes. Strangers still can't fill the shelf's well-known mailboxes. No door link has that exposure, because the shelf's ids go out to everyone. It's the smallest relay change that does this, and the same routes could close #435's gap.",
+      "tradeoffs": [
+        {
+          "dimension": "What the relay knows",
+          "values": {
+            "write-keys": "A hash and byte counts; it never parses a record",
+            "signed-shelf": "Parses records, checks signatures, holds the steward's key",
+            "plain-mailbox": "Nothing new"
+          }
+        },
+        {
+          "dimension": "Flood by a stranger",
+          "values": {
+            "write-keys": "Impossible on any listed mailbox",
+            "signed-shelf": "Refused",
+            "plain-mailbox": "Easy: 64 MiB a week"
+          }
+        },
+        {
+          "dimension": "Reader's download",
+          "values": {
+            "write-keys": "One request per listed level, plus the roll; well under 1 MiB at pilot size",
+            "signed-shelf": "One request",
+            "plain-mailbox": "Five weeks of mailboxes, up to 320 MiB under attack"
+          }
+        },
+        {
+          "dimension": "Takedown removes the bytes",
+          "values": {
+            "write-keys": "Yes (DELETE)",
+            "signed-shelf": "Yes (replaced)",
+            "plain-mailbox": "No: hidden only, until it expires"
+          }
+        },
+        {
+          "dimension": "Privacy and weaponization",
+          "values": {
+            "write-keys": "Private data as today; a posting device's address is tied to the level live",
+            "signed-shelf": "The same, and the relay becomes a policy point that whoever seizes it could repurpose",
+            "plain-mailbox": "Private data as today; the shelf is easy to blank"
+          }
+        }
+      ],
+      "costs": [
+        {
+          "item": "Build time",
+          "values": {
+            "write-keys": "Small: two routes and a DELETE, reusing the blob code",
+            "signed-shelf": "Medium to large: tables, framing, Ed25519, the roll",
+            "plain-mailbox": "None on the relay"
+          }
+        },
+        {
+          "item": "Running cost",
+          "values": {
+            "write-keys": "None new",
+            "signed-shelf": "None new",
+            "plain-mailbox": "None new"
+          }
+        },
+        {
+          "item": "Complexity",
+          "values": {
+            "write-keys": "Low on the relay, moderate in readers",
+            "signed-shelf": "High on the relay",
+            "plain-mailbox": "Low now, a migration later"
+          }
+        },
+        {
+          "item": "Reversibility",
+          "values": {
+            "write-keys": "High: the routes can go, and the records describe themselves",
+            "signed-shelf": "Medium: state held at the relay to migrate",
+            "plain-mailbox": "Medium: readers and records change when the routes arrive"
+          }
+        }
+      ],
+      "risks": [
+        {
+          "risk": "Someone holding a level's key fills that level's mailbox, so its new entries are refused, or deletes its entries",
+          "severity": "low",
+          "mitigation": "Capped at 512 KiB; members' devices delete forgeries; the key changes at a membership end",
+          "options": ["write-keys"]
+        },
+        {
+          "risk": "Readers' requests grow with the number of listed levels",
+          "severity": "low",
+          "mitigation": "Revisit at 100 listed levels; paged reads can stay the same for every reader",
+          "options": ["write-keys"]
+        },
+        {
+          "risk": "Whoever holds the relay's server can change the shelf's policy",
+          "severity": "medium",
+          "mitigation": "Readers check signatures and the roll anyway",
+          "options": ["signed-shelf"]
+        },
+        {
+          "risk": "One stranger blanks the shelf every week",
+          "severity": "high",
+          "mitigation": "Accept for the pilot, and build public mailboxes before outside groups publish",
+          "options": ["plain-mailbox"]
+        },
+        {
+          "risk": "A malicious relay withholds records or ignores a DELETE",
+          "severity": "medium",
+          "mitigation": "Accepted: the relay is trusted for order and time (ADR-0073), and the outside review covers it"
+        }
+      ],
+      "examples": [
+        {
+          "title": "Tahoe-LAFS mutable files",
+          "detail": "Separate write and read capabilities. A storage server accepts a change only from whoever holds the write-enabler secret.",
+          "url": "https://tahoe-lafs.org"
+        },
+        {
+          "title": "Freenet's signed subspace keys",
+          "detail": "Anyone can fetch content by its public key, and only the private key's holder can insert under it."
+        },
+        {
+          "title": "Nostr relays (NIP-01)",
+          "detail": "Relays store signed events and check their signatures. Paid relays restrict who may write.",
+          "url": "https://github.com/nostr-protocol/nips/blob/master/01.md"
+        },
+        {
+          "title": "The Update Framework (TUF)",
+          "detail": "Signed metadata under a root key shipped in the client, which expires so that a stale copy fails closed. The roll follows the same model.",
+          "url": "https://theupdateframework.io"
+        }
+      ]
+    },
+    {
+      "id": "key-holders",
+      "title": "Forgery by key holders",
+      "question": "What stops a member, or someone who has left, from signing under the group's name?",
+      "summary": "A reader can verify only that someone holding a level's shelf key signed, and no option in decision 1 changes that. Every member holds the key, and someone who leaves keeps whatever they could read, as with a front door's key (#288). Whatever you pick here, readers wait a day before showing a new record, and members' devices delete any record their own fold didn't make. So a forgery shows only if nobody in the level opens the app within that day. This decides what happens to the key when a membership ends.",
+      "options": [
+        {
+          "id": "epoch-key",
+          "label": "New key per group key",
+          "summary": "The shelf key comes from the group's current secret, so the key change after a leave or removal (#98) retires it automatically. The steward then adds the new address.",
+          "pros": [
+            "Someone who left can't sign once the key changes",
+            "No new event and no vote",
+            "For your own groups, your device can read the new address itself"
+          ],
+          "cons": [
+            "New entries pause until the steward adds the new address",
+            "Shows readers that the group's membership changed, and roughly when",
+            "A coalition's key still never changes (ADR-0074)"
+          ]
+        },
+        {
+          "id": "ordinary-vote",
+          "label": "Fresh key by vote",
+          "summary": "When a membership ends, the key retires. A member proposes a fresh one at the ordinary bar (3 to 14 days; ADR-0075 §5), and the steward adds it.",
+          "pros": [
+            "The group decides when it's back",
+            "The same cut-off for someone who left"
+          ],
+          "cons": [
+            "A pause of days after every leave",
+            "A new kind of Proposal",
+            "The same public signal"
+          ]
+        },
+        {
+          "id": "keep-key",
+          "label": "Keep one key",
+          "summary": "One key for as long as the opt-in is on. Rely on the day's wait and members' devices deleting forgeries.",
+          "pros": [
+            "No pause and no signal",
+            "Nothing for the steward to do"
+          ],
+          "cons": [
+            "Anyone who was ever a member can forge for as long as the shelf is on",
+            "In a quiet group, each forgery is a window for a smear",
+            "Even a removal (ADR-0016) doesn't end it"
+          ]
+        }
+      ],
+      "recommended": "epoch-key",
+      "recommendation_reason": "It cuts off someone who left at the moment the group already changes its key, with no new event or vote, and it matches your choice for doors (#288). The pause and the steward's re-add are small in a pilot of a few groups, and your device handles them for your own.",
+      "tradeoffs": [
+        {
+          "dimension": "Forgery by someone who left",
+          "values": {
+            "epoch-key": "Ends at the key change, minutes to hours later",
+            "ordinary-vote": "Ends at the key change",
+            "keep-key": "Never ends"
+          }
+        },
+        {
+          "dimension": "Forgery by a current member",
+          "values": {
+            "epoch-key": "The day's wait, then members' devices delete it",
+            "ordinary-vote": "The day's wait, then members' devices delete it",
+            "keep-key": "The day's wait, then members' devices delete it"
+          }
+        },
+        {
+          "dimension": "Pause after a leave",
+          "values": {
+            "epoch-key": "Until the steward adds the new address; the same day for your groups",
+            "ordinary-vote": "3 to 14 days, plus the steward",
+            "keep-key": "None"
+          }
+        },
+        {
+          "dimension": "Privacy and weaponization",
+          "values": {
+            "epoch-key": "A retire record and a new address show that the membership changed",
+            "ordinary-vote": "The same, plus when the vote ran",
+            "keep-key": "No signal, but a removed hostile member keeps the group's public voice"
+          }
+        },
+        {
+          "dimension": "Steward's work",
+          "values": {
+            "epoch-key": "One re-add per membership end",
+            "ordinary-vote": "One re-add per vote",
+            "keep-key": "None"
+          }
+        }
+      ],
+      "costs": [
+        {
+          "item": "Build time",
+          "values": {
+            "epoch-key": "Small: derive the key from the current secret, and post a retire at the key change",
+            "ordinary-vote": "Medium: a new rules value and Proposal",
+            "keep-key": "Smallest"
+          }
+        },
+        {
+          "item": "Running cost",
+          "values": {
+            "epoch-key": "The steward's re-adds",
+            "ordinary-vote": "The steward's re-adds, plus the group's votes",
+            "keep-key": "None"
+          }
+        },
+        {
+          "item": "Complexity",
+          "values": {
+            "epoch-key": "Low",
+            "ordinary-vote": "Medium",
+            "keep-key": "Low"
+          }
+        },
+        {
+          "item": "Reversibility",
+          "values": {
+            "epoch-key": "High: moving to one kept key later is a change in how it's derived",
+            "ordinary-vote": "Medium",
+            "keep-key": "Low, once someone who left has forged"
+          }
+        }
+      ],
+      "risks": [
+        {
+          "risk": "A member who knows a removal vote is coming forges during its 14 days",
+          "severity": "medium",
+          "mitigation": "They're still a member then, so the day's wait and members' devices' checks apply, and the key changes at the removal"
+        },
+        {
+          "risk": "A quiet group, where nobody opens the app for a day, shows a forgery",
+          "severity": "medium",
+          "mitigation": "The ballot line and Rules say the group's devices check its shelf entries only when someone opens the app"
+        },
+        {
+          "risk": "The membership signal tells a hostile reader that a group lost someone",
+          "severity": "low",
+          "mitigation": "It shows when, never who, and only for groups on the shelf",
+          "options": ["epoch-key", "ordinary-vote"]
+        }
+      ],
+      "examples": [
+        {
+          "title": "HMV's Twitter account (January 2013)",
+          "detail": "Staff being laid off live-tweeted the firings from the company's shared login. A shared credential outlives its holders' place in the group."
+        },
+        {
+          "title": "Changing shared secrets when someone leaves",
+          "detail": "Standard offboarding, and this project already does it for group keys (#98) and front doors (#288).",
+          "url": "https://github.com/Geoffe-Ga/reconcile/issues/288"
+        },
+        {
+          "title": "Wikipedia's pending changes",
+          "detail": "On protected articles, edits by new accounts wait for review before readers see them. The day's wait has the same shape.",
+          "url": "https://en.wikipedia.org/wiki/Wikipedia:Pending_changes"
+        }
+      ]
+    },
+    {
+      "id": "lifetime",
+      "title": "How long an entry stays",
+      "question": "How long does a published Dispatch stay on the shelf?",
+      "summary": "A longer life helps newcomers find a group's words. It also builds a fuller record of what each group said, for any hostile reader and for whoever seizes the relay. Under every option, a reader shows at most each level's 10 newest entries, and a takedown still works at once. This decides the default life, and whether devices post entries again to keep them up.",
+      "options": [
+        {
+          "id": "30-days",
+          "label": "30 days",
+          "summary": "30 days from the level's pass: the relay's own blob retention. Nothing posts it again, so a group publishes again to stay findable.",
+          "pros": [
+            "The relay holds at most a month",
+            "Matches ADR-0057 and the relay's 30-day limit, so nothing posts again",
+            "Old words don't keep standing for a group that has moved on"
+          ],
+          "cons": [
+            "A quiet group drops off the shelf",
+            "Ask to join from an entry lasts only a month"
+          ]
+        },
+        {
+          "id": "90-days",
+          "label": "90 days",
+          "summary": "Members' devices post each entry again every three weeks, until 90 days after the pass.",
+          "pros": [
+            "Newcomers find more"
+          ],
+          "cons": [
+            "Three times what a scraper or a seizure gets at once",
+            "Each repeat post ties a device's address to the group again, live",
+            "Needs a refresh duty in every level"
+          ]
+        },
+        {
+          "id": "until-down",
+          "label": "Until taken down",
+          "summary": "Devices keep posting it again until the level takes it down or turns the shelf off.",
+          "pros": [
+            "A group's public words stay until it decides otherwise"
+          ],
+          "cons": [
+            "The shelf becomes a standing record of every group's words: a list by ideology",
+            "Grows without end, until the caps start dropping entries",
+            "Devices post again forever"
+          ]
+        }
+      ],
+      "recommended": "30-days",
+      "recommendation_reason": "It's the life the relay already gives every blob, so there's no refresh duty and no extra posts that tie a device's address to a group. It keeps the shelf a stream of recent words rather than an archive of who said what.",
+      "tradeoffs": [
+        {
+          "dimension": "A hostile reader's list",
+          "values": {
+            "30-days": "A month of words at a time",
+            "90-days": "Three months",
+            "until-down": "Everything a group ever published"
+          }
+        },
+        {
+          "dimension": "A seized relay holds",
+          "values": {
+            "30-days": "At most 30 days",
+            "90-days": "At most 90 days",
+            "until-down": "All of it"
+          }
+        },
+        {
+          "dimension": "Findability",
+          "values": {
+            "30-days": "A group publishes about monthly to stay findable",
+            "90-days": "Good",
+            "until-down": "Best"
+          }
+        },
+        {
+          "dimension": "Posts that tie an address to a group",
+          "values": {
+            "30-days": "One per entry",
+            "90-days": "About four per entry",
+            "until-down": "No limit"
+          }
+        },
+        {
+          "dimension": "Stale words",
+          "values": {
+            "30-days": "Leave on their own",
+            "90-days": "Linger",
+            "until-down": "Stay until someone acts"
+          }
+        }
+      ],
+      "costs": [
+        {
+          "item": "Build time",
+          "values": {
+            "30-days": "Smallest: the expiry only",
+            "90-days": "Small: a refresh duty",
+            "until-down": "Small: a refresh duty"
+          }
+        },
+        {
+          "item": "Running cost",
+          "values": {
+            "30-days": "None",
+            "90-days": "More posts",
+            "until-down": "More posts, and storage that keeps growing"
+          }
+        },
+        {
+          "item": "Complexity",
+          "values": {
+            "30-days": "Low",
+            "90-days": "Medium",
+            "until-down": "Medium"
+          }
+        },
+        {
+          "item": "Reversibility",
+          "values": {
+            "30-days": "High: the life can be lengthened later",
+            "90-days": "Medium: shortening it drops entries groups expect to see",
+            "until-down": "Low: an archive once kept is kept elsewhere too"
+          }
+        }
+      ],
+      "risks": [
+        {
+          "risk": "Groups feel pushed to publish monthly to stay visible: pressure toward engagement",
+          "severity": "low",
+          "mitigation": "No counts and no ranking (DESIGN.md), and Discover says plainly that entries last 30 days",
+          "options": ["30-days"]
+        },
+        {
+          "risk": "A scraper archives everything anyway",
+          "severity": "medium",
+          "mitigation": "Nothing technical stops it. The ballot line says entries can be copied."
+        },
+        {
+          "risk": "A group's old words go on standing for it after its views change",
+          "severity": "medium",
+          "mitigation": "Takedown by vote, or a shorter life",
+          "options": ["90-days", "until-down"]
+        }
+      ],
+      "examples": [
+        {
+          "title": "Craigslist listings",
+          "detail": "A listing expires after 7, 30 or 45 days, depending on its category, and must be posted again to stay up."
+        },
+        {
+          "title": "Nostr NIP-40",
+          "detail": "An event can carry an expiration time, after which relays drop it.",
+          "url": "https://github.com/nostr-protocol/nips/blob/master/40.md"
+        },
+        {
+          "title": "Instagram and Snapchat Stories",
+          "detail": "Posts that vanish after 24 hours: a deliberate choice to keep what someone said from becoming a permanent record."
+        },
+        {
+          "title": "Mastodon's automatic post deletion",
+          "detail": "Since version 3.5, a person can have their posts deleted once they pass an age they choose."
+        }
+      ]
+    },
+    {
+      "id": "suspension",
+      "title": "A level that breaks the covenant",
+      "question": "When the steward finds an entry that breaks the covenant, what leaves the shelf, and when?",
+      "summary": "ADR-0077 left open whether a suspended group's entries leave at once or by vote. ADR-0013 says breaking the covenant costs reach and that a group can appeal by vote, but Reconcile-the-group, which would hold that vote, is deferred (ADR-0074). Two things hold whatever you pick: a member's suspension inside a group (ADR-0016) changes nothing on the shelf, and a group takes its own entries down by its own ordinary vote. This decides what power the steward has over entries already published.",
+      "options": [
+        {
+          "id": "entry-first",
+          "label": "Entry at once",
+          "summary": "The steward withholds one entry at once, with a public reason, and suspends a level's key only for a severe or repeated breach. Either stands until lifted, or until the entry ages out.",
+          "pros": [
+            "Harm is gone from every reader's next read",
+            "Touches only what broke the rule",
+            "Public reason codes"
+          ],
+          "cons": [
+            "One person's judgment in the pilot",
+            "Appeals go to that same person, by hand",
+            "The bytes stay on the relay until they expire"
+          ]
+        },
+        {
+          "id": "level-lapse",
+          "label": "Level, then confirm",
+          "summary": "The steward suspends the level's key at once. The suspension lapses after 7 days unless the steward confirms it publicly, as in ADR-0016.",
+          "pros": [
+            "The familiar suspend-then-decide shape",
+            "Forces a second look"
+          ],
+          "cons": [
+            "Removes all of a group's entries over one",
+            "With no Reconcile-the-group yet, the same person confirms",
+            "A lapse can bring harmful words back"
+          ]
+        },
+        {
+          "id": "group-vote-only",
+          "label": "Only the group's vote",
+          "summary": "The steward can refuse to add or re-add a level, but never hides what's already up. Entries leave by the level's own vote, by age, or when it turns the shelf off.",
+          "pros": [
+            "No editorial power over words already published",
+            "Simple"
+          ],
+          "cons": [
+            "Harmful words stay up for as long as 30 days",
+            "Dropping the whole level is the steward's only tool, and a blunter one"
+          ]
+        }
+      ],
+      "recommended": "entry-first",
+      "recommendation_reason": "It takes a harmful entry off every reader's next read and leaves the group's other words alone, and every act is public on the roll. In a pilot of your own groups it will rarely be needed. The appeal by vote arrives with the covenant gate.",
+      "tradeoffs": [
+        {
+          "dimension": "Time to remove harm",
+          "values": {
+            "entry-first": "The next read",
+            "level-lapse": "The next read",
+            "group-vote-only": "Up to 30 days"
+          }
+        },
+        {
+          "dimension": "What else goes with it",
+          "values": {
+            "entry-first": "Nothing: one entry",
+            "level-lapse": "All the level's entries",
+            "group-vote-only": "Nothing, or the whole level if it's dropped"
+          }
+        },
+        {
+          "dimension": "Who can capture it",
+          "values": {
+            "entry-first": "One person, acting in public, with reason codes",
+            "level-lapse": "The same person, twice",
+            "group-vote-only": "The least editorial power"
+          }
+        },
+        {
+          "dimension": "Privacy and weaponization",
+          "values": {
+            "entry-first": "Withholding is public, so readers see that a group was judged",
+            "level-lapse": "The same, for the whole group",
+            "group-vote-only": "Harmful words keep reaching readers"
+          }
+        },
+        {
+          "dimension": "Appeal",
+          "values": {
+            "entry-first": "By hand to the steward; by vote once Reconcile-the-group exists",
+            "level-lapse": "The same",
+            "group-vote-only": "Nothing to appeal"
+          }
+        }
+      ],
+      "costs": [
+        {
+          "item": "Build time",
+          "values": {
+            "entry-first": "Small: the roll's lists and the reader's check",
+            "level-lapse": "Small, plus a lapse timer",
+            "group-vote-only": "Smallest"
+          }
+        },
+        {
+          "item": "Running cost",
+          "values": {
+            "entry-first": "The steward's judgment, when needed",
+            "level-lapse": "Two judgments per case",
+            "group-vote-only": "None"
+          }
+        },
+        {
+          "item": "Complexity",
+          "values": {
+            "entry-first": "Low",
+            "level-lapse": "Medium",
+            "group-vote-only": "Low"
+          }
+        },
+        {
+          "item": "Reversibility",
+          "values": {
+            "entry-first": "High: lift it on the roll",
+            "level-lapse": "High",
+            "group-vote-only": "High"
+          }
+        }
+      ],
+      "risks": [
+        {
+          "risk": "The steward withholds words they disagree with",
+          "severity": "medium",
+          "mitigation": "Public reason codes, the level's appeal, and the seat converting to an election (ADR-0035)",
+          "options": ["entry-first", "level-lapse"]
+        },
+        {
+          "risk": "A legal demand needs the bytes gone, not just hidden",
+          "severity": "medium",
+          "mitigation": "The operator deletes the row by hand and the roll notes it as legal. Counsel's question is part of the covenant gate."
+        },
+        {
+          "risk": "A withheld entry stays readable on the relay itself",
+          "severity": "low",
+          "mitigation": "For at most 30 days; the operator can delete it on a legal demand",
+          "options": ["entry-first", "level-lapse"]
+        }
+      ],
+      "examples": [
+        {
+          "title": "Bluesky's labelers",
+          "detail": "Moderation services publish signed labels that clients honour to hide a post or warn about it, without deleting it from the network. The roll's withheld list works the same way."
+        },
+        {
+          "title": "Certificate revocation lists (RFC 5280)",
+          "detail": "An issuer publishes a signed list of revoked certificates, and clients check it before trusting one.",
+          "url": "https://www.rfc-editor.org/rfc/rfc5280"
+        },
+        {
+          "title": "Mastodon moderation",
+          "detail": "A server's admins can remove a single post or suspend an account, and many servers publish their moderation decisions."
+        },
+        {
+          "title": "DMCA notice and takedown (17 U.S.C. §512)",
+          "detail": "A host that takes material down on notice keeps its safe harbor, and registers a designated agent with the Copyright Office.",
+          "url": "https://www.copyright.gov/dmca-directory/"
+        }
+      ]
+    }
+  ]
+}

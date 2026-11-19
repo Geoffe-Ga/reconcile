@@ -1,0 +1,115 @@
+{
+  "id": "2026-11-14-bedfellows-band",
+  "title": "Bedfellows Band Calls",
+  "prompt": "#428: the strange-bedfellows score runs on the device; the founder picks the first band.",
+  "created": "2026-11-14",
+  "context": "ADR-0077 §4 settled that Discover's Bedfellows view shows shelf entries from groups that share SOMETHING with you but not EVERYTHING, scored on your device. Nothing is sent or stored. The spike (#428) is built and gated but not pushed: it scored 4 invented readers against 14 invented shelf entries (56 pairs, each marked by hand first). Your picks set the code's defaults and go into an ADR-0077 §4 amendment. All of them stay tunable later, because they're constants and nothing is stored. The full comparison, every pair under every band, is in the spike's bands page, summarized in each decision below.",
+  "theme": {"source": "DESIGN.md", "light": {"bg": "#f6f1e7", "surface": "#fffdf8", "sunken": "#ece5d6", "fg": "#1d1c19", "muted": "#6b665b", "line": "#ddd5c4", "accent": "#1f4a33", "accent-ink": "#f6f1e7", "accent-soft": "#dfe8dc", "rec": "#7a5410", "rec-soft": "#f1e3c4", "sev-low": "#2f6b45", "sev-med": "#85560f", "sev-high": "#b3362a"}, "dark": {"bg": "#15140f", "surface": "#1e1d17", "sunken": "#26241d", "fg": "#f1ece0", "muted": "#a39d8f", "line": "#3a372d", "accent": "#8fbf98", "accent-ink": "#10170f", "accent-soft": "#233a2a", "rec": "#e2b663", "rec-soft": "#3a2f18", "sev-low": "#7fbf8e", "sev-med": "#e0b25c", "sev-high": "#e0705f"}, "fonts": {"display": "\"Newsreader\", \"Iowan Old Style\", Georgia, serif", "body": "\"Public Sans\", system-ui, -apple-system, \"Segoe UI\", sans-serif", "mono": "\"JetBrains Mono\", ui-monospace, \"SF Mono\", Menlo, monospace"}, "fontsUrl": "https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400..600&family=Public+Sans:wght@400..700&family=JetBrains+Mono:wght@400;500&display=swap", "radius": "10px"},
+  "decisions": [
+    {
+      "id": "method",
+      "title": "How likeness is counted",
+      "question": "Which way of comparing two texts should the score use?",
+      "summary": "Every method here drops filler words (\"the\", \"and\"), then counts how much of a shelf entry your own closest Document also says, from 0 (nothing) to 1 (all of it). They differ in whether word endings fold together (\"tracking\" meets \"track\") and whether two-word phrases (\"public library\", \"coal plant\") count extra. Without the filler list, unrelated pairs scored up to 0.29, so every option keeps it. Pick this first, because the bands below are measured on the recommended method.",
+      "options": [
+        {"id": "stems-phrases", "label": "Stems + phrases", "summary": "Fold word endings, and count two-word phrases at twice a word.", "pros": ["Its reasons read well: \"okker river\", \"public library\", \"opposed war\"", "Scattered single-word coincidences weigh less", "Gap between shared and unrelated: 0.10 vs 0.13"], "cons": ["Scores run lower, so the band sits lower", "Narrowest margin of the three on these samples"]},
+        {"id": "stems", "label": "Stemmed words", "summary": "Fold word endings; every word counts the same.", "pros": ["Catches \"schools\"/\"school\", \"opposed\"/\"oppose\"", "Simple to explain"], "cons": ["Folds a chess \"boards\" into a housing \"board\": unrelated pairs reach 0.14", "Gap is 0.14 vs 0.17"]},
+        {"id": "exact", "label": "Exact words", "summary": "Words must match exactly.", "pros": ["Widest gap on these samples (0.10 vs 0.15)", "Simplest"], "cons": ["Misses every change of form: \"tracking\" never meets \"track\"", "Its wide gap is partly luck: it happens to miss the boards/board coincidence"]}
+      ],
+      "recommended": "stems-phrases",
+      "recommendation_reason": "It gives the clearest \"You both write about …\" line, which ADR-0077 requires, and it's the only method whose ranking held up across all four readers. Its smaller numbers just move the band down.",
+      "tradeoffs": [
+        {"dimension": "Explains itself in words", "values": {"stems-phrases": "Best: shared phrases like \"feedlot runoff\"", "stems": "Single words only", "exact": "Single words only"}},
+        {"dimension": "Lowest \"shares one thing\" score", "values": {"stems-phrases": "0.13", "stems": "0.17", "exact": "0.15"}},
+        {"dimension": "Highest unrelated score", "values": {"stems-phrases": "0.10 (boards, winter)", "stems": "0.14 (boards, winter)", "exact": "0.10 (children, defend)"}},
+        {"dimension": "Changes of word form", "values": {"stems-phrases": "Caught", "stems": "Caught", "exact": "Missed"}},
+        {"dimension": "Privacy", "values": {"stems-phrases": "On the device; nothing sent or stored", "stems": "Same", "exact": "Same"}}
+      ],
+      "costs": [
+        {"item": "Build time", "values": {"stems-phrases": "Done (in the spike)", "stems": "A setting change", "exact": "A setting change"}},
+        {"item": "Speed, 500 entries × 20 Documents", "values": {"stems-phrases": "≈45 ms desktop; ≈0.3 s on a throttled phone profile", "stems": "Slightly faster", "exact": "Slightly faster"}},
+        {"item": "Complexity", "values": {"stems-phrases": "A small English stemmer plus phrase pairs", "stems": "A small English stemmer", "exact": "Least"}},
+        {"item": "Reversibility", "values": {"stems-phrases": "High: one constant, nothing stored", "stems": "High", "exact": "High"}}
+      ],
+      "risks": [
+        {"risk": "Fourteen invented entries are a small sample; a real shelf may rank differently", "severity": "medium", "mitigation": "The amendment sets a trigger: measure again once the pilot shelf holds real entries"},
+        {"risk": "The stemmer is English-only; other languages and scripts without spaces score poorly", "severity": "low", "mitigation": "Said plainly in the amendment; revisit if a pilot group writes in another language"}
+      ],
+      "examples": [
+        {"title": "Porter stemmer", "detail": "Martin Porter's 1980 suffix-stripping algorithm, the classic way search engines fold \"connected\" and \"connection\" together.", "url": "https://tartarus.org/martin/PorterStemmer/"},
+        {"title": "Lucene's More Like This", "detail": "Lucene and Elasticsearch find similar documents by term overlap weighted by how distinctive each term is. It's the same family as this method, but runs on a server."}
+      ]
+    },
+    {
+      "id": "band",
+      "title": "The band: how much in common",
+      "question": "Which range of scores should the Bedfellows view show?",
+      "summary": "A band is a floor and a ceiling. Above the ceiling is your own kind: near copies of what you already say. Below the floor is noise: coincidences like a chess club's \"boards\" meeting a housing \"board\". On the samples, the 7 \"shares one thing\" pairs score 0.13–0.39, near copies score 0.89–1.00, and unrelated pairs score at most 0.10. One pair mentions one thing only in passing: \"coal plant\" in one clause, at 0.09. No band takes it in without also taking the boards/winter coincidence at 0.10, so choosing band C is how you'd say passing mentions count.",
+      "options": [
+        {"id": "a-close", "label": "A · Close kin 0.20–0.50", "summary": "Only entries sharing a fifth or more of what they say. Shows 4 of 56 pairs.", "pros": ["Nothing shown that shouldn't be", "Each match is strong"], "cons": ["Misses 3 of 7 \"shares one thing\" pairs, including the library and the late buses", "A small pilot shelf may show nothing at all"]},
+        {"id": "b-default", "label": "B · Default 0.11–0.50", "summary": "Shares about a ninth or more, and less than half. Shows 8 of 56 pairs.", "pros": ["Takes in all 7 \"shares one thing\" pairs", "Leaves out every near copy and every coincidence"], "cons": ["Also shows the hunter × animal-rights pair (see the next decision)", "Leaves out the passing \"coal plant\" mention"]},
+        {"id": "c-wide", "label": "C · Wide 0.08–0.50", "summary": "Lets in passing mentions, and coincidences with them. Shows 10 of 56 pairs.", "pros": ["Takes in the passing \"coal plant\" pair", "More to look at on a small shelf"], "cons": ["Shows the boards/winter coincidence: a chess club as kin to a tenants' union", "Coincidences make the view feel random"]},
+        {"id": "d-high", "label": "D · High ceiling 0.11–0.90", "summary": "The default floor, with the ceiling raised until near copies come in. Shows 9 of 56 pairs.", "pros": ["Shows groups very close to you as well"], "cons": ["Shows a near copy (0.89): your own kind, not a strange bedfellow", "Works against ADR-0077's \"not EVERYTHING\""]}
+      ],
+      "recommended": "b-default",
+      "recommendation_reason": "It's the only band that gets every \"shares one thing\" pair without showing a near copy or a coincidence. Its floor sits in the gap between 0.10 and 0.13, and \"less than half\" keeps out your own kind.",
+      "tradeoffs": [
+        {"dimension": "\"Shares one thing\" pairs shown (of 7)", "values": {"a-close": "4", "b-default": "7", "c-wide": "7", "d-high": "7"}},
+        {"dimension": "Wrongly shown", "values": {"a-close": "None", "b-default": "The opposed pair (next decision)", "c-wide": "The opposed pair + boards/winter", "d-high": "The opposed pair + a near copy"}},
+        {"dimension": "Passing mention (\"coal plant\")", "values": {"a-close": "Left out", "b-default": "Left out", "c-wide": "Taken in", "d-high": "Left out"}},
+        {"dimension": "Fits \"SOMETHING but not EVERYTHING\"", "values": {"a-close": "Leans to \"a lot\"", "b-default": "Yes", "c-wide": "Yes, plus noise", "d-high": "No: lets in near-EVERYTHING"}},
+        {"dimension": "On a small pilot shelf", "values": {"a-close": "Often empty", "b-default": "Some", "c-wide": "Most", "d-high": "Some, including your own kind"}}
+      ],
+      "costs": [
+        {"item": "Build time", "values": {"a-close": "Two numbers and two sample tests", "b-default": "None: it's the spike's default", "c-wide": "Two numbers; two sample tests flip", "d-high": "Two numbers and one sample test"}},
+        {"item": "Running cost", "values": {"a-close": "None", "b-default": "None", "c-wide": "None", "d-high": "None"}},
+        {"item": "Complexity", "values": {"a-close": "Same", "b-default": "Same", "c-wide": "Same", "d-high": "Same"}},
+        {"item": "Reversibility", "values": {"a-close": "High: a constant; nothing stored", "b-default": "High", "c-wide": "High", "d-high": "High"}}
+      ],
+      "risks": [
+        {"risk": "Real shelf entries are longer or shorter than the samples, shifting every score", "severity": "medium", "mitigation": "Measure again on the pilot shelf (the amendment's trigger); the band is a constant"},
+        {"risk": "The view shows nothing on a small shelf, and people decide it's broken", "severity": "medium", "mitigation": "An empty state that says why; widen the floor after the pilot if needed", "options": ["a-close"]},
+        {"risk": "Coincidences make readers distrust every match", "severity": "medium", "mitigation": "The \"You both write about …\" line shows why; pick a higher floor", "options": ["c-wide"]},
+        {"risk": "Near copies turn Bedfellows into an echo chamber", "severity": "high", "mitigation": "Keep the ceiling at or under 0.5", "options": ["d-high"]}
+      ],
+      "examples": [
+        {"title": "Serendipity in recommender research", "detail": "Recommender research has long argued that pure accuracy (more of what you already like) narrows what people see. Work on \"novelty\" and \"serendipity\" deliberately aims for relevant-but-unexpected, which is what this band is for."},
+        {"title": "The filter bubble", "detail": "Eli Pariser's 2011 book argued that showing people only what matches them closes them off. A ceiling under 0.5 is a direct answer to that."}
+      ]
+    },
+    {
+      "id": "opposed",
+      "title": "Same subject, other side",
+      "question": "When an entry is about your subject but takes the other side, does it count as a bedfellow?",
+      "summary": "Term overlap can't tell agreement from opposition. On the samples, an animal-rights call to end deer season scores 0.18 against a hunter (\"deer, rifles, state, lower, land\") and lands in bands B, C and D. Telling sides apart on the device, with no model and no download, isn't reliable. So the real choice is what Discover does about it: show it plainly, ship as is and file a later issue, or let the reader hide entries they don't want.",
+      "options": [
+        {"id": "keep", "label": "Show it as kin", "summary": "Count it: they share a subject, and the \"You both write about\" line says exactly what.", "pros": ["Hunters and animal-rights groups both care about the deer and the land: a real strange-bedfellows opening", "Honest: the reason is on the card", "Nothing more to build"], "cons": ["Some readers will feel it's the enemy, not a bedfellow"]},
+        {"id": "later-issue", "label": "Ship, file an issue", "summary": "Ship as is, and file an issue to tell sides apart once there's a method that works on the device.", "pros": ["Records the gap so it isn't forgotten", "Doesn't block Bedfellows"], "cons": ["There may never be a reliable on-device method", "Behaves the same as \"Show it as kin\" until then"]},
+        {"id": "hide", "label": "Let readers hide", "summary": "Add a \"Not for me\" on each Bedfellows entry, remembered only on that device.", "pros": ["The reader decides, not the method", "Stays local: nothing sent"], "cons": ["New UI and a small local list to keep", "A per-device list of hidden groups is itself a record of what someone rejects"]}
+      ],
+      "recommended": "keep",
+      "recommendation_reason": "Your own words for §4 were \"the main goal is still to build strange bedfellows\". Two groups that disagree about deer season but both write about the land are the clearest case of that. Because the card says what they share, the reader can judge for themselves.",
+      "tradeoffs": [
+        {"dimension": "Serves \"strange bedfellows\"", "values": {"keep": "Directly", "later-issue": "Directly, for now", "hide": "Yes, with an exit"}},
+        {"dimension": "Reader control", "values": {"keep": "Reads the reason, scrolls on", "later-issue": "Same", "hide": "Can hide an entry"}},
+        {"dimension": "Privacy", "values": {"keep": "Nothing stored", "later-issue": "Nothing stored", "hide": "Keeps a local list of hidden entries (high-risk data if seized)"}},
+        {"dimension": "Build", "values": {"keep": "None", "later-issue": "An issue only", "hide": "UI, a local list, tests"}}
+      ],
+      "costs": [
+        {"item": "Build time", "values": {"keep": "None", "later-issue": "Filing an issue", "hide": "About a day, in the Bedfellows view issue (#433)"}},
+        {"item": "Running cost", "values": {"keep": "None", "later-issue": "None", "hide": "None"}},
+        {"item": "Complexity", "values": {"keep": "None", "later-issue": "None now", "hide": "A local list, kept and cleared"}},
+        {"item": "Reversibility", "values": {"keep": "High: add hiding later if the pilot asks", "later-issue": "High", "hide": "Medium: removing it later drops people's hidden lists"}}
+      ],
+      "risks": [
+        {"risk": "A reader sees an opposing group as \"kin\" and feels misread", "severity": "medium", "mitigation": "The card's \"You both write about …\" line says it's about a shared subject, not a shared stance", "options": ["keep", "later-issue"]},
+        {"risk": "A device's list of hidden groups reveals what its owner rejects, if the device is seized", "severity": "medium", "mitigation": "Keep it inside the sealed vault, and clear it with the group's data", "options": ["hide"]}
+      ],
+      "examples": [
+        {"title": "Community Notes' bridging ranking", "detail": "X's Community Notes shows a note only when people who usually disagree both rate it helpful. Common ground is found across sides on purpose, not filtered out."},
+        {"title": "Polis", "detail": "Polis groups participants by how they vote, then highlights statements that every opinion group agrees with. Taiwan's vTaiwan process used it.", "url": "https://pol.is"},
+        {"title": "Braver Angels", "detail": "A US organization that brings people from opposite political sides together around one shared concern at a time."}
+      ]
+    }
+  ]
+}
