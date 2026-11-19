@@ -51,24 +51,25 @@ export const THRESHOLDS: Thresholds = {
   /**
    * 0.5: a counterpart is the same claim restated, a closer pair than a
    * shared subject. On `tune` anything from 0.5 to 0.6 gives the same
-   * numbers; 0.45 loses two shared claims as near-copies. 0.5, the low end,
-   * spreads the rows across the tiers most (strangeness 1 for 41 of 84 rows
-   * rather than 58 of 85 at 0.55).
+   * numbers for every kind but unclear (17/25 at 0.5, 18/25 at 0.55 and 0.6);
+   * 0.45 loses two shared claims as near-copies. 0.5, the low end, spreads the
+   * rows across the tiers most (strangeness 1 for 40 of 83 rows rather than
+   * 57 of 84 at 0.55).
    */
   counterpart: 0.5,
   /**
    * 0.65, not ADR-0080's "about 80%": an entry's title is a claim, and a
    * reader's Document's title isn't, so a near-copy of a Document (title and
    * two sentences) covers at most 2/3. At 0.65, near-copies back 0/28 and
-   * shared claims 26/33; at 0.7, 18/28 near-copies come back; at 0.8, 17–21.
+   * shared claims 26/33; at 0.7, 15/28 near-copies come back; at 0.75 and 0.8, 17/28.
    * Anything from 0.6 to just under 2/3 gives the same numbers.
    */
   nearCopy: 0.65,
   /** ADR-0080 §3: the stance check reads an entry's best three pairs. */
   judged: 3,
   /**
-   * Cut where `tune`'s 84 rows fall: 7 with strangeness 0.5 (two claims of
-   * four restated) are close, 36 between 0.667 and 0.8 middle, and 41 with
+   * Cut where `tune`'s 83 rows fall: 7 with strangeness 0.5 (two claims of
+   * four restated) are close, 36 between 0.667 and 0.8 middle, and 40 with
    * none restated, a subject shared and nothing more, strange.
    */
   strangeness: { closeBelow: 0.6, strangeFrom: 0.9 },
