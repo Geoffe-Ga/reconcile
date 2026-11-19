@@ -35,7 +35,17 @@ const NOTICE = fileURLToPath(new URL('modelNotice.txt', import.meta.url));
 
 const require = createRequire(import.meta.url);
 
-/** npm package `name`'s directory, found from its entry, since its `exports` may hide package.json. */
+/**
+ * npm package `name`'s directory, found from its entry, since its `exports` may hide package.json.
+ *
+ * It assumes the package sits in a directory named `node_modules/<name>`,
+ * a scoped name as two segments (`node_modules/@scope/pkg`), with its entry
+ * somewhere inside it: it walks up from `require.resolve(name)` to the first
+ * directory that ends in that path and holds a package.json. npm's layout,
+ * hoisted or nested, and pnpm's store both fit. A package installed under
+ * another directory name, or whose entry lies outside its own directory,
+ * walks up to the filesystem's root and throws.
+ */
 function packageDir(name: string): string {
   let dir = dirname(require.resolve(name));
   while (!existsSync(join(dir, 'package.json')) || !dir.endsWith(join('node_modules', name))) {
