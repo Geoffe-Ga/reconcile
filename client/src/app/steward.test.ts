@@ -18,6 +18,7 @@ import { sendReport } from '../shelf/report';
 import { createFakeRelay } from '../test/fakeRelay';
 import {
   derivesPins,
+  dismissItem,
   importStewardKey,
   readInbox,
   readQueue,
@@ -143,6 +144,63 @@ describe('readQueue and sendNotice (#489)', () => {
         title: null,
       },
     ]);
+  });
+});
+
+describe('readQueue and a lifted suspension (#490)', () => {
+  it('lists a suspension that stands, and once lifted, the listing posted again waits for release', async () => {
+    const fake = createFakeShelf({ holds: true });
+    const shelf = createShelf({ fetch: fake.fetch });
+    const oak = newSigningKeys();
+    const address = base64url(oak.publicKey);
+    await shelf.put(address, listingBy(oak, 'Oak St Tenants'));
+    await release(shelf, address);
+    const store = keyStore(TEST_STEWARD_SECRET);
+    const suspend = { v: 1, kind: 'notice', act: 'suspend', address, clause: 'C2' } as const;
+    expect(await sendNotice(store, shelf, suspend)).toBe(true);
+
+    const suspended = await readQueue(shelf);
+    if (typeof suspended === 'string') throw new Error('a view');
+    expect(suspended.suspended).toMatchObject([{ address, id: null, clause: 'C2' }]);
+
+    const lift = { v: 1, kind: 'notice', act: 'unsuspend', address } as const;
+    expect(await sendNotice(store, shelf, lift)).toBe(true);
+    await shelf.put(address, listingBy(oak, 'Oak St Tenants'));
+
+    const lifted = await readQueue(shelf);
+    if (typeof lifted === 'string') throw new Error('a view');
+    expect(lifted.suspended).toEqual([]);
+    expect(lifted.waiting.map(({ listing }) => listing.address)).toEqual([address]);
+    expect(await sendNotice(store, shelf, lift)).toBe(false);
+  });
+});
+
+describe('dismissItem (#490)', () => {
+  it('dismisses the item in the store, and says false when the store refuses', async () => {
+    const kept: KeptInbox = { inbox: 'i', instance: 'r', cursor: 1, items: [] };
+    const item = {
+      key: 'k',
+      kind: 'report',
+      seq: 1,
+      received: 1,
+      address: 'a',
+      id: null,
+      clause: 'C1',
+      note: null,
+    } as const;
+    let held: KeptInbox | undefined = { ...kept, items: [item] };
+    const store: InboxKeep = {
+      getStewardInbox: () => Promise.resolve(held),
+      keepStewardInbox: (next) => {
+        held = next ?? undefined;
+        return Promise.resolve();
+      },
+    };
+
+    expect(await dismissItem(store, 'k')).toBe(true);
+    expect((await store.getStewardInbox())?.dismissed).toEqual(['k']);
+    const refusing = { ...store, getStewardInbox: () => Promise.reject(new Error('closed')) };
+    expect(await dismissItem(refusing, 'k')).toBe(false);
   });
 });
 

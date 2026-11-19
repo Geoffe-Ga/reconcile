@@ -4,9 +4,10 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import { messages } from '../app/messages';
-import { COVENANT_HASH } from '../shelf/covenant';
+import { CLAUSE_WORDS, COVENANT_HASH } from '../shelf/covenant';
 import type { ShelfEntry, ShelfListing, StandingHold, WaitingListing } from '../shelf/fold';
 import type { InboxItem } from '../shelf/inbox';
+import type { NoticeRemoval } from '../shelf/notices';
 import type { NoticeBody } from '../shelf/record';
 import { axeViolations } from '../test/axe';
 import { Steward, type StewardQueue, type StewardView } from './Steward';
@@ -57,6 +58,7 @@ const viewOf = (fields: Partial<StewardView> = {}): StewardView => ({
   listings: [],
   entries: [],
   holds: [],
+  suspended: [],
   paused: false,
   inbox: [],
   ...fields,
@@ -65,9 +67,10 @@ const viewOf = (fields: Partial<StewardView> = {}): StewardView => ({
 function setup(
   queue: StewardQueue,
   onNotice = vi.fn<(notice: NoticeBody) => Promise<boolean>>(() => Promise.resolve(true)),
+  onDismiss = vi.fn<(key: string) => Promise<boolean>>(() => Promise.resolve(true)),
 ) {
-  render(<Steward queue={queue} onNotice={onNotice} />);
-  return { user: userEvent.setup(), onNotice };
+  render(<Steward queue={queue} onNotice={onNotice} onDismiss={onDismiss} />);
+  return { user: userEvent.setup(), onNotice, onDismiss };
 }
 
 /** The section headed `title`. */
@@ -313,7 +316,11 @@ describe('Steward: reports and appeals (#490)', () => {
     expect(within(second).getByText('Not the real co-op')).toBeVisible();
     expect(within(second).getByRole('button', { name: words.uphold })).toBeVisible();
     expect(within(third).getByText(words.aboutGone)).toBeVisible();
-    expect(within(third).queryByRole('button')).toBeNull();
+    expect(
+      within(third)
+        .getAllByRole('button')
+        .map((b) => b.textContent),
+    ).toEqual([words.dismiss]);
     expect(await axeViolations()).toEqual([]);
   });
 
@@ -337,5 +344,83 @@ describe('Steward: reports and appeals (#490)', () => {
   it('says when there are none', () => {
     setup(viewOf());
     expect(within(section(words.inboxHeading)).getByText(words.noInbox)).toBeVisible();
+  });
+
+  it('dismisses an item: it leaves the queue once kept, and nothing is sent', async () => {
+    const { user, onNotice, onDismiss } = setup(viewOf({ inbox: [appeal, report] }));
+    const [first] = within(section(words.inboxHeading)).getAllByRole('listitem');
+    if (first === undefined) throw new Error('two items');
+
+    await user.click(within(first).getByRole('button', { name: words.dismiss }));
+
+    expect(onDismiss).toHaveBeenCalledWith('a');
+    expect(onNotice).not.toHaveBeenCalled();
+    const left = within(section(words.inboxHeading)).getAllByRole('listitem');
+    expect(left).toHaveLength(1);
+    expect(within(section(words.inboxHeading)).queryByText('We are Oak St.')).toBeNull();
+  });
+
+  it('keeps an item whose dismissal wasn’t kept, and says so', async () => {
+    const { user } = setup(
+      viewOf({ inbox: [appeal] }),
+      undefined,
+      vi.fn(() => Promise.resolve(false)),
+    );
+
+    await user.click(screen.getByRole('button', { name: words.dismiss }));
+
+    expect(screen.getByText('We are Oak St.')).toBeVisible();
+    expect(screen.getByText(words.dismissFailed)).toBeVisible();
+  });
+
+  it('says when every item was dismissed', async () => {
+    const { user } = setup(viewOf({ inbox: [appeal] }));
+
+    await user.click(screen.getByRole('button', { name: words.dismiss }));
+
+    expect(within(section(words.inboxHeading)).getByText(words.noInbox)).toBeVisible();
+  });
+
+  it('offers to lift the suspension an appeal names, saying what readers will see', async () => {
+    const { user, onNotice } = setup(viewOf({ inbox: [appeal], suspended: [SUSPENDED] }));
+    const [item] = within(section(words.inboxHeading)).getAllByRole('listitem');
+    if (item === undefined) throw new Error('one item');
+
+    expect(within(item).getByText(words.aboutSuspended(CLAUSE_WORDS.C2))).toBeVisible();
+    expect(within(item).getByText(words.willSeeLift(CLAUSE_WORDS.C2))).toBeVisible();
+    expect(within(item).queryByRole('button', { name: words.suspend })).toBeNull();
+    await user.click(within(item).getByRole('button', { name: words.lift }));
+
+    expect(onNotice).toHaveBeenCalledWith({ v: 1, kind: 'notice', act: 'unsuspend', address: OAK });
+  });
+});
+
+const SUSPENDED: NoticeRemoval = {
+  address: OAK,
+  id: null,
+  clause: 'C2',
+  seq: 7,
+  received: 29_000_000,
+};
+
+describe('Steward: suspensions (#490)', () => {
+  it('lists each suspension that stands, with Lift the suspension and what readers will see, and passes axe', async () => {
+    const { user, onNotice } = setup(viewOf({ suspended: [SUSPENDED] }));
+    const [card] = within(section(words.suspendedHeading)).getAllByRole('listitem');
+    if (card === undefined) throw new Error('one suspension');
+
+    expect(within(card).getByText(words.removedFor(CLAUSE_WORDS.C2))).toBeVisible();
+    expect(within(card).getByText(words.addressOf(OAK.slice(0, 8)))).toBeVisible();
+    expect(within(card).getByText(words.willSeeLift(CLAUSE_WORDS.C2))).toBeVisible();
+    expect(await axeViolations()).toEqual([]);
+    await user.click(within(card).getByRole('button', { name: words.lift }));
+
+    expect(onNotice).toHaveBeenCalledWith({ v: 1, kind: 'notice', act: 'unsuspend', address: OAK });
+    expect(within(card).getByText(words.lifted)).toBeVisible();
+  });
+
+  it('says when nothing is suspended', () => {
+    setup(viewOf());
+    expect(within(section(words.suspendedHeading)).getByText(words.noSuspended)).toBeVisible();
   });
 });

@@ -157,3 +157,60 @@ describe('upholds, suspends and pauses (#489)', () => {
     expect(foldNotices([{ ...on, seq: 3 }, off]).paused).toBe(true);
   });
 });
+
+describe('a lifted suspension (#490)', () => {
+  const suspend = (seq: number, clause: 'C1' | 'C3' = 'C3') =>
+    notice({ v: 1, kind: 'notice', act: 'suspend', address: OAK, clause }, seq, seq * 10);
+  const lift = (seq: number, address = OAK) =>
+    notice({ v: 1, kind: 'notice', act: 'unsuspend', address }, seq, seq * 10);
+
+  it('ends the suspension an unsuspend newer than it names, and the release before it', () => {
+    const state = foldNotices([releaseRecord(OAK, 1, 5), suspend(2), lift(3)]);
+
+    expect(state.suspended).toEqual([]);
+    expect(state.released.has(OAK)).toBe(false);
+  });
+
+  it('lets a release after the lift count again', () => {
+    const state = foldNotices([suspend(2), lift(3), releaseRecord(OAK, 4, 40)]);
+
+    expect(state.released.has(OAK)).toBe(true);
+  });
+
+  it('lifts nothing before any suspend: the release and a later suspend stand', () => {
+    const state = foldNotices([lift(1), releaseRecord(OAK, 2, 20), suspend(3)]);
+
+    expect(state.released.has(OAK)).toBe(true);
+    expect(state.suspended).toEqual([
+      { address: OAK, id: null, clause: 'C3', seq: 3, received: 30 },
+    ]);
+  });
+
+  it('lets a suspend after the lift stand again, naming its own clause', () => {
+    const state = foldNotices([suspend(4, 'C1'), lift(3), suspend(2)]);
+
+    expect(state.suspended).toEqual([
+      { address: OAK, id: null, clause: 'C1', seq: 4, received: 40 },
+    ]);
+  });
+
+  it('lifts only the address it names', () => {
+    const birch = notice({ v: 1, kind: 'notice', act: 'suspend', address: BIRCH, clause: 'C2' }, 1);
+    const state = foldNotices([birch, suspend(2), lift(3, BIRCH)]);
+
+    expect(state.suspended.map(({ address }) => address)).toEqual([OAK]);
+  });
+
+  it('ignores an unsuspend any other key signed', () => {
+    const thief = newSigningKeys();
+    const body: NoticeBody = { v: 1, kind: 'notice', act: 'unsuspend', address: OAK };
+    const forged = {
+      seq: 3,
+      received: 30,
+      address: STEWARD_ADDRESS,
+      data: signNotice(thief, body),
+    };
+
+    expect(foldNotices([suspend(2), forged]).suspended).toHaveLength(1);
+  });
+});

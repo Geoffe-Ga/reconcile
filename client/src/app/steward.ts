@@ -1,7 +1,7 @@
 /**
  * The steward's side of the shelf (#488, #489; docs/spec/listed-doors.md
  * §6.2, §6.4): importing the steward's secret in Settings, and the console's
- * read and its five notices: release, hold, uphold, suspend and pause.
+ * read and its six notices: release, hold, uphold, suspend, unsuspend and pause.
  *
  * The secret is taken only when both public keys it derives are the ones the
  * app pins (`shelf/steward.ts`), so no other key is ever kept as the
@@ -13,14 +13,15 @@
  *
  * The console also reads the steward's inbox (#490, `shelf/inbox.ts`): the
  * box secret is derived from the steward's secret for the read and zeroed
- * after, as a notice's signing key is.
+ * after, as a notice's signing key is. The steward may dismiss an item there,
+ * on this device only, and may lift a suspension with an `unsuspend`.
  */
 import { base64url } from '../crypto/base64url';
 import { stewardKeysOf, stewardSecretFrom } from '../crypto/steward';
 import type { Relay } from '../net/relay';
 import type { Shelf } from '../net/shelf';
 import { foldShelf, standingHolds, waitingListings } from '../shelf/fold';
-import { type InboxItem, type InboxKeep, readStewardInbox } from '../shelf/inbox';
+import { dismissInboxItem, type InboxItem, type InboxKeep, readStewardInbox } from '../shelf/inbox';
 import { foldNotices, signNotice } from '../shelf/notices';
 import type { NoticeBody } from '../shelf/record';
 import { STEWARD_PINS, type StewardPins } from '../shelf/steward';
@@ -87,10 +88,24 @@ export async function readInbox(
 }
 
 /**
+ * Dismisses the inbox item `key` names on this device (#490); true once
+ * kept, false when the store refused.
+ */
+export async function dismissItem(store: InboxKeep, key: string): Promise<boolean> {
+  try {
+    await dismissInboxItem(store, key);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * The console's view, read fresh from the relay: every held listing beside
  * any live listing that holds its name, what stands on the shelf (every
- * entry at once, as its own group sees it), each hold that stands, and the
- * reports and appeals `inbox` reads (#490). `unavailable` while the relay
+ * entry at once, as its own group sees it), each hold that stands, each
+ * suspension that stands (#490), and the reports and appeals `inbox` reads
+ * (#490). `unavailable` while the relay
  * has no shelf, `failed` when any read fails.
  */
 export async function readQueue(
@@ -102,12 +117,13 @@ export async function readQueue(
     if (live === null || held === null) return 'unavailable';
     const own = new Set(live.records.map(({ address }) => address));
     const state = foldShelf(live.records, live.now, { own });
-    const { released } = foldNotices(live.records);
+    const { released, suspended } = foldNotices(live.records);
     const view: StewardView = {
       waiting: waitingListings(held.records, state, released),
       listings: state.listings,
       entries: state.entries,
       holds: standingHolds(live.records, held.records, live.now),
+      suspended,
       paused: state.paused,
       inbox: items,
     };

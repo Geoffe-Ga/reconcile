@@ -15,6 +15,10 @@
  * Each item is kept until {@link INBOX_KEEP_MINUTES} after it arrived, by
  * the relay's minute, when the relay has surely deleted it too.
  *
+ * The steward may dismiss an item (#490): the device keeps its key beside
+ * the items, leaves it out of every later read, and forgets the dismissal
+ * when it forgets the item. Nothing goes to the relay.
+ *
  * What the device keeps names only listings and entries, which are public,
  * a clause and a note; nothing about whoever sent them.
  */
@@ -59,6 +63,8 @@ export interface KeptInbox {
   readonly instance: string | null;
   readonly cursor: number;
   readonly items: readonly InboxItem[];
+  /** The keys of the items the steward dismissed, each forgotten with its item (#490). */
+  readonly dismissed?: readonly string[];
 }
 
 /** Where the device keeps it: one record of its own store (`store/db.ts`). */
@@ -106,9 +112,23 @@ const newestFirst = (a: InboxItem, b: InboxItem): number =>
   b.received - a.received || b.seq - a.seq;
 
 /**
+ * The keys among `held`'s and `latest`'s dismissals that still name one of
+ * `items`: a dismissal made while a read was on its way is kept, and one
+ * whose item is let go is forgotten with it.
+ */
+function dismissedAmong(
+  items: readonly InboxItem[],
+  ...kept: readonly (KeptInbox | undefined)[]
+): string[] {
+  const keys = new Set(items.map(({ key }) => key));
+  const dismissed = new Set(kept.flatMap((one) => one?.dismissed ?? []));
+  return [...dismissed].filter((key) => keys.has(key));
+}
+
+/**
  * Reads the steward's inbox after the cursor this device keeps, with the
  * steward's box `secret`, keeps what it found, and resolves to every item
- * held, newest first.
+ * held that the steward hasn't dismissed, newest first.
  *
  * @throws {Error} when the relay can't be reached or the store refuses.
  */
@@ -131,6 +151,28 @@ export async function readStewardInbox(
     page.now,
   );
   const cursor = page.records.at(-1)?.seq ?? (page.instance === start.instance ? start.cursor : 0);
-  await services.keep.keepStewardInbox({ inbox, instance: page.instance, cursor, items });
-  return items.sort(newestFirst);
+  const latest = await services.keep.getStewardInbox();
+  const dismissed = dismissedAmong(items, start, latest?.inbox === inbox ? latest : undefined);
+  await services.keep.keepStewardInbox({
+    inbox,
+    instance: page.instance,
+    cursor,
+    items,
+    dismissed,
+  });
+  const gone = new Set(dismissed);
+  return items.filter(({ key }) => !gone.has(key)).sort(newestFirst);
+}
+
+/**
+ * Dismisses the item `key` names, when the device holds it: it stays kept,
+ * so a read doesn't bring it back, and leaves every later read (#490).
+ *
+ * @throws {Error} when the store refuses.
+ */
+export async function dismissInboxItem(keep: InboxKeep, key: string): Promise<void> {
+  const held = await keep.getStewardInbox();
+  if (held === undefined || !held.items.some((item) => item.key === key)) return;
+  const dismissed = new Set([...(held.dismissed ?? []), key]);
+  await keep.keepStewardInbox({ ...held, dismissed: [...dismissed] });
 }

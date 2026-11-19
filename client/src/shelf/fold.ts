@@ -64,6 +64,9 @@
  *    - a **suspend** ends its address's listing, with its name and entries,
  *      and, once its listing had been released, leaves a tombstone for 30
  *      relay days, as long as a listing that posts nothing more is kept;
+ *    - an **unsuspend** (#490) ends a suspension that stands, and its
+ *      tombstone, and voids the address's earlier releases, so the listing
+ *      its group posts next waits for a fresh release;
  *    - a **pause** that is on sets `paused`, and every screen that shows
  *      the shelf to readers then shows one line in its place (Discover, an
  *      entry's page); the steward's console still lists what stands.

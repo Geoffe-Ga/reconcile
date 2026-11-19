@@ -15,7 +15,9 @@
  * - the pause, with Pause the shelf or Lift the pause (#489);
  * - reports and appeals (#490, §6.3), newest first, each beside the entry or
  *   listing it names, with the same actions on it, a report's clause
- *   chosen. Neither says who sent it.
+ *   chosen, or Lift the suspension for a suspended listing. Neither says who
+ *   sent it. Each may be dismissed, on this device only;
+ * - the suspensions that stand (#490), each with Lift the suspension.
  *
  * Every action that names a clause asks which, and each says what readers,
  * and the group, will see once it is sent. Flagged entries wait for the
@@ -31,6 +33,7 @@ import { BackLink, PageHeader, Section } from '../app/ui';
 import { CLAUSE_WORDS, COVENANT_HASH } from '../shelf/covenant';
 import type { ShelfEntry, ShelfListing, StandingHold, WaitingListing } from '../shelf/fold';
 import type { InboxItem } from '../shelf/inbox';
+import type { NoticeRemoval } from '../shelf/notices';
 import type { Clause, NoticeBody } from '../shelf/record';
 
 /** What the console shows (§6.4): what waits, what stands, what's held, and the pause. */
@@ -43,6 +46,8 @@ export interface StewardView {
   readonly entries: readonly ShelfEntry[];
   /** The holds that stand, with what each hides and when it lapses. */
   readonly holds: readonly StandingHold[];
+  /** The suspensions that stand, each by its first suspend since any lift (#490). */
+  readonly suspended: readonly NoticeRemoval[];
   /** Whether the steward's pause stands. */
   readonly paused: boolean;
   /** Reports and appeals, newest first (#490). */
@@ -58,6 +63,8 @@ export interface StewardProps {
   readonly queue: StewardQueue;
   /** Signs and PUTs `notice`; true once the relay has it. */
   readonly onNotice: (notice: NoticeBody) => Promise<boolean>;
+  /** Dismisses the inbox item `key` names, on this device; true once kept (#490). */
+  readonly onDismiss: (key: string) => Promise<boolean>;
 }
 
 /** Where one action stands. */
@@ -309,6 +316,53 @@ function Pause(props: { readonly paused: boolean; readonly onNotice: StewardProp
   );
 }
 
+/** Lift the suspension of `suspension`'s address, saying first what readers will see (#490). */
+function Lift(props: {
+  readonly suspension: NoticeRemoval;
+  readonly onNotice: StewardProps['onNotice'];
+}) {
+  const { address, clause } = props.suspension;
+  return (
+    <div className="stack">
+      <p className="caption">{words.willSeeLift(CLAUSE_WORDS[clause])}</p>
+      <SendButton
+        label={words.lift}
+        busyLabel={words.lifting}
+        sentLine={words.lifted}
+        send={() => props.onNotice({ v: 1, kind: 'notice', act: 'unsuspend', address })}
+      />
+    </div>
+  );
+}
+
+/** One suspension that stands: when, why, the address's start, and Lift the suspension. */
+function SuspendedCard(props: {
+  readonly suspension: NoticeRemoval;
+  readonly onNotice: StewardProps['onNotice'];
+}) {
+  const { suspension } = props;
+  return (
+    <li className="card stack">
+      <h3 className="heading-3">{words.suspendedOn(formatDate(suspension.received))}</h3>
+      <p>{words.removedFor(CLAUSE_WORDS[suspension.clause])}</p>
+      <p className="meta">{words.addressOf(suspension.address.slice(0, 8))}</p>
+      <Lift suspension={suspension} onNotice={props.onNotice} />
+    </li>
+  );
+}
+
+/** The suspensions that stand, or one line saying there are none (#490). */
+function Suspended({ view, onNotice }: StewardSectionProps) {
+  if (view.suspended.length === 0) return <p>{words.noSuspended}</p>;
+  return (
+    <ul className="stack">
+      {view.suspended.map((suspension) => (
+        <SuspendedCard key={suspension.address} suspension={suspension} onNotice={onNotice} />
+      ))}
+    </ul>
+  );
+}
+
 /** The waiting listings, or one line saying there are none. */
 function Waiting({ view, onNotice }: StewardSectionProps) {
   if (view.waiting.length === 0) return <p className="lede">{words.none}</p>;
@@ -360,6 +414,8 @@ interface About {
   /** The entry's text, when the console holds it. */
   readonly text: string;
   readonly acts: readonly ClauseAct[];
+  /** The suspension of the listing it names, which the steward may lift (#490). */
+  readonly suspension?: NoticeRemoval;
 }
 
 /** The title of entry `id` at `address`, from what stands or what's held, or null. */
@@ -378,8 +434,16 @@ function listingName(view: StewardView, address: string): string | null {
   return live ?? held ?? waiting ?? null;
 }
 
-/** What `item` names, or null when the console holds neither the entry nor the listing. */
+/**
+ * What `item` names, or null when the console holds neither the entry nor
+ * the listing. A suspended listing, or an entry under one, offers its lift.
+ */
 function aboutOf(view: StewardView, item: InboxItem): About | null {
+  const suspension = view.suspended.find((s) => s.address === item.address);
+  if (suspension !== undefined) {
+    const line = words.aboutSuspended(CLAUSE_WORDS[suspension.clause]);
+    return { line, text: '', acts: [], suspension };
+  }
   if (item.id !== null) {
     const entry = entryTitle(view, item.address, item.id);
     if (entry === null) return null;
@@ -391,11 +455,64 @@ function aboutOf(view: StewardView, item: InboxItem): About | null {
     : { line: words.aboutListing(name), text: '', acts: ['hold', 'suspend'] };
 }
 
-/** One report or appeal: what it is, when it came, its note, and what it names with its actions. */
+/** Dismiss: the item leaves the queue once this device keeps the dismissal, else it says so. */
+function Dismiss(props: { readonly send: () => Promise<boolean> }) {
+  const [state, setState] = useState<'idle' | 'busy' | 'failed'>('idle');
+  const busy = state === 'busy';
+  const press = () => {
+    setState('busy');
+    void props
+      .send()
+      .catch(() => false)
+      .then((done) => {
+        // A kept dismissal takes the whole card away, this button with it.
+        if (!done) setState('failed');
+      });
+  };
+  return (
+    <>
+      <div onPointerDownCapture={holdPresses(busy)}>
+        <Button className="button button-quiet" isDisabled={busy} onPress={press}>
+          {words.dismiss}
+        </Button>
+      </div>
+      <p className="status" role="status">
+        {state === 'failed' ? words.dismissFailed : null}
+      </p>
+    </>
+  );
+}
+
+/** What the steward may do to what an item names: the clause acts, or the lift. */
+function AboutActions(props: {
+  readonly item: InboxItem;
+  readonly about: About;
+  readonly onNotice: StewardProps['onNotice'];
+}) {
+  const { item, about, onNotice } = props;
+  if (about.suspension !== undefined) {
+    return <Lift suspension={about.suspension} onNotice={onNotice} />;
+  }
+  return (
+    <Actions
+      address={item.address}
+      id={item.id}
+      acts={about.acts}
+      {...(item.clause === null ? {} : { clause: item.clause })}
+      onNotice={onNotice}
+    />
+  );
+}
+
+/**
+ * One report or appeal: what it is, when it came, its note, what it names
+ * with its actions, and Dismiss.
+ */
 function InboxCard(props: {
   readonly item: InboxItem;
   readonly view: StewardView;
   readonly onNotice: StewardProps['onNotice'];
+  readonly onDismiss: () => Promise<boolean>;
 }) {
   const { item, view, onNotice } = props;
   const about = aboutOf(view, item);
@@ -418,26 +535,39 @@ function InboxCard(props: {
           {about.text}
         </p>
       )}
-      {about === null ? null : (
-        <Actions
-          address={item.address}
-          id={item.id}
-          acts={about.acts}
-          {...(item.clause === null ? {} : { clause: item.clause })}
-          onNotice={onNotice}
-        />
-      )}
+      {about === null ? null : <AboutActions item={item} about={about} onNotice={onNotice} />}
+      <Dismiss send={props.onDismiss} />
     </li>
   );
 }
 
-/** Reports and appeals, newest first, or one line saying there are none. */
-function Inbox({ view, onNotice }: StewardSectionProps) {
-  if (view.inbox.length === 0) return <p>{words.noInbox}</p>;
+/**
+ * Reports and appeals, newest first, without those dismissed since the
+ * console read them, or one line saying there are none.
+ */
+function Inbox({
+  view,
+  onNotice,
+  onDismiss,
+}: StewardSectionProps & Pick<StewardProps, 'onDismiss'>) {
+  const [dismissed, setDismissed] = useState<ReadonlySet<string>>(new Set());
+  const items = view.inbox.filter(({ key }) => !dismissed.has(key));
+  if (items.length === 0) return <p>{words.noInbox}</p>;
+  const dismiss = (key: string) => async () => {
+    const done = await onDismiss(key);
+    if (done) setDismissed((before) => new Set([...before, key]));
+    return done;
+  };
   return (
     <ul className="stack">
-      {view.inbox.map((item) => (
-        <InboxCard key={item.key} item={item} view={view} onNotice={onNotice} />
+      {items.map((item) => (
+        <InboxCard
+          key={item.key}
+          item={item}
+          view={view}
+          onNotice={onNotice}
+          onDismiss={dismiss(item.key)}
+        />
       ))}
     </ul>
   );
@@ -449,8 +579,8 @@ interface StewardSectionProps {
   readonly onNotice: StewardProps['onNotice'];
 }
 
-/** The steward's console: what waits, reports and appeals, what's held, what stands, and the pause. */
-export function Steward({ queue, onNotice }: StewardProps) {
+/** The steward's console: what waits, reports and appeals, what's held or suspended, what stands, and the pause. */
+export function Steward({ queue, onNotice, onDismiss }: StewardProps) {
   return (
     <main className="shell">
       <BackLink to={{ name: 'settings' }} label={messages.settings.title} />
@@ -464,10 +594,13 @@ export function Steward({ queue, onNotice }: StewardProps) {
             <Waiting view={queue} onNotice={onNotice} />
           </Section>
           <Section title={words.inboxHeading}>
-            <Inbox view={queue} onNotice={onNotice} />
+            <Inbox view={queue} onNotice={onNotice} onDismiss={onDismiss} />
           </Section>
           <Section title={words.holdsHeading}>
             <Holds view={queue} onNotice={onNotice} />
+          </Section>
+          <Section title={words.suspendedHeading}>
+            <Suspended view={queue} onNotice={onNotice} />
           </Section>
           <Section title={words.shelfHeading}>
             <OnShelf view={queue} onNotice={onNotice} />

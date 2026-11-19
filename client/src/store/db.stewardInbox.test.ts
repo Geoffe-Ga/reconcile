@@ -14,7 +14,7 @@ freshIndexedDBPerTest();
 
 const ADDRESS = 'A'.repeat(43);
 
-/** A kept inbox at `cursor`, with one report whose note is a canary. */
+/** A kept inbox at `cursor`, with one report whose note is a canary, dismissed (#490). */
 const kept = (cursor: number): KeptInbox => ({
   inbox: 'I'.repeat(43),
   instance: 'relay-1',
@@ -31,6 +31,7 @@ const kept = (cursor: number): KeptInbox => ({
       note: 'inbox-canary',
     },
   ],
+  dismissed: ['K'.repeat(43)],
 });
 
 describe('the steward’s inbox in the store (#490)', () => {

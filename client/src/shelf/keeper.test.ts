@@ -526,6 +526,26 @@ describe('createShelfKeeper: entries (§4.2, §4.5)', () => {
     expect(puts(fake)).toBe(before);
   });
 
+  it('posts the listing again at the next launch once the steward lifts the suspension (#490)', async () => {
+    const log = opened();
+    const fake = shelfAt(log, { held: true });
+    await device(fake, log).run();
+    const address = addressOfDoor(LISTED);
+    const shelf = createShelf({ fetch: fake.fetch });
+    await notify(shelf, { v: 1, kind: 'notice', act: 'release', address });
+    await notify(shelf, { v: 1, kind: 'notice', act: 'suspend', address, clause: 'C3' });
+    const ana = device(fake, log);
+    await ana.run();
+    expect(bodiesAt(fake, LISTED)).toEqual([]);
+
+    await notify(shelf, { v: 1, kind: 'notice', act: 'unsuspend', address });
+    await device(fake, log).run();
+
+    expect(bodiesAt(fake, LISTED)).toEqual([OPEN]);
+    const relisted = fake.records.filter((record) => record.address === address);
+    expect(relisted.map((record) => record.heldUntil)).toEqual([Infinity]);
+  });
+
   it('stops, without failing, when the relay refuses a suspended door it can’t verify (#489)', async () => {
     const log = opened();
     publish(log);

@@ -14,7 +14,13 @@ import { createRelay } from '../net/relay';
 import { DOOR } from '../test/door';
 import { createFakeRelay, type FakeRelay } from '../test/fakeRelay';
 import { TEST_STEWARD } from '../test/steward';
-import { INBOX_KEEP_MINUTES, type InboxKeep, type KeptInbox, readStewardInbox } from './inbox';
+import {
+  dismissInboxItem,
+  INBOX_KEEP_MINUTES,
+  type InboxKeep,
+  type KeptInbox,
+  readStewardInbox,
+} from './inbox';
 import { encodeAppeal, sendAppeal, sendReport } from './report';
 
 const ADDRESS = base64url(
@@ -174,5 +180,79 @@ describe('readStewardInbox', () => {
     fake.minute += 1;
     expect(await read(fake, keep)).toEqual([]);
     expect(INBOX_KEEP_MINUTES).toBe(32 * 1440);
+  });
+});
+
+describe('dismissInboxItem (#490)', () => {
+  it('leaves a dismissed item out of every later read, keeping the dismissal beside it', async () => {
+    const fake = createFakeRelay();
+    await sendReport(sender(fake), { address: ADDRESS, id: ENTRY, clause: 'C1' });
+    fake.minute += 1;
+    await sendAppeal(sender(fake), DOOR, { note: 'Look again' });
+    const { keep, held, writes } = keepOf();
+    const [appeal, report] = await read(fake, keep);
+    if (appeal === undefined || report === undefined) throw new Error('Expected two items.');
+
+    await dismissInboxItem(keep, report.key);
+
+    expect(held()?.dismissed).toEqual([report.key]);
+    expect(held()?.items).toHaveLength(2);
+    expect(writes).toHaveLength(2);
+    expect((await read(fake, keep)).map((item) => item.key)).toEqual([appeal.key]);
+    fake.restart();
+    expect((await read(fake, keep)).map((item) => item.key)).toEqual([appeal.key]);
+  });
+
+  it('forgets a dismissal when its item is let go, at 32 days', async () => {
+    const fake = createFakeRelay();
+    await sendReport(sender(fake), { address: ADDRESS, id: ENTRY, clause: 'C1' });
+    const { keep, held } = keepOf();
+    const [report] = await read(fake, keep);
+    await dismissInboxItem(keep, report?.key ?? '');
+
+    fake.minute += INBOX_KEEP_MINUTES - 1;
+    await read(fake, keep);
+    expect(held()?.dismissed).toHaveLength(1);
+    fake.minute += 1;
+    expect(await read(fake, keep)).toEqual([]);
+    expect(held()?.dismissed).toEqual([]);
+  });
+
+  it('changes nothing for an item it doesn’t hold, or with nothing kept', async () => {
+    const empty = keepOf();
+    await dismissInboxItem(empty.keep, 'k');
+    expect(empty.writes).toEqual([]);
+
+    const fake = createFakeRelay();
+    await sendReport(sender(fake), { address: ADDRESS, id: ENTRY, clause: 'C1' });
+    const { keep, writes } = keepOf();
+    await read(fake, keep);
+    await dismissInboxItem(keep, 'not-an-item');
+    expect(writes).toHaveLength(1);
+  });
+
+  it('keeps a dismissal made while a read was on its way', async () => {
+    const fake = createFakeRelay();
+    await sendReport(sender(fake), { address: ADDRESS, id: ENTRY, clause: 'C1' });
+    const { keep, held } = keepOf();
+    const [report] = await read(fake, keep);
+    const real = createRelay({ fetch: fake.fetch });
+    let open = (): void => undefined;
+    const gate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    const relay = {
+      getBlobs: async (...args: Parameters<typeof real.getBlobs>) => {
+        await gate;
+        return real.getBlobs(...args);
+      },
+    };
+
+    const reading = readStewardInbox({ relay, keep }, TEST_STEWARD.box.secretKey);
+    await dismissInboxItem(keep, report?.key ?? '');
+    open();
+
+    expect(await reading).toEqual([]);
+    expect(held()?.dismissed).toEqual([report?.key]);
   });
 });

@@ -153,6 +153,8 @@ interface VectorRecord {
   readonly hold?: string;
   readonly uphold?: string;
   readonly suspend?: string;
+  /** An unsuspend naming this door: its suspension lifts (#490). */
+  readonly unsuspend?: string;
   /** An entry's label, which a hold or an uphold names. */
   readonly id?: string;
   readonly clause?: Clause;
@@ -262,6 +264,9 @@ function noticeBodyFrom(vector: VectorRecord): NoticeBody | null {
   }
   if (vector.suspend !== undefined) {
     return { v: 1, kind: 'notice', act: 'suspend', address: addressOf(vector.suspend), clause };
+  }
+  if (vector.unsuspend !== undefined) {
+    return { v: 1, kind: 'notice', act: 'unsuspend', address: addressOf(vector.unsuspend) };
   }
   return vector.pause === undefined
     ? null
@@ -870,6 +875,20 @@ describe('foldShelf', () => {
       expect(doorListing([suspend], oak)).toEqual({ listedSince: 4321, held: true, removed: 'C3' });
       expect(doorListing([listing('Oak St Tenants'), suspend], oak)?.removed).toBe('C3');
       expect(newlyListed(doorListing([suspend], oak), NOW)).toBe(true);
+    });
+
+    it('is no longer removed once the steward lifts the suspension, and its next listing waits (#490)', () => {
+      const released = releaseRecord(oak, 0, 100);
+      const suspend = stewardNotice({ act: 'suspend', address: oak, clause: 'C3' }, 4321);
+      const lift = stewardNotice({ act: 'unsuspend', address: oak }, 5000);
+      const relisted = listing('Oak St Tenants');
+
+      expect(doorListingAsServed([released, suspend, lift], oak, NOW)).toBeNull();
+      expect(doorListingAsServed([released, suspend, lift, relisted], oak, NOW)).toEqual({
+        listedSince: relisted.received,
+        held: true,
+        removed: null,
+      });
     });
   });
 

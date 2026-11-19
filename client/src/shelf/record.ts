@@ -21,6 +21,8 @@
  *   one entry rather than the whole listing;
  * - `uphold`: an `address`, an entry's `id` and a `clause`;
  * - `suspend`: an `address` and a `clause`;
+ * - `unsuspend` (#490): the `address` whose suspension it lifts, and no
+ *   clause, since lifting one names no breach;
  * - `pause`: `on`, true to pause the shelf and false to end the pause. §6.1
  *   says a pause is "on or off" and §4.1 had no field for it, so #489 adds
  *   `on`, on a pause only.
@@ -133,6 +135,17 @@ export interface SuspendNoticeBody {
   readonly clause: Clause;
 }
 
+/**
+ * The steward's word that an address's suspension ends (#490): it may list
+ * again, its next listing held until a fresh release.
+ */
+export interface UnsuspendNoticeBody {
+  readonly v: typeof SHELF_VERSION;
+  readonly kind: 'notice';
+  readonly act: 'unsuspend';
+  readonly address: string;
+}
+
 /** The steward's word that the whole shelf hides (`on`), or shows again (#489). */
 export interface PauseNoticeBody {
   readonly v: typeof SHELF_VERSION;
@@ -143,7 +156,12 @@ export interface PauseNoticeBody {
 
 /** A record the steward signs. */
 export type NoticeBody =
-  ReleaseNoticeBody | HoldNoticeBody | UpholdNoticeBody | SuspendNoticeBody | PauseNoticeBody;
+  | ReleaseNoticeBody
+  | HoldNoticeBody
+  | UpholdNoticeBody
+  | SuspendNoticeBody
+  | UnsuspendNoticeBody
+  | PauseNoticeBody;
 
 /** Any record a door, or the steward, signs. */
 export type ShelfBody = OpenListingBody | FinalListingBody | EntryBody | WithdrawBody | NoticeBody;
@@ -170,6 +188,7 @@ function orderedNotice(body: NoticeBody): NoticeBody {
   const { v, kind } = body;
   switch (body.act) {
     case 'release':
+    case 'unsuspend':
       return { v, kind, act: body.act, address: body.address };
     case 'hold': {
       const { address, id, clause } = body;
@@ -264,11 +283,14 @@ function withdrawOf(fields: Readonly<Record<string, unknown>>): WithdrawBody | n
     : null;
 }
 
-/** A release's fields as its body, or null. */
-function releaseOf(fields: Readonly<Record<string, unknown>>): ReleaseNoticeBody | null {
+/** A release's or an unsuspend's fields as its body, or null: each names an address alone. */
+function addressOnlyOf(
+  fields: Readonly<Record<string, unknown>>,
+  act: 'release' | 'unsuspend',
+): ReleaseNoticeBody | UnsuspendNoticeBody | null {
   const { address } = fields;
   return hasKeys(fields, RELEASE_KEYS) && isKey(address)
-    ? { v: SHELF_VERSION, kind: 'notice', act: 'release', address }
+    ? { v: SHELF_VERSION, kind: 'notice', act, address }
     : null;
 }
 
@@ -310,7 +332,8 @@ function suspendOf(fields: Readonly<Record<string, unknown>>): SuspendNoticeBody
 function noticeOf(fields: Readonly<Record<string, unknown>>): NoticeBody | null {
   switch (fields.act) {
     case 'release':
-      return releaseOf(fields);
+    case 'unsuspend':
+      return addressOnlyOf(fields, fields.act);
     case 'hold':
       return holdOf(fields);
     case 'uphold':

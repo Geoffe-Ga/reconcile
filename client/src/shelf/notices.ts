@@ -20,6 +20,12 @@
  * - **suspend**: the listing comes down with its entries, a tombstone takes
  *   its place, and the door's page says so. The first suspend of an address
  *   names its clause.
+ * - **unsuspend** (#490): a suspension that stands ends, its tombstone with
+ *   it, and so does every release of the address before it, so the listing
+ *   the group posts next waits for a fresh release, as any first listing
+ *   does on a held relay. The suspend stays in the log: a suspend after the
+ *   lift stands again, under its own clause. One with no suspension
+ *   standing lifts nothing.
  * - **pause**: the newest pause decides: `on`, the whole shelf section
  *   hides behind one line; off, it shows again.
  *
@@ -71,7 +77,7 @@ export interface NoticeState {
   readonly holds: readonly NoticeHold[];
   /** Each upheld entry, in seq order. */
   readonly upheld: readonly NoticeRemoval[];
-  /** Each suspended address, by its first suspend, in seq order. */
+  /** Each address whose suspension stands, by the first suspend since any lift, in seq order. */
   readonly suspended: readonly NoticeRemoval[];
   /** Whether the newest pause is on. */
   readonly paused: boolean;
@@ -130,6 +136,9 @@ function gather(into: Gathering, notice: NoticeBody, { seq, received }: ShelfRec
       }
       return;
     }
+    case 'unsuspend':
+      if (into.suspended.delete(notice.address)) into.released.delete(notice.address);
+      return;
     case 'pause':
       into.paused = notice.on;
   }

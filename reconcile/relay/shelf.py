@@ -10,8 +10,8 @@ These are the only bodies the relay can read, and it reads as little as it
 can: the signature, ``v`` and ``kind``, an entry's or withdraw's ``id``,
 which it files the record under, a listing's ``open`` and ``final``, which
 say whether the door has closed for good (#486), and a notice's ``act``,
-``address``, ``id``, ``clause`` and ``on`` (#488, #489). It never reads a
-name, a title or a text.
+``address``, ``id``, ``clause`` and ``on`` (#488, #489, #490). It never
+reads a name, a title or a text.
 
 A notice is the steward's (listed-doors.md §6.1); the route checks that the
 steward signed it. Each act names what it acts on, and a notice missing any
@@ -22,12 +22,14 @@ of it is no record:
   holds one entry rather than the whole address.
 - ``uphold``: an ``address``, an entry's ``id`` and a ``clause``.
 - ``suspend``: an ``address`` and a ``clause``.
+- ``unsuspend``: an ``address``, whose suspension it lifts (#490).
 - ``pause``: ``on``, true or false (#489's encoding of "on or off").
 
 A notice is filed under a ``ref`` that says what it acts on, so the relay
 can find it again: a release under the address it names, as #488 filed it,
 and the others under ``hold:{address}``, ``hold:{address}:{id}``,
-``uphold:{address}:{id}``, ``suspend:{address}`` or ``pause``.
+``uphold:{address}:{id}``, ``suspend:{address}``, ``unsuspend:{address}``
+or ``pause``.
 
 Every device verifies each record again under strict RFC 8032 rules
 (``client/src/crypto/shelf.ts``), so a record this check lets through that a
@@ -69,6 +71,7 @@ RELEASE = "release"
 HOLD = "hold"
 UPHOLD = "uphold"
 SUSPEND = "suspend"
+UNSUSPEND = "unsuspend"
 PAUSE = "pause"
 # The covenant's clauses a hold, uphold or suspend names (§6.1).
 CLAUSES = frozenset({"C1", "C2", "C3"})
@@ -195,8 +198,8 @@ def _acts_on(body: dict[str, Any]) -> Notice | None:
     address = body.get("address")
     if not _is_key(address):
         return None
-    if act == RELEASE:
-        return Notice(RELEASE, address)
+    if act in {RELEASE, UNSUSPEND}:
+        return Notice(str(act), address)
     if act not in {HOLD, UPHOLD, SUSPEND} or not _is_clause(body.get("clause")):
         return None
     return _with_entry(str(act), address, body.get("id"))

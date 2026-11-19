@@ -1857,6 +1857,23 @@ export const messages = {
     aboutEntry: (title: string) => `About the entry “${title}”`,
     aboutListing: (name: string) => `About the listing “${name}”`,
     aboutGone: 'About something no longer on the shelf',
+    /**
+     * Dismissing an item, on this device only, and lifting a suspension
+     * (#490, §6.1, §6.4). Nothing about a dismissal reaches the relay.
+     */
+    dismiss: 'Dismiss',
+    dismissFailed: 'It wasn’t dismissed. You can try again.',
+    aboutSuspended: (clause: string) => `About a listing you suspended: ${clause}`,
+    suspendedHeading: 'Suspended',
+    noSuspended: 'Nothing is suspended.',
+    suspendedOn: (date: string) => `A listing removed on ${date}`,
+    removedFor: (clause: string) => `Removed: ${clause}`,
+    addressOf: (start: string) => `Address ${start}…`,
+    lift: 'Lift the suspension',
+    lifting: 'Lifting…',
+    lifted: 'Lifted. When its group posts its listing again, it waits here for your release.',
+    willSeeLift: (clause: string) =>
+      `Lift: readers no longer see “Removed: ${clause}”, and its door’s page no longer says its listing was removed. Its group may list again, and its listing waits for your release, as a new one does.`,
   },
   // Passkey unlock (#95; ADR-0008, ADR-0030): offered once after the pilot
   // notice and always in Settings. iOS allows one passkey request per tap, so

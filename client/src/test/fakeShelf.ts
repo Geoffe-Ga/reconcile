@@ -32,6 +32,10 @@
  * the notice stands, which is as long as the entry would have; a `suspend`
  * deletes an address's records and refuses its PUTs with 403 `suspended`;
  * and a `pause` is only stored.
+ *
+ * And #490's `unsuspend`: it lifts a suspension that stands (409
+ * `not_suspended` without one), the newer of the two by seq deciding, and
+ * leaves the suspend stored, as the relay does.
  */
 import { verifyShelfRecord } from '../crypto/shelf';
 import type { Fetch } from '../net/relay';
@@ -189,6 +193,11 @@ export function createFakeShelf({
   const standingNotice = (ref: string): FakeShelfRecord | undefined =>
     shelf.records.filter((r) => r.ref === ref && r.expiry > today()).at(-1);
 
+  /** Whether a suspend of `address` stands, newer than any unsuspend of it (#490). */
+  const suspended = (address: string): boolean =>
+    (standingNotice(`suspend:${address}`)?.seq ?? 0) >
+    (standingNotice(`unsuspend:${address}`)?.seq ?? 0);
+
   /** Holds each record under `address`, or its entry `id`, until `until`, never shortening a wait. */
   function hold(address: string, id: string | undefined, until: number): void {
     for (const record of shelf.records) {
@@ -234,6 +243,9 @@ export function createFakeShelf({
       case 'suspend':
         drop((r) => r.address !== body.address);
         return stored(address, data, 0, `suspend:${body.address}`);
+      case 'unsuspend':
+        if (!suspended(body.address)) return refuse(409, 'not_suspended');
+        return stored(address, data, 0, `unsuspend:${body.address}`);
       case 'pause':
         return stored(address, data, 0, 'pause');
     }
@@ -284,7 +296,7 @@ export function createFakeShelf({
   }
 
   async function put(address: string, init: RequestInit | undefined): Promise<Response> {
-    if (standingNotice(`suspend:${address}`)) return refuse(403, 'suspended');
+    if (suspended(address)) return refuse(403, 'suspended');
     const data = new Uint8Array(await new Response(init?.body ?? null).arrayBuffer());
     if (verifyShelfRecord(data, address) === null) return refuse(403, 'bad_signature');
     return file(address, data, bodyOf(data, address));

@@ -887,8 +887,8 @@ export type ShelfCopyStore = ShelfKeep;
 
 /**
  * What the steward's device keeps of the steward's inbox (#490,
- * `shelf/inbox.ts`): its cursor and the reports and appeals it opened, one
- * device-wide record. They name only public listings and entries, a clause
+ * `shelf/inbox.ts`): its cursor, the reports and appeals it opened and the
+ * keys of those the steward dismissed, one device-wide record. They name only public listings and entries, a clause
  * and a note, so no key: it stays out of the vault, no listener hears of it,
  * and no backup file or link carries it.
  */

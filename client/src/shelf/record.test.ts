@@ -66,6 +66,10 @@ describe('encodeShelfBody', () => {
     expect(text(encodeShelfBody(hold as ShelfBody))).toBe(
       `{"v":1,"kind":"notice","act":"hold","address":"${ADDRESS}","clause":"C3"}`,
     );
+    const lift = { address: ADDRESS, act: 'unsuspend', kind: 'notice', v: 1 };
+    expect(text(encodeShelfBody(lift as ShelfBody))).toBe(
+      `{"v":1,"kind":"notice","act":"unsuspend","address":"${ADDRESS}"}`,
+    );
     expect(text(encodeShelfBody({ on: false, act: 'pause', kind: 'notice', v: 1 }))).toBe(
       '{"v":1,"kind":"notice","act":"pause","on":false}',
     );
@@ -90,9 +94,10 @@ describe('parseShelfBody', () => {
     ['a hold of an address', { ...NOTICE, act: 'hold', address: ADDRESS, clause: 'C3' }],
     ['an uphold', { ...NOTICE, act: 'uphold', address: ADDRESS, id: ID, clause: 'C1' }],
     ['a suspend', { ...NOTICE, act: 'suspend', address: ADDRESS, clause: 'C3' }],
+    ['an unsuspend', { ...NOTICE, act: 'unsuspend', address: ADDRESS }],
     ['a pause', { ...NOTICE, act: 'pause', on: true }],
     ['the end of a pause', { ...NOTICE, act: 'pause', on: false }],
-  ] as const)('reads back %s (#489)', (_name, body) => {
+  ] as const)('reads back %s (#489, #490)', (_name, body) => {
     expect(parseShelfBody(json(body))).toEqual(body);
     expect(parseShelfBody(encodeShelfBody(body))).toEqual(body);
   });
@@ -125,6 +130,8 @@ describe('parseShelfBody', () => {
     ['an uphold naming no entry', json({ ...RELEASE, act: 'uphold', clause: 'C1' })],
     ['a suspend naming an entry', json({ ...RELEASE, act: 'suspend', id: ID, clause: 'C1' })],
     ['a suspend naming no address', json({ ...NOTICE, act: 'suspend', clause: 'C1' })],
+    ['an unsuspend naming no address', json({ ...NOTICE, act: 'unsuspend' })],
+    ['an unsuspend naming a clause', json({ ...RELEASE, act: 'unsuspend', clause: 'C1' })],
     ['a pause with no on', json({ ...NOTICE, act: 'pause' })],
     ['a pause whose on isn’t true or false', json({ ...NOTICE, act: 'pause', on: 1 })],
     ['a pause naming an address', json({ ...RELEASE, act: 'pause', on: true })],

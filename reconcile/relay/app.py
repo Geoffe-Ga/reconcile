@@ -73,6 +73,12 @@ then the entry is refused again with 403 ``upheld``. A ``suspend`` deletes an
 address's records, and while it stands every PUT under that address gets 403
 ``suspended``. A ``pause`` is stored and does nothing else here.
 
+An ``unsuspend`` (#490, §6.1) lifts a suspension that stands (409
+``not_suspended`` without one) and is kept 180 days beside the suspend it
+lifts, which stays: the newer of an address's suspend and unsuspend, by seq,
+decides, so a later suspend stands again. The address's records were
+deleted, so its next listing is a first listing, held until a new release.
+
 Nothing here logs. Error bodies are a constant ``{"error": "<code>"}`` that
 never echoes the request. The privacy middleware wraps everything.
 """
@@ -432,7 +438,7 @@ class _Shelf:
         key = key_bytes(address)
         if key is None:
             raise RelayError(400, "invalid_address")
-        if self._stands(f"{shelf.SUSPEND}:{address}"):
+        if self._suspended(address):
             raise RelayError(403, "suspended")
         _check_media_type(request.headers, OCTET_STREAM)
         length = _declared_length(request.headers, shelf.MAX_RECORD_BYTES)
@@ -479,17 +485,12 @@ class _Shelf:
         A release clears the wait for one, leaving any hold that stands; a
         hold holds for 10,080 relay minutes; an uphold deletes its entry
         (409 ``no_entry`` without one) and is kept as long as the entry would
-        have been; a suspend deletes its address's records; a pause does
-        nothing here. ``at`` is the relay minute and day it arrived.
+        have been; a suspend deletes its address's records; an unsuspend
+        (409 ``not_suspended`` with no suspension standing) and a pause do
+        nothing more here. ``at`` is the relay minute and day it arrived.
         """
         received, today = at
-        expiry = today + NOTICE_KEEP_DAYS + 1
-        if notice.act == shelf.UPHOLD:
-            kept = self.store.entry_expiry(notice.address, notice.entry, today=today)
-            if kept is None:
-                raise RelayError(409, "no_entry")
-            expiry = kept
-        when = ShelfWhen(received=received, expiry=expiry)
+        when = ShelfWhen(received=received, expiry=self._kept_until(notice, today))
         seq = self.store.add_shelf(steward, "notice", notice.ref, body, when)
         if notice.act == shelf.RELEASE:
             held = self._hold_ends(notice.address, received, today)
@@ -501,6 +502,29 @@ class _Shelf:
         elif notice.act == shelf.SUSPEND:
             self.store.drop_address(notice.address)
         return seq
+
+    def _kept_until(self, notice: shelf.Notice, today: int) -> int:
+        """The day ``notice`` expires: 180 days on, or with the entry an uphold names.
+
+        An uphold needs a live entry (409 ``no_entry``), and an unsuspend a
+        suspension that stands (409 ``not_suspended``, #490).
+        """
+        if notice.act == shelf.UNSUSPEND and not self._suspended(notice.address):
+            raise RelayError(409, "not_suspended")
+        if notice.act != shelf.UPHOLD:
+            return today + NOTICE_KEEP_DAYS + 1
+        kept = self.store.entry_expiry(notice.address, notice.entry, today=today)
+        if kept is None:
+            raise RelayError(409, "no_entry")
+        return kept
+
+    def _suspended(self, address: str) -> bool:
+        """Whether a suspend of ``address`` stands, newer than any unsuspend (#490)."""
+        today = day_of(self.clock())
+        newest = self.store.newest_notice_seq
+        suspend = newest(f"{shelf.SUSPEND}:{address}", today=today)
+        lift = newest(f"{shelf.UNSUSPEND}:{address}", today=today)
+        return suspend > lift
 
     def _hold_ends(self, address: str, minute: int, today: int) -> int:
         """The minute a hold on ``address`` that stands at ``minute`` lapses, else 0."""

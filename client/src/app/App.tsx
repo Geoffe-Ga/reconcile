@@ -57,7 +57,7 @@ import { SendDispatch } from '../screens/SendDispatch';
 import { type NotifyGroup, Settings } from '../screens/Settings';
 import { Steward } from '../screens/Steward';
 import { appealFrom, reportEntry, stewardPinned } from './reports';
-import { importStewardKey, readInbox, sendNotice } from './steward';
+import { dismissItem, importStewardKey, readInbox, sendNotice } from './steward';
 import { useHoldsStewardKey, useOffersStewardKey, useStewardQueue } from './useSteward';
 import { SharedPage } from '../screens/SharedPage';
 import type { SeatNumber } from '../engine/stewards';
@@ -475,6 +475,7 @@ function ConsoleScreen({ services }: { readonly services: AppServices }) {
           ? Promise.resolve(false)
           : sendNotice(services.store, stewardShelf, notice)
       }
+      onDismiss={(key) => dismissItem(services.store, key)}
     />
   );
 }

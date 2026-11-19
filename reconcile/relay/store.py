@@ -33,7 +33,9 @@ The steward's later notices (#489, §6.1): a ``hold`` sets ``held_until`` to
 the minute it lapses, on an address's records or one entry, never
 shortening a longer wait; an ``uphold`` deletes an entry and a ``suspend``
 an address's records. Each notice is filed under a ``ref`` naming what it
-acts on, so the relay finds a standing one without reading a body.
+acts on, so the relay finds a standing one without reading a body. An
+``unsuspend`` (#490) deletes nothing: the newer of an address's suspend and
+unsuspend, by seq, says whether it is suspended.
 
 Each mailbox has a byte cap (#141). ``blobs_by_mailbox_size`` indexes each
 blob's length beside its mailbox and expiry, so summing a mailbox's unexpired
@@ -316,6 +318,15 @@ class BlobStore:
             (ref, today),
         ).fetchone()
         return None if received is None else int(received)
+
+    def newest_notice_seq(self, ref: str, *, today: int) -> int:
+        """The seq of the newest live notice under ``ref``, or 0 with none (#490)."""
+        (seq,) = self._db.execute(
+            "SELECT coalesce(max(seq), 0) FROM shelf"
+            " WHERE kind = 'notice' AND ref = ? AND expiry > ?",
+            (ref, today),
+        ).fetchone()
+        return int(seq)
 
     def entry_expiry(self, address: str, entry: str, *, today: int) -> int | None:
         """The expiry day of ``address``'s live entry ``entry``, or ``None``."""

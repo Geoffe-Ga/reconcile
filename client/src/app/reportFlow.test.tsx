@@ -13,7 +13,7 @@
  * does any report or appeal the steward opens. The steward's inbox is named
  * (a control), and each opened box holds the words its sender typed.
  */
-import { act, screen, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -280,5 +280,22 @@ describe('reports and appeals through the app (#490)', { timeout: 60_000 }, () =
       within(section).getByText(messages.shelfSteward.aboutEntry('Rally Saturday')),
     ).toBeVisible();
     expect(await axeViolations()).toEqual([]);
+
+    // The steward dismisses the report: it stays gone after a reload, and the inbox hears nothing.
+    const asked = fake.requests.length;
+    const [report] = top;
+    if (report === undefined) throw new Error('Expected the report.');
+    await user.click(within(report).getByRole('button', { name: messages.shelfSteward.dismiss }));
+    await waitFor(() => {
+      expect(within(section).queryByText(REPORT_NOTE)).toBeNull();
+    });
+    const sent = fake.requests.slice(asked).filter((request) => request.method !== 'GET');
+    expect(sent.filter((request) => request.url.includes(inbox))).toEqual([]);
+    const reloaded = show({ ...reading(steward, shelf), stewardShelf: shelf }, '#/steward', 's');
+    const again = await reloaded.findByRole('region', {
+      name: messages.shelfSteward.inboxHeading,
+    });
+    expect(await within(again).findByText(APPEAL_NOTE)).toBeVisible();
+    expect(within(again).queryByText(REPORT_NOTE)).toBeNull();
   });
 });

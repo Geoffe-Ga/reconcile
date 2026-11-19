@@ -1,6 +1,6 @@
 {
   "kind": "notices",
-  "about": "The steward's notices on the shelf (#488, #489; shelf/fold.ts rules 1 and 8, shelf/notices.ts, docs/spec/listed-doors.md §4.3 and §6.1). Each door's record is signed by its door's key, made from the door's label (fold.test.ts), as in ownership.json. A record under `release`, `hold`, `uphold` or `suspend` is that notice naming that door, with `id` naming one of its entries by label and `clause` the covenant clause; one under `pause` is a pause, on or off. Each is signed by the steward's key the tests pin (src/test/steward.ts) and served under its address, or, with `signer`, signed by that door's own key and served under that door's address, which every device ignores. A record arrives at `received`, else a day and a minute before the minute the fold runs at, fold.test.ts's NOW (29,000,000); a hold lapses 10,080 relay minutes after it arrives. These records are folded as given, with no release added. `listings` are the doors whose listings show, each with its name; `entries` the doors and ids that show, newest first; `held` the doors whose listing a door's page counts as held (no release, a hold that stands, or a suspend); `tombstones`, when given, each tombstone as its door, the entry it replaced or null for a listing, and its clause, newest first; `holds`, when given, each hold that stands; `paused`, when given, whether a pause stands, which every reader's screen shows in place of the shelf.",
+  "about": "The steward's notices on the shelf (#488, #489; shelf/fold.ts rules 1 and 8, shelf/notices.ts, docs/spec/listed-doors.md §4.3 and §6.1). Each door's record is signed by its door's key, made from the door's label (fold.test.ts), as in ownership.json. A record under `release`, `hold`, `uphold`, `suspend` or `unsuspend` (#490) is that notice naming that door, with `id` naming one of its entries by label and `clause` the covenant clause; one under `pause` is a pause, on or off. Each is signed by the steward's key the tests pin (src/test/steward.ts) and served under its address, or, with `signer`, signed by that door's own key and served under that door's address, which every device ignores. A record arrives at `received`, else a day and a minute before the minute the fold runs at, fold.test.ts's NOW (29,000,000); a hold lapses 10,080 relay minutes after it arrives. These records are folded as given, with no release added. `listings` are the doors whose listings show, each with its name; `entries` the doors and ids that show, newest first; `held` the doors whose listing a door's page counts as held (no release, a hold that stands, or a suspend); `tombstones`, when given, each tombstone as its door, the entry it replaced or null for a listing, and its clause, newest first; `holds`, when given, each hold that stands; `paused`, when given, whether a pause stands, which every reader's screen shows in place of the shelf.",
   "cases": [
     {
       "about": "a listing no release names shows nowhere, nor do its entries",
@@ -573,6 +573,154 @@
       "listings": [],
       "entries": [],
       "held": []
+    },
+    {
+      "about": "an unsuspend lifts the suspension: its tombstone goes, and the door's page no longer says the listing was removed (the relay deleted the listing)",
+      "records": [
+        {
+          "seq": 2,
+          "release": "oak"
+        },
+        {
+          "seq": 3,
+          "suspend": "oak",
+          "clause": "C3"
+        },
+        {
+          "seq": 4,
+          "unsuspend": "oak"
+        }
+      ],
+      "listings": [],
+      "entries": [],
+      "held": [],
+      "tombstones": []
+    },
+    {
+      "about": "a listing posted after the lift waits for a release newer than the lift: the one before the suspend no longer counts",
+      "records": [
+        {
+          "seq": 2,
+          "release": "oak"
+        },
+        {
+          "seq": 3,
+          "suspend": "oak",
+          "clause": "C3"
+        },
+        {
+          "seq": 4,
+          "unsuspend": "oak"
+        },
+        {
+          "seq": 5,
+          "door": "oak",
+          "listing": "Oak St Tenants"
+        }
+      ],
+      "listings": [],
+      "entries": [],
+      "held": ["oak"],
+      "tombstones": []
+    },
+    {
+      "about": "a release after the lift lets the listing show again",
+      "records": [
+        {
+          "seq": 2,
+          "release": "oak"
+        },
+        {
+          "seq": 3,
+          "suspend": "oak",
+          "clause": "C3"
+        },
+        {
+          "seq": 4,
+          "unsuspend": "oak"
+        },
+        {
+          "seq": 5,
+          "door": "oak",
+          "listing": "Oak St Tenants"
+        },
+        {
+          "seq": 6,
+          "release": "oak"
+        }
+      ],
+      "listings": [["oak", "Oak St Tenants"]],
+      "entries": [],
+      "held": [],
+      "tombstones": []
+    },
+    {
+      "about": "a suspend after the lift stands again, with its own clause",
+      "records": [
+        {
+          "seq": 2,
+          "release": "oak"
+        },
+        {
+          "seq": 3,
+          "suspend": "oak",
+          "clause": "C3"
+        },
+        {
+          "seq": 4,
+          "unsuspend": "oak"
+        },
+        {
+          "seq": 5,
+          "door": "oak",
+          "listing": "Oak St Tenants"
+        },
+        {
+          "seq": 6,
+          "release": "oak"
+        },
+        {
+          "seq": 7,
+          "suspend": "oak",
+          "clause": "C1"
+        }
+      ],
+      "listings": [],
+      "entries": [],
+      "held": ["oak"],
+      "tombstones": [["oak", null, "C1"]]
+    },
+    {
+      "about": "an unsuspend before any suspend lifts nothing, and an unsuspend a door signs lifts nothing",
+      "records": [
+        {
+          "seq": 1,
+          "unsuspend": "oak"
+        },
+        {
+          "seq": 2,
+          "door": "oak",
+          "listing": "Oak St Tenants"
+        },
+        {
+          "seq": 3,
+          "release": "oak"
+        },
+        {
+          "seq": 4,
+          "suspend": "oak",
+          "clause": "C2"
+        },
+        {
+          "seq": 5,
+          "unsuspend": "oak",
+          "signer": "oak"
+        }
+      ],
+      "listings": [],
+      "entries": [],
+      "held": ["oak"],
+      "tombstones": [["oak", null, "C2"]]
     }
   ]
 }
