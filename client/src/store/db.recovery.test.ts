@@ -5,33 +5,96 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 
+import { testGroup } from '../test/groups';
 import { freshIndexedDBPerTest } from '../test/idb';
+import { authorOf, testKeys } from '../test/keys';
+import { type Canary, findCanaries, keyCanaries, textCanary } from '../test/scan';
 import { openStore, RECOVERY_CHANGED, type RecoveryPlan, RELAY_BACKUP_CHANGED } from './db';
-import { deviceSnapshot } from './snapshot';
+import { eventIdOf } from './eventId';
+import { deviceSnapshot, takeSnapshot } from './snapshot';
 
 freshIndexedDBPerTest();
 
+type TestStore = Awaited<ReturnType<typeof openStore>>;
+
+// Each contact's name and key is a canary, at least MIN_CANARY_BYTES long, so a scan can look for it.
 const PLAN: RecoveryPlan = {
   split: 'split-id-of-a-db-test-1',
   t: 2,
   n: 3,
   contacts: [
-    { groupId: 'group-1', member: 'ben-key', name: 'Ben', groupName: 'Riverside Tenants' },
-    { groupId: 'group-1', member: 'cal-key', name: 'Cal', groupName: 'Riverside Tenants' },
-    { groupId: 'group-2', member: 'dee-key', name: 'Dee', groupName: 'Allotment' },
+    {
+      groupId: 'group-1',
+      member: 'ben-key-canary',
+      name: 'Benedetta Canary',
+      groupName: 'Riverside Tenants',
+    },
+    {
+      groupId: 'group-1',
+      member: 'cal-key-canary',
+      name: 'Calloway Canary',
+      groupName: 'Riverside Tenants',
+    },
+    {
+      groupId: 'group-2',
+      member: 'dee-key-canary',
+      name: 'Delphine Canary',
+      groupName: 'Allotment',
+    },
   ],
   chosenAt: 1_762_650_000_000,
   retired: [],
 };
 
+/**
+ * What the plan says that no snapshot may carry: its split and each contact's
+ * key and name. Not a contact's group name: a group's own name travels in its
+ * genesis.
+ */
+const PLAN_CANARIES: Canary[] = [
+  textCanary('the plan’s split', PLAN.split),
+  ...PLAN.contacts.flatMap(({ member, name }) => [
+    textCanary(`${name}’s key`, member),
+    textCanary(`${name}’s name`, name),
+  ]),
+];
+
 /** Keeps a group called `groupId` on `store`, as Create group would. */
-async function keepGroup(store: Awaited<ReturnType<typeof openStore>>, groupId: string) {
+async function keepGroup(store: TestStore, groupId: string) {
   await store.addGroup({
     groupId,
     secret: new Uint8Array(32).fill(9),
     signingKey: new Uint8Array(32).fill(7),
     me: { author: 'author-ana', name: 'Ana' },
   });
+}
+
+/**
+ * Keeps a group whose genesis the relay has returned, and gives its id. A
+ * snapshot holds only such a group (`backedUpGroups`), so a test that a
+ * snapshot leaves something out keeps this one, not `keepGroup`'s, which the
+ * snapshot would leave out whole.
+ */
+async function keepFoundedGroup(store: TestStore): Promise<string> {
+  const { state, records } = testGroup();
+  const groupId = state.group;
+  if (groupId === null) throw new Error('Expected a group.');
+  await store.addGroup({
+    groupId,
+    secret: new Uint8Array(32).fill(9),
+    signingKey: testKeys('ana').secretKey,
+    me: { author: authorOf('ana'), name: 'Ana' },
+  });
+  const last = records.at(-1);
+  const pull = {
+    records: [...records],
+    cursor: last?.seq ?? 0,
+    relayNow: (last?.received ?? 0) + 5,
+    instance: 'relay-1',
+    lastSyncAt: 1_762_000_000_000,
+  };
+  await store.applyPull(groupId, pull, eventIdOf);
+  return groupId;
 }
 
 describe('the recovery plan', () => {
@@ -94,13 +157,18 @@ describe('the recovery plan', () => {
 
   it('never travels in a snapshot: no backup file, link bundle or relay copy holds the contacts', async () => {
     const store = await openStore();
-    await keepGroup(store, 'group-1');
+    const groupId = await keepFoundedGroup(store);
     await store.setRelayBackupKey(new Uint8Array(32).fill(5));
     await store.setRecoveryPlan(PLAN);
 
     const snapshot = await deviceSnapshot(store);
     expect(Object.keys(snapshot).sort()).toEqual(['backupKey', 'groups', 'personal']);
-    expect(JSON.stringify(snapshot)).not.toMatch(/Ben|Cal|Dee|ben-key|split-id/);
+    // A backup file's plaintext. A link bundle and the relay copy encode the same snapshot
+    // (`encodeSnapshot` of `deviceSnapshot`), less shares and the key, so what it leaves out, they do.
+    const { plaintext, groupIds } = await takeSnapshot(store);
+    // The control: it holds the group, so a plan written into a group's entry would show.
+    expect(groupIds).toEqual([groupId]);
+    expect(findCanaries(plaintext, PLAN_CANARIES)).toEqual([]);
   });
 });
 
@@ -229,12 +297,21 @@ describe('the shares this device holds for someone recovering (#118)', () => {
     expect((await store.getGroup('group-2'))?.recoveryHolds).toBeUndefined();
   });
 
-  it('never travel in a snapshot', async () => {
+  it('never travel in a snapshot, though the group that keeps them does', async () => {
     const store = await openStore();
-    await keepGroup(store, 'group-1');
-    await store.holdShare('group-1', Uint8Array.from([1]), HOLD);
-    const snapshot = await deviceSnapshot(store);
-    expect(JSON.stringify(snapshot)).not.toMatch(/RR1|alert-id|tag-of-the-hold|recoveryHolds/);
+    const groupId = await keepFoundedGroup(store);
+    await store.holdShare(groupId, Uint8Array.from([1]), HOLD);
+    expect((await store.getGroup(groupId))?.recoveryHolds).toEqual([HOLD]);
+
+    const { plaintext, groupIds } = await takeSnapshot(store);
+    expect(groupIds).toEqual([groupId]);
+    // Every text field the hold keeps but its six-digit number, too short to scan for alone.
+    const fields = ['alert', 'person', 'split', 'tag', 'code'] as const;
+    const canaries = [
+      textCanary('the holds field', 'recoveryHolds'),
+      ...fields.map((field) => textCanary(`the hold’s ${field}`, HOLD[field])),
+    ];
+    expect(findCanaries(plaintext, canaries)).toEqual([]);
   });
 });
 
@@ -288,7 +365,7 @@ describe('a recovering device’s request (#118)', () => {
 
   it('is told apart from the relay backup and the plan, and never travels in a snapshot', async () => {
     const store = await openStore();
-    await keepGroup(store, 'group-1');
+    const groupId = await keepFoundedGroup(store);
     await store.setRelayBackupKey(new Uint8Array(32).fill(5));
     await store.setRecoveryPlan(PLAN);
     await store.keepRecoverRequest(REQUEST);
@@ -297,5 +374,13 @@ describe('a recovering device’s request (#118)', () => {
     expect((await store.getRelayBackup())?.tooLarge).toBe(false);
     const snapshot = await deviceSnapshot(store);
     expect(Object.keys(snapshot).sort()).toEqual(['backupKey', 'groups', 'personal']);
+    const { plaintext, groupIds } = await takeSnapshot(store);
+    expect(groupIds).toEqual([groupId]);
+    const canaries = [
+      ...keyCanaries('the request’s seed', REQUEST.seed),
+      ...keyCanaries('the request’s key', REQUEST.secretKey),
+      ...PLAN_CANARIES,
+    ];
+    expect(findCanaries(plaintext, canaries)).toEqual([]);
   });
 });
