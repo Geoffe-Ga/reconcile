@@ -2,8 +2,8 @@
  * Start's and Discover's word that a door this device sent to was removed
  * from the public shelf (#491; ADR-0081; listed-doors.md §6.5).
  *
- * It reads the shelf as Discover does, at most once an hour
- * (`shelf/read.ts`), folds it, and matches the fold's tombstones against the
+ * Once this device holds an application or card it sent, it reads the shelf
+ * as Discover does, at most once an hour (`shelf/read.ts`), folds it, and matches the fold's tombstones against the
  * applications and reconcile cards this device sent, by door address
  * (`shelf/affected.ts`). Each match shows one line: "A group you asked to
  * join on {date} was removed from the shelf: {clause in words}.", or, for a
@@ -106,8 +106,11 @@ function Line({ line, onDismiss }: { readonly line: Affected; readonly onDismiss
 
 /** The lines this device's reader hasn't dismissed, as a quiet card; nothing when there are none. */
 export function ShelfRemovals({ store, shelf, now }: ShelfRemovalsProps) {
-  const state = useShelfState(shelf);
   const removals = useRemovals(store, now);
+  // A device that sent nothing has no door to hear about, so it reads no shelf: a fresh
+  // Start calls no one (#491). Discover reads the shelf anyway, for its own entries.
+  const sentSomething = removals !== null && removals.sent.length > 0;
+  const state = useShelfState(sentSomething ? shelf : undefined);
   const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set());
   const lines = useMemo(() => {
     if (state === undefined || state === null || state.paused || removals === null) return [];

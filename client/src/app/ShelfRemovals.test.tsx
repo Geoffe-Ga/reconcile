@@ -215,6 +215,17 @@ describe('ShelfRemovals (#491)', () => {
     expect(screen.queryByRole('region')).toBeNull();
   });
 
+  it('reads no shelf on a device that sent nothing, so a fresh Start calls no one', async () => {
+    const store = await openStore();
+    opened.push(store);
+    const shelf = readerOf(shelfWith(SUSPEND));
+    render(<ShelfRemovals store={store} shelf={shelf} now={now} />);
+    await store.removalsAt(NOW);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(shelf.asked).toBe(0);
+    expect(screen.queryByRole('region')).toBeNull();
+  });
+
   it('matches and dismisses without a single request (§6.5: nothing is sent)', async () => {
     const fetch = vi.spyOn(globalThis, 'fetch');
     const user = userEvent.setup();
