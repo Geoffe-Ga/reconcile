@@ -58,6 +58,22 @@ describe('Start', () => {
     expect(alert.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
+  it('shows the shelf’s removal lines after the alert, above the groups (#491)', () => {
+    render(
+      <Start
+        groups={GROUPS}
+        onOpenInvite={vi.fn()}
+        alert={<p data-testid="alert">A recovery is waiting.</p>}
+        removals={<p data-testid="removals">A group you asked to join was removed.</p>}
+      />,
+    );
+    const alert = screen.getByTestId('alert');
+    const removals = screen.getByTestId('removals');
+    const list = screen.getByRole('list');
+    expect(alert.compareDocumentPosition(removals) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(removals.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it('lists every group on the device by name, however many there are', () => {
     const names = ['Riverside Tenants', 'Book club', 'Allotment society', 'Choir'];
     const groups = names.map((name, i) => ({

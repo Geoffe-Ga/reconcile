@@ -8,7 +8,7 @@
  */
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { fromBase64url } from '../crypto/base64url';
+import { base64url, fromBase64url } from '../crypto/base64url';
 import { doorChannelsOf } from '../crypto/door';
 import { addressOf, newFrontDoor, readDoor } from '../door/page';
 import { LEVELS } from '../engine/capabilities';
@@ -148,6 +148,24 @@ describe('makeDoorCard', SLOW, () => {
     await made.post();
     await syncAll();
     expect((await bensCard(at.ben, at.oak)).seed).toBeDefined();
+  });
+
+  it('notes the door on this device only once the card is left there (#491)', async () => {
+    const fake = createFakeRelay();
+    const at = await aDoor(fake);
+    const { store, now } = at.ana.services;
+    const made = await makeDoorCard(at.ana.services, at.riverside, CARD_VALUES, at);
+    if (made.outcome !== 'queued') throw new Error('Expected a card.');
+    fake.offline = true;
+    await expect(made.post()).rejects.toThrow();
+    expect((await store.removalsAt(now())).sent).toEqual([]);
+
+    fake.offline = false;
+    await made.post();
+    expect((await store.removalsAt(now())).sent).toEqual([
+      { door: base64url(at.address), sentAt: now(), kind: 'card' },
+    ]);
+    expect((await at.ben.services.store.removalsAt(now())).sent).toEqual([]);
   });
 
   it('refuses a statement too large to send, keeping nothing', async () => {

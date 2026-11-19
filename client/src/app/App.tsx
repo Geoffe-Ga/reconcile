@@ -175,6 +175,7 @@ import { usePublicShelf } from './usePublicShelf';
 import { useHeardRelay, usePersonalList } from './usePersonalList';
 import { DiscoverScreen, ShelfEntryScreen } from './DiscoverScreen';
 import { ShelfHolds } from './ShelfHolds';
+import { ShelfRemovals } from './ShelfRemovals';
 import { ShelfStrays } from './ShelfStrays';
 import { chooseContacts } from '../store/recovery';
 import { approveRecovery, holdViews, resendRelease } from '../recovery/holder';
@@ -256,6 +257,7 @@ function StartScreen(props: StartScreenProps) {
       persistence={persistence}
       onRestore={onRestore}
       alert={alert}
+      removals={<ShelfRemovals store={services.store} shelf={services.shelf} now={services.now} />}
     />
   );
 }
@@ -1716,7 +1718,7 @@ function PlainScreen(props: PlainScreenProps) {
     case 'personal':
       return <PersonalScreen services={services} />;
     case 'discover':
-      return <DiscoverScreen store={services.store} shelf={services.shelf} />;
+      return <DiscoverScreen store={services.store} shelf={services.shelf} now={services.now} />;
     case 'shelfEntry':
       return <ShelfEntryRoute services={services} address={route.address} id={route.id} />;
     case 'personalDocument':

@@ -159,6 +159,24 @@ export const messages = {
     paused:
       'The public shelf is paused for now. Nothing on it shows until Reconcile’s steward lifts the pause.',
   },
+  /**
+   * On Start and Discover (#491; listed-doors.md §6.5): the steward removed
+   * from the shelf a group this device sent an application or a reconcile
+   * card to, or a Dispatch it published. The device matched it alone, from
+   * what it sent, and told no one; Dismiss hides the line on this device.
+   */
+  removals: {
+    heading: 'Removed from the public shelf',
+    asked: (date: string, clause: string) =>
+      `A group you asked to join on ${date} was removed from the shelf: ${clause}.`,
+    askedEntry: (date: string, clause: string) =>
+      `A Dispatch from a group you asked to join on ${date} was removed from the shelf: ${clause}.`,
+    proposed: (date: string, clause: string) =>
+      `A group you proposed reconciling with on ${date} was removed from the shelf: ${clause}.`,
+    proposedEntry: (date: string, clause: string) =>
+      `A Dispatch from a group you proposed reconciling with on ${date} was removed from the shelf: ${clause}.`,
+    dismiss: 'Dismiss',
+  },
   /** One shelf entry's own page (#431; listed-doors.md §5.2): the link Share and Copy pass along. */
   shelfEntry: {
     pageTitle: 'On the public shelf',

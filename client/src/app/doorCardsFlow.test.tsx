@@ -100,7 +100,10 @@ async function anaProposes(ana: TestDevice, link: string): Promise<void> {
     await user.paste(text);
   }
   await user.click(within(a).getByRole('button', { name: 'Send the card' }));
-  expect(await within(a).findByRole('status')).toHaveTextContent(/front door/);
+  // Making the card shows first, then where it went (posting it notes its door too, #491).
+  await waitFor(() => {
+    expect(within(a).getByRole('status')).toHaveTextContent(/front door/);
+  });
   for (const app of mounted.splice(0)) app.unmount();
 }
 
