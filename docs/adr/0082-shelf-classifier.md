@@ -3,7 +3,7 @@
 - **Status:** Accepted (2026-11-19). The founder answered `/decide` sheet `2026-11-18-shelf-classifier`; see [Decision](#decision). This ADR records the spike (#492), its measurements and the answers. #493 builds it.
 - **Date:** 2026-11-18 (proposed), 2026-11-19 (accepted)
 - **Answers:** the spike that [ADR-0081](0081-listed-doors-and-exception-moderation.md) §4 and [the spec](../spec/listed-doors.md) §6.6 call for: which model, how it runs under the CSP, which languages, and its measured error rate on political speech
-- **Builds on:** [ADR-0005](0005-pwa-client.md), [ADR-0020](0020-us-nonprofit-zero-knowledge.md), [ADR-0024](0024-source-available-license.md), [ADR-0035](0035-reconcile-group-minimal-eternal-core.md), [ADR-0081](0081-listed-doors-and-exception-moderation.md); ADR-0080 §2 (Bedfellows, on an unmerged branch with #476) for the in-browser runtime
+- **Builds on:** [ADR-0005](0005-pwa-client.md), [ADR-0020](0020-us-nonprofit-zero-knowledge.md), [ADR-0024](0024-source-available-license.md), [ADR-0035](0035-reconcile-group-minimal-eternal-core.md), [ADR-0081](0081-listed-doors-and-exception-moderation.md); [ADR-0080](0080-bedfellows-algorithm.md) §2 for the in-browser runtime (#476)
 
 ## Context
 
@@ -13,7 +13,7 @@ Three facts shape the question:
 
 - **There is no fixed text to detect against.** ADR-0035's eternal core has a placeholder: "Reconcile does not carry calls for violence against people, or speech that denies any group's humanity." Its final wording is deferred. The covenant adds no spam and no impersonation (ADR-0081 §3).
 - **"Nothing third-party" rules out a hosted moderation API.** The classifier runs on a device, and it calls nothing except its own model file on the app's origin.
-- **The deploy CSP on `main` has no `'wasm-unsafe-eval'`,** so no WebAssembly runtime loads there. #476 (unmerged) adds it for Bedfellows. It runs ONNX Runtime Web 1.31.1 with SHA-256-pinned model files served from `/models/`, loaded lazily (ADR-0080 §2).
+- **When this was measured, the deploy CSP on `main` had no `'wasm-unsafe-eval'`,** so no WebAssembly runtime loaded there. #476, merged since, added it for Bedfellows. It runs ONNX Runtime Web 1.31.1 with SHA-256-pinned model files served from `/models/`, loaded lazily (ADR-0080 §2).
 
 The text to read is small. A listing's name is at most 120 code points. An entry's title is at most 80 and its text at most 500. A listing holds at most 4 live entries and adds at most one a day.
 
@@ -181,7 +181,7 @@ The founder answered the sheet on 2026-11-19.
 4. **Console: the rule's name only, and the queue keeps its order.** The classifier can't rank entries or decide what the steward sees first.
 5. **Sample: it stays outside the repository,** kept by the founder. The repository is now public. The sample holds hateful test text, written by one labeller against placeholder clauses, and committing it would publish it with no review. The build re-measures against a new two-labeller sample at the trigger anyway. #493's tests use a small, clearly labelled fixture with no hateful text: synthetic score vectors, or neutral sentences with stubbed model outputs.
 
-ADR-0080 (Bedfellows, which owns #476's runtime and its `'wasm-unsafe-eval'`) is not on `main` yet, so #493 lands after #476.
+ADR-0080 (Bedfellows, which owns #476's runtime and its `'wasm-unsafe-eval'`) has merged with #476, so #493 builds on them.
 
 ## Should it be turned on before ADR-0035's wording is settled?
 
@@ -195,7 +195,7 @@ ADR-0080 (Bedfellows, which owns #476's runtime and its `'wasm-unsafe-eval'`) is
 ## Consequences
 
 - §6.6 of [the spec](../spec/listed-doors.md) records this decision. #493 builds B behind a flag that is off by default.
-- The steward's device needs #476's runtime, so #493 depends on #476 (and ADR-0080) merging.
+- The steward's device needs #476's runtime, which has merged with ADR-0080, so #493 can start.
 - ADR-0081 §4 stands as written: the classifier is bundled with the app. C is not built. If a listed group writes in a language other than English, C with Detoxify `multilingual` is the only option measured that reads one, and choosing it would amend ADR-0081 §4.
 - Turning the flag on needs the re-measure, which needs ADR-0035's final wording and a second labeller.
 - None of the measured models flags spam. The covenant's spam rule rests on ADR-0081's limits and readers' reports.
