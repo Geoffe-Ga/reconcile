@@ -9,9 +9,11 @@ description: >-
   NOT a formal GitHub approval. This skill locates the most recent such
   comment via GitHub MCP, parses the verdict, triages blockers/problems/nits
   into a TDD-driven local fix loop, replies and resolves threads. On `LGTM`
-  for the current HEAD with green CI it squash-merges; on `COMMENTS` it never
-  iterates — it files each actionable item as a P0–P3 follow-up issue, then
-  squash-merges; on `CHANGES_REQUESTED` it loops until LGTM.
+  for the current HEAD it merges; on `COMMENTS` it never iterates — it files
+  each actionable item as a P0–P3 follow-up issue, then merges; on
+  `CHANGES_REQUESTED` it loops until LGTM. Once every gate passes, the merge
+  is handed to GitHub by turning on auto-merge (squash), or done directly
+  when GitHub has nothing left to wait for.
   Do NOT use for giving a review (the review runs in
   .github/workflows/code-review.yml), debugging CI failures themselves (use
   ci-debugging), general TDD work outside review context (use stay-green),
@@ -19,12 +21,12 @@ description: >-
   git-workflow).
 metadata:
   author: Geoff
-  version: 1.2.0
+  version: 1.3.0
 ---
 
 # Address Feedback
 
-Close the loop on a Claude PR review: find the latest verdict comment, iterate locally with TDD, push once, and merge when the verdict for the current HEAD is `LGTM` (merge directly) or `COMMENTS` (file a severity-prioritized issue for each actionable item instead of iterating, then merge) with green CI.
+Close the loop on a Claude PR review: find the latest verdict comment, iterate locally with TDD, push once, and merge when the verdict for the current HEAD is `LGTM` (merge directly) or `COMMENTS` (file a severity-prioritized issue for each actionable item instead of iterating, then merge) with no failing CI. Once every gate passes, the default last step is to turn on GitHub auto-merge (squash) so GitHub merges the moment its required checks pass.
 
 ## How the Claude Review Surfaces
 
@@ -161,22 +163,34 @@ Merge only when **every** condition is true. If any fails, stop and explain whic
 
 - Latest qualifying Claude review comment (allowlisted author, attested, unedited by others — Step 1) has `Verdict: LGTM`, **or** `Verdict: COMMENTS` with every actionable item filed or duplicate-linked per Step 1A.
 - That comment's `created_at >= head commit's committer.date` (verdict is for the current HEAD, not a pre-push state).
-- All required check runs are `success`:
+- No check run has failed (`failure`, `cancelled`, `timed_out`, `action_required`), and every check is `success` unless GitHub itself is holding the merge on it (`mergeable_state: blocked`, see "Then turn on auto-merge" below):
   - `mcp__github__pull_request_read` with `method: "get_status"` (combined commit status), and
   - `mcp__github__pull_request_read` with `method: "get_check_runs"` (per-job detail).
 - No unresolved line-level review threads (`mcp__github__pull_request_read` with `method: "get_review_comments"` — each thread has `isResolved`). For `COMMENTS`, threads are resolved by linking the follow-up issue, not by code change.
 - No merge conflict and not `draft` (from the `get` response): `mergeable` is `true` and `mergeable_state` is not `dirty`. Being **behind** the base (`mergeable_state: behind`) is **not** a blocker — do not sync just to catch up. `mergeable: null` means GitHub has not finished computing it: re-fetch, and never read null as clear.
 - The PR carries no `do-not-auto-merge` label.
 
-Then:
+### Then Turn On Auto-Merge (the Default)
 
-```
-mcp__github__merge_pull_request
-  pull_number: <N>
-  merge_method: "squash"   # or whatever the repo standard is
-```
+Once every gate above holds, hand the merge to GitHub. Re-fetch the PR (`pull_request_read get`) and route on `mergeable_state`:
 
-Confirm the merge succeeded; do not delete the remote branch unless the user asks.
+| `mergeable_state` | Action |
+|---|---|
+| `blocked` | GitHub is holding the PR on its own requirements (required checks still running). **Turn on auto-merge.** GitHub merges the moment they pass. |
+| `clean` or `behind` | Nothing is left to wait for, and GitHub refuses auto-merge on a clean PR. Squash-merge directly with `mcp__github__merge_pull_request` (`merge_method: "squash"`). |
+| `unstable` | A check that is not required is pending or failing. Auto-merge would not wait for it, so do neither: wait for it to finish, then re-enter this gate. |
+
+Turn auto-merge on with the first route that works, always with the squash method:
+
+1. `mcp__github__enable_pr_auto_merge` with `owner`, `repo`, `pullNumber: <N>`, `mergeMethod: "SQUASH"`.
+2. Claude Code cloud session without that tool (GraphQL is blocked there): `gh api -X PUT repos/<owner>/<repo>/pulls/<N>/ccr/auto_merge -f merge_method=squash`.
+3. Local session: `gh pr merge <N> --auto --squash`. Only in the `blocked` state, because on a clean PR `gh` merges at once.
+
+Then re-fetch the PR and confirm `auto_merge` is set (or the PR already merged). Report that auto-merge is on and what GitHub is still waiting for; never report "merged" until it has. If the call says auto-merge is disabled for the repository, tell the user, don't change the setting yourself, and fall back to waiting for every check to pass and squash-merging directly.
+
+**Auto-merge must not outlive the gates that earned it.** GitHub keeps auto-merge on through later pushes from accounts with write access, and it does not read labels. So turn it off (`mcp__github__disable_pr_auto_merge`, `gh api -X DELETE repos/<owner>/<repo>/pulls/<N>/ccr/auto_merge`, or `gh pr merge <N> --disable-auto`) **before** any further push to the PR, when a `CHANGES_REQUESTED` verdict arrives, or when the `do-not-auto-merge` label appears. Turn it back on only after every gate passes again for the new HEAD.
+
+Do not delete the remote branch unless the user asks.
 
 ## Examples
 
@@ -185,8 +199,14 @@ Confirm the merge succeeded; do not delete the remote branch unless the user ask
 1. `pull_request_read get` → `head.sha = abc123`. `get_commit abc123` → `committer.date = 2026-05-01T10:00:00Z`.
 2. `pull_request_read get_comments` → latest attested comment by `github-actions[bot]` at `2026-05-01T10:04:33Z`, body ends with `## Verdict: LGTM`.
 3. `10:04:33Z >= 10:00:00Z` → comment is current.
-4. `get_status` and `get_check_runs` → all `success`. `get_review_comments` → no unresolved threads. PR `mergeable: true`, `draft: false`.
-5. `merge_pull_request` with `squash`. Report merge URL.
+4. `get_status` and `get_check_runs` → all `success`. `get_review_comments` → no unresolved threads. PR `mergeable: true`, `draft: false`, `mergeable_state: clean`.
+5. Nothing is pending, so auto-merge has nothing to wait for: `merge_pull_request` with `squash`. Report merge URL.
+
+### Example 1b: Current `Verdict: LGTM`, Required Checks Still Running — Turn On Auto-Merge
+
+1. Same as Example 1, but `get_check_runs` shows the WebKit e2e job `in_progress` and none failed. `mergeable_state: blocked`.
+2. `enable_pr_auto_merge` with `mergeMethod: "SQUASH"`. Re-fetch: `auto_merge` is set.
+3. Report "auto-merge is on; GitHub merges once the e2e job passes." Stay subscribed until the PR merges or closes.
 
 ### Example 2: Verdict Comment Predates the Latest Push (Stale)
 
@@ -227,3 +247,9 @@ Stop. Reproduce the check locally first (`./scripts/precommit-changed.sh`, full 
 ### Error: Merge gate passes but `mergeable` is `false`
 
 Conflicts with the base branch. Rebase or merge `main` locally, resolve, re-run local gates, push. The new commit supersedes the LGTM verdict — request a fresh review before re-entering the merge gate.
+
+### Error: Auto-merge will not turn on
+
+- "Pull request is in clean status": nothing is pending, so squash-merge directly.
+- "Auto-merge is not allowed for this repository": the repo's **Allow auto-merge** setting is off. Tell the user; don't change it yourself. Fall back to waiting for green checks and merging directly.
+- The PR is `unstable`: a non-required check is pending or failing. Auto-merge would ignore it, so wait for it instead.
