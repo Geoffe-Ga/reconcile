@@ -14,6 +14,7 @@
 import { type ChildProcess, spawn } from 'node:child_process';
 import { closeSync, existsSync, openSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
@@ -199,4 +200,24 @@ export async function startRelay(
     throw error;
   }
   return { db: slot.db, log: slot.log, stop };
+}
+
+/**
+ * Empties the relay's public shelf (#434), as a fresh relay's would be.
+ *
+ * Every test on a worker shares its relay's database. That costs a mailbox
+ * spec nothing, since each test's mailboxes are its own, but the shelf is one
+ * list that every reader reads whole: a shelf spec running after another on
+ * the same worker (the other browser's run of itself, say) would find that
+ * run's listings, entries and tombstones beside its own. A spec about the
+ * shelf calls this first, with the relay running, as the invite-history spec
+ * edits the same file (#73). It removes rows only, as a purge does.
+ */
+export function emptyShelf(db: string): void {
+  const sqlite = new DatabaseSync(db, { timeout: 10_000 });
+  try {
+    sqlite.exec('DELETE FROM shelf');
+  } finally {
+    sqlite.close();
+  }
 }

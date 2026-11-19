@@ -43,6 +43,7 @@ import {
   test,
   visit,
 } from './support/fixtures';
+import { emptyShelf } from './support/relay';
 import { readRelayLater } from './support/relayNow';
 import {
   type Canary,
@@ -184,6 +185,8 @@ test('a listed group publishes one Dispatch by vote, the steward releases it, an
   relay,
   request,
 }) => {
+  // The worker's earlier tests may have left the shelf full (`emptyShelf`).
+  emptyShelf(relay.db);
   const sam = await openProfile(NAMES.sam, { extraHTTPHeaders: FORWARDING });
   const ana = await openProfile(NAMES.ana, {
     extraHTTPHeaders: FORWARDING,
