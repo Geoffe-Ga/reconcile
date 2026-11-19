@@ -8,6 +8,12 @@
  * sends the deploy CSP, as e2e/ios-scroll-lock.spec.ts does. The page starts
  * the client; the spec sends it runs and reads the rows back.
  *
+ * A run without the model matches by term overlap (#477). A run that asks for
+ * the model finds no model files here (the spec deletes the build's
+ * `models/`, so the run is the same with or without them on the machine):
+ * the worker asks our own origin for them, fails to load, and answers with
+ * the same term-overlap rows rather than an error.
+ *
  * The control serves the same page under the same CSP with `child-src 'none'`
  * added, which every browser applies to workers. The worker must then fail to
  * load and the page must see the violation, or the first test isn't testing
@@ -51,6 +57,8 @@ interface Seen {
   readonly cancelled: string;
   /** A run after the cancel: its rows, or the name of its error. */
   readonly after: { readonly rows: readonly Row[] } | { readonly failed: string };
+  /** A run that asks for the model, which can't load here: its rows, or the name of its error. */
+  readonly withModel: { readonly rows: readonly Row[] } | { readonly failed: string };
   /** Each CSP violation, as "directive blocked URI". */
   readonly violations: readonly string[];
   /** The URL of each worker the page started. */
@@ -133,6 +141,7 @@ async function runOnPage(browser: Browser, url: string): Promise<Seen> {
         doomed.cancel();
         const cancelled = await settled(() => doomed.rows);
         const after = await settled(() => bedfellows.run(input).rows);
+        const withModel = await settled(() => bedfellows.run(input, { model: true }).rows);
         // A frame and then a task, so any queued violation report has arrived.
         await new Promise((resolve) => {
           requestAnimationFrame(() => setTimeout(resolve, 0));
@@ -141,6 +150,7 @@ async function runOnPage(browser: Browser, url: string): Promise<Seen> {
           first,
           cancelled: 'failed' in cancelled ? cancelled.failed : 'answered',
           after,
+          withModel,
           violations: Reflect.get(window, key) as string[],
         };
       },
@@ -170,6 +180,9 @@ test.beforeAll(async () => {
     logLevel: 'warn',
     build: { outDir, emptyOutDir: true },
   });
+  // The build writes the real model's files where the machine has them; without them every
+  // machine runs this spec the same way, as a device whose model won't load.
+  await rm(join(outDir, 'models'), { recursive: true, force: true });
   deploy = await serve(outDir);
   control = await serve(outDir, `${cspOf(deploy)}; child-src 'none'`);
 });
@@ -179,7 +192,7 @@ test.afterAll(async () => {
   if (outDir !== '') await rm(outDir, { recursive: true, force: true });
 });
 
-test('the Bedfellows worker loads under the deploy CSP, answers, and can be cancelled', async ({
+test('the Bedfellows worker loads under the deploy CSP, answers, can be cancelled, and falls back when the model won’t load', async ({
   browser,
 }) => {
   const origin = new URL(urlOf(started(deploy))).origin;
@@ -191,7 +204,7 @@ test('the Bedfellows worker loads under the deploy CSP, answers, and can be canc
     rows: [
       {
         entryId: 'e1',
-        tier: 'middle',
+        tier: 'close',
         reason: {
           entrySentence: 'We want the library open.',
           readerSentence: 'Keep the library open on Sundays.',
@@ -202,6 +215,13 @@ test('the Bedfellows worker loads under the deploy CSP, answers, and can be canc
   });
   expect(seen.cancelled, 'a cancelled run rejects').toBe('AbortError');
   expect(seen.after, 'the worker answers after a cancel').toEqual(seen.first);
+  expect(seen.withModel, 'a run whose model won’t load falls back to term overlap').toEqual(
+    seen.first,
+  );
+  expect(
+    seen.requests.some((request) => new URL(request).pathname.startsWith('/models/')),
+    'the run with the model asked our own origin for it',
+  ).toBe(true);
   expect(seen.workers, 'one worker, a script from our own origin').toHaveLength(1);
   for (const worker of seen.workers) {
     expect(worker.startsWith(`${origin}/assets/`), worker).toBe(true);

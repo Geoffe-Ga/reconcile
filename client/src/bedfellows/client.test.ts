@@ -63,11 +63,24 @@ describe('createBedfellowsClient (#475)', () => {
     expect(made).toBe(0);
 
     const run = client.run(INPUT);
-    expect(worker.sent).toEqual([{ type: 'run', id: 1, input: INPUT }]);
+    expect(worker.sent).toEqual([{ type: 'run', id: 1, input: INPUT, model: false }]);
     worker.answer({ type: 'rows', id: 1, rows: [ROW] });
 
     await expect(run.rows).resolves.toEqual([ROW]);
     expect(made).toBe(1);
+  });
+
+  it('asks the worker for the model only when the page says the reader agreed to its download (#477)', () => {
+    const worker = fakeWorker();
+    const client = createBedfellowsClient(() => worker);
+
+    client.run(INPUT, { model: true });
+    client.run(INPUT, {});
+
+    expect(worker.sent).toEqual([
+      { type: 'run', id: 1, input: INPUT, model: true },
+      { type: 'run', id: 2, input: INPUT, model: false },
+    ]);
   });
 
   it('keeps one worker for every run, and gives each run its own id and its own rows', async () => {
@@ -107,7 +120,7 @@ describe('createBedfellowsClient (#475)', () => {
 
     await expect(run.rows).rejects.toMatchObject({ name: 'AbortError' });
     expect(worker.sent).toEqual([
-      { type: 'run', id: 1, input: INPUT },
+      { type: 'run', id: 1, input: INPUT, model: false },
       { type: 'cancel', id: 1 },
     ]);
   });
@@ -140,7 +153,7 @@ describe('createBedfellowsClient (#475)', () => {
     expect(workers[0]?.terminated).toBe(true);
     client.run(INPUT);
     expect(made).toBe(2);
-    expect(workers[1]?.sent).toEqual([{ type: 'run', id: 2, input: INPUT }]);
+    expect(workers[1]?.sent).toEqual([{ type: 'run', id: 2, input: INPUT, model: false }]);
   });
 
   it('fails the run, rather than throwing, when the worker can’t start', async () => {

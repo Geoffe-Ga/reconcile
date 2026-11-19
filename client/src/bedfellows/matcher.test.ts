@@ -11,6 +11,7 @@ import type { Entry, Reader } from './corpus';
 import { harnessAsync } from './harness';
 import { pipelineMatcher } from './matcher';
 import { standInEmbedder, standInJudge } from './standIns';
+import { THRESHOLDS } from './thresholds';
 import type { Models, Stance } from './types';
 
 /** A reader with one Document holding `text`. */
@@ -57,6 +58,14 @@ describe('pipelineMatcher (#475)', () => {
     await expect(
       pipelineMatcher(judgingAll('agrees'))(mine, entry('Feed the ducks.')),
     ).resolves.toBe('nothing');
+  });
+
+  it('runs with the thresholds a tuning run hands it (#477)', async () => {
+    const strict = { ...THRESHOLDS, match: 1.01 };
+
+    await expect(pipelineMatcher(judgingAll('agrees'), strict)(mine, theirs)).resolves.toBe(
+      'nothing',
+    );
   });
 
   it('runs on the tune split with the stand-ins, and never claims common ground there', async () => {

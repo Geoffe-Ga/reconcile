@@ -6,12 +6,20 @@
  */
 import type { AsyncMatcher } from './harness';
 import { bedfellows } from './pipeline';
+import type { Thresholds } from './thresholds';
 import type { Models } from './types';
 
-/** The pipeline with `models` as an {@link AsyncMatcher}, at the dial's start. */
-export function pipelineMatcher(models: Models): AsyncMatcher {
+/**
+ * The pipeline with `models` as an {@link AsyncMatcher}, at the dial's start,
+ * with `thresholds` where a tuning run tries others than `THRESHOLDS`.
+ */
+export function pipelineMatcher(models: Models, thresholds?: Thresholds): AsyncMatcher {
   return async (reader, entry) => {
-    const [row] = await bedfellows({ reader: reader.documents, entries: [entry], dial: 0 }, models);
+    const [row] = await bedfellows(
+      { reader: reader.documents, entries: [entry], dial: 0 },
+      models,
+      thresholds === undefined ? {} : { thresholds },
+    );
     if (row === undefined) return 'nothing';
     return row.reason.verified ? 'common-ground' : 'shared-subject';
   };

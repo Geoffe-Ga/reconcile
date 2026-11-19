@@ -40,9 +40,16 @@ export type FromModelWorker =
 export interface ShelfTiming {
   readonly documents: number;
   readonly entries: number;
+  /** The sentences the run handed the model: the reader's, and the entries' it had no vectors for. */
   readonly claims: number;
   readonly rows: number;
   readonly ms: number;
+}
+
+/** A shelf timed twice (#477): first with no entry vectors kept, then again with them all kept. */
+export interface ShelfTimings {
+  readonly cold: ShelfTiming;
+  readonly warm: ShelfTiming;
 }
 
 /** How a matcher did on the corpus's tune split, kind by kind (#474's harness). */
@@ -75,16 +82,34 @@ export interface Measurement {
   readonly firstEmbedMs: number;
   /** From the first fetch to the first vector. */
   readonly timeToFirstVectorMs: number;
-  /** The issue's example: the reading room against the library, and against the chess club. */
+  /** #476's example: the reading room against the library, and against the chess club. */
   readonly example: { readonly libraryCosine: number; readonly chessCosine: number };
+  /**
+   * #477's examples through the pipeline: whether "Keep the reading room open
+   * late." gets a row for "The library must stay open." and "Our chess club
+   * needs new boards." one for "The housing board meets on Tuesday.", with
+   * each pair's cosine.
+   */
+  readonly rows: {
+    readonly library: { readonly row: boolean; readonly cosine: number };
+    readonly chess: { readonly row: boolean; readonly cosine: number };
+  };
   readonly perSentence: {
     /** The median of ten one-sentence calls. */
     readonly aloneMs: number;
     /** Sixty-four corpus sentences in one call, run in batches, per sentence. */
     readonly batchedMs: number;
   };
-  readonly shelf50: ShelfTiming;
-  readonly shelf500: ShelfTiming;
-  /** The harness on tune with the model and with #475's stand-in, when asked for. */
-  readonly harness: { readonly model: HarnessCounts; readonly standIn: HarnessCounts } | null;
+  readonly shelf50: ShelfTimings;
+  readonly shelf500: ShelfTimings;
+  /**
+   * The harness on tune, when asked for: with the model, with #475's stand-in
+   * embedder, and with term overlap alone (the fallback while the model hasn't
+   * loaded), each through this pipeline and its thresholds.
+   */
+  readonly harness: {
+    readonly model: HarnessCounts;
+    readonly standIn: HarnessCounts;
+    readonly fallback: HarnessCounts;
+  } | null;
 }

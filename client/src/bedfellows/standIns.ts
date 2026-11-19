@@ -12,7 +12,7 @@
 import { contentWords, sentencesOf } from './baseline';
 import type { Embedder, Splitter, StanceJudge, Vector } from './types';
 
-/** The stand-in splitter: cuts on `.`, `!` or `?` and at blank lines (#474's `sentencesOf`). */
+/** The stand-in splitter: cuts on `.`, `!` or `?` and at blank lines (#474's `sentencesOf`). `split.ts` replaced it in the pipeline (#477); the harness pages still compare against it. */
 export const standInSplitter: Splitter = sentencesOf;
 
 /** The stand-in embedder's vector size. */
@@ -47,6 +47,7 @@ function hashed(sentence: string): Vector {
  * and word sense are invisible to it, as they are to term overlap.
  */
 export const standInEmbedder: Embedder & { readonly dimensions: number } = {
+  model: 'stand-in/hashed-content-words/256',
   dimensions: DIMENSIONS,
   embed: (sentences) => Promise.resolve(sentences.map(hashed)),
 };

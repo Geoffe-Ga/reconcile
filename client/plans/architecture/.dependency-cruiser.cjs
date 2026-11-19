@@ -38,6 +38,17 @@ module.exports = {
       },
     },
     {
+      name: 'corpus-stays-out-of-the-app',
+      comment:
+        "The labelled corpus (#474, ADR-0080 §8) and the harness that scores matchers against it are for tests and tuning runs, never the app: no other module but a test imports them, except by type, so the bundle every device downloads holds none of the corpus's invented groups and texts. corpus.ts is the only door to corpus/*.json, and harness.ts the only other module that reads corpus.ts.",
+      severity: 'error',
+      from: { pathNot: ['\\.test\\.tsx?$', '^src/bedfellows/(corpus|harness)\\.ts$'] },
+      to: {
+        path: ['^src/bedfellows/corpus(\\.ts$|/)', '^src/bedfellows/harness\\.ts$'],
+        dependencyTypesNot: ['type-only'],
+      },
+    },
+    {
       name: 'only-embedder-ts-fetches-the-model',
       comment:
         "The one door from Bedfellows to the network is src/net/modelFiles.ts, which fetches only a pinned model file by name from our own origin and checks its hash (#476, ADR-0080 §2): no word, vector or score of the reader's can ride on it. Only src/bedfellows/embedder.ts, and its test, may use it.",

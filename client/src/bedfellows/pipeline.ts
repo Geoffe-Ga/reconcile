@@ -1,30 +1,56 @@
 /**
- * The Bedfellows pipeline (#475; ADR-0080 §1, §3, §4, §7): a reader's own
- * Documents and some public shelf entries in, ranked rows out.
+ * The Bedfellows pipeline (#475, #477; ADR-0080 §1, §3, §4, §7): a reader's
+ * own Documents and some public shelf entries in, ranked rows out.
  *
- * 1. Each reader Document and each entry is cut into claims, one sentence
- *    each; an entry's title is a claim too.
- * 2. Every claim is embedded, and every reader claim is matched against every
- *    entry claim by cosine. Pairs at or above `THRESHOLDS.match` are candidates.
- * 3. An entry's coverage is the share of its claims with a candidate. One with
- *    no candidate, or (at three claims or more) coverage above
- *    `THRESHOLDS.nearCopy`, stays out.
+ * 1. Each reader Document and each entry is cut into claims (`split.ts`); an
+ *    entry's title is a claim too.
+ * 2. Every claim is embedded: the reader's in memory for this run only, the
+ *    entries' through the cache of public entry vectors (`entryVectors.ts`).
+ *    Every reader claim is matched against every entry claim by cosine
+ *    (`match.ts`); pairs at or above `match` are candidates.
+ * 3. An entry's coverage is the share of its claims with a counterpart. One
+ *    with no candidate, or (at three claims or more) coverage above
+ *    `nearCopy`, stays out.
  * 4. Its best three pairs go to the stance check. An agreeing pair is a
  *    verified anchor, an unsure one a shared subject; an opposed pair is
  *    dropped, and an entry left with none stays out, with nothing said.
  * 5. Its tier comes from strangeness, one minus coverage, or for an entry
- *    under three claims from its reason's strength.
+ *    under three claims from its best pair and its nearest Document
+ *    (`tiers.ts`).
  *
- * It is pure: the same input and models give the same rows, whatever order
- * the reader's Documents or the entries come in, because every tie is broken
- * by words, never by position. It writes nothing and sends nothing: the
+ * Term overlap (`fallback.ts`) places, unverified, every entry while the
+ * model hasn't loaded (no embedder), an entry the model doesn't cover against
+ * all the reader's Documents, and any entry against those of the reader's
+ * Documents the model doesn't cover.
+ *
+ * It is pure but for the cache: the same input and models give the same
+ * rows, whatever order the reader's Documents or the entries come in, because
+ * every tie is broken by words, never by position. It sends nothing, and it
+ * writes nothing but entries' public vectors to the store it is handed: the
  * reader's text, vectors and scores exist only in memory (ADR-0080 §5).
+ *
+ * **Hand it the whole shelf.** The cache keeps exactly the entries a run is
+ * given, unsealed, so a caller that left out the reader's own groups' entries
+ * would leave a gap in it the shape of those groups. A caller drops its own
+ * groups' entries from the rows that come back, never from what goes in
+ * (ADR-0080 §5, as #477 amends it).
  */
-import { standInSplitter } from './standIns';
-import { THRESHOLDS } from './thresholds';
+import {
+  CHUNK,
+  embedInChunks,
+  entryVectors,
+  stopIfAborted,
+  type VectorStore,
+} from './entryVectors';
+import { covers, type RankedRow, termOverlapRow } from './fallback';
+import { byText, type Candidate, type Claim, matchEntry } from './match';
+import { claimsIn, splitClaims } from './split';
+import { THRESHOLDS, type Thresholds } from './thresholds';
+import { nearestDocument, tierByStrangeness, tierOfShortEntry } from './tiers';
 import type {
   BedfellowsEntry,
   BedfellowsInput,
+  Embedder,
   Models,
   Reason,
   Row,
@@ -34,48 +60,51 @@ import type {
   Vector,
 } from './types';
 
-/** A reader claim and its vector. */
-interface Claim {
-  readonly sentence: string;
-  readonly vector: Vector;
+export { cosine } from './match';
+
+/** How a run runs. */
+export interface RunOptions {
+  /** Stops the run between entries and between embedding chunks. */
+  readonly signal?: AbortSignal | undefined;
+  /** Where entries' public vectors are kept; without one, nothing is kept. */
+  readonly store?: VectorStore | undefined;
+  /** The thresholds to run with: {@link THRESHOLDS} unless a tuning run tries others. */
+  readonly thresholds?: Thresholds;
 }
 
-/** A candidate pair of claims and how alike their vectors are. */
-interface Candidate {
-  readonly readerSentence: string;
-  readonly entrySentence: string;
-  readonly similarity: number;
+/** A reader Document's claims, and whether the model covers it. */
+interface ReaderDocument {
+  readonly claims: readonly string[];
+  readonly covered: boolean;
 }
 
-/** A row and the strength of its reason, which ranks it within its tier. */
-interface Ranked {
-  readonly row: Row;
-  readonly strength: number;
+/** An entry's claims, and whether the model covers it. */
+interface EntryClaims {
+  readonly id: string;
+  readonly claims: readonly string[];
+  readonly covered: boolean;
+}
+
+/** The reader, as the model sees the Documents it covers. */
+interface ModelReader {
+  readonly claims: readonly Claim[];
+  readonly byDocument: readonly (readonly Vector[])[];
+}
+
+/** Everything a run places entries with. */
+interface Context {
+  readonly reader: ModelReader;
+  /** Every Document's claims, for an entry the model doesn't cover. */
+  readonly allDocuments: readonly (readonly string[])[];
+  /** The claims of the Documents the model doesn't cover. */
+  readonly uncovered: readonly (readonly string[])[];
+  readonly vectors: ReadonlyMap<string, Vector[]>;
+  readonly judge: StanceJudge;
+  readonly thresholds: Thresholds;
 }
 
 /** The order tiers are shown in. */
 const TIER_ORDER: readonly Tier[] = ['close', 'middle', 'strange'];
-
-/** The cosine of the angle between `a` and `b`; 0 when either is the zero vector. */
-export function cosine(a: Vector, b: Vector): number {
-  let dot = 0;
-  let aa = 0;
-  let bb = 0;
-  for (let i = 0; i < a.length; i += 1) {
-    const x = a[i] ?? 0;
-    const y = b[i] ?? 0;
-    dot += x * y;
-    aa += x * x;
-    bb += y * y;
-  }
-  return aa === 0 || bb === 0 ? 0 : dot / Math.sqrt(aa * bb);
-}
-
-/** Orders strings by their UTF-16 code units, the same on every device and in every locale. */
-function byText(a: string, b: string): number {
-  if (a === b) return 0;
-  return a < b ? -1 : 1;
-}
 
 /** `sentences`, trimmed, without blanks or repeats, in code-unit order. */
 function claimsOf(sentences: readonly string[]): string[] {
@@ -83,36 +112,17 @@ function claimsOf(sentences: readonly string[]): string[] {
   return [...new Set(trimmed)].sort(byText);
 }
 
-/** Stronger pairs first; equal pairs by the entry's sentence, then the reader's. */
-function byStrength(a: Candidate, b: Candidate): number {
-  if (a.similarity !== b.similarity) return b.similarity - a.similarity;
-  return byText(a.entrySentence, b.entrySentence) || byText(a.readerSentence, b.readerSentence);
-}
-
 /** Close kin first, then middle, then strange; stronger reasons first, then by entry id. */
-function byRank(a: Ranked, b: Ranked): number {
+function byRank(a: RankedRow, b: RankedRow): number {
   const tier = TIER_ORDER.indexOf(a.row.tier) - TIER_ORDER.indexOf(b.row.tier);
   if (tier !== 0) return tier;
   if (a.strength !== b.strength) return b.strength - a.strength;
   return byText(a.row.entryId, b.row.entryId);
 }
 
-/** Rejects the run with an AbortError once `signal` is aborted. */
-function stopIfAborted(signal: AbortSignal | undefined): void {
-  if (signal?.aborted === true) {
-    throw new DOMException('The Bedfellows run was cancelled.', 'AbortError');
-  }
-}
-
-/** Every pair of `entryClaim` with a reader claim at or above the match threshold. */
-function candidatesFor(entryClaim: Claim, reader: readonly Claim[]): Candidate[] {
-  return reader
-    .map((own) => ({
-      readerSentence: own.sentence,
-      entrySentence: entryClaim.sentence,
-      similarity: cosine(own.vector, entryClaim.vector),
-    }))
-    .filter((pair) => pair.similarity >= THRESHOLDS.match);
+/** `pair` as a reason. */
+function reasonFrom(pair: Candidate, verified: boolean): Reason {
+  return { entrySentence: pair.entrySentence, readerSentence: pair.readerSentence, verified };
 }
 
 /**
@@ -134,45 +144,82 @@ async function reasonOf(
     : { reason: reasonFrom(unsure, false), strength: unsure.similarity };
 }
 
-/** `pair` as a reason. */
-function reasonFrom(pair: Candidate, verified: boolean): Reason {
-  return { entrySentence: pair.entrySentence, readerSentence: pair.readerSentence, verified };
+/** `entry`'s row by the model, from its claims' `vectors`, or null when it stays out. */
+async function placeByModel(
+  entry: EntryClaims,
+  vectors: readonly Vector[],
+  context: Context,
+): Promise<RankedRow | null> {
+  const t = context.thresholds;
+  const claims = entry.claims.map((sentence, i) => ({ sentence, vector: vectors[i] ?? [] }));
+  const found = matchEntry(claims, context.reader.claims, t);
+  if (found.candidates.length === 0) return null;
+  const short = entry.claims.length < t.shortEntry.claims;
+  if (!short && found.coverage > t.nearCopy) return null;
+  const best = await reasonOf(found.candidates.slice(0, t.judged), context.judge);
+  if (best === null) return null;
+  const tier = short
+    ? tierOfShortEntry(best.strength, nearestDocument(vectors, context.reader.byDocument), t)
+    : tierByStrangeness(1 - found.coverage, t);
+  return { row: { entryId: entry.id, tier, reason: best.reason }, strength: best.strength };
 }
 
-/** The tier of an entry of three claims or more, by its strangeness. */
-function tierByStrangeness(strangeness: number): Tier {
-  if (strangeness < THRESHOLDS.strangeness.closeBelow) return 'close';
-  return strangeness < THRESHOLDS.strangeness.strangeFrom ? 'middle' : 'strange';
+/** `entry`'s row: by the model where it covers the entry, else by term overlap. */
+async function place(entry: EntryClaims, context: Context): Promise<RankedRow | null> {
+  const vectors = context.vectors.get(entry.id);
+  if (vectors !== undefined) {
+    const row = await placeByModel(entry, vectors, context);
+    if (row !== null) return row;
+  }
+  const documents = vectors === undefined ? context.allDocuments : context.uncovered;
+  return documents.length === 0
+    ? null
+    : termOverlapRow(entry.id, entry.claims, documents, context.thresholds);
 }
 
-/** The tier of an entry under three claims, by its reason's strength. */
-function tierByStrength(strength: number): Tier {
-  if (strength >= THRESHOLDS.shortEntry.close) return 'close';
-  return strength >= THRESHOLDS.shortEntry.middle ? 'middle' : 'strange';
+/** The reader's covered claims embedded, in memory for this run only, and each Document's vectors. */
+async function modelReader(
+  documents: readonly ReaderDocument[],
+  embedder: Embedder | undefined,
+  signal: AbortSignal | undefined,
+): Promise<ModelReader> {
+  const covered = documents.filter((doc) => doc.covered);
+  if (embedder === undefined || covered.length === 0) return { claims: [], byDocument: [] };
+  const sentences = claimsOf(covered.flatMap((doc) => doc.claims));
+  const vectors = await embedInChunks(sentences, embedder, CHUNK, signal);
+  const vectorOf = (sentence: string): Vector => vectors.get(sentence) ?? [];
+  return {
+    claims: sentences.map((sentence) => ({ sentence, vector: vectorOf(sentence) })),
+    byDocument: covered.map((doc) => doc.claims.map(vectorOf)),
+  };
 }
 
-/** `entry`'s row against the reader's claims, or null when it stays out. */
-async function place(
-  entry: BedfellowsEntry,
-  reader: readonly Claim[],
-  models: Models,
+/** The shelf's entries in id order, each with its claims and whether `modelCovers` it. */
+function entryClaimsOf(
+  entries: readonly BedfellowsEntry[],
   split: Splitter,
-): Promise<Ranked | null> {
-  const sentences = claimsOf([entry.title, ...split(entry.text)]);
-  if (sentences.length === 0) return null;
-  const vectors = await models.embedder.embed(sentences);
-  const perClaim = sentences.map((sentence, i) =>
-    candidatesFor({ sentence, vector: vectors[i] ?? [] }, reader),
-  );
-  const candidates = perClaim.flat().sort(byStrength);
-  if (candidates.length === 0) return null;
-  const coverage = perClaim.filter((pairs) => pairs.length > 0).length / sentences.length;
-  const short = sentences.length < THRESHOLDS.shortEntry.claims;
-  if (!short && coverage > THRESHOLDS.nearCopy) return null;
-  const found = await reasonOf(candidates.slice(0, THRESHOLDS.judged), models.judge);
-  if (found === null) return null;
-  const tier = short ? tierByStrength(found.strength) : tierByStrangeness(1 - coverage);
-  return { row: { entryId: entry.id, tier, reason: found.reason }, strength: found.strength };
+  modelCovers: (text: string) => boolean,
+): EntryClaims[] {
+  return [...entries]
+    .sort((a, b) => byText(a.id, b.id))
+    .map((e) => ({
+      id: e.id,
+      claims: claimsOf(claimsIn(e.title, e.text, split)),
+      covered: modelCovers(`${e.title}\n${e.text}`),
+    }))
+    .filter((entry) => entry.claims.length > 0);
+}
+
+/** The vectors of the entries the model covers, when the reader has claims it covers too. */
+async function coveredEntryVectors(
+  entries: readonly EntryClaims[],
+  reader: ModelReader,
+  embedder: Embedder | undefined,
+  options: RunOptions,
+): Promise<Map<string, Vector[]>> {
+  const matched = reader.claims.length === 0 ? [] : entries.filter((entry) => entry.covered);
+  if (embedder === undefined || matched.length === 0) return new Map();
+  return entryVectors(matched, embedder, { store: options.store, signal: options.signal });
 }
 
 /**
@@ -181,23 +228,37 @@ async function place(
  * within a tier. A reader with no Documents gets none. `input.dial` is not
  * read yet (#479).
  *
- * @throws {DOMException} an AbortError, between entries, once `signal` is aborted.
+ * @throws {DOMException} an AbortError, between entries or embedding chunks, once `signal` is aborted.
  */
 export async function bedfellows(
   input: BedfellowsInput,
   models: Models,
-  signal?: AbortSignal,
+  options: RunOptions = {},
 ): Promise<Row[]> {
+  const { signal } = options;
+  const t = options.thresholds ?? THRESHOLDS;
   stopIfAborted(signal);
-  const split = models.splitter ?? standInSplitter;
-  const sentences = claimsOf(input.reader.flatMap((doc) => split(doc.text)));
-  if (sentences.length === 0) return [];
-  const vectors = await models.embedder.embed(sentences);
-  const reader = sentences.map((sentence, i) => ({ sentence, vector: vectors[i] ?? [] }));
-  const ranked: Ranked[] = [];
-  for (const entry of [...input.entries].sort((a, b) => byText(a.id, b.id))) {
+  const { embedder } = models;
+  const split = models.splitter ?? splitClaims;
+  const modelCovers = (text: string) => embedder !== undefined && covers(text, t.covers);
+  const documents: ReaderDocument[] = input.reader
+    .map((doc) => ({ claims: claimsOf(split(doc.text)), covered: modelCovers(doc.text) }))
+    .filter((doc) => doc.claims.length > 0);
+  if (documents.length === 0) return [];
+  const entries = entryClaimsOf(input.entries, split, modelCovers);
+  const reader = await modelReader(documents, embedder, signal);
+  const context: Context = {
+    reader,
+    allDocuments: documents.map((doc) => doc.claims),
+    uncovered: documents.filter((doc) => !doc.covered).map((doc) => doc.claims),
+    vectors: await coveredEntryVectors(entries, reader, embedder, options),
+    judge: models.judge,
+    thresholds: t,
+  };
+  const ranked: RankedRow[] = [];
+  for (const entry of entries) {
     stopIfAborted(signal);
-    const row = await place(entry, reader, models, split);
+    const row = await place(entry, context);
     if (row !== null) ranked.push(row);
   }
   stopIfAborted(signal);

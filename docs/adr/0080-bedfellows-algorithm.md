@@ -62,6 +62,7 @@ ADR-0077 §4's rules stand: everything runs on the reader's device; no text, ter
 - It stays on the one device: no backup, relay backup, snapshot or device link carries it.
 - Settings has **Clear Bedfellows history**. Panic wipe erases it with everything else.
 - **Match scores are never written.** Vectors of the reader's own writing live in memory only. Vectors of public shelf entries may sit in an ordinary cache.
+  - **Amended (#477): the cache holds the whole shelf.** It is kept outside the vault, unsealed, so which entries it holds must say nothing about the reader. The pipeline is therefore handed every entry on the shelf, the reader's own groups' included, and §4's rule that the reader's own groups' and coalitions' entries stay out applies to the rows it returns, never to what it is given. Were the caller to leave the reader's own groups out first, the entries missing from the cache would point to the groups the reader belongs to.
 - Ask to join and Propose reconciling are never signals, and neither is time spent.
 
 ### 6. Safeguards
@@ -95,6 +96,15 @@ ADR-0077 §4's rules stand: everything runs on the reader's device; no text, ter
   | Peak memory, the page's renderer | 400 MB at peak, about 320 MB once settled (115 MB before loading) | < 300 MB: over |
 
   Embedding claims is nearly all the time. What would bring the shelves in, cheapest first: keep public entries' vectors in the ordinary cache §5 allows, so a refresh embeds only new entries; show rows as each entry is placed, so first matches don't wait for the whole shelf; give the page cross-origin isolation (COOP and COEP headers), so the runtime can run on several threads; cap the claims or tokens embedded per entry; or a smaller model, with the harness judging what it costs. Memory: hand the files' bytes to the runtime and drop them, as `embedderLoader` does, and measure inside the app rather than the test page.
+- **Measured (#477), on desktop again, with the cache §5 allows.** Public entries' vectors are kept in an IndexedDB database of their own (`reconcile-bedfellows-vectors`), by entry id and model, and dropped when the entry leaves the shelf or the model changes; the model now embeds one sentence at a time, since the 8-bit model's vectors shift with the other sentences in a batch, and it is no slower. Same machine, under load from other work, #476's page and this one run side by side:
+
+  | | Before (#476) | After, nothing kept | After, entries kept | Budget |
+  |---|---|---|---|---|
+  | 50 entries against 5 Documents, model loaded | 3.17 s | 2.5–2.9 s | 0.26–0.30 s | ≤ 3 s |
+  | 500 entries against 20 Documents | 25.4 s | 20.2–20.6 s | 1.25–1.49 s | ≤ 10 s |
+  | Peak memory, the page's renderer | 399 MB | 401–402 MB | | < 300 MB |
+
+  A refresh with the shelf kept is inside its budget; the first run on a new shelf isn't, and memory is unchanged, since the model's own working set dominates it. A first open still pays for the model's load (2.5–2.8 s to the first vector here) before any match. The thresholds are in `client/src/bedfellows/thresholds.ts`, set on the corpus's `tune` split: a near-copy is an entry more than 65% of whose claims are restated, not 80%, because an entry's title is a claim and a Document's isn't, so a near-copy of a Document tops out at two claims of three.
 - A part that misses its target ships in its weaker form: unverified wording everywhere if the stance check misses, and the shared-enemy check off if it's unmeasured.
 
 ## Why
