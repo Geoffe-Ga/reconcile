@@ -1,7 +1,7 @@
 /**
  * The steward's side of the shelf (#488, #489; docs/spec/listed-doors.md
  * §6.2, §6.4): importing the steward's secret in Settings, and the console's
- * read and its five notices: release, hold, uphold, suspend and pause.
+ * read and its six notices: release, hold, uphold, suspend, unsuspend and pause.
  *
  * The secret is taken only when both public keys it derives are the ones the
  * app pins (`shelf/steward.ts`), so no other key is ever kept as the
@@ -10,13 +10,20 @@
  * store only to sign a notice on this device; a copy read out is zeroed once
  * the notice is signed. A notice names a clause and what it acts on, never
  * who reported it (ADR-0013).
+ *
+ * The console also reads the steward's inbox (#490, `shelf/inbox.ts`): the
+ * box secret is derived from the steward's secret for the read and zeroed
+ * after, as a notice's signing key is. The steward may dismiss an item there,
+ * on this device only, and may lift a suspension with an `unsuspend`.
  */
 import { base64url } from '../crypto/base64url';
 import { stewardKeysOf, stewardSecretFrom } from '../crypto/steward';
+import type { Relay } from '../net/relay';
 import type { Shelf } from '../net/shelf';
 import { foldShelf, standingHolds, waitingListings } from '../shelf/fold';
+import { dismissInboxItem, type InboxItem, type InboxKeep, readStewardInbox } from '../shelf/inbox';
 import { foldNotices, signNotice } from '../shelf/notices';
-import type { NoticeBody } from '../shelf/record';
+import type { NoticeDraft } from '../shelf/record';
 import { STEWARD_PINS, type StewardPins } from '../shelf/steward';
 import { type StewardKeyStore, VaultLocked } from '../store/db';
 import type { StewardImport } from './StewardKeyCard';
@@ -53,25 +60,72 @@ export async function importStewardKey(
   }
 }
 
+/** No reports or appeals: the inbox of a console with nothing to read it with. */
+const NO_INBOX = (): Promise<InboxItem[]> => Promise.resolve([]);
+
+/**
+ * The reports and appeals in the steward's inbox (#490), newest first, read
+ * after the cursor `store` keeps, with the box secret derived from the
+ * steward's secret on this device; none on a device without one. The
+ * secret and the box secret are zeroed once read.
+ *
+ * @throws {Error} when the relay or the store fails.
+ */
+export async function readInbox(
+  store: Pick<StewardKeyStore, 'getStewardKey'> & InboxKeep,
+  relay: Pick<Relay, 'getBlobs'>,
+): Promise<InboxItem[]> {
+  const secret = await store.getStewardKey();
+  if (secret === undefined) return [];
+  const { signing, box } = stewardKeysOf(secret);
+  secret.fill(0);
+  signing.secretKey.fill(0);
+  try {
+    return await readStewardInbox({ relay, keep: store }, box.secretKey);
+  } finally {
+    box.secretKey.fill(0);
+  }
+}
+
+/**
+ * Dismisses the inbox item `key` names on this device (#490); true once
+ * kept, false when the store refused.
+ */
+export async function dismissItem(store: InboxKeep, key: string): Promise<boolean> {
+  try {
+    await dismissInboxItem(store, key);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * The console's view, read fresh from the relay: every held listing beside
  * any live listing that holds its name, what stands on the shelf (every
- * entry at once, as its own group sees it) and each hold that stands.
- * `unavailable` while the relay has no shelf, `failed` when either read fails.
+ * entry at once, as its own group sees it), each hold that stands, each
+ * suspension that stands (#490), and the reports and appeals `inbox` reads
+ * (#490). `unavailable` while the relay
+ * has no shelf, `failed` when any read fails.
  */
-export async function readQueue(shelf: Pick<Shelf, 'read' | 'readHeld'>): Promise<StewardQueue> {
+export async function readQueue(
+  shelf: Pick<Shelf, 'read' | 'readHeld'>,
+  inbox: () => Promise<readonly InboxItem[]> = NO_INBOX,
+): Promise<StewardQueue> {
   try {
-    const [live, held] = await Promise.all([shelf.read(), shelf.readHeld()]);
+    const [live, held, items] = await Promise.all([shelf.read(), shelf.readHeld(), inbox()]);
     if (live === null || held === null) return 'unavailable';
     const own = new Set(live.records.map(({ address }) => address));
     const state = foldShelf(live.records, live.now, { own });
-    const { released } = foldNotices(live.records);
+    const { released, suspended } = foldNotices(live.records);
     const view: StewardView = {
       waiting: waitingListings(held.records, state, released),
       listings: state.listings,
       entries: state.entries,
       holds: standingHolds(live.records, held.records, live.now),
+      suspended,
       paused: state.paused,
+      inbox: items,
     };
     return view;
   } catch {
@@ -80,14 +134,17 @@ export async function readQueue(shelf: Pick<Shelf, 'read' | 'readHeld'>): Promis
 }
 
 /**
- * Signs `notice` with the steward's key and PUTs it under the steward's
- * address; true once the relay has it, false when the device holds no key
- * that derives the pins or the relay refused it.
+ * Signs `notice` with the steward's key, stamped with this device's UTC day
+ * and a fresh nonce so no one can replay it (#490's review), and PUTs it
+ * under the steward's address; true once the relay has it, false when the
+ * device holds no key that derives the pins or the relay refused it, a
+ * notice signed on a day the relay no longer takes (`stale_notice`, a clock
+ * more than a day off) included.
  */
 export async function sendNotice(
   store: Pick<StewardKeyStore, 'getStewardKey'>,
   shelf: Pick<Shelf, 'put'>,
-  notice: NoticeBody,
+  notice: NoticeDraft,
 ): Promise<boolean> {
   const secret = await store.getStewardKey().catch(() => undefined);
   if (secret === undefined) return false;

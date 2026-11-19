@@ -46,7 +46,10 @@
  * it: once a suspend names the door's address, the device posts nothing
  * more under it, listing or entry; and an entry the steward upheld is never
  * posted again. A relay that answers `403 suspended` or `403 upheld` (one
- * whose notices this app's pins don't verify) stops it the same way.
+ * whose notices this app's pins don't verify) stops it the same way. Once
+ * the steward lifts the suspension (#490), the keeper posts the listing
+ * again at the next launch, when it next reads the shelf, and the relay
+ * holds it until a fresh release.
  *
  * Before posting, the device reads the whole shelf, as every reader does
  * (ADR-0077 §4), to see the copy that stands. It remembers in memory what it

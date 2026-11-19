@@ -32,7 +32,7 @@ A group can list its front door. A listed group can publish single Dispatches to
 | **Registry** | Every live listing, as each device folds it from the shelf log |
 | **Entry** | One published Dispatch: its id, title and text, under a listing's address |
 | **Steward** | The platform-level moderator (ADR-0013), the founder during the pilot. Distinct from a group's own stewards |
-| **Notice** | A record the steward signs: release, hold, uphold, suspend or pause |
+| **Notice** | A record the steward signs: release, hold, uphold, suspend, unsuspend or pause |
 | **Tombstone** | An uphold or suspend notice, as shown in place of what it removed |
 | **Skeleton** | A name reduced so that look-alike spellings compare equal |
 
@@ -82,11 +82,12 @@ Every record is compact UTF-8 JSON, signed with Ed25519 under the tag `reconcile
 | `listing`, final | `{v: 1, kind, open: false, final: true}` | the door |
 | `entry` | `{v: 1, kind, id, title, text}`: the Dispatch's id, title (1 to 80 code points) and text (at most 500) | the door |
 | `withdraw` | `{v: 1, kind, id}`: an entry's id | the door |
-| `notice` | `{v: 1, kind, act, address?, id?, clause?, on?}` (§6.1; `on` on a pause only, #489) | the steward |
+| `notice` | `{v: 1, kind, act, address?, id?, clause?, on?, day, n}` (§6.1; `on` on a pause only, #489; an `unsuspend` names an address alone, #490; `day` and `n` on every notice, #490's review) | the steward |
 
 - An entry carries no name. It shows its listing's current name, so a name lives in one place.
 - An entry carries no author, total, Document link, member count or time of its own.
 - Sizes **(proposed)**: a listing or notice is at most 1,024 bytes, an entry at most 4,096.
+- **A notice can't be replayed** (#490's review). Every notice ends with `day`, the UTC day number on which the steward signed it, and `n`, a fresh 16-byte nonce in canonical unpadded base64url, both signed with the rest. The relay takes a notice only on that day or the next (else `400 stale_notice`) and only once per nonce (else `409 replayed_notice`), remembering each nonce until its notice could be taken no more; every device counts a notice only when its `day` is its relay `received` day or the day before, and only the first with each nonce, by seq. Without them, anyone who saved a notice the shelf served could PUT it again later: an old `unsuspend` after a fresh suspend, an old `suspend` after a lift, an old `hold`, or an old `release` of a relisting. The format changed before any notice was live (the app's steward pins are still null), so no stored notice is invalidated.
 
 ### 4.2 Relay routes
 
@@ -110,7 +111,7 @@ These are the first routes whose bodies the relay can read. They are on only whe
 
 **What the relay never does:** read a name's meaning, compare skeletons, keep per-IP state, or log a request. The existing rules in §6 of the MVP spec apply unchanged: constant error bodies, no client address, no forwarding headers.
 
-**Storage.** One table, `shelf(seq, address, kind, ref, body, received, expiry, held_until)`, where `ref` is an entry's id or empty. No other column.
+**Storage.** One table, `shelf(seq, address, kind, ref, body, received, expiry, held_until)`, where `ref` is an entry's id or empty. No other column. Beside it, `notice_nonces(n, expiry)` keeps each taken notice's nonce for two days so none is taken twice (§4.1, #490's review): a value the notice itself publishes, and nothing else.
 
 - A listing expires 30 days after its last post, an entry 30 days after its first, a notice after 180 days **(proposed)**.
 - A final listing deletes its address's entries.
@@ -183,7 +184,7 @@ A door's application form offers no personal Documents when the door is listed a
 
 ### 6.1 Notices
 
-**Built** (#488 `release`, #489 the rest). The relay and every device act on each notice; the contract lives in [`phase-1/06-relay-api.md`](phase-1/06-relay-api.md) (Held mode, The steward's later notices, The fold's notices), [`phase-1/08-screens.md`](phase-1/08-screens.md) (Group home's hold, item 16's removed listing, item 19's tombstones and pause) and [`phase-1/09-privacy-rules.md`](phase-1/09-privacy-rules.md) (A removal names a clause). Decided in #489: a `pause` notice carries `on` (`{v, kind, act: "pause", on}`), since §4.1's body had no field for "on or off" and the newest pause decides; a hold names a clause too, for the group's "Held" line; a held listing keeps its name meanwhile; a suspend's tombstone shows only for a listing a release had let show, for 30 relay days; an uphold's tombstone ends with the entry's 30 days, counted from the uphold once the relay has deleted the entry; and a pause, like every notice, is kept 180 days, so a pause nobody renews lifts itself then.
+**Built** (#488 `release`, #489 the rest, #490 `unsuspend`). The relay and every device act on each notice; the contract lives in [`phase-1/06-relay-api.md`](phase-1/06-relay-api.md) (Held mode, The steward's later notices, The fold's notices), [`phase-1/08-screens.md`](phase-1/08-screens.md) (Group home's hold, item 16's removed listing, item 19's tombstones and pause) and [`phase-1/09-privacy-rules.md`](phase-1/09-privacy-rules.md) (A removal names a clause). Decided in #489: a `pause` notice carries `on` (`{v, kind, act: "pause", on}`), since §4.1's body had no field for "on or off" and the newest pause decides; a hold names a clause too, for the group's "Held" line; a held listing keeps its name meanwhile; a suspend's tombstone shows only for a listing a release had let show, for 30 relay days; an uphold's tombstone ends with the entry's 30 days, counted from the uphold once the relay has deleted the entry; and a pause, like every notice, is kept 180 days, so a pause nobody renews lifts itself then. Decided in #490 (the founder, 2026-11-19): a suspension can be lifted by a sixth act, `unsuspend`, rather than by a `release` of a suspended address, since a release means "this listing passed its first look" and is folded whatever its order, so it couldn't also undo a later suspend without changing what every existing release means; a lift is a decision of its own, public as every notice is, and it names no clause because it names no breach. The suspend stays: the newer of the two by `seq` decides, so a later suspend stands again. A lift voids the address's earlier releases, so the listing its group posts next waits for a fresh release on the relay and on every device, as any first listing does in held mode. A suspension no one lifts still lapses with its notice at 180 days, as built (#511).
 
 The steward signs each notice. The relay acts on it so that held records aren't downloaded, and every device folds it so that the relay alone is never trusted.
 
@@ -193,11 +194,13 @@ The steward signs each notice. The relay acts on it so that held records aren't 
 | `hold` | an entry, or an address | hides it for 10,080 minutes | the same; the group's own members see "Held: {clause}" |
 | `uphold` | an entry, and a clause | deletes the entry, keeps the notice | shows a tombstone in the entry's place until its 30 days end |
 | `suspend` | an address, and a clause | deletes its records, refuses its PUTs | shows a tombstone; the door's page says the listing was removed |
+| `unsuspend` | an address | ends its suspension, keeps the suspend (`409 not_suspended` without one) | the tombstone goes; the next listing waits for a fresh release |
 | `pause` | on or off | nothing | hides or shows the whole shelf section |
 
 - **A hold lapses.** Without an `uphold` within 10,080 relay minutes, the entry shows again. An absent steward, or a thief who only holds, therefore fails open.
 - **A tombstone names the clause,** in words: "Removed: impersonation of another group". Decisions are public (ADR-0013).
 - **Clauses** are the covenant's: `C1`, `C2`, `C3`.
+- **Each notice is once-only** (§4.1, #490's review): signed with its day and a fresh nonce, it is taken by the relay and counted by devices once, within a day of its signing, so no saved notice can undo a later decision. Two decisions alike, a second suspend under the same clause, are two notices with two nonces.
 
 ### 6.2 The steward's key
 
@@ -209,22 +212,25 @@ The steward signs each notice. The relay acts on it so that held records aren't 
 
 ### 6.3 Reports and appeals
 
+**Built** (#490). The contract lives in [`phase-1/06-relay-api.md`](phase-1/06-relay-api.md) (The steward's inbox), [`phase-1/08-screens.md`](phase-1/08-screens.md) (Group home's hold, item 12's console, item 19's entry page) and [`phase-1/09-privacy-rules.md`](phase-1/09-privacy-rules.md) (A report carries no reporter). Decided in #490: the inbox derives from the steward's box key under `reconcile/v1/steward-inbox`; reports and appeals are sealed under labels of their own, and an appeal is signed under a tag of its own, `reconcile/v1/steward-appeal`, so none passes for a shelf record; every one is padded to 4,096 bytes, not the smallest blob that fits, so the relay can't tell a report from an appeal or a note's length; an appeal's note is 1 to 500 code points, as a report's is at most; "Report this entry" sits on the entry's own page (#431), where each entry's actions are; the appeal sits on Group home's hold card, and on a new card for a removed listing; and neither shows while the app pins no steward.
+
 - **Report.** Every entry has a quiet "Report this entry". It asks for a clause and takes a note of up to 500 code points. The device seals `{address, id, clause, note?}` to the steward's box key, padded to a blob size, and PUTs it to the steward's inbox, an ordinary mailbox derived from the steward's key. It carries nothing about the reporter and has no reply path.
 - **Appeal.** A member of a held or suspended group who holds `propose` sees "Ask the steward to look again". It sends `{address, id?, note}`, signed with the door's key, the same way.
 - **Reports never hide anything.** They only fill the steward's queue.
 
 ### 6.4 The steward's console
 
-**Built: the waiting listings and Release** (#488), and standing holds and the four other notices (#489); reports, appeals and flagged entries wait for §6.3 and §6.6. The contract lives in [`phase-1/08-screens.md`](phase-1/08-screens.md) (item 12).
+**Built: the waiting listings and Release** (#488), standing holds and the four other notices (#489), and reports and appeals (#490), with, decided there by the founder (2026-11-19), Dismiss on each item, kept on the steward's device only and forgotten with the item at 32 days, and the suspensions that stand, each with Lift the suspension, which an appeal about a suspended listing offers too. The inbox's device record isn't cleared when the steward's key is dropped, and the inbox has no cap beyond the relay's mailbox cap. Flagged entries wait for §6.6. The contract lives in [`phase-1/08-screens.md`](phase-1/08-screens.md) (item 12).
 
 `#/steward`, shown only on a device that holds the steward's secret key. It lists:
 
 - listings waiting for release, with any live listing that shares the skeleton beside each;
 - reports and appeals, newest first;
 - entries the classifier flagged (§6.6);
-- standing holds and when each lapses.
+- standing holds and when each lapses;
+- suspensions that stand (#490).
 
-Its actions are the five notices. Each asks for a clause where one is needed and shows what readers will see.
+Its actions are the six notices, and Dismiss on a report or appeal. Each asks for a clause where one is needed and shows what readers will see.
 
 ### 6.5 Telling affected devices
 

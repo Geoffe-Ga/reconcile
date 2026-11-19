@@ -20,24 +20,76 @@
  * - **suspend**: the listing comes down with its entries, a tombstone takes
  *   its place, and the door's page says so. The first suspend of an address
  *   names its clause.
+ * - **unsuspend** (#490): a suspension that stands ends, its tombstone with
+ *   it, and so does every release of the address before it, so the listing
+ *   the group posts next waits for a fresh release, as any first listing
+ *   does on a held relay. The suspend stays in the log: a suspend after the
+ *   lift stands again, under its own clause. One with no suspension
+ *   standing lifts nothing.
  * - **pause**: the newest pause decides: `on`, the whole shelf section
  *   hides behind one line; off, it shows again.
  *
  * A notice names a clause and what it acts on, never who reported it
  * (ADR-0013: decisions are public).
+ *
+ * **No replays** (#490's review). The shelf serves every notice to anyone,
+ * so anyone could save one and have a relay serve it again later: an old
+ * lift after a fresh suspend, say. Each notice is signed with its stamp
+ * (`record.ts`): the UTC day it was signed on and a fresh nonce. A device
+ * counts a notice only when that day is the day of its relay `received`
+ * minute or the day before, as the relay takes it, and only the first
+ * notice with each nonce, by seq; any other is ignored, as a malformed one
+ * is. So a relay that serves an old notice again, or serves it twice, can't
+ * get it honoured.
  */
-import { verifyShelfRecord } from '../crypto/shelf';
+import { newNoticeNonce, verifyShelfRecord } from '../crypto/shelf';
 import type { SigningKeys } from '../crypto/sign';
 import type { ShelfRecord } from '../net/shelf';
-import { type Clause, type NoticeBody, parseShelfBody, signShelfBody } from './record';
+import {
+  type Clause,
+  type NoticeBody,
+  type NoticeDraft,
+  type NoticeStamp,
+  parseShelfBody,
+  signShelfBody,
+} from './record';
 import { STEWARD_PINS, type StewardPins } from './steward';
 
 /** Relay minutes a hold hides what it names (§6.1): 7 relay days. */
 export const HOLD_MINUTES = 10_080;
 
-/** `body` signed with the steward's `keys`, ready to PUT under their address. */
-export function signNotice(keys: SigningKeys, body: NoticeBody): Uint8Array<ArrayBuffer> {
+/** Milliseconds in a UTC day. */
+const DAY_MS = 86_400_000;
+
+/** Relay minutes in a UTC day. */
+const DAY_MINUTES = 1440;
+
+/** How many days before the day it arrived a notice may be signed: the relay's grace for midnight. */
+const GRACE_DAYS = 1;
+
+/** A fresh stamp: the UTC day of device time `at` and a new random nonce. */
+export function noticeStamp(at: number = Date.now()): NoticeStamp {
+  return { day: Math.floor(at / DAY_MS), n: newNoticeNonce() };
+}
+
+/**
+ * `draft` stamped with `stamp` (fresh unless given: today's UTC day on this
+ * device and a new nonce) and signed with the steward's `keys`, ready to PUT
+ * under their address. Only tests pass a stamp, to pin bytes.
+ */
+export function signNotice(
+  keys: SigningKeys,
+  draft: NoticeDraft,
+  stamp: NoticeStamp = noticeStamp(),
+): Uint8Array<ArrayBuffer> {
+  const body: NoticeBody = { ...draft, day: stamp.day, n: stamp.n };
   return signShelfBody(keys, body);
+}
+
+/** Whether `notice` was signed on the day of relay minute `received` or the day before. */
+export function isFresh(notice: NoticeStamp, received: number): boolean {
+  const arrived = Math.floor(received / DAY_MINUTES);
+  return notice.day <= arrived && notice.day >= arrived - GRACE_DAYS;
 }
 
 /** A hold as every device folds it: what it hides, why, and until when. */
@@ -71,7 +123,7 @@ export interface NoticeState {
   readonly holds: readonly NoticeHold[];
   /** Each upheld entry, in seq order. */
   readonly upheld: readonly NoticeRemoval[];
-  /** Each suspended address, by its first suspend, in seq order. */
+  /** Each address whose suspension stands, by the first suspend since any lift, in seq order. */
   readonly suspended: readonly NoticeRemoval[];
   /** Whether the newest pause is on. */
   readonly paused: boolean;
@@ -130,6 +182,9 @@ function gather(into: Gathering, notice: NoticeBody, { seq, received }: ShelfRec
       }
       return;
     }
+    case 'unsuspend':
+      if (into.suspended.delete(notice.address)) into.released.delete(notice.address);
+      return;
     case 'pause':
       into.paused = notice.on;
   }
@@ -151,9 +206,12 @@ export function foldNotices(
     suspended: new Map(),
     paused: false,
   };
+  const seen = new Set<string>();
   for (const record of [...records].sort((a, b) => a.seq - b.seq)) {
     const notice = pinnedNotice(record, pins);
-    if (notice !== null) gather(into, notice, record);
+    if (notice === null || seen.has(notice.n)) continue;
+    seen.add(notice.n);
+    if (isFresh(notice, record.received)) gather(into, notice, record);
   }
   return {
     released: into.released,

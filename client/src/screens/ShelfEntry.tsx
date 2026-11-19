@@ -15,16 +15,22 @@
  * reconciling with it (#426's rule), where the door's own button starts the
  * card. A door the shelf says is newly listed or held takes no personal
  * Documents there (§5.3).
+ *
+ * Under the link, a quiet Report this entry (#490, §6.3) sends the steward
+ * a clause and an optional note about it, only where the app pins a steward
+ * to send it to. It hides nothing here or on any other device.
  */
 import { Link } from 'react-aria-components';
 
 import { CopyLink } from '../app/CopyLink';
+import { ReportDialog, type SendOutcome } from '../app/StewardDialogs';
 import { messages } from '../app/messages';
 import { routeHref } from '../app/router';
 import type { SharePort } from '../app/share';
 import { ShelfCard } from '../app/ShelfCard';
 import { PageHeader } from '../app/ui';
 import type { ShelfEntry as Entry } from '../shelf/fold';
+import type { Clause } from '../shelf/record';
 
 /** Props for {@link ShelfEntry}. */
 export interface ShelfEntryProps {
@@ -38,6 +44,8 @@ export interface ShelfEntryProps {
   readonly sharing?: SharePort | undefined;
   /** Whether this device has a group that may propose reconciling with the listing's group (#426). */
   readonly mayReconcile: boolean;
+  /** Sends a report of this entry to the steward (#490); without one, there's no steward to send to. */
+  readonly onReport?: ((clause: Clause, note: string) => Promise<SendOutcome>) | undefined;
 }
 
 /** Ask to join, and Propose reconciling where `mayReconcile`: each opens the door at `address`. */
@@ -59,10 +67,12 @@ function DoorActions({ address, mayReconcile }: { address: string; mayReconcile:
 }
 
 /**
- * The entry, with Ask to join and maybe Propose reconciling, and its link
- * with Copy and Share; or the line that it isn't on the shelf.
+ * The entry, with Ask to join and maybe Propose reconciling, its link with
+ * Copy and Share, and Report this entry where there's a steward; or the line
+ * that it isn't on the shelf.
  */
-export function ShelfEntry({ entry, link, copyText, sharing, mayReconcile }: ShelfEntryProps) {
+export function ShelfEntry(props: ShelfEntryProps) {
+  const { entry, link, copyText, sharing, mayReconcile, onReport } = props;
   const words = messages.shelfEntry;
   return (
     <main className="shell" data-scene="treetops">
@@ -83,6 +93,7 @@ export function ShelfEntry({ entry, link, copyText, sharing, mayReconcile }: She
             copyText={copyText}
             {...(sharing === undefined ? {} : { sharing })}
           />
+          {onReport === undefined ? null : <ReportDialog onReport={onReport} />}
         </>
       )}
       <p>

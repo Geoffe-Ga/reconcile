@@ -39,7 +39,7 @@ import { BOX_OVERHEAD, kxPublicKeyOf, openBox, sealTo } from './box';
 import { sha256 } from './hash';
 import { hkdf32 } from './hkdf';
 import { openTagged, signTagged } from './record';
-import { BLOB_SIZES, isBlobSize, PayloadTooLarge, unframeBody } from './seal';
+import { BLOB_SIZES, type BlobSize, isBlobSize, PayloadTooLarge, unframeBody } from './seal';
 import { DOOR_PAGE_CONTEXT, publicKeyOf, type SigningKeys } from './sign';
 
 /** A door secret's length in bytes, either kind, and a reply seed's. */
@@ -167,13 +167,14 @@ export function openDoorRecord(record: Uint8Array, address: Uint8Array): Uint8Ar
 
 /**
  * `plaintext` framed for a padded box: its length, the plaintext, then zeros,
- * so the box around it is exactly the smallest blob size that fits.
+ * so the box around it is exactly the smallest blob size that fits, and no
+ * smaller than `atLeast`.
  *
  * @throws {PayloadTooLarge} when it is too large for the largest blob.
  */
-function framed(plaintext: Uint8Array): Uint8Array<ArrayBuffer> {
+function framed(plaintext: Uint8Array, atLeast: BlobSize): Uint8Array<ArrayBuffer> {
   const size = BLOB_SIZES.find((candidate) => {
-    return plaintext.length + LENGTH_BYTES + BOX_OVERHEAD <= candidate;
+    return candidate >= atLeast && plaintext.length + LENGTH_BYTES + BOX_OVERHEAD <= candidate;
   });
   if (size === undefined) throw new PayloadTooLarge(plaintext.length);
   const body = new Uint8Array(size - BOX_OVERHEAD);
@@ -184,7 +185,9 @@ function framed(plaintext: Uint8Array): Uint8Array<ArrayBuffer> {
 
 /**
  * Seals `plaintext` to the X25519 `publicKey` for `mailbox`, under `info`,
- * as a box of exactly one of the four blob sizes.
+ * as a box of exactly one of the four blob sizes: the smallest that fits,
+ * or `atLeast` when that is larger, so boxes whose plaintexts differ in
+ * length can all be one size (#490).
  *
  * @throws {PayloadTooLarge} when it is too large for the largest blob.
  * @throws {RangeError} when `publicKey` isn't a key a box can be sealed to.
@@ -194,8 +197,9 @@ export function sealPadded(
   plaintext: Uint8Array,
   info: string,
   mailbox: string,
+  atLeast: BlobSize = BLOB_SIZES[0],
 ): Uint8Array<ArrayBuffer> {
-  return sealTo(publicKey, framed(plaintext), info, utf8ToBytes(mailbox));
+  return sealTo(publicKey, framed(plaintext, atLeast), info, utf8ToBytes(mailbox));
 }
 
 /**

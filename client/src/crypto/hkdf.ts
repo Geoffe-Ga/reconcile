@@ -5,7 +5,7 @@
  * door's page, inbox and reply mailboxes (`door.ts`, #121), a link's
  * channels (`link.ts`, #96), a coalition room's entry id (`room.ts`, #125),
  * a seat's encryption key (`room.ts`, #313), the steward's two keys
- * (`steward.ts`, #488) and a group's nudge offset for a
+ * (`steward.ts`, #488), the steward's inbox (`shelf.ts`, #490) and a group's nudge offset for a
  * coalition's motion (`nudgeOffset.ts`, #284, `reconcile/v1/nudge-offset`)
  * and a vote link's token (`voteLink.ts`, #472, `reconcile/v1/vote-link`)
  * all derive through it, each under a label of its own, so no two ever

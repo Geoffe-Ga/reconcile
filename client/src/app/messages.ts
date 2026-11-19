@@ -188,6 +188,40 @@ export const messages = {
     heldListing: 'Your group’s listing and everything it published.',
     heldUntil: (date: string) =>
       `Reconcile’s steward is looking at this. Unless they remove it, it shows again on ${date}.`,
+    /** On Group home (#490, §6.1): the steward removed the group's listing, under a clause. */
+    removedHeading: 'Removed from the public shelf',
+    removed: (clause: string) => `Removed: ${clause}`,
+    removedListing: 'Your group’s listing and everything it published.',
+    /**
+     * Report this entry (#490, §6.3): any reader may send one to the
+     * steward. It says nothing about who sent it and has no reply, and it
+     * hides nothing.
+     */
+    report: 'Report this entry',
+    reportTitle: 'Report this entry to Reconcile’s steward',
+    reportLede:
+      'The steward reads it and decides. Your report doesn’t say who you are, and you won’t get a reply. It hides nothing by itself.',
+    reportClause: 'What it breaks in the covenant',
+    noteLabel: 'Note (optional)',
+    noteHint: (max: number) => `Up to ${String(max)} characters. Only the steward reads it.`,
+    noteTooLong: (max: number) => `Keep the note to ${String(max)} characters.`,
+    send: 'Send',
+    sending: 'Sending…',
+    cancel: 'Cancel',
+    reportSent: 'Sent to Reconcile’s steward.',
+    sendFailed: 'It wasn’t sent. Check your connection and try again.',
+    /**
+     * Ask the steward to look again (#490, §6.3): a member who may propose,
+     * in a held or removed group, sends one appeal, signed with the door's key.
+     */
+    appeal: 'Ask the steward to look again',
+    appealTitle: 'Ask Reconcile’s steward to look again',
+    appealLede:
+      'It goes to the steward under your group’s front door, not your name. You won’t get a reply in the app.',
+    appealLabel: 'Why it should show',
+    appealHint: (max: number) => `Up to ${String(max)} characters.`,
+    appealRequired: 'Say why it should show.',
+    appealSent: 'Sent. The steward reads it and decides.',
   },
   start: {
     pageTitle: 'Your groups',
@@ -1811,6 +1845,35 @@ export const messages = {
     sending: 'Sending…',
     sent: 'Sent. Devices act on it at their next read of the shelf.',
     sendFailed: 'It wasn’t sent. You can try again.',
+    /**
+     * Reports and appeals (#490, §6.3, §6.4), newest first, each beside what
+     * it names. Neither says who sent it.
+     */
+    inboxHeading: 'Reports and appeals',
+    noInbox: 'No reports or appeals.',
+    reportOf: (clause: string) => `Report: ${clause}`,
+    appealOf: 'Appeal from the group',
+    receivedOn: (date: string) => `Received ${date}`,
+    aboutEntry: (title: string) => `About the entry “${title}”`,
+    aboutListing: (name: string) => `About the listing “${name}”`,
+    aboutGone: 'About something no longer on the shelf',
+    /**
+     * Dismissing an item, on this device only, and lifting a suspension
+     * (#490, §6.1, §6.4). Nothing about a dismissal reaches the relay.
+     */
+    dismiss: 'Dismiss',
+    dismissFailed: 'It wasn’t dismissed. You can try again.',
+    aboutSuspended: (clause: string) => `About a listing you suspended: ${clause}`,
+    suspendedHeading: 'Suspended',
+    noSuspended: 'Nothing is suspended.',
+    suspendedOn: (date: string) => `A listing removed on ${date}`,
+    removedFor: (clause: string) => `Removed: ${clause}`,
+    addressOf: (start: string) => `Address ${start}…`,
+    lift: 'Lift the suspension',
+    lifting: 'Lifting…',
+    lifted: 'Lifted. When its group posts its listing again, it waits here for your release.',
+    willSeeLift: (clause: string) =>
+      `Lift: readers no longer see “Removed: ${clause}”, and its door’s page no longer says its listing was removed. Its group may list again, and its listing waits for your release, as a new one does.`,
   },
   // Passkey unlock (#95; ADR-0008, ADR-0030): offered once after the pilot
   // notice and always in Settings. iOS allows one passkey request per tap, so

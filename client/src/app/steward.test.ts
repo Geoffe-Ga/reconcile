@@ -5,14 +5,27 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { base64url } from '../crypto/base64url';
+import { verifyShelfRecord } from '../crypto/shelf';
 import { newSigningKeys } from '../crypto/sign';
 import { createShelf } from '../net/shelf';
-import { signShelfBody } from '../shelf/record';
+import { parseShelfBody, signShelfBody } from '../shelf/record';
 import { nameSkeleton } from '../shelf/skeleton';
 import { VaultLocked } from '../store/db';
 import { createFakeShelf, release } from '../test/fakeShelf';
 import { STEWARD_ADDRESS, TEST_PINS, TEST_STEWARD_SECRET } from '../test/steward';
-import { derivesPins, importStewardKey, readQueue, releaseListing, sendNotice } from './steward';
+import { createRelay } from '../net/relay';
+import type { InboxKeep, KeptInbox } from '../shelf/inbox';
+import { sendReport } from '../shelf/report';
+import { createFakeRelay } from '../test/fakeRelay';
+import {
+  derivesPins,
+  dismissItem,
+  importStewardKey,
+  readInbox,
+  readQueue,
+  releaseListing,
+  sendNotice,
+} from './steward';
 
 const COVENANT = base64url(new Uint8Array(32).fill(9));
 
@@ -87,14 +100,17 @@ describe('importStewardKey', () => {
   });
 });
 
+/** This device's clock as a relay minute: `sendNotice` stamps each notice with its UTC day. */
+const deviceMinute = (): number => Math.floor(Date.now() / 60_000);
+
 describe('readQueue and sendNotice (#489)', () => {
   it('lists what stands, entries at once; holds one with its lapse; and leaves a held listing out of the waiting', async () => {
-    const fake = createFakeShelf();
+    const fake = createFakeShelf({ minute: deviceMinute() });
     const shelf = createShelf({ fetch: fake.fetch });
     const oak = newSigningKeys();
     const address = base64url(oak.publicKey);
     await shelf.put(address, listingBy(oak, 'Oak St Tenants'));
-    await release(shelf, address);
+    await release(fake, address);
     const id = base64url(new Uint8Array(32).fill(4));
     await shelf.put(
       address,
@@ -135,14 +151,106 @@ describe('readQueue and sendNotice (#489)', () => {
   });
 });
 
+describe('sendNotice stamps each notice (#490’s review)', () => {
+  it('signs with this device’s UTC day and a fresh nonce, so the same act sent twice is two notices', async () => {
+    const fake = createFakeShelf({ minute: deviceMinute() });
+    const shelf = createShelf({ fetch: fake.fetch });
+    const store = keyStore(TEST_STEWARD_SECRET);
+    const pause = { v: 1, kind: 'notice', act: 'pause', on: true } as const;
+
+    expect(await sendNotice(store, shelf, pause)).toBe(true);
+    expect(await sendNotice(store, shelf, pause)).toBe(true);
+
+    const bodies = fake.records.map(({ data }) => {
+      const message = verifyShelfRecord(data, STEWARD_ADDRESS);
+      return message === null ? null : parseShelfBody(message);
+    });
+    const day = Math.floor(fake.minute / 1440);
+    expect(bodies).toMatchObject([
+      { act: 'pause', on: true, day },
+      { act: 'pause', on: true, day },
+    ]);
+    const [first, second] = bodies;
+    expect(first?.kind === 'notice' && second?.kind === 'notice' && first.n !== second.n).toBe(
+      true,
+    );
+  });
+
+  it('says false when the relay finds the notice stale: this device’s clock is days behind', async () => {
+    const fake = createFakeShelf({ minute: deviceMinute() + 2 * 1440 });
+    const shelf = createShelf({ fetch: fake.fetch });
+    const pause = { v: 1, kind: 'notice', act: 'pause', on: true } as const;
+
+    expect(await sendNotice(keyStore(TEST_STEWARD_SECRET), shelf, pause)).toBe(false);
+    expect(fake.records).toEqual([]);
+  });
+});
+
+describe('readQueue and a lifted suspension (#490)', () => {
+  it('lists a suspension that stands, and once lifted, the listing posted again waits for release', async () => {
+    const fake = createFakeShelf({ minute: deviceMinute(), holds: true });
+    const shelf = createShelf({ fetch: fake.fetch });
+    const oak = newSigningKeys();
+    const address = base64url(oak.publicKey);
+    await shelf.put(address, listingBy(oak, 'Oak St Tenants'));
+    await release(fake, address);
+    const store = keyStore(TEST_STEWARD_SECRET);
+    const suspend = { v: 1, kind: 'notice', act: 'suspend', address, clause: 'C2' } as const;
+    expect(await sendNotice(store, shelf, suspend)).toBe(true);
+
+    const suspended = await readQueue(shelf);
+    if (typeof suspended === 'string') throw new Error('a view');
+    expect(suspended.suspended).toMatchObject([{ address, id: null, clause: 'C2' }]);
+
+    const lift = { v: 1, kind: 'notice', act: 'unsuspend', address } as const;
+    expect(await sendNotice(store, shelf, lift)).toBe(true);
+    await shelf.put(address, listingBy(oak, 'Oak St Tenants'));
+
+    const lifted = await readQueue(shelf);
+    if (typeof lifted === 'string') throw new Error('a view');
+    expect(lifted.suspended).toEqual([]);
+    expect(lifted.waiting.map(({ listing }) => listing.address)).toEqual([address]);
+    expect(await sendNotice(store, shelf, lift)).toBe(false);
+  });
+});
+
+describe('dismissItem (#490)', () => {
+  it('dismisses the item in the store, and says false when the store refuses', async () => {
+    const kept: KeptInbox = { inbox: 'i', instance: 'r', cursor: 1, items: [] };
+    const item = {
+      key: 'k',
+      kind: 'report',
+      seq: 1,
+      received: 1,
+      address: 'a',
+      id: null,
+      clause: 'C1',
+      note: null,
+    } as const;
+    let held: KeptInbox | undefined = { ...kept, items: [item] };
+    const store: InboxKeep = {
+      getStewardInbox: () => Promise.resolve(held),
+      keepStewardInbox: (next) => {
+        held = next ?? undefined;
+        return Promise.resolve();
+      },
+    };
+
+    expect(await dismissItem(store, 'k')).toBe(true);
+    expect((await store.getStewardInbox())?.dismissed).toEqual(['k']);
+    const refusing = { ...store, getStewardInbox: () => Promise.reject(new Error('closed')) };
+    expect(await dismissItem(refusing, 'k')).toBe(false);
+  });
+});
+
 describe('readQueue and releaseListing', () => {
   it('lists each held listing beside the live one holding its name, and releases it', async () => {
-    const fake = createFakeShelf();
+    const fake = createFakeShelf({ minute: deviceMinute() });
     const shelf = createShelf({ fetch: fake.fetch });
     const birch = newSigningKeys();
     const oak = newSigningKeys();
     await shelf.put(base64url(birch.publicKey), listingBy(birch, 'Eastside Tenants Union'));
-    await release(shelf, base64url(birch.publicKey));
+    await release(fake, base64url(birch.publicKey));
     await shelf.put(base64url(oak.publicKey), listingBy(oak, 'EASTSIDE TENANTS UNI0N'));
 
     const queue = await readQueue(shelf);
@@ -183,5 +291,48 @@ describe('readQueue and releaseListing', () => {
     expect(await releaseListing(keyStore(new Uint8Array(32).fill(1)), shelf, address)).toBe(false);
     expect(await releaseListing(keyStore(TEST_STEWARD_SECRET), refusing, address)).toBe(false);
     expect(fake.records).toEqual([]);
+  });
+});
+
+describe('readInbox and the console’s reports (#490)', () => {
+  /** A keep in memory. */
+  function keepIn(): InboxKeep {
+    let held: KeptInbox | undefined;
+    return {
+      getStewardInbox: () => Promise.resolve(held),
+      keepStewardInbox: (kept) => {
+        held = kept ?? undefined;
+        return Promise.resolve();
+      },
+    };
+  }
+
+  it('opens the inbox with the steward’s key, and the console lists what it found', async () => {
+    const fake = createFakeRelay();
+    const relay = createRelay({ fetch: fake.fetch });
+    const address = base64url(newSigningKeys().publicKey);
+    const id = base64url(new Uint8Array(32).fill(4));
+    await sendReport({ relay }, { address, id, clause: 'C2', note: 'Spam' });
+    const store = { ...keyStore(TEST_STEWARD_SECRET), ...keepIn() };
+    const shelf = createShelf({ fetch: createFakeShelf().fetch });
+
+    const queue = await readQueue(shelf, () => readInbox(store, relay));
+
+    const inbox = typeof queue === 'string' ? [] : queue.inbox;
+    expect(inbox).toMatchObject([{ kind: 'report', address, id, clause: 'C2', note: 'Spam' }]);
+    expect(store.secret).toEqual(TEST_STEWARD_SECRET);
+  });
+
+  it('reads nothing on a device without the key, and fails the console when the inbox can’t be read', async () => {
+    const fake = createFakeRelay();
+    const relay = createRelay({ fetch: fake.fetch });
+    const store = { ...keyStore(), ...keepIn() };
+    expect(await readInbox(store, relay)).toEqual([]);
+    expect(fake.requests).toEqual([]);
+
+    fake.offline = true;
+    const keyed = { ...keyStore(TEST_STEWARD_SECRET), ...keepIn() };
+    const shelf = createShelf({ fetch: createFakeShelf().fetch });
+    expect(await readQueue(shelf, () => readInbox(keyed, relay))).toBe('failed');
   });
 });

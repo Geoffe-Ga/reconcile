@@ -109,7 +109,7 @@ describe('The public shelf on Discover through the app (#484)', { timeout: 60_00
       address,
       signShelfBody(door, { ...listing, skeleton: nameSkeleton(name), covenant }),
     );
-    await release(shelf, address);
+    await release(fake, address);
     await shelf.put(
       address,
       signShelfBody(door, {
@@ -189,8 +189,8 @@ describe('The public shelf on Discover through the app (#484)', { timeout: 60_00
   });
 
   it('shows a tombstone in place of an entry the steward upheld, naming its clause (#489)', async () => {
-    const { shelf, address, id } = await stockedShelf();
-    await notify(shelf, {
+    const { fake, shelf, address, id } = await stockedShelf();
+    await notify(fake, {
       v: 1,
       kind: 'notice',
       act: 'uphold',
@@ -214,8 +214,8 @@ describe('The public shelf on Discover through the app (#484)', { timeout: 60_00
   });
 
   it('hides the shelf, and an entry’s own page, behind the pause (#489)', async () => {
-    const { shelf, address, id } = await stockedShelf();
-    await notify(shelf, { v: 1, kind: 'notice', act: 'pause', on: true });
+    const { fake, shelf, address, id } = await stockedShelf();
+    await notify(fake, { v: 1, kind: 'notice', act: 'pause', on: true });
     const device = await testDevice(createFakeRelay(), 'Nobody');
     opened.push(device);
     const services = { ...device.services, shelf: readerOf(shelf, device) };
@@ -312,7 +312,7 @@ describe(
       const shelfFake = createFakeShelf();
       const shelf = createShelf({ fetch: shelfFake.fetch });
       await shelf.put(ADDRESS, listing);
-      await release(shelf, ADDRESS);
+      await release(shelfFake, ADDRESS);
       await shelf.put(ADDRESS, entry);
       const listedAt = shelfFake.minute;
       shelfFake.minute += 1440;

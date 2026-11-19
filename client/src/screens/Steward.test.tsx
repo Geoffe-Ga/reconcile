@@ -1,12 +1,14 @@
-/** The steward's console (#488, #489; listed-doors.md §6.4). */
+/** The steward's console (#488, #489, #490; listed-doors.md §6.4). */
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import { messages } from '../app/messages';
-import { COVENANT_HASH } from '../shelf/covenant';
+import { CLAUSE_WORDS, COVENANT_HASH } from '../shelf/covenant';
 import type { ShelfEntry, ShelfListing, StandingHold, WaitingListing } from '../shelf/fold';
-import type { NoticeBody } from '../shelf/record';
+import type { InboxItem } from '../shelf/inbox';
+import type { NoticeRemoval } from '../shelf/notices';
+import type { NoticeDraft } from '../shelf/record';
 import { axeViolations } from '../test/axe';
 import { Steward, type StewardQueue, type StewardView } from './Steward';
 
@@ -56,16 +58,19 @@ const viewOf = (fields: Partial<StewardView> = {}): StewardView => ({
   listings: [],
   entries: [],
   holds: [],
+  suspended: [],
   paused: false,
+  inbox: [],
   ...fields,
 });
 
 function setup(
   queue: StewardQueue,
-  onNotice = vi.fn<(notice: NoticeBody) => Promise<boolean>>(() => Promise.resolve(true)),
+  onNotice = vi.fn<(notice: NoticeDraft) => Promise<boolean>>(() => Promise.resolve(true)),
+  onDismiss = vi.fn<(key: string) => Promise<boolean>>(() => Promise.resolve(true)),
 ) {
-  render(<Steward queue={queue} onNotice={onNotice} />);
-  return { user: userEvent.setup(), onNotice };
+  render(<Steward queue={queue} onNotice={onNotice} onDismiss={onDismiss} />);
+  return { user: userEvent.setup(), onNotice, onDismiss };
 }
 
 /** The section headed `title`. */
@@ -249,5 +254,173 @@ describe('Steward: hold, uphold, suspend and pause (#489)', () => {
 
     await user.click(within(pause).getByRole('button', { name: words.resume }));
     expect(onNotice).toHaveBeenCalledWith({ v: 1, kind: 'notice', act: 'pause', on: false });
+  });
+});
+
+describe('Steward: reports and appeals (#490)', () => {
+  const report: InboxItem = {
+    key: 'r',
+    kind: 'report',
+    seq: 5,
+    received: 29_000_010,
+    address: ELM,
+    id: ID,
+    clause: 'C3',
+    note: 'Not the real co-op',
+  };
+  const appeal: InboxItem = {
+    key: 'a',
+    kind: 'appeal',
+    seq: 6,
+    received: 29_000_020,
+    address: OAK,
+    id: null,
+    clause: null,
+    note: 'We are Oak St.',
+  };
+  const gone: InboxItem = {
+    ...report,
+    key: 'g',
+    seq: 4,
+    received: 29_000_000,
+    id: 'G'.repeat(43),
+    note: null,
+  };
+
+  it('lists each beside what it names, in the order given, newest first, and passes axe', async () => {
+    setup(
+      viewOf({
+        listings: [listingOf('Elm Co-op', ELM)],
+        entries: [ENTRY],
+        holds: [HOLD],
+        inbox: [appeal, report, gone],
+      }),
+    );
+
+    const items = within(section(words.inboxHeading)).getAllByRole('listitem');
+    const [first, second, third] = items;
+    if (first === undefined || second === undefined || third === undefined) {
+      throw new Error('three items');
+    }
+    expect(within(first).getByRole('heading', { name: words.appealOf })).toBeVisible();
+    expect(within(first).getByText(words.aboutListing('Oak St Tenants'))).toBeVisible();
+    expect(within(first).getByText('We are Oak St.')).toBeVisible();
+    expect(within(first).getByRole('button', { name: words.suspend })).toBeVisible();
+    expect(
+      within(second).getByRole('heading', {
+        name: words.reportOf('impersonation of another group or person'),
+      }),
+    ).toBeVisible();
+    expect(within(second).getByText(words.aboutEntry('Rent strike vote'))).toBeVisible();
+    expect(within(second).getByText('Thursday.')).toBeVisible();
+    expect(within(second).getByText('Not the real co-op')).toBeVisible();
+    expect(within(second).getByRole('button', { name: words.uphold })).toBeVisible();
+    expect(within(third).getByText(words.aboutGone)).toBeVisible();
+    expect(
+      within(third)
+        .getAllByRole('button')
+        .map((b) => b.textContent),
+    ).toEqual([words.dismiss]);
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('holds the entry a report names, under the clause it names', async () => {
+    const { user, onNotice } = setup(viewOf({ entries: [ENTRY], inbox: [report] }));
+    const [item] = within(section(words.inboxHeading)).getAllByRole('listitem');
+    if (item === undefined) throw new Error('one item');
+
+    await user.click(within(item).getByRole('button', { name: words.hold }));
+
+    expect(onNotice).toHaveBeenCalledWith({
+      v: 1,
+      kind: 'notice',
+      act: 'hold',
+      address: ELM,
+      id: ID,
+      clause: 'C3',
+    });
+  });
+
+  it('says when there are none', () => {
+    setup(viewOf());
+    expect(within(section(words.inboxHeading)).getByText(words.noInbox)).toBeVisible();
+  });
+
+  it('dismisses an item: it leaves the queue once kept, and nothing is sent', async () => {
+    const { user, onNotice, onDismiss } = setup(viewOf({ inbox: [appeal, report] }));
+    const [first] = within(section(words.inboxHeading)).getAllByRole('listitem');
+    if (first === undefined) throw new Error('two items');
+
+    await user.click(within(first).getByRole('button', { name: words.dismiss }));
+
+    expect(onDismiss).toHaveBeenCalledWith('a');
+    expect(onNotice).not.toHaveBeenCalled();
+    const left = within(section(words.inboxHeading)).getAllByRole('listitem');
+    expect(left).toHaveLength(1);
+    expect(within(section(words.inboxHeading)).queryByText('We are Oak St.')).toBeNull();
+  });
+
+  it('keeps an item whose dismissal wasn’t kept, and says so', async () => {
+    const { user } = setup(
+      viewOf({ inbox: [appeal] }),
+      undefined,
+      vi.fn(() => Promise.resolve(false)),
+    );
+
+    await user.click(screen.getByRole('button', { name: words.dismiss }));
+
+    expect(screen.getByText('We are Oak St.')).toBeVisible();
+    expect(screen.getByText(words.dismissFailed)).toBeVisible();
+  });
+
+  it('says when every item was dismissed', async () => {
+    const { user } = setup(viewOf({ inbox: [appeal] }));
+
+    await user.click(screen.getByRole('button', { name: words.dismiss }));
+
+    expect(within(section(words.inboxHeading)).getByText(words.noInbox)).toBeVisible();
+  });
+
+  it('offers to lift the suspension an appeal names, saying what readers will see', async () => {
+    const { user, onNotice } = setup(viewOf({ inbox: [appeal], suspended: [SUSPENDED] }));
+    const [item] = within(section(words.inboxHeading)).getAllByRole('listitem');
+    if (item === undefined) throw new Error('one item');
+
+    expect(within(item).getByText(words.aboutSuspended(CLAUSE_WORDS.C2))).toBeVisible();
+    expect(within(item).getByText(words.willSeeLift(CLAUSE_WORDS.C2))).toBeVisible();
+    expect(within(item).queryByRole('button', { name: words.suspend })).toBeNull();
+    await user.click(within(item).getByRole('button', { name: words.lift }));
+
+    expect(onNotice).toHaveBeenCalledWith({ v: 1, kind: 'notice', act: 'unsuspend', address: OAK });
+  });
+});
+
+const SUSPENDED: NoticeRemoval = {
+  address: OAK,
+  id: null,
+  clause: 'C2',
+  seq: 7,
+  received: 29_000_000,
+};
+
+describe('Steward: suspensions (#490)', () => {
+  it('lists each suspension that stands, with Lift the suspension and what readers will see, and passes axe', async () => {
+    const { user, onNotice } = setup(viewOf({ suspended: [SUSPENDED] }));
+    const [card] = within(section(words.suspendedHeading)).getAllByRole('listitem');
+    if (card === undefined) throw new Error('one suspension');
+
+    expect(within(card).getByText(words.removedFor(CLAUSE_WORDS.C2))).toBeVisible();
+    expect(within(card).getByText(words.addressOf(OAK.slice(0, 8)))).toBeVisible();
+    expect(within(card).getByText(words.willSeeLift(CLAUSE_WORDS.C2))).toBeVisible();
+    expect(await axeViolations()).toEqual([]);
+    await user.click(within(card).getByRole('button', { name: words.lift }));
+
+    expect(onNotice).toHaveBeenCalledWith({ v: 1, kind: 'notice', act: 'unsuspend', address: OAK });
+    expect(within(card).getByText(words.lifted)).toBeVisible();
+  });
+
+  it('says when nothing is suspended', () => {
+    setup(viewOf());
+    expect(within(section(words.suspendedHeading)).getByText(words.noSuspended)).toBeVisible();
   });
 });

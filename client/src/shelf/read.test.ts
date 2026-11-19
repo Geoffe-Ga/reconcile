@@ -33,7 +33,7 @@ async function stocked() {
       covenant: COVENANT,
     }),
   );
-  await release(shelf, ADDRESS);
+  await release(fake, ADDRESS);
   await shelf.put(
     ADDRESS,
     signShelfBody(door, { v: 1, kind: 'entry', id: ID, title: 'Rent strike vote', text: '' }),

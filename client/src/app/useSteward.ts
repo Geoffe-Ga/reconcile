@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 
 import type { Shelf } from '../net/shelf';
 import type { StewardQueue } from '../screens/Steward';
+import type { InboxItem } from '../shelf/inbox';
 import { STEWARD_PINS } from '../shelf/steward';
 import { STEWARD_CHANGED, type Store } from '../store/db';
 import { useShelfRead } from './usePublicShelf';
@@ -62,8 +63,15 @@ export function useOffersStewardKey(
   return read === undefined ? undefined : true;
 }
 
-/** The console's queue once read, null until then; `reload` reads it again. */
-export function useStewardQueue(shelf: Pick<Shelf, 'read' | 'readHeld'> | undefined): {
+/**
+ * The console's queue once read, with the reports and appeals `inbox` reads
+ * (#490), null until then; `reload` reads it again. `inbox` should keep its
+ * identity across renders, or the queue is read again each time.
+ */
+export function useStewardQueue(
+  shelf: Pick<Shelf, 'read' | 'readHeld'> | undefined,
+  inbox?: () => Promise<readonly InboxItem[]>,
+): {
   readonly queue: StewardQueue | null;
   readonly reload: () => void;
 } {
@@ -72,14 +80,14 @@ export function useStewardQueue(shelf: Pick<Shelf, 'read' | 'readHeld'> | undefi
   useEffect(() => {
     let live = true;
     const reading =
-      shelf === undefined ? Promise.resolve('unavailable' as const) : readQueue(shelf);
+      shelf === undefined ? Promise.resolve('unavailable' as const) : readQueue(shelf, inbox);
     void reading.then((answer) => {
       if (live) setQueue(answer);
     });
     return () => {
       live = false;
     };
-  }, [shelf, round]);
+  }, [shelf, inbox, round]);
   return {
     queue,
     reload: () => {

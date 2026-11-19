@@ -5,6 +5,8 @@
  * back only when it names exactly what its act names: a release an address;
  * a hold an address, a clause and maybe an entry; an uphold an address, an
  * entry and a clause; a suspend an address and a clause; and a pause `on`.
+ * Every notice ends with its stamp, `day` and `n` (#490's review), and reads
+ * back only with both: a whole day number and a 16-byte nonce.
  */
 import { describe, expect, it } from 'vitest';
 
@@ -39,8 +41,12 @@ const FINAL: ShelfBody = { v: 1, kind: 'listing', open: false, final: true };
 const ENTRY: ShelfBody = { v: 1, kind: 'entry', id: ID, title: 'Rent strike vote', text: '' };
 const WITHDRAW: ShelfBody = { v: 1, kind: 'withdraw', id: ID };
 const ADDRESS = base64url(new Uint8Array(32).fill(3));
-const RELEASE: ShelfBody = { v: 1, kind: 'notice', act: 'release', address: ADDRESS };
-const NOTICE = { v: 1, kind: 'notice' } as const;
+const DAY = 20_776;
+const NONCE = base64url(new Uint8Array(16).fill(6));
+const STAMP = { day: DAY, n: NONCE } as const;
+const TAIL = `"day":${String(DAY)},"n":"${NONCE}"`;
+const RELEASE: ShelfBody = { v: 1, kind: 'notice', act: 'release', address: ADDRESS, ...STAMP };
+const NOTICE = { v: 1, kind: 'notice', ...STAMP } as const;
 
 describe('encodeShelfBody', () => {
   it('writes each kind as compact JSON with its keys in the spec’s order', () => {
@@ -53,21 +59,33 @@ describe('encodeShelfBody', () => {
     );
     expect(text(encodeShelfBody(WITHDRAW))).toBe(`{"v":1,"kind":"withdraw","id":"${ID}"}`);
     expect(text(encodeShelfBody(RELEASE))).toBe(
-      `{"v":1,"kind":"notice","act":"release","address":"${ADDRESS}"}`,
+      `{"v":1,"kind":"notice","act":"release","address":"${ADDRESS}",${TAIL}}`,
     );
   });
 
-  it('writes a notice’s fields in the spec’s order, leaving out those it lacks', () => {
-    const uphold = { clause: 'C2', id: ID, address: ADDRESS, act: 'uphold', kind: 'notice', v: 1 };
-    expect(text(encodeShelfBody(uphold as ShelfBody))).toBe(
-      `{"v":1,"kind":"notice","act":"uphold","address":"${ADDRESS}","id":"${ID}","clause":"C2"}`,
+  it('writes a notice’s fields in the spec’s order, leaving out those it lacks, its stamp last', () => {
+    const uphold = { n: NONCE, day: DAY, clause: 'C2', id: ID, address: ADDRESS, act: 'uphold' };
+    expect(text(encodeShelfBody({ ...uphold, kind: 'notice', v: 1 } as ShelfBody))).toBe(
+      `{"v":1,"kind":"notice","act":"uphold","address":"${ADDRESS}","id":"${ID}","clause":"C2",${TAIL}}`,
     );
-    const hold = { clause: 'C3', address: ADDRESS, act: 'hold', kind: 'notice', v: 1 };
-    expect(text(encodeShelfBody(hold as ShelfBody))).toBe(
-      `{"v":1,"kind":"notice","act":"hold","address":"${ADDRESS}","clause":"C3"}`,
+    const hold = {
+      n: NONCE,
+      day: DAY,
+      clause: 'C3',
+      address: ADDRESS,
+      act: 'hold',
+      kind: 'notice',
+    };
+    expect(text(encodeShelfBody({ ...hold, v: 1 } as ShelfBody))).toBe(
+      `{"v":1,"kind":"notice","act":"hold","address":"${ADDRESS}","clause":"C3",${TAIL}}`,
     );
-    expect(text(encodeShelfBody({ on: false, act: 'pause', kind: 'notice', v: 1 }))).toBe(
-      '{"v":1,"kind":"notice","act":"pause","on":false}',
+    const lift = { n: NONCE, day: DAY, address: ADDRESS, act: 'unsuspend', kind: 'notice', v: 1 };
+    expect(text(encodeShelfBody(lift as ShelfBody))).toBe(
+      `{"v":1,"kind":"notice","act":"unsuspend","address":"${ADDRESS}",${TAIL}}`,
+    );
+    const pause = { n: NONCE, day: DAY, on: false, act: 'pause', kind: 'notice', v: 1 } as const;
+    expect(text(encodeShelfBody(pause))).toBe(
+      `{"v":1,"kind":"notice","act":"pause","on":false,${TAIL}}`,
     );
   });
 
@@ -90,9 +108,10 @@ describe('parseShelfBody', () => {
     ['a hold of an address', { ...NOTICE, act: 'hold', address: ADDRESS, clause: 'C3' }],
     ['an uphold', { ...NOTICE, act: 'uphold', address: ADDRESS, id: ID, clause: 'C1' }],
     ['a suspend', { ...NOTICE, act: 'suspend', address: ADDRESS, clause: 'C3' }],
+    ['an unsuspend', { ...NOTICE, act: 'unsuspend', address: ADDRESS }],
     ['a pause', { ...NOTICE, act: 'pause', on: true }],
     ['the end of a pause', { ...NOTICE, act: 'pause', on: false }],
-  ] as const)('reads back %s (#489)', (_name, body) => {
+  ] as const)('reads back %s (#489, #490)', (_name, body) => {
     expect(parseShelfBody(json(body))).toEqual(body);
     expect(parseShelfBody(encodeShelfBody(body))).toEqual(body);
   });
@@ -125,9 +144,22 @@ describe('parseShelfBody', () => {
     ['an uphold naming no entry', json({ ...RELEASE, act: 'uphold', clause: 'C1' })],
     ['a suspend naming an entry', json({ ...RELEASE, act: 'suspend', id: ID, clause: 'C1' })],
     ['a suspend naming no address', json({ ...NOTICE, act: 'suspend', clause: 'C1' })],
+    ['an unsuspend naming no address', json({ ...NOTICE, act: 'unsuspend' })],
+    ['an unsuspend naming a clause', json({ ...RELEASE, act: 'unsuspend', clause: 'C1' })],
     ['a pause with no on', json({ ...NOTICE, act: 'pause' })],
     ['a pause whose on isn’t true or false', json({ ...NOTICE, act: 'pause', on: 1 })],
     ['a pause naming an address', json({ ...RELEASE, act: 'pause', on: true })],
+    ['a notice with no day (#490’s review)', json({ ...RELEASE, day: undefined })],
+    ['a notice with no nonce', json({ ...RELEASE, n: undefined })],
+    ['a notice with neither', json({ v: 1, kind: 'notice', act: 'release', address: ADDRESS })],
+    ['a day that isn’t a number', json({ ...RELEASE, day: String(DAY) })],
+    ['a day that isn’t whole', json({ ...RELEASE, day: DAY + 0.5 })],
+    ['a day before 1970', json({ ...RELEASE, day: -1 })],
+    ['a day too large to count', json({ ...RELEASE, day: 2 ** 53 })],
+    ['a nonce of 15 bytes', json({ ...RELEASE, n: base64url(new Uint8Array(15)) })],
+    ['a nonce of 32 bytes', json({ ...RELEASE, n: ID })],
+    ['a nonce with a spare bit set', json({ ...RELEASE, n: 'AAAAAAAAAAAAAAAAAAAAAB' })],
+    ['a nonce that isn’t text', json({ ...RELEASE, n: 7 })],
     ['an unknown kind', json({ ...WITHDRAW, kind: 'pitch' })],
     ['a key too many', json({ ...LISTING, author: 'Ana' })],
     ['a key too few', json({ v: 1, kind: 'listing', open: true, name: 'Oak' })],

@@ -63,3 +63,7 @@ The founder weighed gates that would prevent these (a steward's list, proof of w
 - **A listing ends when a membership ends,** as a door does (ADR-0038's amendment of 2026-11-12). Relisting takes a new vote and a new address, and the name is unprotected in between. The steward resolves that by hand during the pilot.
 - **The steward's key is one key on one device during the pilot.** A thief could hold or remove entries until it is rotated by an app release.
 - #427 closes with this ADR. #430, #431, #432 and #434 are rewritten to match.
+
+## Amendment (2026-11-19): steward notices can't be replayed
+
+#516's review found that a steward notice's signed bytes were the same every time and public on `GET /v1/shelf`, so anyone could replay an old notice: an old lift after a new suspension, an old suspension after a lift, an old hold or release. Every notice now carries the UTC day it was signed (`day`) and a 16-byte random nonce (`n`), both signed. The relay refuses a notice whose day is not today or yesterday (`400 stale_notice`) or whose nonce it has already stored (`409 replayed_notice`), and devices apply the same day window, against each notice's receipt, and count only the first notice with each nonce. The relay remembers spent nonces in a table of its own, `notice_nonces(n, expiry)`, holding only the public nonce and a day, purged two days after the notice's day. That is the one storage this amendment adds. The format change is safe because no notice has ever been live: production pins are null.
