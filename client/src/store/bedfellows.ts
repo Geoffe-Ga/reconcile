@@ -35,9 +35,17 @@
  * until the next sweep under an honest clock.
  *
  * **Marks** are private: never shown to anyone, counted or sent. A mark
- * nudges the dial one step (#479's `nudge`): Common ground out, Too far in.
+ * nudges the dial one step (#479's `nudge`): Common ground out, Too far in,
+ * but at most once a view (the founder's decision of 2026-11-19, after
+ * #481's year found a reader who marks every strange entry Too far pulled
+ * back to the dial's start, a step for each mark). A view is one
+ * {@link BedfellowsHistory.open}: the first mark after it that nudges spends
+ * the view's nudge, and later marks until the next open are kept without
+ * moving the dial. The count lives in the session's memory, not the sealed
+ * slot, so reopening Bedfellows (or reloading the page) starts a new view.
  * An entry marked Too far goes to the pipeline as one to leave out. Taking a
- * mark back leaves the dial where it is. Nothing else is ever a signal: not
+ * mark back, or marking the same way again, leaves the dial where it is and
+ * the view's nudge unspent. Nothing else is ever a signal: not
  * time spent, opening an entry, Ask to join, Propose reconciling, votes,
  * membership or follows.
  */
@@ -252,6 +260,7 @@ export interface BedfellowsHistory {
   /**
    * Bedfellows opens on a shelf of `shelf`'s entry ids: forget what expired or
    * left it, step the dial for this week (#479), and read the view's inputs.
+   * Each open starts a new view, with one nudge for its marks to spend.
    *
    * @throws {VaultLocked} on a device with a vault this session hasn't opened.
    */
@@ -260,7 +269,11 @@ export interface BedfellowsHistory {
   read(): Promise<HistoryView>;
   /** The view showed `ids`: each not yet recorded is, as first shown today. */
   showed(ids: readonly string[]): Promise<void>;
-  /** Mark `id` (recording it as shown today if it isn't), nudging the dial; null takes a mark back. */
+  /**
+   * Mark `id` (recording it as shown today if it isn't); null takes a mark
+   * back. A new mark nudges the dial if it's the first to since the last
+   * {@link BedfellowsHistory.open}: at most one nudge a view.
+   */
   mark(id: string, mark: Mark | null): Promise<void>;
   /** The reader moves the dial to `step`. */
   setDial(step: number): Promise<void>;
@@ -325,10 +338,9 @@ function withMark(
     : shown.map((entry) => (entry === held ? record : entry));
 }
 
-/** The dial after `mark` replaces `before` on an entry: a new mark nudges, a taken-back one doesn't. */
-function dialAfter(dial: number, before: Mark | undefined, mark: Mark | null): number {
-  if (mark === null || mark === before) return dial;
-  return nudge(dial, mark === 'common-ground' ? 'out' : 'in');
+/** Whether `mark` replacing `before` on an entry nudges: a new mark does, a taken-back or repeated one doesn't. */
+function nudges(before: Mark | undefined, mark: Mark | null): mark is Mark {
+  return mark !== null && mark !== before;
 }
 
 /**
@@ -355,6 +367,8 @@ export function createBedfellowsHistory(
   const random = options.random ?? randomBytes;
   let state: BedfellowsState | null = null;
   let dirty = false;
+  /** Whether a mark has nudged the dial since the last open: at most one nudge a view. */
+  let nudged = false;
 
   const stop = store.subscribe((changed) => {
     if (changed !== BEDFELLOWS_CLEARED) return;
@@ -385,6 +399,7 @@ export function createBedfellowsHistory(
 
   return {
     async open(shelf) {
+      nudged = false;
       await sweep(shelf);
       const current = await held();
       const stepped = stepFor(current, weekOf(dateOf(now())));
@@ -405,11 +420,12 @@ export function createBedfellowsHistory(
     async mark(id, mark) {
       const current = await held();
       const before = current.shown.find((entry) => entry.id === id)?.mark;
-      change({
-        ...current,
-        dial: dialAfter(current.dial, before, mark),
-        shown: withMark(current.shown, id, mark, today()),
-      });
+      let dial = current.dial;
+      if (!nudged && nudges(before, mark)) {
+        nudged = true;
+        dial = nudge(dial, mark === 'common-ground' ? 'out' : 'in');
+      }
+      change({ ...current, dial, shown: withMark(current.shown, id, mark, today()) });
     },
     async setDial(step) {
       change({ ...(await held()), dial: setDial(step) });

@@ -241,17 +241,62 @@ describe('the session’s history (#480)', () => {
   it('nudges the dial out for common ground and in for too far, one step each, never past an end', async () => {
     const { store } = fakeStore({ held: { ...EMPTY_HISTORY, dial: 2, seed: 9 } });
     const history = createBedfellowsHistory(store, { now: testClock().now });
+    await history.open(SHELF);
     await history.mark('e1', 'common-ground');
     expect((await history.read()).dial).toBe(3);
+    await history.open(SHELF);
     await history.mark('e2', 'too-far');
+    await history.open(SHELF);
     await history.mark('e3', 'too-far');
     expect((await history.read()).dial).toBe(1);
     await history.setDial(TOP);
+    await history.open(SHELF);
     await history.mark('e4', 'common-ground');
     expect((await history.read()).dial).toBe(TOP);
     await history.resetDial();
+    await history.open(SHELF);
     await history.mark('e1', 'too-far');
     expect((await history.read()).dial).toBe(0);
+  });
+
+  it('nudges the dial at most once a view: the first new mark of a view moves it, later marks in that view don’t', async () => {
+    const { store } = fakeStore({ held: { ...EMPTY_HISTORY, dial: 4, seed: 9 } });
+    const history = createBedfellowsHistory(store, { now: testClock().now });
+    await history.open(SHELF);
+    await history.mark('e1', 'too-far');
+    await history.mark('e2', 'too-far');
+    await history.mark('e3', 'common-ground');
+    await history.mark('e4', 'too-far');
+    const view = await history.read();
+    expect(view.dial).toBe(3);
+    expect(view.leaveOut).toEqual(['e1', 'e2', 'e4']);
+    expect(view.marks.get('e3')).toBe('common-ground');
+    await history.open(SHELF);
+    await history.mark('e4', 'common-ground');
+    await history.mark('e2', 'common-ground');
+    await history.mark('e1', 'common-ground');
+    expect((await history.read()).dial).toBe(4);
+  });
+
+  it('spends a view’s nudge only on a mark that nudges: a taken-back or repeated mark leaves it for the next', async () => {
+    const { store } = fakeStore({
+      held: {
+        ...EMPTY_HISTORY,
+        dial: 4,
+        seed: 9,
+        shown: [
+          { id: 'e1', day: START_DAY, mark: 'too-far' },
+          { id: 'e2', day: START_DAY, mark: 'common-ground' },
+        ],
+      },
+    });
+    const history = createBedfellowsHistory(store, { now: testClock().now });
+    await history.open(SHELF);
+    await history.mark('e1', null);
+    await history.mark('e2', 'common-ground');
+    expect((await history.read()).dial).toBe(4);
+    await history.mark('e3', 'too-far');
+    expect((await history.read()).dial).toBe(3);
   });
 
   it('takes a mark back without moving the dial, and a taken-back too far is shown again', async () => {
