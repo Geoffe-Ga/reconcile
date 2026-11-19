@@ -246,7 +246,13 @@ Its actions are the six notices, and Dismiss on a report or appeal. Each asks fo
 - **It only flags.** A flag puts an entry in the console's queue. It hides nothing, and no reader sees it.
 - **It reads only shelf entries**, which are public, and only on the steward's device. It never runs on a group's sealed content (ADR-0020, as ADR-0081 clarifies).
 - **It makes no network call** beyond fetching its own model file from the app's origin.
-- **A spike decides the rest:** which model, how it runs under a CSP with no WebAssembly, which languages, and its measured error rate on political speech. The spike's ADR must exist before the classifier is built.
+- **Decided: [ADR-0082](../adr/0082-shelf-classifier.md)** (Accepted 2026-11-19). The spike (#492) measured three options on a 188-item written sample. None catches most calls for violence or veiled threats, and the ones that catch more flag counter-speech. The founder chose:
+  - **Build it now, behind a flag that stays off** until the trigger: before any group beyond the founder's is released (ADR-0081 §5). Turning it on needs a re-measure against the covenant's final clauses, labelled by at least two people. #493 builds it.
+  - **The small WebAssembly model** (MiniLMv2-toxic-jigsaw, about 23.6 MB) on #476's runtime, pinned in `modelPins.ts`. Only the steward's device fetches it. ADR-0080, which owns that runtime, has merged with #476.
+  - **A narrow rule:** `threat` or `identity_hate` ≥ 0.5.
+  - **A flag names the rule that fired and never reorders the queue.**
+  - **The test sample stays outside the repository.** #493's tests use a small fixture with no hateful text.
+- **What would make it client-side scanning** (ADR-0082): running on any other device, the author's included; reading anything sealed; sending a result off the device; acting with no person deciding; or matching a list supplied by someone outside Reconcile's governance.
 
 ## 7. Privacy rules
 
