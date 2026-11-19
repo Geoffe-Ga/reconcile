@@ -1,5 +1,5 @@
 import { useId, useState } from 'react';
-import { Link, SwitchButton, SwitchField } from 'react-aria-components';
+import { Button, Link, SwitchButton, SwitchField } from 'react-aria-components';
 
 import type { BackupToSave } from '../app/backup';
 import { EraseCard } from '../app/EraseCard';
@@ -89,6 +89,8 @@ export interface SettingsProps {
   readonly onRestore: RestoreBackupProps['onRestore'];
   /** Erases all of Reconcile's data on this device and reloads; rejects when it couldn't. */
   readonly onErase: () => Promise<void>;
+  /** Clears the Bedfellows history (#480); rejects when it couldn't, as while the vault is locked. */
+  readonly onClearBedfellows: () => Promise<void>;
   /** The passkey section (#95). */
   readonly passkey: SettingsPasskey;
   /** Where the relay backup stands (#97); nothing shows while the device keeps none. */
@@ -350,6 +352,49 @@ function PasskeySection({ passkey }: { readonly passkey: SettingsPasskey }) {
   );
 }
 
+/** Where Clear Bedfellows history stands. */
+type ClearState = 'idle' | 'clearing' | 'cleared' | 'failed';
+
+/**
+ * Clear Bedfellows history (#480; ADR-0080 §5): one line saying what it
+ * forgets, one quiet button, and a polite line once it has run. It shows on
+ * every device, used or not, so it says nothing about whether Bedfellows was
+ * ever opened.
+ */
+function ClearBedfellows({ onClear }: { readonly onClear: () => Promise<void> }) {
+  const [state, setState] = useState<ClearState>('idle');
+  const { bedfellowsHistory: words } = messages;
+  const clear = (): void => {
+    setState('clearing');
+    onClear().then(
+      () => {
+        setState('cleared');
+      },
+      () => {
+        setState('failed');
+      },
+    );
+  };
+  const line = state === 'cleared' ? words.cleared : state === 'failed' ? words.failed : null;
+  return (
+    <div className="stack">
+      <p className="lede">{words.lede}</p>
+      <div>
+        <Button
+          className="button button-secondary"
+          isDisabled={state === 'clearing'}
+          onPress={clear}
+        >
+          {state === 'clearing' ? words.clearing : words.clear}
+        </Button>
+      </div>
+      <p role="status" className="caption">
+        {line}
+      </p>
+    </div>
+  );
+}
+
 /**
  * Settings (`#/settings`; spec §8.12, #78, #95, #96, #99, #109):
  * Notifications, one switch per group, then Save a backup, with the relay
@@ -408,6 +453,9 @@ export function Settings(props: SettingsProps) {
             <StewardKeyCard steward={props.steward} />
           </Section>
         )}
+        <Section title={settings.bedfellowsHeading}>
+          <ClearBedfellows onClear={props.onClearBedfellows} />
+        </Section>
         <Section title={settings.eraseHeading}>
           <EraseCard onErase={props.onErase} />
         </Section>

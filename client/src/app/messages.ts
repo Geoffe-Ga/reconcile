@@ -1790,6 +1790,7 @@ export const messages = {
     restoreHeading: 'Restore a backup',
     linkHeading: 'Link a new device',
     passkeyHeading: 'Lock with a passkey',
+    bedfellowsHeading: 'Bedfellows',
     eraseHeading: 'Erase this device',
     stewardHeading: 'Steward key',
   },
@@ -1892,6 +1893,17 @@ export const messages = {
     lifted: 'Lifted. When its group posts its listing again, it waits here for your release.',
     willSeeLift: (clause: string) =>
       `Lift: readers no longer see “Removed: ${clause}”, and its door’s page no longer says its listing was removed. Its group may list again, and its listing waits for your release, as a new one does.`,
+  },
+  /**
+   * Settings' Clear Bedfellows history (#480; ADR-0080 §5): one line on what
+   * it forgets, and one quiet button. The history never leaves the device.
+   */
+  bedfellowsHistory: {
+    lede: 'Forgets which entries Bedfellows showed you on this device, how you marked them, and where its dial stands.',
+    clear: 'Clear Bedfellows history',
+    clearing: 'Clearing…',
+    cleared: 'Bedfellows history cleared.',
+    failed: 'Bedfellows history couldn’t be cleared. Reload Reconcile, then try again.',
   },
   // Passkey unlock (#95; ADR-0008, ADR-0030): offered once after the pilot
   // notice and always in Settings. iOS allows one passkey request per tap, so

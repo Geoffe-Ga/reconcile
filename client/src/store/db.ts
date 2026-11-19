@@ -64,7 +64,11 @@
  * first unlock after them. The person's recovery contacts (#109) are
  * another record in the device store, under its own key: the one place the
  * device lists them, which no backup file, link bundle or relay copy
- * carries. They hold no key, so they stay out of the vault.
+ * carries. They hold no key, so they stay out of the vault. The Bedfellows
+ * history (#480, `./bedfellows.ts`) is the vault store's other record: one
+ * slot sealed under the vault key, always 64 KiB, which every vault has from
+ * the start, so nothing about it sits in a plain record or shows on a
+ * locked device; a device with no vault keeps none.
  *
  * Once a decided Proposal's ballots expire (#111), `clearBallots` deletes
  * them, its other results and anything else that expires with them from the
@@ -76,6 +80,7 @@
 import { openDB } from 'idb';
 import type { DBSchema, IDBPDatabase, IDBPTransaction } from 'idb';
 
+import { openHistory, sealHistory } from '../crypto/history';
 import { MAX_RECORD_BYTES, RecordTooLarge } from '../crypto/record';
 import type { BotMoment } from '../engine/chatPosts';
 import type { Ceiling, Score } from '../engine/event';
@@ -91,6 +96,15 @@ import {
 } from './applications';
 import type { GroupState, LogRecord } from '../engine/fold';
 import type { TallyDetail } from '../engine/tally';
+import {
+  BEDFELLOWS_CLEARED,
+  type BedfellowsState,
+  decodeHistory,
+  EMPTY_HISTORY,
+  encodeHistory,
+  expireHistory,
+  type HistoryStore,
+} from './bedfellows';
 import { type Draft, draftIn, type DraftShelf, type DraftStore, withDraft } from './drafts';
 import { placedInLog } from './logOrder';
 import {
@@ -928,7 +942,15 @@ export interface Store
     ShelfCopyStore,
     StewardInboxStore,
     StewardKeyStore,
-    RemovalStore {
+    RemovalStore,
+    HistoryStore {
+  /**
+   * Forget each Bedfellows history record 30 days past its first day by the
+   * device clock's `now` (#480), as the store's other expiries run after each
+   * sync pass: one write, only when a record went. A device with no vault, or
+   * a locked one, has nothing this session may read, so it does nothing.
+   */
+  sweepBedfellows(now: number): Promise<void>;
   /** Every group on the device: never a coalition's entry (#114) or a room (#125). */
   listGroups(): Promise<Group[]>;
   /** Every coalition entry on the device (#114). */
@@ -1238,11 +1260,26 @@ type DeviceRecord =
   | KeptInbox
   | KeptRemovals;
 
+/**
+ * The Bedfellows history's slot in the vault store (#480): sealed under the
+ * vault key, always {@link HISTORY_SEALED_BYTES} long (`../crypto/history.ts`).
+ * Every vault has one, empty or not, so its being there says nothing.
+ */
+interface HistorySlot {
+  readonly id: typeof HISTORY_ID;
+  readonly sealed: Uint8Array;
+}
+
+/** The vault's own record in a vault store record, or undefined: only it names a credential. */
+function vaultIn(record: VaultRecord | HistorySlot | undefined): VaultRecord | undefined {
+  return record !== undefined && 'credentialId' in record ? record : undefined;
+}
+
 interface Schema extends DBSchema {
   groups: { key: string; value: StoredGroup };
   personal: { key: string; value: StoredDocument };
   device: { key: string; value: DeviceRecord };
-  vault: { key: string; value: VaultRecord };
+  vault: { key: string; value: VaultRecord | HistorySlot };
   sent: { key: string; value: StoredSent };
 }
 
@@ -1346,6 +1383,8 @@ const STEWARD_INBOX = 'steward-inbox';
 /** The device store's key for the removals record (#491): a key of its own, so no new version. */
 const REMOVALS = 'shelf-removals';
 const VAULT = 'vault';
+/** The vault store's key for the Bedfellows history's sealed slot (#480): beside the vault, so no new version. */
+const HISTORY_ID = 'history';
 const SENT = 'sent';
 
 /**
@@ -1731,8 +1770,11 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
     ...stewardKeyStore(db, session, () => {
       notify(STEWARD_CHANGED);
     }),
+    ...historyStore(db, session, () => {
+      notify(BEDFELLOWS_CLEARED);
+    }),
     async readVault() {
-      const vault = await db.get(VAULT, VAULT_ID);
+      const vault = vaultIn(await db.get(VAULT, VAULT_ID));
       return vault === undefined
         ? null
         : { credentialId: vault.credentialId, prfSalt: vault.prfSalt };
@@ -1754,6 +1796,8 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
           // The new vault is written once, already holding every key (#391).
           const empty = { groups: new Map(), records: new Map() };
           await keepKeysIn(tx, { vault: newVault(lock, key), keys: empty, key }, change);
+          // Every vault has the Bedfellows history's slot from the start, used or not (#480).
+          await tx.objectStore(VAULT).put(emptySlot(key));
         });
       } catch (error) {
         sealing.key?.fill(0);
@@ -1762,14 +1806,17 @@ export async function openStore(name = DATABASE_NAME): Promise<Store> {
       session.key = sealing.key;
     },
     async unlock(key) {
-      const vault = await db.get(VAULT, VAULT_ID);
+      const vault = vaultIn(await db.get(VAULT, VAULT_ID));
       const check = vault === undefined ? null : openKeys(vault, key);
       if (check === null) return false;
       // Opened only to check the key, so zeroed at once, best effort (#391).
       zeroVaultKeys(check);
       const opening: Session = { key: Uint8Array.from(key) };
       try {
-        await writeKeys(db, (tx) => sealPlain(tx, opening));
+        await writeKeys(db, async (tx) => {
+          await sealPlain(tx, opening);
+          await slotFor(tx, key);
+        });
       } catch (error) {
         opening.key?.fill(0);
         throw error;
@@ -2455,7 +2502,7 @@ async function vaultKeys<Mode extends IDBTransactionMode>(
   tx: IDBPTransaction<Schema, Stores, Mode>,
   session: Session,
 ): Promise<OpenedVault | null> {
-  return opened(await tx.objectStore(VAULT).get(VAULT_ID), session);
+  return opened(vaultIn(await tx.objectStore(VAULT).get(VAULT_ID)), session);
 }
 
 /**
@@ -2534,7 +2581,7 @@ async function readWhole(
   // A record holds its own keys exactly when the device has no vault, so a
   // plain device reads as it always has, and the vault is read only when needed.
   const plain = read.every((record) => record === undefined || hasKeys(record));
-  const keys = plain ? null : opened(await tx.objectStore(VAULT).get(VAULT_ID), session);
+  const keys = plain ? null : opened(vaultIn(await tx.objectStore(VAULT).get(VAULT_ID)), session);
   return read.flatMap((record) => (record === undefined ? [] : [wholeGroup(record, keys)]));
 }
 
@@ -3027,4 +3074,100 @@ function inSeqOrder(log: readonly LogRecord[], added: readonly LogRecord[]): Log
 /** True when `a` and `b` hold the same bytes. */
 export function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
   return a.length === b.length && a.every((byte, i) => byte === b[i]);
+}
+
+/** The Bedfellows history's slot holding `plaintext`, sealed under the vault `key` (#480). */
+function slotOf(key: Uint8Array, plaintext: Uint8Array): HistorySlot {
+  return { id: HISTORY_ID, sealed: sealHistory(key, plaintext) };
+}
+
+/** An empty Bedfellows history's slot, sealed under the vault `key` (#480). */
+function emptySlot(key: Uint8Array): HistorySlot {
+  return slotOf(key, encodeHistory(EMPTY_HISTORY));
+}
+
+/**
+ * Gives a vault that has none an empty Bedfellows history's slot, as one
+ * sealed before #480 lacks (#480): written at its first unlock after, so
+ * every vault has one whether Bedfellows was opened or not.
+ */
+async function slotFor(tx: KeyTransaction, key: Uint8Array): Promise<void> {
+  const slots = tx.objectStore(VAULT);
+  if ((await slots.getKey(HISTORY_ID)) === undefined) await slots.put(emptySlot(key));
+}
+
+/**
+ * The vault key this session may seal the Bedfellows history under, read
+ * inside `tx`, or null when the device has no vault.
+ *
+ * @throws {VaultLocked} when it has one this session hasn't opened.
+ */
+async function historyKey<Mode extends IDBTransactionMode>(
+  tx: IDBPTransaction<Schema, [typeof VAULT], Mode>,
+  session: Session,
+): Promise<Uint8Array | null> {
+  if ((await tx.objectStore(VAULT).getKey(VAULT_ID)) === undefined) return null;
+  if (session.key === null) throw new VaultLocked();
+  return session.key;
+}
+
+/** The history `slot` holds under `key`: empty when there's none, or it doesn't open or check out. */
+function historyIn(slot: VaultRecord | HistorySlot | undefined, key: Uint8Array): BedfellowsState {
+  const sealed = slot !== undefined && !('credentialId' in slot) ? slot.sealed : undefined;
+  const plaintext = sealed === undefined ? null : openHistory(key, sealed);
+  const state = plaintext === null ? null : decodeHistory(plaintext);
+  plaintext?.fill(0);
+  return state ?? EMPTY_HISTORY;
+}
+
+/**
+ * The Bedfellows history (#480; `./bedfellows.ts`): one sealed slot beside
+ * the vault, read and written only under this session's vault key, in the
+ * vault store alone. Nothing about it sits in a plain record, no snapshot
+ * reads the vault store, and Restore's `replaceGroups` clears that store, so
+ * the history never leaves the device and a restored one starts without it.
+ * `cleared` hears each clear.
+ */
+function historyStore(
+  db: IDBPDatabase<Schema>,
+  session: Session,
+  cleared: () => void,
+): Omit<HistoryStore, 'subscribe'> & Pick<Store, 'sweepBedfellows'> {
+  /** Seals `state` into the slot, in place of what it held: false without a vault. */
+  const keep = async (state: BedfellowsState): Promise<boolean> => {
+    const plaintext = encodeHistory(state);
+    try {
+      // A refusal throws before any write, so the transaction commits nothing.
+      const tx = db.transaction(VAULT, 'readwrite');
+      const key = await historyKey(tx, session);
+      if (key !== null) await tx.objectStore(VAULT).put(slotOf(key, plaintext));
+      await tx.done;
+      return key !== null;
+    } finally {
+      plaintext.fill(0);
+    }
+  };
+  return {
+    async readBedfellows() {
+      const tx = db.transaction(VAULT);
+      const key = await historyKey(tx, session);
+      return key === null ? null : historyIn(await tx.objectStore(VAULT).get(HISTORY_ID), key);
+    },
+    keepBedfellows: keep,
+    async clearBedfellows() {
+      await keep(EMPTY_HISTORY);
+      cleared();
+    },
+    async sweepBedfellows(now) {
+      // Without the key, the device has no vault or a locked one: nothing to sweep either way.
+      const { key } = session;
+      if (key === null) return;
+      const tx = db.transaction(VAULT, 'readwrite');
+      const slots = tx.objectStore(VAULT);
+      const held = historyIn(await slots.get(HISTORY_ID), key);
+      const swept = expireHistory(held, now);
+      if (swept !== held) await slots.put(slotOf(key, encodeHistory(swept)));
+      await tx.done;
+    },
+  };
 }

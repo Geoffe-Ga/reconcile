@@ -253,6 +253,7 @@ Build on **React Aria Components** (unstyled, accessible). Style everything from
   - Each switch is a card on `surface` with a `hairline` border, and a tap anywhere on it toggles it. The track sits at the row's end, at least a 44px target with the card.
   - Off: a `muted` ring with a `muted` thumb at the start. On: the track fills `primary` and the thumb, in `surface`, moves to the end, so the state never rests on color alone.
   - Why one didn't turn on ("Notifications are blocked…", "This device can't get notifications…") is one line in `body`, never an alert color.
+- **Clear Bedfellows history** (Settings, #480): under the heading "Bedfellows", one line in body saying what it forgets (which entries Bedfellows showed, how they were marked, and where its dial stands), then Clear Bedfellows history (secondary). Once it runs, one polite line (caption) says it was cleared, or that it couldn't be. No confirm, no count of what it held, and it shows on every device, used or not.
 - **Erase card** (Settings): one card, "Erase Reconcile from this device", in the same calm style as any setting.
   - It reveals a press-and-hold confirm. Releasing early cancels, and a polite live region announces the progress.
   - `negative` appears only on that final confirm.

@@ -22,6 +22,7 @@ function setup(props: Partial<SettingsProps> = {}) {
       Promise.resolve({ groups: 1, skipped: 0, skippedDocuments: 0, older: false }),
     ),
     onErase: vi.fn(() => new Promise<void>(() => undefined)),
+    onClearBedfellows: vi.fn(() => Promise.resolve()),
     passkey: {
       state: 'offered',
       path: 'backup',
@@ -57,6 +58,37 @@ describe('Settings', () => {
     expect(await axeViolations()).toEqual([]);
   });
 
+  it('clears the Bedfellows history from one quiet button under one line saying what it forgets (#480)', async () => {
+    const { user, onClearBedfellows } = setup();
+    const section = screen.getByRole('region', { name: 'Bedfellows' });
+    expect(within(section).getByText(messages.bedfellowsHistory.lede)).toBeVisible();
+    const clear = within(section).getByRole('button', { name: 'Clear Bedfellows history' });
+    expect(clear).toHaveClass('button-secondary');
+    await user.click(clear);
+    expect(onClearBedfellows).toHaveBeenCalledTimes(1);
+    expect(await within(section).findByRole('status')).toHaveTextContent(
+      'Bedfellows history cleared.',
+    );
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('says so in a line when the Bedfellows history couldn’t be cleared, and lets the reader try again (#480)', async () => {
+    const onClearBedfellows = vi
+      .fn<() => Promise<void>>()
+      .mockRejectedValueOnce(new Error('locked'))
+      .mockResolvedValueOnce(undefined);
+    const { user } = setup({ onClearBedfellows });
+    const section = screen.getByRole('region', { name: 'Bedfellows' });
+    await user.click(within(section).getByRole('button', { name: 'Clear Bedfellows history' }));
+    expect(await within(section).findByRole('status')).toHaveTextContent(
+      messages.bedfellowsHistory.failed,
+    );
+    await user.click(within(section).getByRole('button', { name: 'Clear Bedfellows history' }));
+    await waitFor(() => {
+      expect(within(section).getByRole('status')).toHaveTextContent('Bedfellows history cleared.');
+    });
+  });
+
   it('offers a passkey, saying the phone asks twice, and keeps the result in place of the offer', async () => {
     const { user } = setup();
     const section = screen.getByRole('region', { name: 'Lock with a passkey' });
@@ -71,6 +103,7 @@ describe('Settings', () => {
       'Restore a backup',
       'Link a new device',
       'Lock with a passkey',
+      'Bedfellows',
       'Erase this device',
     ]);
     for (const line of [messages.passkey.lede, messages.passkey.twice, messages.passkey.privacy]) {
@@ -178,6 +211,7 @@ describe('Settings', () => {
       'Restore a backup',
       'Link a new device',
       'Lock with a passkey',
+      'Bedfellows',
       'Erase this device',
     ]);
     expect(await axeViolations()).toEqual([]);

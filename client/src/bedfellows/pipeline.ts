@@ -104,8 +104,13 @@ interface ModelReader {
 }
 
 /** A ranked row, and whether it bridges the reader's Documents. */
-interface PlacedRow extends RankedRow {
+interface BridgedRow extends RankedRow {
   readonly bridges: boolean;
+}
+
+/** A placed row, and whether the reader has seen it (#480). */
+interface PlacedRow extends BridgedRow {
+  readonly seen: boolean;
 }
 
 /** Everything a run places entries with. */
@@ -131,10 +136,14 @@ function claimsOf(sentences: readonly string[]): string[] {
   return [...new Set(trimmed)].sort(byText);
 }
 
-/** Close kin first, then middle, then strange; bridges first in a tier, then stronger reasons, then by entry id. */
+/**
+ * Close kin first, then middle, then strange; in a tier, entries the reader
+ * hasn't seen first, then bridges, then stronger reasons, then by entry id.
+ */
 function byRank(a: PlacedRow, b: PlacedRow): number {
   const tier = TIER_ORDER.indexOf(a.row.tier) - TIER_ORDER.indexOf(b.row.tier);
   if (tier !== 0) return tier;
+  if (a.seen !== b.seen) return a.seen ? 1 : -1;
   if (a.bridges !== b.bridges) return a.bridges ? -1 : 1;
   if (a.strength !== b.strength) return b.strength - a.strength;
   return byText(a.row.entryId, b.row.entryId);
@@ -176,7 +185,7 @@ async function placeByModel(
   entry: EntryClaims,
   vectors: readonly Vector[],
   context: Context,
-): Promise<PlacedRow | null> {
+): Promise<BridgedRow | null> {
   const t = context.thresholds;
   const claims = entry.claims.map((sentence, i) => ({ sentence, vector: vectors[i] ?? [] }));
   const found = matchEntry(claims, context.reader.claims, t);
@@ -199,7 +208,7 @@ async function placeByModel(
  * `entry`'s row: by the model where it covers the entry, else by term overlap.
  * Term overlap has no vectors to tell Documents apart, so its rows never bridge.
  */
-async function place(entry: EntryClaims, context: Context): Promise<PlacedRow | null> {
+async function place(entry: EntryClaims, context: Context): Promise<BridgedRow | null> {
   const vectors = context.vectors.get(entry.id);
   if (vectors !== undefined) {
     const row = await placeByModel(entry, vectors, context);
@@ -263,19 +272,23 @@ async function coveredEntryVectors(
 
 /**
  * `ranked`, in rank order, as one view: the reader's own groups' entries left
- * out, each tier's bridges and the rest each turned by the view's day and
- * seed, then the dial's mix of the tiers.
+ * out; in each tier, the unseen entries before the seen (#480), each of those
+ * bridges first, every part turned by the view's day and seed; then the dial's
+ * mix of the tiers.
  */
 function pickView(ranked: readonly PlacedRow[], dial: number, view: BedfellowsView): Row[] {
   const day = dayOf(view.date);
   const own = new Set(view.own);
-  const shown = ranked.filter((r) => !own.has(r.row.entryId));
-  const turned = (tier: Tier, bridging: boolean): Row[] => {
-    const rows = shown.filter((r) => r.row.tier === tier && r.bridges === bridging);
-    const by = turn(day, view.seed, `${tier}|${bridging ? 'bridge' : 'rest'}`);
-    return rotate(rows, by).map(({ row }) => row);
+  const candidates = ranked.filter((r) => !own.has(r.row.entryId));
+  const turned = (tier: Tier, seen: boolean, bridging: boolean): Row[] => {
+    const rows = candidates.filter(
+      (r) => r.row.tier === tier && r.seen === seen && r.bridges === bridging,
+    );
+    const salt = `${tier}|${bridging ? 'bridge' : 'rest'}${seen ? '|seen' : ''}`;
+    return rotate(rows, turn(day, view.seed, salt)).map(({ row }) => row);
   };
-  const tierOf = (tier: Tier): Row[] => [...turned(tier, true), ...turned(tier, false)];
+  const tierOf = (tier: Tier): Row[] =>
+    [false, true].flatMap((seen) => [...turned(tier, seen, true), ...turned(tier, seen, false)]);
   const byTier = { close: tierOf('close'), middle: tierOf('middle'), strange: tierOf('strange') };
   return mix(byTier, dial, view.size).shown;
 }
@@ -315,11 +328,15 @@ export async function bedfellows(
     judge: models.judge,
     thresholds: t,
   };
+  const seen = new Set(input.shown);
+  // Too far leaves rows out, never the run's input: the cache keeps exactly
+  // what a run is given, so a gap in it would show the reader's marks.
+  const leaveOut = new Set(input.leaveOut);
   const ranked: PlacedRow[] = [];
   for (const entry of entries) {
     stopIfAborted(signal);
     const row = await place(entry, context);
-    if (row !== null) ranked.push(row);
+    if (row !== null && !leaveOut.has(entry.id)) ranked.push({ ...row, seen: seen.has(entry.id) });
   }
   stopIfAborted(signal);
   ranked.sort(byRank);

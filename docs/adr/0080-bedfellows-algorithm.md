@@ -58,12 +58,14 @@ ADR-0077 §4's rules stand: everything runs on the reader's device; no text, ter
 
 - **A sealed short history:** which shelf entries Bedfellows showed, and how the reader marked them (**Common ground** or **Too far**), with the dial's position.
 - A mark nudges the dial, and an entry marked Too far isn't shown again. Marks are private: never shown to anyone, never counted, never sent.
+- **Amended (#480, the founder's decision of 2026-11-19): at most one nudge a view.** A view is one opening of Bedfellows. The first mark in it that would nudge moves the dial one step; later marks in the same view are kept, and a Too far still leaves its entry out, but they don't move the dial. Taking a mark back, or marking the same way again, moves nothing and spends nothing. The count lives in the session's memory, not the sealed history, so reopening starts a new view (`client/src/store/bedfellows.ts`). Why: #481's year found a reader who marks every strange entry Too far pulled back to a dial of 1 to 2.6, a step for each mark, so one view could undo a month of stretch.
 - A history record is deleted 30 days after it's written, or when its entry leaves the shelf, whichever comes first.
 - It is sealed in the vault and written through the vault's scheduled writes (ADR-0046), never on the tap.
 - It stays on the one device: no backup, relay backup, snapshot or device link carries it.
 - Settings has **Clear Bedfellows history**. Panic wipe erases it with everything else.
 - **Match scores are never written.** Vectors of the reader's own writing live in memory only. Vectors of public shelf entries may sit in an ordinary cache.
   - **Amended (#477): the cache holds the whole shelf.** It is kept outside the vault, unsealed, so which entries it holds must say nothing about the reader. The pipeline is therefore handed every entry on the shelf, the reader's own groups' included, and §4's rule that the reader's own groups' and coalitions' entries stay out applies to the rows it returns, never to what it is given. Were the caller to leave the reader's own groups out first, the entries missing from the cache would point to the groups the reader belongs to.
+  - **Amended (#480): the same holds for Too far.** An entry marked Too far is left out of the rows, never out of the run, so the cache still holds its vectors and shows no sign of the private mark (`pipeline.test.ts`).
 - Ask to join and Propose reconciling are never signals, and neither is time spent.
 
 ### 6. Safeguards
