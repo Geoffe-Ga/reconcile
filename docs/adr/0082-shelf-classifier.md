@@ -1,7 +1,7 @@
-# ADR-0082: The Shelf Classifier Waits for the Covenant's Words, and Then Runs on the Steward's Device Only
+# ADR-0082: The Shelf Classifier Is Built Behind a Flag, Runs on the Steward's Device Only, and Waits for the Covenant's Words to Turn On
 
-- **Status:** Proposed. The founder decides through `/decide` sheet `2026-11-18-shelf-classifier`. This ADR records the spike (#492) and its measurements, and leans toward an answer. Nothing here is built.
-- **Date:** 2026-11-18
+- **Status:** Accepted (2026-11-19). The founder answered `/decide` sheet `2026-11-18-shelf-classifier`; see [Decision](#decision). This ADR records the spike (#492), its measurements and the answers. #493 builds it.
+- **Date:** 2026-11-18 (proposed), 2026-11-19 (accepted)
 - **Answers:** the spike that [ADR-0081](0081-listed-doors-and-exception-moderation.md) §4 and [the spec](../spec/listed-doors.md) §6.6 call for: which model, how it runs under the CSP, which languages, and its measured error rate on political speech
 - **Builds on:** [ADR-0005](0005-pwa-client.md), [ADR-0020](0020-us-nonprofit-zero-knowledge.md), [ADR-0024](0024-source-available-license.md), [ADR-0035](0035-reconcile-group-minimal-eternal-core.md), [ADR-0081](0081-listed-doors-and-exception-moderation.md); ADR-0080 §2 (Bedfellows, on an unmerged branch with #476) for the in-browser runtime
 
@@ -37,7 +37,7 @@ Every item was written for this spike, by the spike's author. None comes from a 
 | Spam, which breaks the covenant but is reported apart | 8 | flag |
 | Spanish: 5 violence or threat, 3 dehumanization, 2 swearing hate; 10 political, quotation, reclaimed or ordinary | 20 | 10 flag, 10 don't |
 
-That makes 188 items. The sample is **not committed**. It holds hateful text, and committing it is the founder's call (decision `sample` on the sheet). Its limits:
+That makes 188 items. The sample is **not committed**, and it stays out of the repository ([Decision](#decision), `sample`). Its limits:
 
 - **One labeller.** The spike's author wrote and labelled everything.
 - **It is small:** 40 English items should flag. One item is 2.5 points of false-negative rate, and one of 120 is 0.8 points of false-positive rate.
@@ -161,7 +161,9 @@ Client-side scanning is software on a person's own device that inspects their pr
 - letting a flag hide, delay or refuse an entry with no person deciding;
 - matching against a list or model supplied by a party outside Reconcile's own governance, such as a hash list or a government's lexicon.
 
-## Decision (proposed)
+## What the spike recommended
+
+The founder's answers below replace this where they differ: the classifier is built now, behind a flag.
 
 - **Don't build the classifier until the trigger.** The trigger is ADR-0081 §5's: before any group beyond the founder's is released onto the shelf. Until then the covenant gate holds every listing except the founder's own (ADR-0081 §3), so there is nothing for a classifier to watch. Readers' reports and the steward's console are enough.
 - **When the trigger comes, build B with the narrow rule, if the pilot shelf is English.** It is bundled with the app as ADR-0081 says. It reuses #476's runtime and CSP, and it is pinned like Bedfellows' models. On this sample its narrow rule flagged none of the 120 entries that should pass, so it never sends counter-speech or reclaimed language to the queue. It catches only the obvious cases (9 of 40), and the ADR says so plainly. Readers' reports remain the main signal.
@@ -169,27 +171,37 @@ Client-side scanning is software on a person's own device that inspects their pr
 - **Before the build, re-measure.** Use a sample labelled against the covenant's final clauses, by at least two labellers, with a held-out split, on this harness. Ship only if the narrow rule's false positives on quotation and reclaimed language stay at or under 1 in 20.
 - **What the console shows with a flag:** the rule that fired, never a ranking. The queue keeps its order (oldest first), so the classifier can't decide what the steward sees first.
 
-## Should it be built before ADR-0035's wording is settled?
+## Decision
 
-**No.** There are four reasons:
+The founder answered the sheet on 2026-11-19.
+
+1. **Timing: build it now, behind a feature flag that stays off until the trigger.** The trigger is still ADR-0081 §5's: before any group beyond the founder's is released onto the shelf. Building now means the trigger finds it ready; the flag keeps a rudeness filter from posing as a covenant check before then. The re-measure (a sample labelled by at least two people against the covenant's final clauses, with a held-out split, and at most 1 in 20 false flags on quotation and reclaimed language) is a precondition of turning the flag on, not of building.
+2. **Where: B, the small WebAssembly model.** MiniLMv2-toxic-jigsaw (Apache-2.0, about 23.6 MB) on #476's ONNX Runtime Web runtime, its SHA-256 pinned in `modelPins.ts`, fetched and run on the steward's device only. It is bundled with the app as ADR-0081 §4 says, and needs no CSP change beyond #476's.
+3. **Rule: narrow,** `threat` or `identity_hate` ≥ 0.5. It flagged none of the 120 entries that should pass, so counter-speech and reclaimed language never reach the queue because of it.
+4. **Console: the rule's name only, and the queue keeps its order.** The classifier can't rank entries or decide what the steward sees first.
+5. **Sample: it stays outside the repository,** kept by the founder. The repository is now public. The sample holds hateful test text, written by one labeller against placeholder clauses, and committing it would publish it with no review. The build re-measures against a new two-labeller sample at the trigger anyway. #493's tests use a small, clearly labelled fixture with no hateful text: synthetic score vectors, or neutral sentences with stubbed model outputs.
+
+ADR-0080 (Bedfellows, which owns #476's runtime and its `'wasm-unsafe-eval'`) is not on `main` yet, so #493 lands after #476.
+
+## Should it be turned on before ADR-0035's wording is settled?
+
+**No.** The spike first asked whether to build it; the founder chose to build it and keep it off. These four reasons now govern the flag:
 
 1. **Nothing measured detects the draft core's clauses.** Calls for violence and threats are what the core names, and they are what every model here misses. Building now would ship a flagger for rudeness labelled as a covenant check.
 2. **The final wording decides the labels.** A sample can only be labelled against settled words. A model or threshold tuned to the placeholder would have to be re-measured anyway.
 3. **There is nothing on the shelf to watch yet.** The gate releases only the founder's groups until the wording is settled and read by counsel (ADR-0081 §3).
-4. **The cost of waiting is small.** B is a few days' work once #476 has merged: a pin, a worker call and a column in the console.
-
-The one thing worth doing before the wording is settled is to keep this spike's harness and sample where the build issue can find them (decision `sample`).
+4. **Building early costs little.** B is a few days' work once #476 has merged: a pin, a worker call and a column in the console. With the flag off, it changes nothing anyone sees.
 
 ## Consequences
 
-- §6.6 of [the spec](../spec/listed-doors.md) records this ADR as pending, and the build issue waits for the founder's answer and the trigger.
-- If B is chosen, the steward's device needs #476's runtime. B then depends on #476 merging.
-- If C is chosen, ADR-0081 §4's "bundled with the app" is amended, and the steward runs a program the project maintains outside the app.
+- §6.6 of [the spec](../spec/listed-doors.md) records this decision. #493 builds B behind a flag that is off by default.
+- The steward's device needs #476's runtime, so #493 depends on #476 (and ADR-0080) merging.
+- ADR-0081 §4 stands as written: the classifier is bundled with the app. C is not built. If a listed group writes in a language other than English, C with Detoxify `multilingual` is the only option measured that reads one, and choosing it would amend ADR-0081 §4.
+- Turning the flag on needs the re-measure, which needs ADR-0035's final wording and a second labeller.
 - None of the measured models flags spam. The covenant's spam rule rests on ADR-0081's limits and readers' reports.
 
 ## Open questions
 
 - **ADR-0035's final wording** (deferred). It sets the labels the re-measure uses.
 - **Who votes on the moderation policy** (ADR-0081 §5, open). Choosing the classifier and its rule is moderation policy. The founder's steward seat decides it for the pilot, and the body ADR-0081 §5 names should ratify it.
-- **Committing the sample.** It holds hateful text, written for testing. ADR-0024 keeps the repository private until publication. Whether a test fixture like this belongs in a repository that will later be published is the founder's call.
 - **TensorFlow.js `toxicity`** is unmeasured, because its weights' hosts are refused here. Measuring it needs a session that can reach them.
