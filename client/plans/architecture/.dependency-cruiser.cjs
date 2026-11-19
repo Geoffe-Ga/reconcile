@@ -68,6 +68,14 @@ module.exports = {
       to: { path: 'node_modules/(onnxruntime-web|onnxruntime-common|@huggingface/tokenizers)/' },
     },
     {
+      name: 'only-the-steward-console-reaches-the-classifier',
+      comment:
+        "The shelf classifier (#493, ADR-0082) runs only in the steward's console, on a device that holds the steward's key, and only over public shelf entries: never on a reader's device, an author's draft or a group's sealed content (ADR-0020). Only the console's app module, src/app/steward.ts, and the classifier's own test may import src/shelf/classify.ts. Other modules may name its types, which load no code.",
+      severity: 'error',
+      from: { pathNot: '^src/(app/steward|shelf/classify\\.test)\\.ts$' },
+      to: { path: '^src/shelf/classify\\.ts$', dependencyTypesNot: ['type-only'] },
+    },
+    {
       name: 'engine-does-no-io',
       comment:
         'The engine is pure: it folds the records sync hands it and never reaches the network itself (spec §2, #63).',

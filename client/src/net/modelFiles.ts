@@ -8,21 +8,25 @@
  * ride on it, and every device asks for the same files. dependency-cruiser
  * lets the two model loaders, `src/bedfellows/embedder.ts` and
  * `src/bedfellows/judge.ts` (#478), import this module and nothing else of
- * `src/net`.
+ * `src/net`. The shelf classifier's loader, `src/shelf/classify.ts` (#493),
+ * fetches its files the same way, on the steward's device only.
  *
  * The service worker keeps each file the first time it's fetched
  * (`serviceWorker.ts`), so this check runs on every load, cached or not.
  */
 import { sha256OfFile } from '../crypto/hash';
-import { type PinnedFile, SERVED_FILES } from './modelPins';
+import { BEDFELLOWS_FILES, type PinnedFile } from './modelPins';
 
 /** A file that came back, but not the one pinned: it is never used. */
 export class PinMismatchError extends Error {
   override readonly name = 'PinMismatchError';
 }
 
-/** Every byte a first load downloads: what the reader sees before it starts (#433). */
-export const MODEL_DOWNLOAD_BYTES = SERVED_FILES.reduce((sum, pin) => sum + pin.bytes, 0);
+/**
+ * Every byte Bedfellows' first load downloads: what the reader sees before it
+ * starts (#433). The shelf classifier's files are never in it (#493).
+ */
+export const MODEL_DOWNLOAD_BYTES = BEDFELLOWS_FILES.reduce((sum, pin) => sum + pin.bytes, 0);
 
 /** A file name with no path in it: letters, digits, `.`, `_` and `-`, not starting with `.`. */
 const FILE_NAME = /^[A-Za-z0-9_-][A-Za-z0-9._-]*$/;

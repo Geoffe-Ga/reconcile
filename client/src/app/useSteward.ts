@@ -5,13 +5,13 @@
 import { useEffect, useState } from 'react';
 
 import type { Shelf } from '../net/shelf';
-import type { StewardQueue } from '../screens/Steward';
+import type { ShelfFlags, StewardQueue } from '../screens/Steward';
 import type { InboxItem } from '../shelf/inbox';
 import { STEWARD_PINS } from '../shelf/steward';
 import { STEWARD_CHANGED, type Store } from '../store/db';
 import { useShelfRead } from './usePublicShelf';
 import type { ShelfReader } from '../shelf/read';
-import { readQueue } from './steward';
+import { readFlags, readQueue } from './steward';
 
 /**
  * Whether this device holds the steward's key, kept current as it comes and
@@ -94,4 +94,28 @@ export function useStewardQueue(
       setRound((n) => n + 1);
     },
   };
+}
+
+/**
+ * What the shelf classifier flags in `queue` once it is read (#493): `off`
+ * until then, and for good while the classifier is switched off. The queue
+ * shows first; flags follow once the model has read every entry, and change
+ * nothing in it.
+ */
+export function useShelfFlags(
+  queue: StewardQueue | null,
+  read: (queue: StewardQueue) => Promise<ShelfFlags> = readFlags,
+): ShelfFlags {
+  const [flags, setFlags] = useState<ShelfFlags>('off');
+  useEffect(() => {
+    if (queue === null) return;
+    let live = true;
+    void read(queue).then((answer) => {
+      if (live) setFlags(answer);
+    });
+    return () => {
+      live = false;
+    };
+  }, [queue, read]);
+  return flags;
 }

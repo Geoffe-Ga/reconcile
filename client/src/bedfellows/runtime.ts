@@ -6,8 +6,10 @@
  * file.
  *
  * It runs the embedding model (`startEncoder`, #476) and, for the stance
- * check, a sentence-pair classifier (`startPairClassifier`, #478). It fetches
- * nothing. It is handed each model's three files, already checked against
+ * check, a sentence-pair classifier (`startPairClassifier`, #478); and, for
+ * the steward's console alone, a one-text, multi-label classifier
+ * (`startTextClassifier`, #493; ADR-0082), which `src/shelf/classify.ts`
+ * loads only when the shelf classifier is switched on. It fetches nothing. It is handed each model's three files, already checked against
  * their pins (`src/net/modelFiles.ts`), and runs on one thread in the worker
  * it is loaded in: no proxy worker, no threads (which would need a `blob:`
  * worker the CSP refuses), and no file from any URL. Compiling the
@@ -247,6 +249,40 @@ export async function startPairClassifier(files: RuntimeFiles): Promise<PairClas
       const feeds = pairFeeds(tokenizer, session.inputNames, premise, hypothesis);
       const results = await session.run(feeds);
       return softmax((results[output]?.data ?? []) as Float32Array);
+    },
+  };
+}
+
+/** A started one-text classifier: a text in, each label's own probability out. */
+export interface TextClassifier {
+  scores(text: string): Promise<Float32Array>;
+}
+
+/** Each of `logits` on its own through the logistic function, as a multi-label model is read. */
+function sigmoid(logits: ArrayLike<number>): Float32Array {
+  return Float32Array.from(Array.from(logits), (x) => 1 / (1 + Math.exp(-x)));
+}
+
+/**
+ * Starts a one-text, multi-label classifier, such as the shelf classifier's
+ * toxicity model (#493; ADR-0082), from its checked files: one session, on
+ * WebAssembly, on this thread. It reads `[CLS] text [SEP]`, cut to
+ * {@link MAX_TOKENS} tokens, one text per run, and answers each label's
+ * probability on its own, since a text may carry several labels or none.
+ *
+ * @throws {Error} when the model asks for an input this runtime can't feed.
+ */
+export async function startTextClassifier(files: RuntimeFiles): Promise<TextClassifier> {
+  const { session, tokenizer } = await open(files);
+  const output = session.outputNames[0] ?? 'logits';
+  return {
+    scores: async (text) => {
+      const batch = batchOf(tokenizer, [text]);
+      const feeds = Object.fromEntries(
+        session.inputNames.map((name) => [name, feedFor(name, batch, 1)]),
+      );
+      const results = await session.run(feeds);
+      return sigmoid((results[output]?.data ?? []) as Float32Array);
     },
   };
 }

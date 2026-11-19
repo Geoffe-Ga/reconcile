@@ -19,9 +19,13 @@
  *   sent it. Each may be dismissed, on this device only;
  * - the suspensions that stand (#490), each with Lift the suspension.
  *
+ * - entries the shelf classifier flagged (#493, §6.6; ADR-0082), only while
+ *   it is switched on: each with the rule that fired, never a score, in the
+ *   shelf's order, with Hold and Uphold and the clause the rule suggests
+ *   chosen. A flag holds, hides and reorders nothing; the steward decides.
+ *
  * Every action that names a clause asks which, and each says what readers,
- * and the group, will see once it is sent. Flagged entries wait for the
- * classifier (§6.6).
+ * and the group, will see once it is sent.
  */
 import { useState } from 'react';
 import { Button, Label, RadioButton, RadioField, RadioGroup } from 'react-aria-components';
@@ -33,6 +37,7 @@ import { BackLink, PageHeader, Section } from '../app/ui';
 import { CLAUSE_WORDS, COVENANT_HASH } from '../shelf/covenant';
 import type { ShelfEntry, ShelfListing, StandingHold, WaitingListing } from '../shelf/fold';
 import type { InboxItem } from '../shelf/inbox';
+import type { EntryFlag } from '../shelf/classify';
 import type { NoticeRemoval } from '../shelf/notices';
 import type { Clause, NoticeDraft } from '../shelf/record';
 
@@ -57,6 +62,13 @@ export interface StewardView {
 /** What the console shows (`app/steward.ts`), or why it has nothing to show. */
 export type StewardQueue = StewardView | 'unavailable' | 'failed';
 
+/**
+ * What the shelf classifier found (#493): `off` while it is switched off,
+ * which shows nothing; the entries it flagged, in the shelf's order; or that
+ * it couldn't run.
+ */
+export type ShelfFlags = 'off' | 'failed' | readonly EntryFlag[];
+
 /** Props for {@link Steward}. */
 export interface StewardProps {
   /** What the console lists, or that the shelf is off or couldn't be read. */
@@ -65,6 +77,8 @@ export interface StewardProps {
   readonly onNotice: (notice: NoticeDraft) => Promise<boolean>;
   /** Dismisses the inbox item `key` names, on this device; true once kept (#490). */
   readonly onDismiss: (key: string) => Promise<boolean>;
+  /** What the shelf classifier flagged (#493); none, and no section, while it is off. */
+  readonly flags?: ShelfFlags;
 }
 
 /** Where one action stands. */
@@ -573,6 +587,70 @@ function Inbox({
   );
 }
 
+/** One flagged entry: its title and text, the rule that fired, and Hold and Uphold (#493). */
+function FlagCard(props: {
+  readonly entry: ShelfEntry;
+  readonly flag: EntryFlag;
+  readonly onNotice: StewardProps['onNotice'];
+}) {
+  const { entry, flag } = props;
+  return (
+    <li className="card stack">
+      <h3 className="heading-3">
+        <bdi>{entry.title}</bdi>
+      </h3>
+      {entry.text === '' ? null : (
+        <p className="dispatch-text" dir="auto">
+          {entry.text}
+        </p>
+      )}
+      <p className="meta">{words.flaggedBy(flag.rule)}</p>
+      <Actions
+        address={entry.address}
+        id={entry.id}
+        acts={['hold', 'uphold']}
+        clause={flag.clause}
+        onNotice={props.onNotice}
+      />
+    </li>
+  );
+}
+
+/**
+ * The entries the classifier flagged, in the shelf's order, each still on
+ * the shelf; or a line saying it flagged none, or couldn't run (#493).
+ */
+function Flagged({
+  view,
+  onNotice,
+  flags,
+}: StewardSectionProps & { readonly flags: Exclude<ShelfFlags, 'off'> }) {
+  if (flags === 'failed') return <p>{words.flagsFailed}</p>;
+  const shown = flags.flatMap((flag) => {
+    const entry = view.entries.find((e) => e.address === flag.address && e.id === flag.id);
+    return entry === undefined ? [] : [{ entry, flag }];
+  });
+  return (
+    <div className="stack">
+      <p className="caption">{words.flaggedLede}</p>
+      {shown.length === 0 ? (
+        <p>{words.noFlagged}</p>
+      ) : (
+        <ul className="stack">
+          {shown.map(({ entry, flag }) => (
+            <FlagCard
+              key={`${entry.address} ${entry.id}`}
+              entry={entry}
+              flag={flag}
+              onNotice={onNotice}
+            />
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 /** Props for each of the console's sections. */
 interface StewardSectionProps {
   readonly view: StewardView;
@@ -580,7 +658,7 @@ interface StewardSectionProps {
 }
 
 /** The steward's console: what waits, reports and appeals, what's held or suspended, what stands, and the pause. */
-export function Steward({ queue, onNotice, onDismiss }: StewardProps) {
+export function Steward({ queue, onNotice, onDismiss, flags = 'off' }: StewardProps) {
   return (
     <main className="shell">
       <BackLink to={{ name: 'settings' }} label={messages.settings.title} />
@@ -596,6 +674,11 @@ export function Steward({ queue, onNotice, onDismiss }: StewardProps) {
           <Section title={words.inboxHeading}>
             <Inbox view={queue} onNotice={onNotice} onDismiss={onDismiss} />
           </Section>
+          {flags === 'off' ? null : (
+            <Section title={words.flaggedHeading}>
+              <Flagged view={queue} onNotice={onNotice} flags={flags} />
+            </Section>
+          )}
           <Section title={words.holdsHeading}>
             <Holds view={queue} onNotice={onNotice} />
           </Section>

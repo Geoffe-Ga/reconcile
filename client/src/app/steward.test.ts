@@ -2,6 +2,7 @@
  * The steward's import and console (#488; listed-doors.md §6.2, §6.4),
  * against the fake shelf's held mode and the tests' pinned steward key.
  */
+import { renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { base64url } from '../crypto/base64url';
@@ -22,10 +23,12 @@ import {
   dismissItem,
   importStewardKey,
   readInbox,
+  readFlags,
   readQueue,
   releaseListing,
   sendNotice,
 } from './steward';
+import { useShelfFlags } from './useSteward';
 
 const COVENANT = base64url(new Uint8Array(32).fill(9));
 
@@ -334,5 +337,89 @@ describe('readInbox and the console’s reports (#490)', () => {
     const keyed = { ...keyStore(TEST_STEWARD_SECRET), ...keepIn() };
     const shelf = createShelf({ fetch: createFakeShelf().fetch });
     expect(await readQueue(shelf, () => readInbox(keyed, relay))).toBe('failed');
+  });
+});
+
+describe('readFlags and useShelfFlags (#493; ADR-0082)', () => {
+  const entryOf = (id: string, title: string) => ({
+    address: 'A'.repeat(43),
+    id,
+    title,
+    text: '',
+    name: 'Elm Co-op',
+    seq: 1,
+    received: 29_000_000,
+    early: false,
+    listedSince: 29_000_000,
+  });
+  const VIEW = {
+    waiting: [],
+    listings: [],
+    entries: [entryOf('d1', 'Potluck on Sunday'), entryOf('d2', 'Stand-in flagged entry')],
+    holds: [],
+    suspended: [],
+    paused: false,
+    inbox: [],
+  };
+  /** A classifier that flags `flagged` by the threat rule, recording each text. */
+  const classifierFlagging = (flagged: string) => ({
+    classify: vi.fn((text: string) =>
+      Promise.resolve({ score: text === flagged ? 0.9 : 0, rule: 'threat', clause: 'C1' } as const),
+    ),
+  });
+
+  it('is off, and classifies nothing, while the app’s classifier is switched off', async () => {
+    expect(await readFlags(VIEW)).toBe('off');
+    expect(await readFlags(VIEW, null)).toBe('off');
+  });
+
+  it('is off, and classifies nothing, for a console with nothing to show', async () => {
+    const classifier = classifierFlagging('');
+    expect(await readFlags('unavailable', classifier)).toBe('off');
+    expect(await readFlags('failed', classifier)).toBe('off');
+    expect(classifier.classify).not.toHaveBeenCalled();
+  });
+
+  it('flags the view’s entries, in its order', async () => {
+    const classifier = classifierFlagging('Stand-in flagged entry');
+
+    expect(await readFlags(VIEW, classifier)).toEqual([
+      { address: 'A'.repeat(43), id: 'd2', rule: 'threat', clause: 'C1' },
+    ]);
+  });
+
+  it('says it failed when the model can’t load, and flags nothing', async () => {
+    const classifier = {
+      classify: () => Promise.reject(new Error('The model file couldn’t be fetched.')),
+    };
+    expect(await readFlags(VIEW, classifier)).toBe('failed');
+  });
+
+  it('starts off, reads once the queue is read, and leaves the queue as it was', async () => {
+    const read = vi.fn(() =>
+      Promise.resolve([
+        { address: 'A'.repeat(43), id: 'd2', rule: 'threat', clause: 'C1' },
+      ] as const),
+    );
+    const { result, rerender } = renderHook(({ queue }) => useShelfFlags(queue, read), {
+      initialProps: { queue: null as typeof VIEW | null },
+    });
+
+    expect(result.current).toBe('off');
+    expect(read).not.toHaveBeenCalled();
+    rerender({ queue: VIEW });
+    await waitFor(() => {
+      expect(result.current).toEqual([
+        { address: 'A'.repeat(43), id: 'd2', rule: 'threat', clause: 'C1' },
+      ]);
+    });
+    expect(read).toHaveBeenCalledExactlyOnceWith(VIEW);
+  });
+
+  it('is off with the app’s classifier switched off', async () => {
+    const { result } = renderHook(() => useShelfFlags(VIEW));
+    await waitFor(() => {
+      expect(result.current).toBe('off');
+    });
   });
 });

@@ -1,5 +1,7 @@
 /**
- * The Bedfellows model's files, each pinned by its SHA-256 (#476; ADR-0080 §2).
+ * The Bedfellows model's files, each pinned by its SHA-256 (#476; ADR-0080 §2),
+ * and the shelf classifier's, which only the steward's console fetches once
+ * it is switched on (#493; ADR-0082).
  *
  * Every device fetches exactly these files from Reconcile's own origin, under
  * `/models/`, so a fetch says nothing about the reader. They are too large for
@@ -107,11 +109,91 @@ export interface StanceModel {
  */
 export const STANCE_MODEL: StanceModel | null = null;
 
-/** Every file the build serves under `/models/`: the embedder's, then `stance`'s, each once. */
-export function servedFiles(stance: StanceModel | null): SourcedFile[] {
-  const files = [...Object.values(MODEL_FILES), ...Object.values(stance?.files ?? {})];
+/**
+ * A shelf classifier (#493; ADR-0082): a one-text, multi-label toxicity
+ * model, its tokenizer and the runtime, and which of its outputs are the two
+ * labels the narrow rule reads, `threat` and `identity_hate`.
+ */
+export interface ShelfClassifierModel {
+  readonly files: Readonly<Record<ModelFileName, SourcedFile>>;
+  readonly labels: { readonly threat: number; readonly identityHate: number };
+}
+
+/** The spike's pinned revision of the third-party ONNX export (#492). */
+const TOXIC_JIGSAW_REVISION =
+  'https://huggingface.co/minuva/MiniLMv2-toxic-jigsaw-onnx/resolve/c035f27b6a6d68770f8069a4829f1715a48b8d51';
+
+/**
+ * The model ADR-0082 measured and chose: MiniLMv2-toxic-jigsaw (Apache-2.0),
+ * a 6-layer BERT student of `unitary/toxic-bert`, as an 8-bit ONNX export,
+ * with its uncased WordPiece tokenizer and Bedfellows' runtime: 23.6 MB of
+ * its own. Its outputs, from the export's `config.json`, are `toxic`,
+ * `severe_toxic`, `obscene`, `threat`, `insult` and `identity_hate`.
+ *
+ * **Provenance (follow-up):** the ONNX file is a third party's export,
+ * `minuva/MiniLMv2-toxic-jigsaw-onnx`, pinned here at the revision the spike
+ * measured. Exporting our own copy from the Apache-2.0 checkpoint
+ * `minuva/MiniLMv2-toxic-jigsaw` would take that party out of the chain
+ * (ADR-0082, Open questions); the pin then changes with the re-measure.
+ */
+export const MINILM_TOXIC_JIGSAW: ShelfClassifierModel = {
+  files: {
+    model: {
+      file: 'MiniLMv2-toxic-jigsaw-q8-bcd9dfb4.onnx',
+      sha256: hexOf([
+        188, 217, 223, 180, 140, 173, 128, 42, 200, 247, 205, 120, 158, 18, 148, 241, 240, 178, 45,
+        83, 39, 151, 189, 65, 245, 161, 22, 148, 227, 194, 105, 160,
+      ]),
+      bytes: 22_864_978,
+      source: `${TOXIC_JIGSAW_REVISION}/model_optimized_quantized.onnx`,
+      license: 'Apache-2.0',
+    },
+    tokenizer: {
+      file: 'MiniLMv2-toxic-jigsaw-tokenizer-91f1def9.json',
+      sha256: hexOf([
+        145, 241, 222, 249, 185, 57, 31, 218, 190, 2, 140, 211, 243, 252, 196, 239, 211, 78, 93, 31,
+        8, 195, 191, 45, 229, 19, 235, 181, 145, 26, 24, 84,
+      ]),
+      bytes: 711_649,
+      source: `${TOXIC_JIGSAW_REVISION}/tokenizer.json`,
+      license: 'Apache-2.0',
+    },
+    runtime: MODEL_FILES.runtime,
+  },
+  labels: { threat: 3, identityHate: 5 },
+};
+
+/**
+ * The shelf classifier the steward's console runs: none, which is the
+ * feature flag, and it stays off (#493; ADR-0082 Decision 1). It turns on
+ * only after the re-measure ADR-0082 names: a sample labelled by at least two
+ * people against the covenant's final clauses, with a held-out split, and at
+ * most 1 in 20 false flags on quotation and reclaimed language. Turning it on
+ * is setting this to {@link MINILM_TOXIC_JIGSAW}, or the model the re-measure
+ * picks; its files are then built, fetched by `models.sh` and served beside
+ * Bedfellows' ({@link servedFiles}). While it is null no device downloads a
+ * classifier and the console shows no flag.
+ */
+export const SHELF_CLASSIFIER: ShelfClassifierModel | null = null;
+
+/**
+ * Every file the build serves under `/models/`: the embedder's, then
+ * `stance`'s, then `classifier`'s, each once.
+ */
+export function servedFiles(
+  stance: StanceModel | null,
+  classifier: ShelfClassifierModel | null = null,
+): SourcedFile[] {
+  const files = [
+    ...Object.values(MODEL_FILES),
+    ...Object.values(stance?.files ?? {}),
+    ...Object.values(classifier?.files ?? {}),
+  ];
   return [...new Map(files.map((pin) => [pin.file, pin])).values()];
 }
 
-/** The files the build serves, and every device may fetch, under `/models/`. */
-export const SERVED_FILES: readonly SourcedFile[] = servedFiles(STANCE_MODEL);
+/** The files a reader's device fetches for Bedfellows: never the shelf classifier's. */
+export const BEDFELLOWS_FILES: readonly SourcedFile[] = servedFiles(STANCE_MODEL);
+
+/** The files the build serves under `/models/`; only the steward's console fetches the classifier's. */
+export const SERVED_FILES: readonly SourcedFile[] = servedFiles(STANCE_MODEL, SHELF_CLASSIFIER);
