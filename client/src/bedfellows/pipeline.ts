@@ -28,6 +28,12 @@
  * every tie is broken by words, never by position. It sends nothing, and it
  * writes nothing but entries' public vectors to the store it is handed: the
  * reader's text, vectors and scores exist only in memory (ADR-0080 §5).
+ *
+ * **Hand it the whole shelf.** The cache keeps exactly the entries a run is
+ * given, unsealed, so a caller that left out the reader's own groups' entries
+ * would leave a gap in it the shape of those groups. A caller drops its own
+ * groups' entries from the rows that come back, never from what goes in
+ * (ADR-0080 §5, as #477 amends it).
  */
 import {
   CHUNK,

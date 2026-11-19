@@ -62,6 +62,7 @@ ADR-0077 §4's rules stand: everything runs on the reader's device; no text, ter
 - It stays on the one device: no backup, relay backup, snapshot or device link carries it.
 - Settings has **Clear Bedfellows history**. Panic wipe erases it with everything else.
 - **Match scores are never written.** Vectors of the reader's own writing live in memory only. Vectors of public shelf entries may sit in an ordinary cache.
+  - **Amended (#477): the cache holds the whole shelf.** It is kept outside the vault, unsealed, so which entries it holds must say nothing about the reader. The pipeline is therefore handed every entry on the shelf, the reader's own groups' included, and §4's rule that the reader's own groups' and coalitions' entries stay out applies to the rows it returns, never to what it is given. Were the caller to leave the reader's own groups out first, the entries missing from the cache would point to the groups the reader belongs to.
 - Ask to join and Propose reconciling are never signals, and neither is time spent.
 
 ### 6. Safeguards
