@@ -37,7 +37,9 @@
  * given, unsealed, so a caller that left out the reader's own groups' entries
  * would leave a gap in it the shape of those groups. A caller drops its own
  * groups' entries from the rows that come back, never from what goes in
- * (ADR-0080 §5, as #477 amends it).
+ * (ADR-0080 §5, as #477 amends it). A view (#479) mixes the rows it picks, so
+ * it can't be trimmed after: the caller names those entries in `view.own`,
+ * and the view leaves them out before the mix.
  */
 import { bridges, documentsOf } from './bridge';
 import { dayOf } from './clock';
@@ -260,13 +262,16 @@ async function coveredEntryVectors(
 }
 
 /**
- * `ranked`, in rank order, as one view: each tier's bridges and the rest each
- * turned by the view's day and seed, then the dial's mix of the tiers.
+ * `ranked`, in rank order, as one view: the reader's own groups' entries left
+ * out, each tier's bridges and the rest each turned by the view's day and
+ * seed, then the dial's mix of the tiers.
  */
 function pickView(ranked: readonly PlacedRow[], dial: number, view: BedfellowsView): Row[] {
   const day = dayOf(view.date);
+  const own = new Set(view.own);
+  const shown = ranked.filter((r) => !own.has(r.row.entryId));
   const turned = (tier: Tier, bridging: boolean): Row[] => {
-    const rows = ranked.filter((r) => r.row.tier === tier && r.bridges === bridging);
+    const rows = shown.filter((r) => r.row.tier === tier && r.bridges === bridging);
     const by = turn(day, view.seed, `${tier}|${bridging ? 'bridge' : 'rest'}`);
     return rotate(rows, by).map(({ row }) => row);
   };

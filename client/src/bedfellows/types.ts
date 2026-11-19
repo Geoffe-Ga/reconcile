@@ -30,6 +30,13 @@ export interface BedfellowsView {
   readonly size: number;
   readonly date: string;
   readonly seed: number;
+  /**
+   * The ids of the reader's own groups' and coalitions' entries, left out of
+   * the rows before the mix (ADR-0080 §4), so the view stays `size` and keeps
+   * its floors. The run is still handed them, so the cache holds the whole
+   * shelf (§5, as #477 amends it).
+   */
+  readonly own?: readonly string[];
 }
 
 /** One run's input: the reader's Documents, the shelf, the dial's position and the view. */

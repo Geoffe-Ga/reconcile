@@ -583,13 +583,14 @@ describe('bedfellows (#475)', () => {
 describe('bedfellows picks and orders a view (#479)', () => {
   const toDegrees = (cos: number): number => (Math.acos(cos) * 180) / Math.PI;
   // One claim each, so closeness is the pair's strength (`tiers.ts`): C close, M middle, W strange.
+  const embedder = scripted({
+    R: at(0),
+    C: at(10),
+    M: at(toDegrees(0.5)),
+    W: at(toDegrees((THRESHOLDS.match + THRESHOLDS.shortEntry.middle) / 2)),
+  });
   const models: Models = {
-    embedder: scripted({
-      R: at(0),
-      C: at(10),
-      M: at(toDegrees(0.5)),
-      W: at(toDegrees((THRESHOLDS.match + THRESHOLDS.shortEntry.middle) / 2)),
-    }),
+    embedder,
     judge: standInJudge,
     splitter: (text) => text.split(' '),
   };
@@ -662,6 +663,22 @@ describe('bedfellows picks and orders a view (#479)', () => {
       ),
       { numRuns: 30 },
     );
+  });
+
+  it('leaves the reader’s own groups’ entries out of the view before it mixes, and still keeps their vectors', async () => {
+    const own = ['c00', 'c01', 'c02', 'c03', 'c04'];
+    const store = memoryVectorStore();
+    const view = { size: 10, date: '2026-11-18', seed: 7, own };
+
+    const kept: Models = { ...models, embedder: { ...embedder, model: 'scripted' } };
+
+    const rows = await bedfellows({ reader: [doc('R')], entries, dial: 0, view }, kept, { store });
+
+    expect(rows).toHaveLength(10);
+    expect(rows.filter((row) => own.includes(row.entryId))).toEqual([]);
+    expect(tiersOf(rows).filter((tier) => tier === 'close')).toHaveLength(7);
+    const cached = new Set(store.records().map((record) => record.entryId));
+    expect(own.filter((id) => cached.has(id))).toEqual(own);
   });
 
   describe('the bridging bonus', () => {
