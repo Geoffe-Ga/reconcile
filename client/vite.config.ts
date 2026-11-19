@@ -4,6 +4,7 @@ import { defineConfig, loadEnv } from 'vite';
 
 import { modelFiles, ortWasmUrl } from './plugins/modelFiles.ts';
 import { serviceWorker } from './plugins/serviceWorker.ts';
+import { stewardPinsDefine } from './plugins/stewardPins.ts';
 
 export default defineConfig(({ mode }) => {
   // The app calls the relay at /v1 on its own origin. In development, and in
@@ -11,6 +12,11 @@ export default defineConfig(({ mode }) => {
   const { RECONCILE_RELAY_PORT = '8787' } = loadEnv(mode, '.', 'RECONCILE_RELAY_');
 
   return {
+    // The steward's two public keys (#505): RECONCILE_STEWARD_PIN_SIGN and
+    // RECONCILE_STEWARD_PIN_BOX from the build's environment, or null with
+    // neither. A malformed one throws here, so the build fails.
+    // deploy/deploy.sh refuses a build that pins the tests' key.
+    define: stewardPinsDefine(process.env),
     // serviceWorker() writes /sw.js, which keeps the app offline (#76).
     // modelFiles() writes models/, the Bedfellows model's pinned files, which
     // the worker keeps on first use rather than at install (#476).
@@ -23,7 +29,7 @@ export default defineConfig(({ mode }) => {
       setupFiles: ['./src/test-setup.ts'],
       // Hands the tests ONNX Runtime Web's WebAssembly from node_modules (#476).
       globalSetup: ['./test/globalSetup.ts'],
-      include: ['src/**/*.test.{ts,tsx}'],
+      include: ['src/**/*.test.{ts,tsx}', 'plugins/**/*.test.ts'],
       // Vitest blanks stylesheets unless told otherwise. A `?raw` import of one
       // returns its text, as in a build, so a test can check what ships.
       css: { include: [/\.css\?raw$/] },

@@ -4,7 +4,9 @@ The tests run a copy of e2e.sh in a temp tree whose ``npm`` and ``npx`` are
 stubs on PATH. Each stub logs what it was asked to run and the environment the
 loop would have seen, so the tests check the script's own work (free ports for
 each Playwright worker, a temp directory for the relays that is deleted
-afterwards, build before test) without a browser or a relay.
+afterwards, build before test, the tests' steward pins on the build) without
+a browser or a relay. A ``node`` stub prints the pins, as
+``client/scripts/stewardTestPins.mjs`` would.
 """
 
 from __future__ import annotations
@@ -25,13 +27,20 @@ BASH = shutil.which("bash") or "bash"
 SEP = "\t"
 
 # Logs one line per call: the command, its directory, the three variables the
-# Playwright config reads, and whether the relays' directory exists.
+# Playwright config reads, whether the relays' directory exists, and the two
+# steward pins the build reads (#505).
 STUB = f"""#!{BASH}
 exists=no; [[ -d "${{E2E_RELAY_DIR:-/nonexistent}}" ]] && exists=yes
-printf '%s{SEP}%s{SEP}%s{SEP}%s{SEP}%s{SEP}%s\\n' "$(basename "$0") $*" "$PWD" \\
-    "${{E2E_WEB_PORTS:-}}" "${{E2E_RELAY_PORTS:-}}" "${{E2E_RELAY_DIR:-}}" \\
-    "$exists" >> "$STUB_LOG"
+printf '%s{SEP}%s{SEP}%s{SEP}%s{SEP}%s{SEP}%s{SEP}%s{SEP}%s\\n' "$(basename "$0") $*" \\
+    "$PWD" "${{E2E_WEB_PORTS:-}}" "${{E2E_RELAY_PORTS:-}}" "${{E2E_RELAY_DIR:-}}" \\
+    "$exists" "${{RECONCILE_STEWARD_PIN_SIGN:-}}" "${{RECONCILE_STEWARD_PIN_BOX:-}}" \\
+    >> "$STUB_LOG"
 """
+
+# What the node stub prints in place of stewardTestPins.mjs: two settings.
+PIN_SIGN = "test-sign-pin"
+PIN_BOX = "test-box-pin"
+PINS_OUT = f"RECONCILE_STEWARD_PIN_SIGN={PIN_SIGN}\nRECONCILE_STEWARD_PIN_BOX={PIN_BOX}"
 
 
 @dataclass(frozen=True)
@@ -44,6 +53,7 @@ class Call:
     relay_ports: list[str]
     relay_dir: str
     relay_dir_existed: bool
+    pins: tuple[str, str]
 
 
 @dataclass(frozen=True)
@@ -80,6 +90,8 @@ def _run(tree: Path, *args: str, env: dict[str, str] | None = None) -> Run:
     for tool in ("npm", "npx"):
         if not (tree / "bin" / tool).exists():
             _stub(tree, tool)
+    if not (tree / "bin" / "node").exists():
+        _stub(tree, "node", then=f"printf '%s\\n' '{PINS_OUT}'")
     log = tree / "calls.log"
     python_dir = str(Path(sys.executable).parent)
     result = subprocess.run(  # nosec B603 - fixed argv, no shell
@@ -99,9 +111,17 @@ def _run(tree: Path, *args: str, env: dict[str, str] | None = None) -> Run:
     lines = log.read_text("utf-8").splitlines() if log.exists() else []
     calls = []
     for line in lines:
-        command, cwd, web, relay, relay_dir, existed = line.split(SEP)
+        command, cwd, web, relay, relay_dir, existed, sign, box = line.split(SEP)
         calls.append(
-            Call(command, cwd, web.split(), relay.split(), relay_dir, existed == "yes")
+            Call(
+                command,
+                cwd,
+                web.split(),
+                relay.split(),
+                relay_dir,
+                existed == "yes",
+                (sign, box),
+            )
         )
     return Run(result.returncode, calls, tree / "tmp", result.stderr)
 
@@ -125,10 +145,11 @@ def test_builds_then_runs_playwright_on_free_ports_and_a_temp_dir(tree: Path) ->
     run = _run(tree)
     assert run.code == 0
     assert [call.command for call in run.calls] == [
+        "node scripts/stewardTestPins.mjs",
         "npm run build",
         "npx playwright test",
     ]
-    test = run.calls[1]
+    test = run.calls[2]
     assert test.cwd == str(tree / "client")
     assert len(test.web_ports) == len(test.relay_ports) == 2
     ports = {int(port) for port in test.web_ports + test.relay_ports}
@@ -190,7 +211,7 @@ def test_failed_build_stops_before_playwright(tree: Path) -> None:
     _stub(tree, "npm", exit_code=1)
     run = _run(tree)
     assert run.code == 1
-    assert [call.command for call in run.calls] == ["npm run build"]
+    assert [call.command for call in run.calls][-1] == "npm run build"
 
 
 def test_extra_arguments_go_to_playwright(tree: Path) -> None:
@@ -218,6 +239,24 @@ def test_installs_dependencies_when_missing(tree: Path) -> None:
     run = _run(tree)
     assert [call.command for call in run.calls] == [
         "npm ci",
+        "node scripts/stewardTestPins.mjs",
         "npm run build",
         "npx playwright test",
     ]
+
+
+def test_the_build_pins_the_tests_steward_key(tree: Path) -> None:
+    """The app is built with the tests' pins (#505), so an e2e device honours
+    the tests' steward; Playwright itself needs neither setting."""
+    run = _run(tree)
+    build = next(call for call in run.calls if call.command == "npm run build")
+    assert build.pins == (PIN_SIGN, PIN_BOX)
+    assert run.calls[-1].pins == ("", "")
+
+
+def test_no_pins_stops_the_run_before_the_build(tree: Path) -> None:
+    """If the pins can't be derived, nothing is built with null pins by mistake."""
+    _stub(tree, "node", exit_code=1)
+    run = _run(tree)
+    assert run.code == 1
+    assert "npm run build" not in [call.command for call in run.calls]

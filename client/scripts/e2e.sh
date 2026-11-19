@@ -20,7 +20,8 @@ while [[ $# -gt 0 ]]; do
             cat << EOF
 Usage: $(basename "$0") [OPTIONS] [PLAYWRIGHT_ARGS...]
 
-Build the app, then run e2e/ with Playwright. playwright.config.ts starts
+Build the app with the tests' steward pins (scripts/stewardTestPins.mjs),
+then run e2e/ with Playwright. playwright.config.ts starts
 "vite preview" of the build, which sends the deploy CSP, once for each
 Playwright worker. Each test starts its worker's relay (../scripts/relay.sh)
 and stops it when it ends, so the relay-learns-nothing spec can scan what the
@@ -121,5 +122,11 @@ if [[ ! -d node_modules ]]; then
     npm ci
 fi
 
-npm run build
+# The build pins the tests' steward key (#505), derived from the publicly
+# known test secret in src/test/steward.ts, so an e2e device honours the
+# tests' steward. Only the build sees the two settings, and the deploy
+# refuses any build that carries them (../deploy/deploy.sh).
+STEWARD_PINS="$(node scripts/stewardTestPins.mjs)"
+mapfile -t STEWARD_PIN_SETTINGS <<< "$STEWARD_PINS"
+env "${STEWARD_PIN_SETTINGS[@]}" npm run build
 npx playwright test "${PLAYWRIGHT_ARGS[@]+"${PLAYWRIGHT_ARGS[@]}"}"

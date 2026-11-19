@@ -71,29 +71,44 @@ def test_a_seed_of_any_other_length_is_refused(length: int) -> None:
 
 
 def _printed(capsys: pytest.CaptureFixture[str]) -> dict[str, str]:
-    """One run of ``main``: each ``label: value`` line it printed, by label."""
+    """One run of ``main``: each ``label: value`` and ``NAME=value`` line, by label."""
     assert main([]) == 0
     out = capsys.readouterr().out
     pairs = [line.split(": ", 1) for line in out.splitlines() if ": " in line]
-    relay = [line for line in out.splitlines() if line.startswith("RECONCILE_")]
-    return {**dict(pairs), "relay": relay[0]}
+    settings = [
+        line.split("=", 1) for line in out.splitlines() if line.startswith("RECONCILE_")
+    ]
+    return {**dict(pairs), **dict(settings)}
 
 
 def test_main_prints_the_secret_and_both_public_keys(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """The secret once, the two pins, and the relay's line, which it starts with."""
+    """The secret once, the deploy build's two pins (#505), and the relay's line."""
     lines = _printed(capsys)
     secret = lines["Steward secret (import in Settings, then keep offline)"]
     keys = derive(base64.urlsafe_b64decode(secret + "="))
     sign = _b64url(keys.sign_public)
 
-    assert lines["Sign public key (pin as sign)"] == sign
-    assert lines["Box public key (pin as box)"] == _b64url(keys.box_public)
-    assert lines["relay"] == f"RECONCILE_RELAY_SHELF_STEWARD_KEY={sign}"
+    assert lines["RECONCILE_STEWARD_PIN_SIGN"] == sign
+    assert lines["RECONCILE_STEWARD_PIN_BOX"] == _b64url(keys.box_public)
+    assert lines["RECONCILE_RELAY_SHELF_STEWARD_KEY"] == sign
     env = {"RECONCILE_RELAY_DB": "relay.db", "RECONCILE_RELAY_SHELF_STEWARD_KEY": sign}
     assert Settings.from_env(env).shelf_steward_key == sign
     assert key_bytes(sign) == keys.sign_public
+
+
+def test_main_says_where_each_setting_goes(capsys: pytest.CaptureFixture[str]) -> None:
+    """The pins go to the deploy build's environment, never into source (#505)."""
+    assert main([]) == 0
+    out = capsys.readouterr().out.splitlines()
+
+    build = out.index("Set both for the deploy build (deploy/.env or its environment):")
+    relay = out.index("Set this on the relay (a reconcile-relay.service drop-in):")
+    assert out[build + 1].startswith("RECONCILE_STEWARD_PIN_SIGN=")
+    assert out[build + 2].startswith("RECONCILE_STEWARD_PIN_BOX=")
+    assert out[relay + 1].startswith("RECONCILE_RELAY_SHELF_STEWARD_KEY=")
+    assert "pin as" not in "\n".join(out)
 
 
 def test_main_makes_a_new_secret_each_run(capsys: pytest.CaptureFixture[str]) -> None:

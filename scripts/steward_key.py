@@ -6,15 +6,19 @@ The steward is the platform's moderator, the founder during the pilot
 each by HKDF-SHA-256 with an empty salt under a label of its own:
 
 - ``reconcile/v1/steward-sign``: the Ed25519 key that signs notices. Its
-  public half is pinned in ``client/src/shelf/steward.ts`` as ``sign`` and
-  set as the relay's ``RECONCILE_RELAY_SHELF_STEWARD_KEY``.
+  public half is the app's ``sign`` pin, which the deploy build reads from
+  ``RECONCILE_STEWARD_PIN_SIGN`` (#505), and the relay's
+  ``RECONCILE_RELAY_SHELF_STEWARD_KEY``.
 - ``reconcile/v1/steward-box``: the X25519 key reports are sealed to (#489).
-  Its public half is pinned as ``box``.
+  Its public half is the app's ``box`` pin, from
+  ``RECONCILE_STEWARD_PIN_BOX``.
 
 The client derives them the same way (``client/src/crypto/steward.ts``), and
 ``client/src/crypto/vectors/steward.json`` pins both. The secret is printed
 once, to be imported in Settings, under Steward key, on the steward's one device
-and then kept offline; this script keeps no copy and writes no file.
+and then kept offline; this script keeps no copy and writes no file. The
+public keys are printed as the settings that take them: two for the deploy
+build (``deploy/README.md``), one for the relay.
 
 Usage:
     python -m scripts.steward_key
@@ -86,7 +90,7 @@ def _b64url(raw: bytes) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Print a new steward secret, its two public keys and the relay's setting."""
+    """Print a new steward secret, the deploy build's two pins and the relay's key."""
     args = sys.argv[1:] if argv is None else argv
     if args:
         print(
@@ -96,8 +100,10 @@ def main(argv: list[str] | None = None) -> int:
     seed = secrets.token_bytes(SEED_BYTES)
     keys = derive(seed)
     print(f"Steward secret (import in Settings, then keep offline): {_b64url(seed)}")
-    print(f"Sign public key (pin as sign): {_b64url(keys.sign_public)}")
-    print(f"Box public key (pin as box): {_b64url(keys.box_public)}")
+    print("Set both for the deploy build (deploy/.env or its environment):")
+    print(f"RECONCILE_STEWARD_PIN_SIGN={_b64url(keys.sign_public)}")
+    print(f"RECONCILE_STEWARD_PIN_BOX={_b64url(keys.box_public)}")
+    print("Set this on the relay (a reconcile-relay.service drop-in):")
     print(f"RECONCILE_RELAY_SHELF_STEWARD_KEY={_b64url(keys.sign_public)}")
     return 0
 
