@@ -21,13 +21,16 @@ import {
 import type { RuntimeFiles } from '../bedfellows/runtime';
 import { ortWasm } from '../test/ortWasm';
 import { tinyClassifierOnnx, tinyLogitsOf, TINY_VOCAB, tinyTokenizerJson } from '../test/tinyModel';
+import { createClassifierHost, type FromClassifier } from './classifyWorker';
 import {
+  type ClassifierWorker,
   classifierLoader,
   entryText,
   FLAG_BAR,
   flagEntries,
   flags,
   shelfClassifier,
+  startInWorker,
   type TextScorer,
   verdictOf,
 } from './classify';
@@ -174,6 +177,34 @@ function scorerOf(table: Record<string, Partial<Record<Label, number>>>) {
   return { scorer, read };
 }
 
+/**
+ * A stand-in for the classifier's module worker: what the page posts goes to
+ * the worker's own host, here on this thread with the real runtime, and its
+ * answers come back as message events, a turn later, as a worker's do.
+ */
+function inlineWorker(start?: Parameters<typeof createClassifierHost>[1]) {
+  const listeners: ((event: MessageEvent<FromClassifier>) => void)[] = [];
+  const terminate = vi.fn();
+  const host = createClassifierHost((data) => {
+    setTimeout(() => {
+      for (const listener of listeners) listener({ data } as MessageEvent<FromClassifier>);
+    }, 0);
+  }, start);
+  const worker: ClassifierWorker = {
+    postMessage: (message) => {
+      host.handle(message);
+    },
+    addEventListener: (_type, listener) => {
+      listeners.push(listener);
+    },
+    terminate,
+  };
+  return { worker, terminate };
+}
+
+/** Starts the model in {@link inlineWorker}, as the app starts it in a real one. */
+const startInline = (files: RuntimeFiles) => startInWorker(files, () => inlineWorker().worker);
+
 describe('classifierLoader (#493)', () => {
   it('is null while no classifier is pinned, and the app’s is: the flag is off, and nothing is fetched', () => {
     const { fetchFile, fetchPin } = serving();
@@ -241,9 +272,9 @@ describe('classifierLoader (#493)', () => {
     await expect(classifier?.classify('Potluck')).resolves.toMatchObject({ score: 0 });
   });
 
-  it('runs the real runtime on the pinned files, loaded only when first asked', async () => {
+  it('runs the real runtime on the pinned files, in the classifier’s worker, loaded only when first asked', async () => {
     const { fetchPin } = serving();
-    const classifier = classifierLoader(TINY_MODEL, fetchPin);
+    const classifier = classifierLoader(TINY_MODEL, fetchPin, startInline);
     const tokens = ['[CLS]', 'our', 'chess', 'club', '[SEP]'];
     const logit = (i: number) =>
       tokens.reduce((sum, token) => sum + (tinyLogitsOf(TINY_VOCAB.indexOf(token))[i] ?? 0), 0) /
@@ -327,7 +358,7 @@ describe('scoring makes no request but the model files’, and keeps nothing (#4
     vi.stubGlobal('fetch', fetchFile);
     vi.stubGlobal('XMLHttpRequest', doors.xhr);
     vi.stubGlobal('navigator', Object.create(navigator, { sendBeacon: { value: doors.beacon } }));
-    const classifier = classifierLoader(TINY_MODEL);
+    const classifier = classifierLoader(TINY_MODEL, undefined, startInline);
     const entries = [
       entry('d1', 'Our chess club', 'needs new boards'),
       entry('d2', 'Keep the reading room open'),
@@ -342,5 +373,66 @@ describe('scoring makes no request but the model files’, and keeps nothing (#4
       expect(init).toEqual({ credentials: 'same-origin', redirect: 'error' });
     }
     for (const door of Object.values(doors)) expect(door).not.toHaveBeenCalled();
+  });
+});
+
+describe('the classifier’s worker (#493)', () => {
+  const FILES: RuntimeFiles = {
+    model: TINY.model,
+    tokenizer: TINY.tokenizer,
+    runtime: TINY.runtime,
+  };
+
+  it('rejects, and ends the worker, when the model doesn’t start', async () => {
+    const { worker, terminate } = inlineWorker(() => Promise.reject(new Error('no')));
+
+    await expect(startInWorker(FILES, () => worker)).rejects.toThrow(
+      'The classifier couldn’t start.',
+    );
+    expect(terminate).toHaveBeenCalledOnce();
+  });
+
+  it('rejects one text the model can’t read, and reads the next', async () => {
+    const scores = vi
+      .fn<(text: string) => Promise<Float32Array>>()
+      .mockRejectedValueOnce(new Error('no'))
+      .mockResolvedValue(Float32Array.of(0.25));
+    const { worker } = inlineWorker(() => Promise.resolve({ scores }));
+    const scorer = await startInWorker(FILES, () => worker);
+
+    await expect(scorer.scores('Potluck')).rejects.toThrow(
+      'The classifier couldn’t read an entry.',
+    );
+    expect(Array.from(await scorer.scores('Potluck'))).toEqual([0.25]);
+  });
+
+  it('answers each text by its own id, however the answers come back', async () => {
+    const { worker } = inlineWorker(() =>
+      Promise.resolve({
+        scores: (text: string) =>
+          new Promise<Float32Array>((done) => {
+            setTimeout(
+              () => {
+                done(Float32Array.of(text.length));
+              },
+              text === 'slow' ? 5 : 0,
+            );
+          }),
+      }),
+    );
+    const scorer = await startInWorker(FILES, () => worker);
+
+    const [slow, quick] = await Promise.all([scorer.scores('slow'), scorer.scores('ok')]);
+
+    expect([Array.from(slow), Array.from(quick)]).toEqual([[4], [2]]);
+  });
+
+  it('answers an error to a text sent before the model was started', async () => {
+    const post = vi.fn<(message: FromClassifier) => void>();
+    createClassifierHost(post).handle({ type: 'score', id: 7, text: 'Potluck' });
+
+    await vi.waitFor(() => {
+      expect(post).toHaveBeenCalledWith({ type: 'error', id: 7 });
+    });
   });
 });

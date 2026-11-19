@@ -70,10 +70,10 @@ module.exports = {
     {
       name: 'only-the-steward-console-reaches-the-classifier',
       comment:
-        "The shelf classifier (#493, ADR-0082) runs only in the steward's console, on a device that holds the steward's key, and only over public shelf entries: never on a reader's device, an author's draft or a group's sealed content (ADR-0020). Only the console's app module, src/app/steward.ts, and the classifier's own test may import src/shelf/classify.ts. Other modules may name its types, which load no code.",
+        "The shelf classifier (#493, ADR-0082) runs only in the steward's console, on a device that holds the steward's key, and only over public shelf entries: never on a reader's device, an author's draft or a group's sealed content (ADR-0020). Only the console's app module, src/app/steward.ts, may import src/shelf/classify.ts, which alone starts its worker, src/shelf/classifyWorker.ts; besides them, only their tests may. Other modules may name their types, which load no code.",
       severity: 'error',
-      from: { pathNot: '^src/(app/steward|shelf/classify\\.test)\\.ts$' },
-      to: { path: '^src/shelf/classify\\.ts$', dependencyTypesNot: ['type-only'] },
+      from: { pathNot: '^src/(app/steward|shelf/classify(Worker)?(\\.test)?)\\.ts$' },
+      to: { path: '^src/shelf/classify(Worker)?\\.ts$', dependencyTypesNot: ['type-only'] },
     },
     {
       name: 'engine-does-no-io',

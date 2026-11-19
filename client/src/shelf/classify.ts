@@ -19,8 +19,9 @@
  *   app module (`src/app/steward.ts`) import this, and it asks only on a
  *   device that holds the steward's key. The model's files are fetched from
  *   our own origin the first time an entry is classified, never before, each
- *   checked against its pin (`src/net/modelFiles.ts`); the runtime's code is
- *   imported then too, so no reader's device loads either.
+ *   checked against its pin (`src/net/modelFiles.ts`), and the model starts
+ *   then, in a worker of its own (`classifyWorker.ts`), so no reader's
+ *   device loads either.
  * - **It sends and keeps nothing.** A score lives only in memory while one
  *   entry is read, and a flag only in the console's state until it closes:
  *   nothing is written to the store, the relay or anywhere else.
@@ -28,6 +29,7 @@
 import { fetchPinned } from '../net/modelFiles';
 import { type PinnedFile, SHELF_CLASSIFIER, type ShelfClassifierModel } from '../net/modelPins';
 import type { RuntimeFiles } from '../bedfellows/runtime';
+import type { FromClassifier, ToClassifier } from './classifyWorker';
 import type { Clause } from './record';
 
 /** The narrow rule's bar, on each of its two labels: the model card's own (ADR-0082). */
@@ -75,10 +77,57 @@ export interface ShelfClassifier {
   classify(text: string): Promise<Verdict>;
 }
 
-/** Starts the runtime's text classifier, importing the runtime's code only now. */
-async function startModel(files: RuntimeFiles): Promise<TextScorer> {
-  const { startTextClassifier } = await import('../bedfellows/runtime');
-  return startTextClassifier(files);
+/** The worker's side of a channel, as the page sees it: a `Worker`, or a test's stand-in. */
+export interface ClassifierWorker {
+  postMessage(message: ToClassifier): void;
+  addEventListener(type: 'message', listener: (event: MessageEvent<FromClassifier>) => void): void;
+  terminate(): void;
+}
+
+/** The classifier's module worker, built by Vite from the app's own origin. */
+function newWorker(): ClassifierWorker {
+  return new Worker(new URL('./classifyWorker.ts', import.meta.url), { type: 'module' });
+}
+
+/**
+ * Starts the model in a worker of its own (`classifyWorker.ts`), handing it
+ * the checked files, and resolves once it has started with a scorer that
+ * asks it one text at a time.
+ *
+ * @throws {Error} when the model doesn't start; the worker is then ended.
+ */
+export function startInWorker(
+  files: RuntimeFiles,
+  makeWorker: () => ClassifierWorker = newWorker,
+): Promise<TextScorer> {
+  const worker = makeWorker();
+  const waiting = new Map<number, (scores: Float32Array | null) => void>();
+  let next = 0;
+  return new Promise((resolve, reject) => {
+    const scorer: TextScorer = {
+      scores: (text) =>
+        new Promise((done, fail) => {
+          const id = (next += 1);
+          waiting.set(id, (scores) => {
+            if (scores === null) fail(new Error('The classifier couldn’t read an entry.'));
+            else done(scores);
+          });
+          worker.postMessage({ type: 'score', id, text });
+        }),
+    };
+    worker.addEventListener('message', ({ data }) => {
+      if (data.type === 'started') resolve(scorer);
+      if (data.type === 'failed') {
+        worker.terminate();
+        reject(new Error('The classifier couldn’t start.'));
+      }
+      if (data.type === 'scores' || data.type === 'error') {
+        waiting.get(data.id)?.(data.type === 'scores' ? data.scores : null);
+        waiting.delete(data.id);
+      }
+    });
+    worker.postMessage({ type: 'start', files });
+  });
 }
 
 /**
@@ -90,7 +139,7 @@ async function startModel(files: RuntimeFiles): Promise<TextScorer> {
 export function classifierLoader(
   model: ShelfClassifierModel | null,
   fetchPin: (pin: PinnedFile) => Promise<Uint8Array> = fetchPinned,
-  start: (files: RuntimeFiles) => Promise<TextScorer> = startModel,
+  start: (files: RuntimeFiles) => Promise<TextScorer> = startInWorker,
 ): ShelfClassifier | null {
   if (model === null) return null;
   const { files, labels } = model;
