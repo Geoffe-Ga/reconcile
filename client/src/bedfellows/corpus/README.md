@@ -56,4 +56,4 @@ housing, libraries, hunting, animals, environment, belief, labour, business, rec
 
 ## Privacy
 
-Everything here is invented: groups, people, places (Brindlewood, Harrow Creek, the Fennick estate, Tollby, the Wend) and texts. No real group, organisation, person, brand or place is named, and no real mission statement, slogan or scripture is quoted.
+Everything here is invented: groups, people, places (Brindlewood, Harrow Creek, the Fennick estate, Tollby, Velmarsh, the Wend) and texts. No real group, organisation, person, brand or place is named, and no real mission statement, slogan or scripture is quoted.
