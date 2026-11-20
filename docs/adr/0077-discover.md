@@ -1,6 +1,6 @@
 # ADR-0077: Discover: a Voted Public Shelf, Door-Based Asks, and On-Device Kinship
 
-- **Status:** Accepted; the shelf's publishing side waits on the eternal core's wording ([ADR-0035](0035-reconcile-group-minimal-eternal-core.md)) and on the spike in §1
+- **Status:** Accepted; the shelf's publishing side waits on the eternal core's wording ([ADR-0035](0035-reconcile-group-minimal-eternal-core.md)). The spike in §1 is answered by [ADR-0081](0081-listed-doors-and-exception-moderation.md) (2026-11-17, #427), which amends §1
 - **Date:** 2026-11-14
 - **Decided via:** `/decide` sheet `2026-11-14-discover`, decisions `feed-reach` (the founder's own: pass-along plus a per-Dispatch public shelf), `read-to-join` (`door`), `resume` (`snapshot`), `influence` (the founder's own: a strange-bedfellows algorithm), `find-group` (`door-cards`), `handover` (`share-sheet`, `paste-spot`), `placement` (`tabs`)
 - **Builds on:** [ADR-0001](0001-local-first-trust-model.md), [ADR-0009](0009-per-group-identities.md), [ADR-0013](0013-covenant-on-reach.md), [ADR-0037](0037-holonic-promotion.md), [ADR-0038](0038-optional-discovery.md), [ADR-0040](0040-group-opt-ins-are-governed.md)
@@ -23,7 +23,7 @@ ADR-0074 kept "no public index" for the MVP, and ADR-0038 made any index a furth
 - **An entry holds** the Dispatch's title and text, the names of the levels that published it, and each one's front-door address when its door is open. Nothing else: no author, no totals, no Document link.
 - **Pass-along stays.** A shelf entry has a link a person can hand to another person, who then sees it on Discover.
 - **The shelf is pull only.** It sends no notification and no push, so ADR-0071's "no Reconcile-wide broadcast" stands.
-- **A spike settles the rest before anything publishes:** where entries live on the relay and how a reader checks that the named levels really passed them, spam and abuse, how long an entry stays, and how a level takes one down. Its findings amend this ADR.
+- **A spike settles the rest before anything publishes:** where entries live on the relay and how a reader checks that the named levels really passed them, spam and abuse, how long an entry stays, and how a level takes one down. Its findings amend this ADR. **Answered by [ADR-0081](0081-listed-doors-and-exception-moderation.md)** (#427): only a listed level publishes, the relay checks signatures and keeps one shelf, and moderation is by exception ([the spec](../spec/listed-doors.md)).
 
 ### 2. From reading to asking
 
@@ -70,6 +70,6 @@ The app gains a bottom tab bar: **Groups** (today's Start, and still the opening
 
 ## Open questions
 
-- The spike's four: storage and proof, abuse, how long an entry stays, and takedown.
+- The spike's four (storage and proof, abuse, how long an entry stays, and takedown) are resolved by [ADR-0081](0081-listed-doors-and-exception-moderation.md) (2026-11-17).
 - Whether a coalition gets a front door of its own. Today only groups have one, so a card can reach a coalition only by hand.
-- Whether a suspended group's entries (ADR-0016) leave the shelf at once or by vote.
+- Whether a suspended group's entries (ADR-0016) leave the shelf at once or by vote is resolved: at once, since the steward's suspend takes a listing and its entries down, leaving a tombstone ([ADR-0081](0081-listed-doors-and-exception-moderation.md) §4; [`listed-doors.md`](../spec/listed-doors.md) §6).
