@@ -1,7 +1,7 @@
 /**
  * A later relay clock for a profile, in test code alone (#127).
  *
- * A coalition's pass is final only a week after its deadline (#100, #250),
+ * A coalition's pass is final only a day after its deadline (#100, #250, #387),
  * and the real relay's clock can't move: `scripts/relay.sh` starts it with no
  * test-only route, flag or hook, and `page.clock` would close every vote
  * early. So a spec that must see a pass become final reads the relay's own

@@ -12,7 +12,7 @@
  *   fails it at once, and it never goes past: neither profile finds it on
  *   Eastside Housing's Dispatches, and its home lists it as didn't pass.
  * - A rise: Ana puts another to Riverside's vote with "One level up", and
- *   both groups pass it. Once the coalition's pass is final, a week after its
+ *   both groups pass it. Once the coalition's pass is final, a day after its
  *   deadline, both profiles read it on Eastside Housing's Dispatches.
  *
  * axe checks every new screen, and the fixture fails on any CSP violation.
@@ -191,7 +191,7 @@ test('a Dispatch rises through the coalition, and one the coalition votes down g
       { timeout: SYNC_MS },
     );
     await expectAccessible(ben, 'a promotion motion the coalition passed, not yet final');
-    // The relay minute it goes out: a week after its deadline (#124, #250).
+    // The relay minute it goes out: a day after its deadline (#124, #250, #387).
     const day = await coalitionResult(ben).locator('time').getAttribute('datetime');
     settles = Date.parse(day ?? '') / 60_000;
     expect(settles).toBeGreaterThan(await relayMinute(request));

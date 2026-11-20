@@ -22,7 +22,7 @@
  * control blob, the coalition's weekly mailbox ids and the follow mailbox's
  * id must all turn up, so the scan can't pass by reading nothing.
  *
- * A Dispatch reaching Fay isn't here: a coalition's goes out only a week
+ * A Dispatch reaching Fay isn't here: a coalition's goes out only a day
  * after its motion's deadline (#100), and these specs never move the clock,
  * so `src/app/followFlow.test.tsx` covers it on a fake relay.
  */
