@@ -17,7 +17,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { parseFollowLink } from '../coalition/follow';
 import { base64url, fromBase64url } from '../crypto/base64url';
 import { followChannelOf } from '../crypto/follow';
-import { RESULT_GRACE_MINUTES } from '../engine/coalition';
+import { HORIZON_STEP_MINUTES } from '../engine/coalition';
 import { fold } from '../engine/fold';
 import { DAY_MINUTES, DEFAULT_RULES } from '../engine/rules';
 import type { TestDevice } from '../test/appServices';
@@ -52,8 +52,8 @@ afterEach(() => {
 /** A coalition name no other test plants, so a scan for it can't find anything else. */
 const CANARY_NAME = 'CANARY Eastside Followed';
 
-/** Relay time a week past a vote's deadline, by which every pass on it is final. */
-const PAST_FINAL = DEFAULT_RULES.windows.ordinary.default * DAY_MINUTES + RESULT_GRACE_MINUTES + 60;
+/** Relay time an hour past a vote's level-1 horizon, a day after its deadline, by which every pass on it is final (#387). */
+const PAST_FINAL = DEFAULT_RULES.windows.ordinary.default * DAY_MINUTES + HORIZON_STEP_MINUTES + 60;
 
 /** The one coalition entry `device` keeps. */
 async function entryOn(device: TestDevice) {

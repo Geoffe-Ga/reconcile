@@ -311,7 +311,7 @@
           },
           {
             "seq": 20,
-            "received": 29395170,
+            "received": 29386530,
             "event": {
               "v": 1,
               "type": "join",
@@ -329,7 +329,7 @@
           },
           {
             "seq": 21,
-            "received": 29395171,
+            "received": 29386531,
             "event": {
               "v": 1,
               "type": "proposal",
@@ -405,7 +405,7 @@
           },
           {
             "seq": 22,
-            "received": 29395172,
+            "received": 29386532,
             "event": {
               "v": 1,
               "type": "vote",
@@ -422,7 +422,7 @@
           }
         ]
       },
-      "relayNow": 29395179,
+      "relayNow": 29386539,
       "expect": {
         "coalition": {
           "coalition": {
@@ -445,7 +445,7 @@
               {
                 "motion": "@15",
                 "key": "^C",
-                "at": 29395169
+                "at": 29386529
               }
             ],
             "bindings": [
@@ -528,7 +528,7 @@
               "author": "%dee",
               "name": "Dee",
               "seq": 20,
-              "received": 29395170
+              "received": 29386530
             }
           ],
           "ignored": []
@@ -595,7 +595,7 @@
       }
     },
     {
-      "name": "admit-open: every seat's pass reads as a pass that isn't final until results stop counting, at deadline + 10,080, so the group has no seat yet and its bringer's join is ignored",
+      "name": "admit-open: every seat's pass reads as a pass that isn't final until results stop counting, at deadline + 1,440, its horizon at level 1, so the group has no seat yet and its bringer's join is ignored",
       "logs": {
         "A": [
           {
@@ -947,7 +947,7 @@
           }
         ]
       },
-      "relayNow": 29395168,
+      "relayNow": 29386528,
       "expect": {
         "coalition": {
           "coalition": {

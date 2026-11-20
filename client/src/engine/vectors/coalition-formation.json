@@ -228,7 +228,7 @@
               "title": "Shared ground",
               "atoms": ["We keep the river clean.", "We meet on the first Sunday."]
             },
-            "formsBy": 29405250,
+            "formsFinal": 29396610,
             "bindings": [
               { "author": "%kim", "seat": "^A" },
               { "author": "%zed", "seat": "^B" }
@@ -1088,7 +1088,7 @@
       "report": { "A": [{ "motion": "@6", "seat": "^A", "result": "fail" }] }
     },
     {
-      "name": "formation-expired: a coalition still forming 14 + 7 days after its genesis is declined then, and a pass received at that minute is ignored",
+      "name": "formation-expired: a coalition still forming 14 days and a day after its genesis (formsFinal) is declined then, and a pass received at that minute is ignored",
       "logs": {
         "coalition": [
           {
@@ -1162,7 +1162,7 @@
           },
           {
             "seq": 5,
-            "received": 29405250,
+            "received": 29396610,
             "event": {
               "v": 1,
               "type": "group-result",
@@ -1174,11 +1174,11 @@
           }
         ]
       },
-      "relayNow": 29405255,
+      "relayNow": 29396615,
       "expect": {
         "coalition": {
-          "coalition": { "status": "declined", "declinedAt": 29405250 },
-          "at": 29405250,
+          "coalition": { "status": "declined", "declinedAt": 29396610 },
+          "at": 29396610,
           "ignored": [{ "seq": 5, "id": "@5" }]
         }
       },
@@ -1259,7 +1259,7 @@
           },
           {
             "seq": 5,
-            "received": 29405249,
+            "received": 29396609,
             "event": {
               "v": 1,
               "type": "group-result",
@@ -1271,9 +1271,9 @@
           }
         ]
       },
-      "relayNow": 29405255,
+      "relayNow": 29396615,
       "expect": {
-        "coalition": { "coalition": { "status": "formed", "declinedAt": null }, "at": 29405255 }
+        "coalition": { "coalition": { "status": "formed", "declinedAt": null }, "at": 29396615 }
       }
     },
     {
@@ -1335,7 +1335,7 @@
           }
         ]
       },
-      "relayNow": 29405249,
+      "relayNow": 29396609,
       "expect": { "coalition": { "coalition": { "status": "forming", "declinedAt": null } } }
     },
     {
@@ -1397,11 +1397,11 @@
           }
         ]
       },
-      "relayNow": 29405250,
+      "relayNow": 29396610,
       "expect": {
         "coalition": {
-          "coalition": { "status": "declined", "declinedAt": 29405250 },
-          "at": 29405250
+          "coalition": { "status": "declined", "declinedAt": 29396610 },
+          "at": 29396610
         }
       }
     },

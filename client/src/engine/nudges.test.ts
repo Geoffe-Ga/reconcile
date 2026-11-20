@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { folded, foldLogs, Logs } from '../test/coalitions';
 import { authorOf } from '../test/keys';
 import { deadlineOf, groupLog } from '../test/votes';
-import { nudgeKey, nudgesFor } from './nudges';
+import type { GroupState } from './fold';
+import { nudgeKey, nudgesFor, REMINDER_MINUTES, reminds } from './nudges';
 import { DAY_MINUTES } from './rules';
 
 const ANA = authorOf('ana');
@@ -85,13 +86,14 @@ describe('nudgesFor: a coalition’s motion opened in the group (#284)', () => {
   /** Group A as its devices fold it at `relayNow`, with the motion its seat decides. */
   const groupA = (logs: Logs, relayNow: number) => folded(foldLogs(logs.logs, relayNow), 'A').state;
 
-  it('gives each member it is open to two nudges, its deadline’s minutes shifted by the group’s offset', () => {
+  it('gives each member it is open to three nudges, the reminder first, its deadline’s minutes shifted by the group’s offset (#250)', () => {
     const { logs, motion, at } = scene();
     const state = groupA(logs, at + 5);
     const opened = state.proposals.find((p) => p.id === motion);
     if (opened === undefined) throw new Error('Expected the motion in A.');
     const offsetOf = (id: string) => (id === motion ? 17 : 0);
     const expected = [
+      { proposal: motion, opened: opened.received, minute: opened.deadline - 3 * DAY_MINUTES + 17 },
       { proposal: motion, opened: opened.received, minute: opened.deadline - DAY_MINUTES + 17 },
       { proposal: motion, opened: opened.received, minute: opened.deadline + 17 },
     ];
@@ -112,5 +114,87 @@ describe('nudgesFor: a coalition’s motion opened in the group (#284)', () => {
     logs.vote('A', at + 3, 'ana', motion, 4);
     logs.vote('A', at + 4, 'ben', motion, 4);
     expect(nudgesFor(groupA(logs, at + 5), ANA, () => 17)).toEqual([]);
+  });
+});
+
+describe('the reminder for a reconcile or coalition vote (#250, the founder’s decision of 2026-11-19)', () => {
+  const R = 29_375_000;
+
+  /** Riverside (Ana, Ben, Cal) and Ana's reconcile Proposal, which Ben has scored. */
+  function reconciling() {
+    const logs = new Logs();
+    logs.group('A', R, ['ana', 'ben', 'cal']);
+    const proposal = logs.reconcile('A', R + 3, 'ana', 'A');
+    logs.vote('A', R + 4, 'ben', proposal, 4);
+    return { logs, proposal };
+  }
+
+  /** Group A's reconcile Proposal `id` folded at `relayNow`. */
+  function proposalAt(logs: Logs, id: string, relayNow: number) {
+    const found = folded(foldLogs(logs.logs, relayNow), 'A').state.proposals.find(
+      (p) => p.id === id,
+    );
+    if (found === undefined) throw new Error('Expected the Proposal.');
+    return found;
+  }
+
+  it('comes 3 days before a vote closes', () => {
+    expect(REMINDER_MINUTES).toBe(4_320);
+  });
+
+  it('wakes the group 3 days before its reconcile Proposal closes, from the proposer’s device, as its other nudges do', () => {
+    const { logs, proposal } = reconciling();
+    const state = folded(foldLogs(logs.logs, R + 10), 'A').state;
+    const { deadline, received } = proposalAt(logs, proposal, R + 10);
+
+    expect(nudgesFor(state, ANA)).toEqual([
+      { proposal, opened: received, minute: deadline - 3 * DAY_MINUTES },
+      { proposal, opened: received, minute: deadline - DAY_MINUTES },
+      { proposal, opened: received, minute: deadline },
+    ]);
+    expect(nudgesFor(state, BEN)).toEqual([]);
+  });
+
+  it('takes no reminder for an ordinary Proposal, nor for one whose window is 3 days, which opened then', () => {
+    const log = groupLog({ members: ['Ben'] });
+    log.propose('Ana');
+    expect(nudgesFor(log.state(), ANA)).toHaveLength(2);
+
+    const { logs, proposal } = reconciling();
+    const state = folded(foldLogs(logs.logs, R + 10), 'A').state;
+    const short: GroupState = {
+      ...state,
+      proposals: state.proposals.map((p) =>
+        p.id === proposal ? { ...p, deadline: p.received + 3 * DAY_MINUTES } : p,
+      ),
+    };
+    expect(
+      nudgesFor(short, ANA).map((n) => n.minute - (short.proposals.at(-1)?.received ?? 0)),
+    ).toEqual([2 * DAY_MINUTES, 3 * DAY_MINUTES]);
+  });
+
+  it('shows only to an eligible member who hasn’t scored it, from 3 days before it closes until it does', () => {
+    const { logs, proposal } = reconciling();
+    const { deadline } = proposalAt(logs, proposal, R + 10);
+    const from = deadline - 3 * DAY_MINUTES;
+    const open = proposalAt(logs, proposal, from);
+
+    expect(reminds(open, ANA, from)).toBe(true);
+    expect(reminds(open, authorOf('cal'), deadline - 1)).toBe(true);
+    // Ben has scored it, and it isn't time yet a minute before.
+    expect(reminds(open, BEN, from)).toBe(false);
+    expect(reminds(open, ANA, from - 1)).toBe(false);
+    // Nor for someone outside its eligible set, nor once it has closed.
+    expect(reminds(open, authorOf('zed'), from)).toBe(false);
+    expect(reminds(open, ANA, deadline)).toBe(false);
+    expect(reminds(proposalAt(logs, proposal, deadline), ANA, deadline - 1)).toBe(false);
+  });
+
+  it('never shows for an ordinary Proposal', () => {
+    const log = groupLog({ members: ['Ben'] });
+    const id = log.propose('Ana');
+    const proposal = log.state().proposals.find((p) => p.id === id);
+    if (proposal === undefined) throw new Error('Expected the Proposal.');
+    expect(reminds(proposal, BEN, proposal.deadline - 1)).toBe(false);
   });
 });

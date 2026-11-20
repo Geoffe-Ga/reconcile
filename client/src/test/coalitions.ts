@@ -11,7 +11,7 @@ import { sha256 } from '../crypto/hash';
 import { sealSeatSecrets } from '../crypto/innerSeal';
 import { roomCommit, seatKxOf, wrapInner } from '../crypto/room';
 import { seatKeyOf, signSeatProof } from '../crypto/seat';
-import { RESULT_GRACE_MINUTES } from '../engine/coalition';
+import { HORIZON_STEP_MINUTES } from '../engine/coalition';
 import { foldTogether, motionsFor, seatIn } from '../engine/crossing';
 import type {
   CarriedDispatch,
@@ -230,7 +230,7 @@ export class Logs {
     deciders.forEach(([participant, from], i) =>
       this.result(received + 1 + i, participant, motion, from, 'pass'),
     );
-    return received + DEFAULT_RULES.windows.ordinary.default * DAY_MINUTES + RESULT_GRACE_MINUTES;
+    return received + DEFAULT_RULES.windows.ordinary.default * DAY_MINUTES + HORIZON_STEP_MINUTES;
   }
 
   /** `who` posts `wrap` for `seat`'s room `inner` (#313): {@link wrapFor}'s unless given. */

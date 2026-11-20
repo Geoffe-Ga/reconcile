@@ -16,7 +16,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { MAX_RECORD_BYTES } from '../crypto/record';
-import { MAX_LEVEL } from '../engine/coalition';
+import { MAX_LEVEL, motionHorizon } from '../engine/coalition';
 import { promotionsOwed, resultsToReport } from '../engine/crossing';
 import { DISPATCH_TEXT_MAX, DISPATCH_TITLE_MAX } from '../engine/dispatches';
 import type { GroupState } from '../engine/fold';
@@ -113,6 +113,10 @@ describe('its promotion record at every level fits a record too (#377)', () => {
       ).toContainEqual({ motion, seat: seatKey(lower), result: 'pass' });
       logs.resultIn(log, (minute += 1), bound, motion, lower, 'pass');
       logs.resultIn(log, minute, other[0], motion, other[1], 'pass');
+      // The next line's record goes up once this pass is final, at its horizon (#387).
+      const decided = stateOf(logs.foldAll(minute), log);
+      const proposal = decided.proposals.find((p) => p.id === motion);
+      minute = motionHorizon(decided.coalition, proposal ?? { id: motion, deadline: minute });
     }
 
     expect(sizes).toHaveLength(MAX_LEVEL);

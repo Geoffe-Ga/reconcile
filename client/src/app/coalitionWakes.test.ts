@@ -6,8 +6,9 @@
  * groups.
  *
  * Each group's devices nudge its own mailbox for the motion, as a proposer's
- * device does for its own Proposal (#99): a day before the deadline and at
- * it, but each group's minutes shift by its own offset,
+ * device does for its own Proposal (#99): 3 days before the deadline, its
+ * reminder (#250), a day before and at it, but each group's minutes shift by
+ * its own offset,
  * HKDF(group secret, "reconcile/v1/nudge-offset" ‖ motion id) mod 60, so the
  * nudges the relay keeps don't line several groups' mailboxes up on one
  * motion's minutes. And the ballot that closes the motion early in a group
@@ -110,14 +111,18 @@ async function nudgesOf(
   const mailbox = mailboxAt(group, opened.received);
   return {
     taken: nudgedAt(fake, mailbox, from),
-    expected: [opened.deadline - DAY_MINUTES + offset, opened.deadline + offset],
-    base: [opened.deadline - DAY_MINUTES, opened.deadline],
+    expected: [
+      opened.deadline - 3 * DAY_MINUTES + offset,
+      opened.deadline - DAY_MINUTES + offset,
+      opened.deadline + offset,
+    ],
+    base: [opened.deadline - 3 * DAY_MINUTES, opened.deadline - DAY_MINUTES, opened.deadline],
     offset,
   };
 }
 
 describe('nudges for a coalition’s motion (#284)', SLOW, () => {
-  it('nudge each group’s mailbox a day before the deadline and at it, shifted by the group’s own offset, once each', async () => {
+  it('nudge each group’s mailbox 3 days before the deadline (its reminder, #250), a day before and at it, shifted by the group’s own offset, once each', async () => {
     const fake = createFakeRelay();
     const { ana, ben, riverside, oak } = await formedCoalition(fake);
     const { motion, from, logs } = await anaProposes(fake, ana);
@@ -135,7 +140,7 @@ describe('nudges for a coalition’s motion (#284)', SLOW, () => {
     for (const device of [ana, ben]) {
       const nudged = (await device.services.store.getGroup(device === ana ? riverside : oak))
         ?.nudged;
-      expect(nudged?.filter((key) => key.startsWith(`${motion}@`))).toHaveLength(2);
+      expect(nudged?.filter((key) => key.startsWith(`${motion}@`))).toHaveLength(3);
     }
   });
 
@@ -155,6 +160,29 @@ describe('nudges for a coalition’s motion (#284)', SLOW, () => {
     }
     expect(inRiverside.taken).toEqual(inRiverside.expected);
     expect(inOak.taken).toEqual(inOak.expected);
+  });
+
+  it('carry nothing in the reminder: its body is the minute alone, never the vote, the group or the coalition (ADR-0012, #250)', async () => {
+    const fake = createFakeRelay();
+    const { ana, riverside } = await formedCoalition(fake);
+    const { motion, from } = await anaProposes(fake, ana);
+    const { group, opened } = await held(ana, riverside, motion);
+    const reminder = opened.deadline - 3 * DAY_MINUTES + nudgeOffset(group.secret, motion);
+    const posts = fake.requests
+      .slice(from)
+      .filter((r) => r.method === 'POST' && r.url.endsWith('/nudge'));
+    const bodies = posts.map((r) => new TextDecoder().decode(r.body ?? new Uint8Array()));
+
+    expect(bodies).toContain(JSON.stringify({ not_before: reminder }));
+    const [entry] = await ana.services.store.listCoalitions();
+    const canaries = [motion, riverside, entry?.groupId ?? 'none', 'Banks too', 'vote', 'counted'];
+    for (const [i, body] of bodies.entries()) {
+      expect(Object.keys(JSON.parse(body) as object)).toEqual(['not_before']);
+      for (const canary of canaries) {
+        expect(body).not.toContain(canary);
+        expect(posts[i]?.url).not.toContain(canary);
+      }
+    }
   });
 
   it('register a phone under the week its group’s nudges for the motion wait in, once that week has passed', async () => {

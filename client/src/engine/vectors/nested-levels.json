@@ -1374,7 +1374,7 @@
       }
     },
     {
-      "name": "genesis-level-stated: a genesis that states C’s seat at C’s own level, 1, gets C’s pass",
+      "name": "genesis-level-stated: a genesis that states C’s seat at C’s own level, 1, gets C’s pass once C’s reconcile motion is final, at its horizon, its deadline plus a day (#387)",
       "logs": {
         "C": [
           {
@@ -1577,7 +1577,7 @@
           }
         ]
       },
-      "relayNow": 29375012,
+      "relayNow": 29386526,
       "expect": {
         "C": {
           "coalitions": [
@@ -1606,7 +1606,7 @@
       }
     },
     {
-      "name": "genesis-level-misstated: a genesis that states C’s seat at level 0, when C is a level-1 coalition, gets C’s fail, though C passed its reconcile motion",
+      "name": "genesis-level-misstated: a genesis that states C’s seat at level 0, when C is a level-1 coalition, gets C’s fail, though C passed its reconcile motion, final at its horizon (#387)",
       "logs": {
         "C": [
           {
@@ -1809,7 +1809,7 @@
           }
         ]
       },
-      "relayNow": 29375012,
+      "relayNow": 29386526,
       "expect": {
         "C": {
           "coalitions": [

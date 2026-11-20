@@ -1028,7 +1028,7 @@ export function CoalitionComposer(props: CoalitionComposerProps) {
         whyHint: coalitions.composerWhyHint,
         linkHint: coalitions.composerLinkHint,
         visibility: coalitions.composerVisibility,
-        dispatchHint: coalitions.composerDispatchHint,
+        dispatchHint: coalitions.composerDispatchHint(state.coalition?.level ?? 1),
       }}
       intro={
         <>

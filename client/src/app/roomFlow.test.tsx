@@ -29,7 +29,7 @@ import {
 } from '../crypto/groupKeys';
 import { deriveRoomEntryId, wrapInner } from '../crypto/room';
 import { BLOB_SIZES, xchachaSeal } from '../crypto/seal';
-import { RESULT_GRACE_MINUTES } from '../engine/coalition';
+import { HORIZON_STEP_MINUTES } from '../engine/coalition';
 import { parseRecord, signEvent } from '../engine/event';
 import type { GroupState } from '../engine/fold';
 import { DAY_MINUTES, DEFAULT_RULES } from '../engine/rules';
@@ -281,8 +281,8 @@ describe('a coalition’s room', SLOW, () => {
   });
 });
 
-/** Relay time a week past a vote's deadline, by which every pass on it is final. */
-const PAST_FINAL = DEFAULT_RULES.windows.ordinary.default * DAY_MINUTES + RESULT_GRACE_MINUTES + 60;
+/** Relay time an hour past a vote's level-1 horizon, a day after its deadline, by which every pass on it is final (#387). */
+const PAST_FINAL = DEFAULT_RULES.windows.ordinary.default * DAY_MINUTES + HORIZON_STEP_MINUTES + 60;
 
 const BEFORE = 'CANARY-BEFORE-313 Should we let Elm Row in?';
 const DURING = 'CANARY-DURING-313 Their landlord is ours too.';
@@ -440,7 +440,7 @@ describe('a group asking into a coalition, and its room (#313)', SLOW, () => {
     const results = (await coalitionOn(dee)).coalition?.results.filter((r) => r.motion === motion);
     expect(results?.map((r) => r.result)).toEqual(['pass', 'pass']);
     const inner = await innerOf(ana);
-    // Every seat has passed, but the pass is final only a week after the deadline.
+    // Every seat has passed, but the pass is final only a day after the deadline (#387).
     expect((await coalitionOn(dee)).coalition?.seats).toHaveLength(2);
     await expectShut(fake, dee, { inner, id, written: [BEFORE, DURING] });
 

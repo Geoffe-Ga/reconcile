@@ -11,7 +11,7 @@ import { act } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { parseCardLink } from '../coalition/card';
-import { RESULT_GRACE_MINUTES } from '../engine/coalition';
+import { HORIZON_STEP_MINUTES } from '../engine/coalition';
 import { DAY_MINUTES, DEFAULT_RULES } from '../engine/rules';
 import type { TestDevice } from '../test/appServices';
 import { axeViolations } from '../test/axe';
@@ -187,8 +187,8 @@ describe('reconciling two groups', SLOW, () => {
   });
 });
 
-/** Relay time a week past a vote's deadline, by which every pass on it is final. */
-const PAST_FINAL = DEFAULT_RULES.windows.ordinary.default * DAY_MINUTES + RESULT_GRACE_MINUTES + 60;
+/** Relay time an hour past a vote's level-1 horizon, a day after its deadline, by which every pass on it is final (#387). */
+const PAST_FINAL = DEFAULT_RULES.windows.ordinary.default * DAY_MINUTES + HORIZON_STEP_MINUTES + 60;
 
 /**
  * Eastside Housing formed, then Dee's Elm Row brings a card Ana makes from

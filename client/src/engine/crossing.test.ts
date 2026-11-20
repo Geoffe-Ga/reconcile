@@ -139,6 +139,7 @@ describe("fold's outside motions", () => {
     expect(coalition.coalition?.motions.at(-1)).toEqual({
       id: 'm',
       deadline: R + 110 + WEEK,
+      level: 1,
       seats: [seatKey('A'), seatKey('B')],
       admit: null,
     });

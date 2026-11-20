@@ -24,7 +24,7 @@ import { bringCard, lookupCard, makeCard, postCard } from '../app/reconcile';
 import { base64url, fromBase64url } from '../crypto/base64url';
 import { deriveWeekMailboxId, weekOf } from '../crypto/groupKeys';
 import { parseCardLink } from '../coalition/card';
-import { RESULT_GRACE_MINUTES } from '../engine/coalition';
+import { HORIZON_STEP_MINUTES } from '../engine/coalition';
 import { parseRecord } from '../engine/event';
 import type { GroupState } from '../engine/fold';
 import { DAY_MINUTES, DEFAULT_RULES } from '../engine/rules';
@@ -58,8 +58,11 @@ afterEach(() => {
 /** A motion's voting window: the ordinary default, 7 days, in relay minutes. */
 const WINDOW = DEFAULT_RULES.windows.ordinary.default * DAY_MINUTES;
 
-/** Relay time past a motion's deadline and the week its results still count. */
-const PAST_FINAL = WINDOW + RESULT_GRACE_MINUTES + 60;
+/** Relay time an hour past a level-1 motion's horizon, from its deadline (#387). */
+const PAST_HORIZON = HORIZON_STEP_MINUTES + 60;
+
+/** Relay time a week past a motion's deadline, past every level's horizon. */
+const PAST_FINAL = WINDOW;
 
 /** Passes on every device: ballots up, each line's result and record, then every device reads it. */
 const SETTLE = 4;
@@ -376,6 +379,11 @@ async function metroFormed(fake: FakeRelay) {
   await vote(oak, made.proposalId, [ben, cy]);
   await vote(elm, elmProposal, [eve]);
   await syncAll(SETTLE);
+  // Eastside Housing's pass crosses up to Metro Renters' genesis once final, at its horizon (#387).
+  act(() => {
+    fake.minute += WINDOW + PAST_HORIZON;
+  });
+  await syncAll(SETTLE);
   return { ...groups, eve, elm };
 }
 
@@ -394,8 +402,12 @@ describe('a Dispatch as far as the coalitions go', SLOW, () => {
       fake.minute = inEastside.received + CAST_AFTER;
     });
     await syncAll(SETTLE);
+    act(() => {
+      fake.minute = inEastside.deadline + PAST_HORIZON;
+    });
+    await syncAll(SETTLE);
 
-    // Eastside Housing's pass is certain, so its participant in Metro Renters sends it on, at level 2.
+    // Eastside Housing's pass is final, so its participant in Metro Renters sends it on, at level 2.
     const inMetro = promotionIn(await coalitionNamed(eve, 'Metro Renters'), id);
     expect(inMetro.target).toMatchObject({ ceiling: 'coalitions', level: 2 });
     // It opens in Elm Row, and no new vote in Eastside Housing or the groups beneath it.

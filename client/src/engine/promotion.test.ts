@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest';
 import { NESTED_STATEMENTS, NestedLogs, seatKey, threeLevels } from '../test/coalitions';
 import { authorOf } from '../test/keys';
 import { LEVELS } from './capabilities';
-import { MAX_LEVEL, promotionFits, withinCeiling } from './coalition';
+import { MAX_LEVEL, motionHorizon, promotionFits, withinCeiling } from './coalition';
 import { promotionsOwed, resultsToReport } from './crossing';
 import { type Ceiling, CEILINGS, type PromoteProposalBody } from './event';
 import type { GroupState } from './fold';
@@ -29,6 +29,13 @@ function stateOf(states: Record<string, GroupState>, log: string): GroupState {
   return state;
 }
 
+/** The deadline of the Proposal `id` in `state`, failing the test when there is none. */
+function deadlineOf(state: GroupState, id: string): number {
+  const proposal = state.proposals.find((p) => p.id === id);
+  if (proposal === undefined) throw new Error(`no Proposal ${id}`);
+  return proposal.deadline;
+}
+
 /**
  * The coalitions above group A, nearest first (#122's three levels): each
  * name, the lower log whose seat it is, the participant bound to that seat,
@@ -44,7 +51,9 @@ const LINES = [
  * A puts a Dispatch with `ceiling` to its vote and passes it; then, line by
  * line, the participant bound to the lower seat posts whatever record the
  * lower log owes, the lower seat's result on it is what its own fold says,
- * and the other seat passes it. Returns the coalitions a record reached.
+ * and the other seat passes it. The next line's record goes up once that
+ * pass is final, at the motion's horizon there (#387). Returns the
+ * coalitions a record reached.
  */
 function rise(ceiling: Ceiling): string[] {
   const logs = new NestedLogs();
@@ -69,6 +78,8 @@ function rise(ceiling: Ceiling): string[] {
     logs.resultIn(log, (at += 1), bound, motion, lower, 'pass');
     logs.resultIn(log, at, other[0], motion, other[1], 'pass');
     reached.push(log);
+    const decided = stateOf(logs.foldAll(at), log);
+    at = motionHorizon(decided.coalition, { id: motion, deadline: deadlineOf(decided, motion) });
   }
   return reached;
 }

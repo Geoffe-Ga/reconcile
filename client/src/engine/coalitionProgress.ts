@@ -9,7 +9,7 @@
  * groups are still deciding, and, once the counts settle it, the outcome
  * `coalitionOutcome` gives.
  */
-import { coalitionOutcome, settlesAt, seatCounts, seatResult, UNANIMOUS_UP_TO } from './coalition';
+import { coalitionOutcome, horizonOf, seatCounts, seatResult, UNANIMOUS_UP_TO } from './coalition';
 import type { GroupResultValue } from './event';
 import type { GroupState } from './fold';
 
@@ -27,8 +27,9 @@ export interface GroupStanding {
  * group in seat order. `mine` is what the viewer's own group reported, when
  * a seat is given and it has. `outcome` is set once the counts decide it,
  * as `coalitionOutcome` does. A fail is final at once; a pass becomes `final`
- * at `settles`, its deadline plus 10,080 minutes, when results stop counting
- * and the coalition's text changes (#100, #250).
+ * at `settles`, its horizon (`horizonOf`: its deadline plus a day for each
+ * level), when results stop counting and the coalition's text changes (#100,
+ * #250, #387).
  */
 export interface CoalitionProgress {
   readonly seats: number;
@@ -77,7 +78,7 @@ export function coalitionProgress(
   }));
   const { passes, fails } = seatCounts(results, motionId, motion.seats);
   const everySeat = motion.admit !== null;
-  const settles = settlesAt(motion);
+  const settles = horizonOf(motion);
   const expired = coalition.at >= settles;
   const { kind } = coalitionOutcome({ seats: groups.length, passes, fails, expired, everySeat });
   const mine = mySeat === undefined ? null : seatResult(results, motionId, mySeat);

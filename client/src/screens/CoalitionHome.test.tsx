@@ -6,7 +6,7 @@ import type { CoalitionHomeView, MotionItem } from '../app/coalitionHome';
 import { formatDay } from '../app/format';
 import { messages } from '../app/messages';
 import type { WebShare } from '../app/share';
-import { RESULT_GRACE_MINUTES } from '../engine/coalition';
+import { HORIZON_STEP_MINUTES } from '../engine/coalition';
 import type { CoalitionProgress } from '../engine/coalitionProgress';
 import { newestFirst } from '../engine/dispatches';
 import { fold } from '../engine/fold';
@@ -74,7 +74,7 @@ function coalitionWithDispatch() {
   });
   logs.result(at + 1, 'kim', motion, 'A', 'pass');
   logs.result(at + 2, 'zed', motion, 'B', 'pass');
-  const state = fold(logs.logs.coalition ?? [], at + 7 * DAY_MINUTES + RESULT_GRACE_MINUTES);
+  const state = fold(logs.logs.coalition ?? [], at + 7 * DAY_MINUTES + HORIZON_STEP_MINUTES);
   const id = state.group ?? '';
   return { state, id, dispatches: newestFirst(state) };
 }
@@ -134,7 +134,7 @@ function coalitionWithRisen() {
   const risen = logs.promoteIn('coalition', at, 'kim', { target, title: words.title, why: '' });
   logs.result(at + 1, 'kim', risen, 'Riverside Tenants', 'pass');
   logs.result(at + 2, 'zed', risen, 'Oak St Co-op', 'pass');
-  const state = fold(logs.logs.coalition ?? [], at + 7 * DAY_MINUTES + RESULT_GRACE_MINUTES);
+  const state = fold(logs.logs.coalition ?? [], at + 7 * DAY_MINUTES + HORIZON_STEP_MINUTES);
   return { state, dispatches: newestFirst(state) };
 }
 

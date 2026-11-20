@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { folded, foldLogs, Logs } from '../test/coalitions';
 import { authorOf } from '../test/keys';
 import { deadlineOf, groupLog, type GroupStart, type LogBuilder } from '../test/votes';
-import { RESULT_GRACE_MINUTES } from './coalition';
+import { HORIZON_STEP_MINUTES } from './coalition';
 import { parseRecord, type Score } from './event';
 import { expiringProposal, resultFor } from './expiry';
 import { fold, type GroupState, type LogRecord, proposalTally } from './fold';
@@ -664,7 +664,7 @@ describe('a coalition’s section history (#100, #120; ADR-0036)', () => {
     logs.vote('A', at + 2, 'canaryben', motion, 3);
     logs.result(at + 3, 'kim', motion, 'A', 'pass');
     logs.result(at + 4, 'zed', motion, 'B', 'pass');
-    const settles = at + WEEK + RESULT_GRACE_MINUTES;
+    const settles = at + WEEK + HORIZON_STEP_MINUTES;
     const second = logs.motion(settles + 10, 'kim', 'We keep the whole valley clean.');
     logs.result(settles + 12, 'zed', second, 'B', 'fail');
     const coalition = folded(foldLogs(logs.logs, settles + 20), 'coalition').state;
@@ -707,7 +707,7 @@ describe('a coalition’s section history (#100, #120; ADR-0036)', () => {
     const at = logs.formed(R, ['A', 'B'], ['kim', 'zed']);
     const motion = logs.motion(at, 'zed');
     logs.result(at + 1, 'kim', motion, 'A', 'pass');
-    const settles = at + WEEK + RESULT_GRACE_MINUTES;
+    const settles = at + WEEK + HORIZON_STEP_MINUTES;
     const coalition = folded(foldLogs(logs.logs, settles), 'coalition').state;
     expect(sectionHistory(coalition, `${logs.ids.coalition ?? ''}.0`).notPassed).toEqual([
       { proposalId: motion, title: 'Banks too', outcome: 'fail', decidedAt: settles },

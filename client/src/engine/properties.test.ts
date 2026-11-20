@@ -45,7 +45,7 @@ import {
 import { doorOf } from '../test/door';
 import { authorOf, signedAs, testKx } from '../test/keys';
 import { LEVELS } from './capabilities';
-import { coalitionOutcome, RESULT_GRACE_MINUTES, seatResult, UNANIMOUS_UP_TO } from './coalition';
+import { coalitionOutcome, HORIZON_STEP_MINUTES } from './coalition';
 import { resultsToReport, seatIn } from './crossing';
 import { VERSIONS_MAX } from './composeOption';
 import { type EventDraft, type FoundingDocument, parseRecord, type Score } from './event';
@@ -1974,7 +1974,7 @@ describe('properties of coalitions (#100)', { timeout: 120_000 }, () => {
             logs.result(at + 1 + i, participant(seat), motion, seatName(seat), result);
           });
           const deadline = at + WINDOW;
-          const now = expired ? deadline + RESULT_GRACE_MINUTES : deadline;
+          const now = expired ? deadline + HORIZON_STEP_MINUTES : deadline;
           const state = fold(logs.logs.coalition ?? [], now);
           const p = state.proposals[0];
           return {
@@ -2089,67 +2089,6 @@ function seatValue(report: LowerReport): 'pass' | 'fail' | null {
   return report === 'contest' ? 'fail' : report;
 }
 
-/** One run of the contest property (#375): C's seats' reports, D's other seats', and the order C's arrive in. */
-interface ContestRun {
-  readonly lower: readonly LowerReport[];
-  readonly others: readonly ('pass' | 'fail' | null)[];
-  readonly order: readonly number[];
-  readonly expired: boolean;
-}
-
-/**
- * C, of one seat per `run.lower`, and D, of C's seat and one per
- * `run.others`, decide a motion in D (#375). D's other seats report first;
- * then C's report in the order `run.order` gives, a contest as a pass and a
- * fail. C's devices post to D whatever C owes it after each report
- * `crossing` marks, as a sync would, and once every report is in. Returns
- * D's outcome, its finality and Atoms, and what C's seat counts as in D.
- */
-function contestedLines(run: ContestRun, crossing: readonly boolean[]) {
-  const logs = new NestedLogs();
-  const cSeats = run.lower.map((_, i) => [`L${String(i)}`] as const);
-  const cWho = run.lower.map((_, i) => `l${String(i)}`);
-  logs.formedIn('C', R, cSeats, cWho);
-  const into = logs.sealedInto('C', R + 5, 'l0', 'D', STATEMENT_D);
-  cSeats.forEach(([seat], i) => logs.resultIn('C', R + 6, cWho[i] ?? '', into, seat, 'pass'));
-  const dSeats: NestedSeat[] = [['C', 1], ...run.others.map((_, i) => [`E${String(i)}`] as const)];
-  const dWho = ['q', ...run.others.map((_, i) => `e${String(i)}`)];
-  logs.formedIn('D', R + 7, dSeats, dWho, STATEMENT_D);
-  const motion = logs.motionIn('D', R + 20, 'e0', 'Rent stays fair for everyone.');
-  run.others.forEach((result, i) => {
-    if (result !== null)
-      logs.resultIn('D', R + 21, `e${String(i)}`, motion, `E${String(i)}`, result);
-  });
-  const cross = (when: number) => {
-    const states = logs.foldAll(when);
-    const [c, d] = [states.C, states.D];
-    const seat = c === undefined || d === undefined ? null : seatIn(c, d);
-    if (c === undefined || d === undefined || seat === null) throw new Error('Expected C’s seat.');
-    for (const body of resultsToReport(c, d, seat)) {
-      logs.add('D', when, 'q', { type: 'group-result', body });
-    }
-  };
-  reportSteps(run).forEach(({ seat, result }, n) => {
-    const when = R + 22 + n;
-    logs.resultIn('C', when, `l${String(seat)}`, motion, `L${String(seat)}`, result);
-    if (crossing[n] === true) cross(when);
-  });
-  cross(R + 40);
-  const deadline = R + 20 + WINDOW;
-  const d = logs.foldAll(run.expired ? deadline + RESULT_GRACE_MINUTES : deadline).D;
-  const p = d?.proposals.find((proposal) => proposal.id === motion);
-  const seatC = seatResult(d?.coalition?.results ?? [], motion, seatKey('C'));
-  return { outcome: p?.outcome.kind, final: p?.final, atoms: d?.atoms, seatC };
-}
-
-/** Each of C's reports in `run`, a contest's pass before its fail, in the order `run.order` gives. */
-function reportSteps(run: ContestRun) {
-  return run.lower
-    .flatMap((report, seat) => reportsOf(report).map((result) => ({ seat, result })))
-    .map((step, i) => ({ ...step, rank: run.order[i] ?? 0, i }))
-    .sort((a, b) => a.rank - b.rank || a.i - b.i);
-}
-
 /** The outcome kind `results` reach over `seats` seats, as `coalitionOutcome` decides it. */
 function outcomeOver(results: readonly ('pass' | 'fail' | null)[], expired: boolean) {
   const passes = results.filter((r) => r === 'pass').length;
@@ -2158,6 +2097,191 @@ function outcomeOver(results: readonly ('pass' | 'fail' | null)[], expired: bool
 }
 
 const STATEMENT_D = { name: 'Metro Renters', title: 'Shared ground', atoms: ['Rent stays fair.'] };
+
+const STATEMENT_F = {
+  name: 'State Renters',
+  title: 'Shared ground',
+  atoms: ['Renters have a voice.'],
+};
+
+/** The text F's motion gives its first section in the staggered property (#387). */
+const STAGGERED_TEXT = 'Renters have a voice everywhere.';
+
+/** The draws a time is picked from, as a fraction of its span: 0 to DRAW − 1. */
+const DRAW = 10_000;
+
+/** How many report times a run draws: enough for every seat at every level to contest. */
+const TIMES = 32;
+
+/**
+ * When things land in one run of the staggered property (#387): a draw for
+ * each report, in seat order, a contest's pass before its fail; extra minutes
+ * at which C's devices cross up to D (`crossC`) and D's up to F (`crossD`),
+ * anywhere while the motion is open above; and where in the day between its
+ * own horizon and the level above's each level's devices cross once more
+ * (`lastC`, `lastD`), as some device of theirs always does.
+ */
+interface StaggeredTiming {
+  readonly times: readonly number[];
+  readonly crossC: readonly number[];
+  readonly crossD: readonly number[];
+  readonly lastC: number;
+  readonly lastD: number;
+}
+
+/**
+ * One run of the staggered property (#387): what C's seats report, what D's
+ * seats besides C's report (`middle`), what F's besides D's report (`upper`),
+ * and two timings to compare.
+ */
+interface StaggeredRun {
+  readonly lower: readonly LowerReport[];
+  readonly middle: readonly LowerReport[];
+  readonly upper: readonly LowerReport[];
+  readonly first: StaggeredTiming;
+  readonly second: StaggeredTiming;
+}
+
+/** One step of a staggered run: a seat's report in a coalition, or a lower log's devices crossing up. */
+type StaggeredStep =
+  | {
+      readonly at: number;
+      readonly kind: 'report';
+      readonly log: string;
+      readonly who: string;
+      readonly seat: string;
+      readonly result: 'pass' | 'fail';
+    }
+  | { readonly at: number; readonly kind: 'cross'; readonly lower: string; readonly upper: string };
+
+/** The participant bound to each lower log's seat in the log above it, who posts its results there. */
+const CROSSER: Readonly<Record<string, string>> = { C: 'q', D: 'r' };
+
+/** The minute a draw `n` picks in `[start, end)`. */
+function within(n: number, start: number, end: number): number {
+  return start + Math.floor((n * (end - start)) / DRAW);
+}
+
+/** Seat names and participants for a level's seats: `L0`, `l0`, and so on. */
+function seatsNamed(reports: readonly LowerReport[], seat: string, who: string) {
+  return reports.map((_, i) => ({ seat: `${seat}${String(i)}`, who: `${who}${String(i)}` }));
+}
+
+/**
+ * Three levels for the staggered property (#387): C of `run.lower`'s seats;
+ * D of C and `run.middle`'s; F of D and `run.upper`'s, each formed, and each
+ * coalition's seat above passed by every seat beneath it. Returns F's motion,
+ * received at R + 30, which opens in D and, through D, in C.
+ */
+function staggeredNest(logs: NestedLogs, run: StaggeredRun): string {
+  const c = seatsNamed(run.lower, 'L', 'l');
+  logs.formedIn(
+    'C',
+    R,
+    c.map((s) => [s.seat] as const),
+    c.map((s) => s.who),
+  );
+  const intoD = logs.sealedInto('C', R + 3, 'l0', 'D', STATEMENT_D);
+  c.forEach(({ seat, who }) => logs.resultIn('C', R + 4, who, intoD, seat, 'pass'));
+  const d = [{ seat: 'C', who: 'q' }, ...seatsNamed(run.middle, 'E', 'e')];
+  const dSeats = d.map((s, i): NestedSeat => (i === 0 ? ['C', 1] : [s.seat]));
+  logs.formedIn(
+    'D',
+    R + 5,
+    dSeats,
+    d.map((s) => s.who),
+    STATEMENT_D,
+  );
+  const intoF = logs.sealedInto('D', R + 8, 'q', 'F', STATEMENT_F);
+  // C decides D's motion to take F's seat for its own seat too, so C's seats pass it as D's do.
+  c.forEach(({ seat, who }) => logs.resultIn('C', R + 9, who, intoF, seat, 'pass'));
+  d.forEach(({ seat, who }) => logs.resultIn('D', R + 9, who, intoF, seat, 'pass'));
+  const f = [{ seat: 'D', who: 'r' }, ...seatsNamed(run.upper, 'G', 'g')];
+  const fSeats = f.map((s, i): NestedSeat => (i === 0 ? ['D', 2] : [s.seat]));
+  logs.formedIn(
+    'F',
+    R + 10,
+    fSeats,
+    f.map((s) => s.who),
+    STATEMENT_F,
+  );
+  return logs.motionIn('F', R + 30, 'g0', STAGGERED_TEXT);
+}
+
+/**
+ * Every step of a staggered run, in time order: each seat's reports at their
+ * drawn minutes, before its own level's horizon, and each lower log's
+ * crossings, the extra ones while the motion is open above and the last one
+ * between its own horizon and the level above's.
+ */
+function staggeredSteps(run: StaggeredRun, timing: StaggeredTiming): StaggeredStep[] {
+  const open = R + 31;
+  const [hC, hD, hF] = [1, 2, 3].map((k) => R + 30 + WINDOW + k * HORIZON_STEP_MINUTES);
+  const ends = { C: hC ?? 0, D: hD ?? 0, F: hF ?? 0 };
+  let next = 0;
+  const levels = [
+    ['C', seatsNamed(run.lower, 'L', 'l'), run.lower],
+    ['D', seatsNamed(run.middle, 'E', 'e'), run.middle],
+    ['F', seatsNamed(run.upper, 'G', 'g'), run.upper],
+  ] as const;
+  const reports = levels.flatMap(([log, seats, said]) =>
+    seats.flatMap(({ seat, who }, i) =>
+      reportsOf(said[i] ?? null).map((result): StaggeredStep => {
+        const at = within(timing.times[next++] ?? 0, open, ends[log]);
+        return { at, kind: 'report', log, who, seat, result };
+      }),
+    ),
+  );
+  const cross = (lower: string, upper: string, at: number): StaggeredStep => ({
+    at,
+    kind: 'cross',
+    lower,
+    upper,
+  });
+  const crossings = [
+    ...timing.crossC.map((n) => cross('C', 'D', within(n, open, ends.D))),
+    cross('C', 'D', within(timing.lastC, ends.C, ends.D)),
+    ...timing.crossD.map((n) => cross('D', 'F', within(n, open, ends.F))),
+    cross('D', 'F', within(timing.lastD, ends.D, ends.F)),
+  ];
+  return [...reports, ...crossings].sort((a, b) => a.at - b.at);
+}
+
+/** `lower`'s devices crossing up to `upper` at minute `at`: they post whatever it owes there now. */
+function crossUp(logs: NestedLogs, lower: string, upper: string, at: number): void {
+  const owed = owedUp(logs.foldAll(at), lower, upper);
+  for (const body of owed) {
+    logs.add(upper, at, CROSSER[lower] ?? '', { type: 'group-result', body });
+  }
+}
+
+/**
+ * Plays one staggered run (#387) with `timing`, then folds every log at F's
+ * horizon: C's, D's and F's outcome on F's motion and whether each is final,
+ * and F's first section.
+ */
+function staggered(run: StaggeredRun, timing: StaggeredTiming) {
+  const logs = new NestedLogs();
+  const motion = staggeredNest(logs, run);
+  for (const step of staggeredSteps(run, timing)) {
+    if (step.kind === 'report') {
+      logs.resultIn(step.log, step.at, step.who, motion, step.seat, step.result);
+    } else {
+      crossUp(logs, step.lower, step.upper, step.at);
+    }
+  }
+  const states = logs.foldAll(R + 30 + WINDOW + 3 * HORIZON_STEP_MINUTES);
+  const decided = (log: string) => {
+    const p = states[log]?.proposals.find((proposal) => proposal.id === motion);
+    return { final: p?.final, outcome: p?.outcome.kind };
+  };
+  return {
+    C: decided('C'),
+    D: decided('D'),
+    F: decided('F'),
+    atoms: states.F?.atoms.map((atom) => atom.text.trim()),
+  };
+}
 
 /** The groups of the nested canary property: each log, its three voters, first the founder. */
 const CANARY_GROUPS = [
@@ -2259,7 +2383,8 @@ describe('properties of nested coalitions (#122)', { timeout: 120_000 }, () => {
               logs.resultIn('C', R + 21 + n, `l${String(i)}`, motion, `L${String(i)}`, result);
             }
           });
-          const at = R + 40;
+          // C's devices cross from C's horizon on (#387), with D's other seats' results among them.
+          const at = R + 20 + WINDOW + HORIZON_STEP_MINUTES;
           const upper = upperIn(sorted);
           upper.forEach((i, n) => {
             const when = at + n;
@@ -2279,15 +2404,15 @@ describe('properties of nested coalitions (#122)', { timeout: 120_000 }, () => {
               logs.resultIn('D', when, `e${String(i - 1)}`, motion, `E${String(i - 1)}`, result);
             }
           });
-          const deadline = R + 20 + WINDOW;
-          const now = s.expired ? deadline + RESULT_GRACE_MINUTES : deadline;
-          const d = logs.foldAll(now).D;
+          const horizonD = R + 20 + WINDOW + 2 * HORIZON_STEP_MINUTES;
+          const d = logs.foldAll(s.expired ? horizonD : at + 10).D;
           const p = d?.proposals.find((proposal) => proposal.id === motion);
           return { outcome: p?.outcome.kind, final: p?.final, atoms: d?.atoms };
         };
         const first = decide(true);
         expect(decide(false)).toEqual(first);
-        const fromC = outcomeOver(lower, false);
+        // C's outcome is final at its horizon, where a missing result counts as a fail.
+        const fromC = outcomeOver(lower, true);
         const crossed = fromC === 'open' ? null : fromC;
         const kind = outcomeOver([crossed, ...others], s.expired);
         expect(first.outcome).toBe(kind === 'open' ? 'lapse' : kind);
@@ -2297,49 +2422,74 @@ describe('properties of nested coalitions (#122)', { timeout: 120_000 }, () => {
     );
   });
 
-  it('never counts C’s seat in D as a pass C didn’t make, whenever C’s devices cross and a contest lands, and with C of four seats or fewer decides the same whenever they cross (#375)', () => {
-    const scenario = fc.integer({ min: 2, max: 6 }).chain((seats) =>
-      fc.record({
-        lower: fc.array(lowerReport, { minLength: seats, maxLength: seats }),
-        others: fc.array(maybeResult, { minLength: 1, maxLength: 3 }),
-        order: fc.array(fc.nat(), { minLength: 2 * seats, maxLength: 2 * seats }),
-        crossAfter: fc.array(fc.boolean(), { minLength: 2 * seats, maxLength: 2 * seats }),
-        expired: fc.boolean(),
-      }),
-    );
-    type Run = typeof scenario extends fc.Arbitrary<infer T> ? T : never;
-    // Five seats decide by two-thirds: four passes cross up early, then L0's contest leaves C open.
-    const withdrawn: Run = {
-      lower: ['contest', 'pass', 'pass', 'pass', null],
-      others: ['pass'],
-      order: [0, 9, 1, 2, 3, 4, 5, 6, 7, 8],
-      crossAfter: [false, false, false, true, false, false, false, false, false, false],
-      expired: false,
+  it('decides every level of three the same whatever the order and timing of results, at any seat count: only final outcomes cross up (#387)', () => {
+    const seats = (min: number) => fc.array(lowerReport, { minLength: min, maxLength: 5 });
+    const draws = fc.array(fc.nat({ max: DRAW - 1 }), { minLength: 0, maxLength: 3 });
+    const timing = fc.record({
+      times: fc.array(fc.nat({ max: DRAW - 1 }), { minLength: TIMES, maxLength: TIMES }),
+      crossC: draws,
+      crossD: draws,
+      lastC: fc.nat({ max: DRAW - 1 }),
+      lastD: fc.nat({ max: DRAW - 1 }),
+    });
+    const scenario = fc.record({
+      lower: fc.array(lowerReport, { minLength: 2, maxLength: 6 }),
+      middle: seats(1),
+      upper: seats(1),
+      first: timing,
+      second: timing,
+    });
+    // #375's counterexample: of C's five seats four pass, C's devices cross, then L0's contest.
+    const early = {
+      times: [0, 5000, 100, 200, 300],
+      crossC: [400],
+      crossD: [],
+      lastC: 0,
+      lastD: 0,
     };
-    // As above, but the fail for the withdrawn pass crosses, and then L4's pass makes C pass after all.
-    const recovered: Run = {
+    const late = {
+      times: [0, 5000, 100, 200, 300],
+      crossC: [],
+      crossD: [],
+      lastC: 9999,
+      lastD: 9999,
+    };
+    const pad = (t: StaggeredTiming) => ({
+      ...t,
+      times: [...t.times, ...Array<number>(TIMES - t.times.length).fill(9000)],
+    });
+    const withdrawn: StaggeredRun = {
+      lower: ['contest', 'pass', 'pass', 'pass', null],
+      middle: ['pass'],
+      upper: ['pass'],
+      first: pad(early),
+      second: pad(late),
+    };
+    // The recovery: after the contest and a crossing, L4's pass makes C pass after all.
+    const recovered: StaggeredRun = {
       lower: ['contest', 'pass', 'pass', 'pass', 'pass'],
-      others: ['pass'],
-      order: [0, 4, 1, 2, 3, 5, 6, 7, 8, 9],
-      crossAfter: [false, false, false, true, true, false, false, false, false, false],
-      expired: true,
+      middle: ['pass'],
+      upper: ['pass'],
+      first: pad({ ...early, times: [0, 5000, 100, 200, 300, 6000], crossC: [400, 5200] }),
+      second: pad({ ...late, times: [0, 5000, 100, 200, 300, 6000] }),
     };
     fc.assert(
       fc.property(scenario, (run) => {
-        const once = contestedLines(run, []);
-        const early = contestedLines(run, run.crossAfter);
-        const fromC = outcomeOver(run.lower.map(seatValue), false);
-        // Crossing once every report is in carries C's own outcome, and D decides on it.
-        expect(once.seatC).toBe(fromC === 'open' ? null : fromC);
-        const kind = outcomeOver([once.seatC, ...run.others], run.expired);
-        expect(once.outcome).toBe(kind === 'open' ? 'lapse' : kind);
-        // Whenever C's devices cross, C's seat in D is a pass only if C's own outcome is.
-        if (early.seatC === 'pass') expect(fromC).toBe('pass');
-        if (fromC === 'fail') expect(early.seatC).toBe('fail');
-        // Up to four seats every seat must pass, so a contest turns C's pass straight into a fail.
-        if (run.lower.length <= UNANIMOUS_UP_TO) expect(early).toEqual(once);
+        const first = staggered(run, run.first);
+        // The same outcome at every level, whatever the order and timing of results.
+        expect(staggered(run, run.second)).toEqual(first);
+        // And the one each level's final outcome gives, level by level from the groups up.
+        const c = outcomeOver(run.lower.map(seatValue), true);
+        const d = outcomeOver([c === 'open' ? null : c, ...run.middle.map(seatValue)], true);
+        const f = outcomeOver([d === 'open' ? null : d, ...run.upper.map(seatValue)], true);
+        expect(first).toMatchObject({
+          C: { final: true, outcome: c },
+          D: { final: true, outcome: d },
+          F: { final: true, outcome: f },
+        });
+        expect(first.atoms).toEqual([f === 'pass' ? STAGGERED_TEXT : STATEMENT_F.atoms[0]]);
       }),
-      { numRuns: 30, examples: [[withdrawn], [recovered]] },
+      { numRuns: 25, examples: [[withdrawn], [recovered]] },
     );
   });
 
@@ -2360,7 +2510,8 @@ describe('properties of nested coalitions (#122)', { timeout: 120_000 }, () => {
           const who = body.seat === seatKey('A') ? 'ca' : 'cb';
           logs.add('C', R + 30 + i, who, { type: 'group-result', body });
         });
-        const after = logs.foldAll(R + 40 + WINDOW);
+        // C's pass crosses up once final, at its horizon (#387).
+        const after = logs.foldAll(R + 20 + WINDOW + HORIZON_STEP_MINUTES);
         const upward = owedUp(after, 'C', 'D');
         expect(upward.map((body) => body.motion)).toContain(motion);
         const voters = CANARY_GROUPS.flatMap(([, names]) => names);

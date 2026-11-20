@@ -1,7 +1,17 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { coalitionOutcome, RESULT_GRACE_MINUTES, settlesAt } from './coalition';
+import type { CoalitionGenesisBody } from './event';
+import {
+  coalitionOutcome,
+  HORIZON_STEP_MINUTES,
+  horizonOf,
+  type MotionSeats,
+  motionHorizon,
+  newCoalition,
+  resultsCount,
+} from './coalition';
+import { DEFAULT_RULES } from './rules';
 
 describe('coalitionOutcome', () => {
   it('reads the issue’s examples', () => {
@@ -102,12 +112,59 @@ describe('coalitionOutcome', () => {
       }),
     );
   });
+});
 
-  it('gives results a week past the deadline', () => {
-    expect(RESULT_GRACE_MINUTES).toBe(10_080);
+/** A motion's snapshot at `level`, deciding nothing, for the horizon's rules alone. */
+function snapshot(id: string, deadline: number, level: number): MotionSeats {
+  return { id, deadline, level, seats: [], admit: null };
+}
+
+describe('horizons (#250, #387)', () => {
+  const D = 29_385_100;
+
+  it('steps one day per level: g is 1,440 minutes', () => {
+    expect(HORIZON_STEP_MINUTES).toBe(1_440);
   });
 
-  it('settles a motion, and any Dispatch it carries, a week past its deadline (#124)', () => {
-    expect(settlesAt({ deadline: 29_385_100 })).toBe(29_395_180);
+  it('puts a level-k motion’s horizon at its deadline plus k days', () => {
+    expect(horizonOf({ deadline: D, level: 0 })).toBe(D);
+    expect(horizonOf({ deadline: D, level: 1 })).toBe(D + 1_440);
+    expect(horizonOf({ deadline: D, level: 2 })).toBe(D + 2_880);
+    expect(horizonOf({ deadline: D, level: 3 })).toBe(D + 4_320);
+  });
+
+  it('reads a motion’s level from its snapshot, which a later admission doesn’t move', () => {
+    const coalition = { level: 2, motions: [snapshot('m', D, 1)] };
+    expect(motionHorizon(coalition, { id: 'm', deadline: D })).toBe(D + 1_440);
+  });
+
+  it('takes the coalition’s level for a motion with no snapshot, and a group’s deadline as its own', () => {
+    expect(motionHorizon({ level: 3, motions: [] }, { id: 'x', deadline: D })).toBe(D + 4_320);
+    expect(motionHorizon(null, { id: 'x', deadline: D })).toBe(D);
+  });
+
+  it('counts results until the minute before each level’s horizon, and not at it', () => {
+    for (const level of [1, 2, 3]) {
+      const coalition = { formsFinal: 0, motions: [snapshot('m', D, level)] };
+      const horizon = D + level * 1_440;
+      expect(resultsCount(coalition, 'g', 'm', horizon - 1)).toBe(true);
+      expect(resultsCount(coalition, 'g', 'm', horizon)).toBe(false);
+    }
+  });
+
+  it('makes a formation final 14 days plus a day per level after its genesis', () => {
+    const seat = (key: string, level?: number) => ({ name: key, key, ...(level ? { level } : {}) });
+    const body = (seats: CoalitionGenesisBody['seats']): CoalitionGenesisBody => ({
+      kind: 'coalition',
+      name: 'C',
+      seats,
+      documents: [{ title: 'Mission statement', atoms: ['We share.'] }],
+    });
+    const one = newCoalition(body([seat('a'), seat('b')]), DEFAULT_RULES, 1_000);
+    const two = newCoalition(body([seat('a', 1), seat('b')]), DEFAULT_RULES, 1_000);
+    expect(one?.formsFinal).toBe(1_000 + 14 * 1_440 + 1_440);
+    expect(two?.formsFinal).toBe(1_000 + 14 * 1_440 + 2_880);
+    expect(resultsCount({ formsFinal: 5, motions: [] }, 'g', 'g', 4)).toBe(true);
+    expect(resultsCount({ formsFinal: 5, motions: [] }, 'g', 'g', 5)).toBe(false);
   });
 });

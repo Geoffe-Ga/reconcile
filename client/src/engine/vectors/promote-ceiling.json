@@ -1184,7 +1184,7 @@
       }
     },
     {
-      "name": "ceiling-1-stops-at-C: B passes C’s promotion motion and C passes it; with ceiling 1, C owes D no record and nothing opens in D or E; once C’s pass is final, the Dispatch goes out in C under its own id",
+      "name": "ceiling-1-stops-at-C: B passes C’s promotion motion and C passes it; with ceiling 1, C owes D no record and nothing opens in D or E; once C’s pass is final, at its horizon, the deadline plus a day (#387), the Dispatch goes out in C under its own id",
       "logs": {
         "A": [
           {
@@ -1763,7 +1763,7 @@
           }
         ]
       },
-      "relayNow": 29395174,
+      "relayNow": 29386534,
       "expect": {
         "A": {
           "dispatches": [
@@ -1799,7 +1799,7 @@
               "title": "Rally Saturday",
               "text": "Meet at the river at ten.",
               "doc": null,
-              "received": 29395174
+              "received": 29386534
             }
           ]
         },
@@ -1830,7 +1830,7 @@
       }
     },
     {
-      "name": "ceiling-1-passed-not-final: as soon as C’s pass is certain, before results on it stop counting, the Dispatch hasn’t gone out in C: it waits until the pass is final",
+      "name": "ceiling-1-passed-not-final: a minute before C’s horizon, its pass is certain but not final, so the Dispatch hasn’t gone out in C: it waits until the pass is final",
       "logs": {
         "A": [
           {
@@ -2409,7 +2409,7 @@
           }
         ]
       },
-      "relayNow": 29395173,
+      "relayNow": 29386533,
       "expect": {
         "C": {
           "proposals": [

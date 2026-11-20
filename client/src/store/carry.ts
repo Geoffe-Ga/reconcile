@@ -28,7 +28,7 @@ import { base64url } from '../crypto/base64url';
 import { drawBelow, type Random } from '../crypto/random';
 import { newBallotSalt } from '../crypto/salt';
 import { can } from '../engine/capabilities';
-import { MAX_LEVEL, RESULT_GRACE_MINUTES } from '../engine/coalition';
+import { MAX_LEVEL, motionHorizon } from '../engine/coalition';
 import {
   type Ceiling,
   type ParsedEvent,
@@ -179,7 +179,7 @@ interface Holding {
 /**
  * The relay minute of each final decision on the Dispatch `id` in a log on
  * this device: a group's at its close, a coalition's once final, a fail at
- * once and a pass once results on it stop counting.
+ * once and a pass once results on it stop counting, at its horizon (#387).
  */
 function decisions(id: string, { groups, coalitions }: Holding): number[] {
   const inGroups = groups.flatMap(({ state }) =>
@@ -190,7 +190,7 @@ function decisions(id: string, { groups, coalitions }: Holding): number[] {
   const inCoalitions = coalitions.flatMap(({ state }) =>
     state.proposals
       .filter((p) => p.final && p.target.kind === 'promote' && p.target.dispatch.id === id)
-      .map((p) => p.closedAt ?? p.deadline + RESULT_GRACE_MINUTES),
+      .map((p) => p.closedAt ?? motionHorizon(state.coalition, p)),
   );
   return [...inGroups, ...inCoalitions];
 }

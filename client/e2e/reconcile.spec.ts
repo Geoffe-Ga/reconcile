@@ -16,10 +16,10 @@
  *
  * Then Ana proposes a change to the coalition's statement from its home
  * (#120), it opens as a coalition vote in both groups, and once both pass,
- * both see that the coalition passed it, to take effect a week after its
+ * both see that the coalition passed it, to take effect a day after its
  * deadline. Its title, why and text are canaries too.
  *
- * Admitting a third group isn't here: it is final only a week after its
+ * Admitting a third group isn't here: it is final only a day after its
  * deadline (#100), so `src/app/reconcileFlow.test.tsx` covers it on a fake
  * relay. `coalition.spec.ts` (#127) sees a coalition's text change once a
  * pass is final, and a change fail in one group.
@@ -181,7 +181,7 @@ test('two groups reconcile by a card, both pass, and the relay keeps none of it 
     await vote(ben, FOUR);
   });
 
-  await test.step('once Riverside passes it too, the coalition has passed it, to take effect in a week', async () => {
+  await test.step('once Riverside passes it too, the coalition has passed it, to take effect a day after its deadline', async () => {
     const { page } = ana;
     await page.getByRole('link', { name: words.riverside, exact: true }).click();
     await page

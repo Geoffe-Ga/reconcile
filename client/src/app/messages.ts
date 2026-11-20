@@ -2604,8 +2604,24 @@ export const messages = {
     waitingAfter: '’s vote',
     /** Around a group's name: "Oak St Co-op didn’t pass this". */
     didntPassAfter: 'didn’t pass this',
+    /** After a group's own waiting line, while its open vote has a ballot and isn't passing (#250). */
+    notPassing: 'Currently not passing',
     waitingCard: 'Waiting for another group to bring the card.',
-    lapsed: 'Not every group voted in time.',
+    /** A coalition still forming at `formsFinal`, declined by the close-out (#250). */
+    lapsed: 'Not every group voted in time, so the coalition won’t form.',
+    /**
+     * In place of the ballot on a group's open reconcile vote once another
+     * founding group's fail has declined its coalition (#250), after that
+     * group's name in its own `<bdi>`.
+     */
+    withdrawnAfter: 'didn’t pass this, so the coalition won’t form.',
+    /**
+     * Above the ballot on an open reconcile or coalition vote, from 3 days
+     * before it closes, for someone who hasn't scored it (#250): around the
+     * deadline in a `<time>` element.
+     */
+    reminderBefore: 'If you don’t vote by',
+    reminderAfter: ', you won’t be counted.',
     youTakePart: 'You take part as',
     takePart: 'Take part',
     takePartHint: 'Join the coalition under your group’s seat.',
@@ -2721,9 +2737,14 @@ export const messages = {
     composerLinkHint: 'Where the groups can talk it over.',
     composerVisibility:
       'Your draft stays on this device until you propose it. Then every group in the coalition sees this Proposal, under the name you take part as.',
-    /** Under "Send a Dispatch if this passes" on a coalition's composer (#124). */
-    composerDispatchHint:
-      'If the coalition passes this, the Dispatch goes out once the pass is final, a week after voting ends. Everyone who reads the coalition gets it: its followers, and people in its groups who open it.',
+    /**
+     * Under "Send a Dispatch if this passes" on a coalition's composer (#124):
+     * its pass is final a day after voting ends for each level it has (#387).
+     */
+    composerDispatchHint: (days: number) =>
+      `If the coalition passes this, the Dispatch goes out once the pass is final, ${
+        days === 1 ? 'a day' : `${count(days)} days`
+      } after voting ends. Everyone who reads the coalition gets it: its followers, and people in its groups who open it.`,
     /** The coalition home of someone who only follows it (#124). */
     followingEyebrow: 'Following',
     /** Between member groups' names under a followed coalition's name: "Riverside Tenants · Oak St Co-op". */

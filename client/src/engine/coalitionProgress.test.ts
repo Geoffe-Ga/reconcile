@@ -2,7 +2,7 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import { foldLogs, folded, Logs, seatKey } from '../test/coalitions';
-import { coalitionOutcome, RESULT_GRACE_MINUTES } from './coalition';
+import { coalitionOutcome, HORIZON_STEP_MINUTES } from './coalition';
 import { coalitionProgress, passesNeeded } from './coalitionProgress';
 import type { GroupResultValue } from './event';
 import type { GroupState } from './fold';
@@ -102,7 +102,7 @@ describe('coalitionProgress', () => {
     expect(opened.deciding).toEqual(['Riverside Tenants', 'Oak St Co-op']);
     expect(opened.mine).toBeUndefined();
     expect(opened.outcome).toBeUndefined();
-    expect(opened.settles).toBe(open.deadline + RESULT_GRACE_MINUTES);
+    expect(opened.settles).toBe(open.deadline + HORIZON_STEP_MINUTES);
 
     const one = coalitionWith(2, ['pass']);
     expect(progressOf(one.state, one.motion, 'Riverside Tenants')).toMatchObject({
@@ -116,7 +116,7 @@ describe('coalitionProgress', () => {
     const passed = progressOf(both.state, both.motion);
     expect(passed).toMatchObject({ passed: 2, deciding: [], outcome: 'pass', final: false });
 
-    const final = coalitionWith(2, ['pass', 'pass'], WINDOW + RESULT_GRACE_MINUTES);
+    const final = coalitionWith(2, ['pass', 'pass'], WINDOW + HORIZON_STEP_MINUTES);
     expect(progressOf(final.state, final.motion)).toMatchObject({ outcome: 'pass', final: true });
 
     const failed = coalitionWith(2, ['pass', 'fail']);
@@ -130,9 +130,9 @@ describe('coalitionProgress', () => {
   });
 
   it('turns a pass final only once results stop counting, a minute at a time', () => {
-    const before = coalitionWith(2, ['pass', 'pass'], WINDOW + RESULT_GRACE_MINUTES - 1);
+    const before = coalitionWith(2, ['pass', 'pass'], WINDOW + HORIZON_STEP_MINUTES - 1);
     expect(progressOf(before.state, before.motion).final).toBe(false);
-    const at = coalitionWith(2, ['pass', 'pass'], WINDOW + RESULT_GRACE_MINUTES);
+    const at = coalitionWith(2, ['pass', 'pass'], WINDOW + HORIZON_STEP_MINUTES);
     expect(progressOf(at.state, at.motion).final).toBe(true);
   });
 
@@ -172,7 +172,7 @@ describe('coalitionProgress', () => {
     const { state, motion } = coalitionWith(
       5,
       ['pass', 'pass', 'pass'],
-      WINDOW + RESULT_GRACE_MINUTES,
+      WINDOW + HORIZON_STEP_MINUTES,
     );
     expect(progressOf(state, motion)).toMatchObject({
       passed: 3,
@@ -226,7 +226,7 @@ describe('coalitionProgress', () => {
       );
     fc.assert(
       fc.property(runs, ([size, reports, late]) => {
-        const after = late ? WINDOW + RESULT_GRACE_MINUTES : undefined;
+        const after = late ? WINDOW + HORIZON_STEP_MINUTES : undefined;
         const { state, motion } = coalitionWith(size, reports, after);
         const progress = progressOf(state, motion);
         const fails = reports.filter((r) => r === 'fail' || r === 'contest').length;

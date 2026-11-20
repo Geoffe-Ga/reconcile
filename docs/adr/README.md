@@ -39,7 +39,7 @@ Settled decisions about how Reconcile works. Before designing anything, check he
 | [0033](0033-legal-entity-staging.md) | Founder-owned pilot, then a fiscal sponsor (to be chosen), then Reconcile's own 501(c)(3) | Accepted |
 | [0034](0034-blind-credit-payment-rail.md) | Peer money moves as blind-signed credits; platform gifts use an ordinary processor; never Stripe Connect | Accepted (direction) |
 | [0035](0035-reconcile-group-minimal-eternal-core.md) | Reconcile-the-group starts from a short eternal core, its wording settled before genesis; the rest is ratified by the first groups | Accepted; amended 2026-11-08 |
-| [0036](0036-coalition-each-group-passes.md) | Coalition motions pass group by group; only signed results cross group lines | Accepted |
+| [0036](0036-coalition-each-group-passes.md) | Coalition motions pass group by group; only signed results cross group lines; a pass is final a day per level after its deadline, only final outcomes cross up, and a coalition still forming 14 days plus a day per level after its genesis is declined | Accepted; amended 2026-11-14 (#250, #387) |
 | [0037](0037-holonic-promotion.md) | Each level decides; the author sets a ceiling, at most the coalitions (0071); votes travel with the Dispatch on the voter's own device | Accepted; amended by 0065, 0070, 0071 |
 | [0038](0038-optional-discovery.md) | Discovery is optional; groups can open a front door that never lists people, and that closes when a membership ends (#288) | Accepted; amended 2026-11-12 (#288), and by 0077 |
 | [0039](0039-integrations-per-group-opt-in.md) | Bot reach and sight are a per-group ladder, nudge-only by default; a nudge carries a vote link that only the group can open (0079) | Accepted; amended by 0079 |

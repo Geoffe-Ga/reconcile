@@ -13,14 +13,14 @@
  * - Ana proposes new wording for the coalition's first section from its
  *   home. A passes it, and A's profiles read "Your group passed this.
  *   Waiting for 1 more group."; then B passes it, and every profile reads
- *   that the coalition passed it, to take effect a week after its deadline.
+ *   that the coalition passed it, to take effect a day after its deadline (#387).
  *   Before B votes, the motion's Copy link to this vote gives a link in A
  *   and another in B (#472), and Cy, in both, opens each in its own group.
  * - Ana proposes a change to the second section. A passes it and B scores
  *   it 0 (Ben's and Cy's reasons are canaries), so every profile reads "Not
  *   every group passed.". Dee and Ana, in A alone, never see either reason
  *   on any screen, nor B's totals.
- * - A pass is final only a week after its deadline (#100, #250), and the
+ * - A pass is final only a day after its deadline (#100, #250, #387), and the
  *   real relay's clock can't move, so every profile then reads the relay's
  *   mailbox answers that much later (`support/relayNow.ts`), once nothing
  *   more has to cross. Each coalition home lists both motions in Decided,
@@ -338,7 +338,7 @@ test('two groups reconcile, pass one coalition change and fail another', async (
       ),
     );
     await expectAccessible(ana, 'a coalition pass, not yet final');
-    // The relay minute it takes effect: a week after its deadline (#100, #250).
+    // The relay minute it takes effect: a day after its deadline (#100, #250, #387).
     const day = await coalitionResult(ana).locator('time').getAttribute('datetime');
     settles = Date.parse(day ?? '') / 60_000;
     expect(settles).toBeGreaterThan(await relayMinute(request));
@@ -416,7 +416,7 @@ test('two groups reconcile, pass one coalition change and fail another', async (
     }
   });
 
-  await test.step('a week after the deadline, every coalition home has the first change and not the second', async () => {
+  await test.step('a day after the deadline, every coalition home has the first change and not the second', async () => {
     // Every profile reads the relay's clock at once, an hour past the minute the pass takes effect.
     const minutes = settles - (await relayMinute(request)) + 60;
     const later = await Promise.all(everyone.map((person) => readRelayLater(person, minutes)));
