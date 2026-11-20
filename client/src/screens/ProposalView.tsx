@@ -565,6 +565,7 @@ function Vote({ props, proposal, versions, motion }: VoteProps) {
   // Once another founding group's fail has declined the coalition, its reconcile ballot is withdrawn.
   const withdrawn = withdrawnBy(proposal, props.coalitions ?? []);
   const reason = whyNoVote(props, proposal);
+  const shown = withdrawn === null && ballotShown(reason, proposal);
   const closed = proposal.final || now >= proposal.deadline;
   const suspended = isSuspended(state, me);
   const mine = myBallot(props, proposal);
@@ -575,10 +576,8 @@ function Vote({ props, proposal, versions, motion }: VoteProps) {
       <HigherBar proposal={proposal} />
       <NarrowedNote state={state} proposal={proposal} />
       <Legend comparison={comparison} open={!proposal.final} />
-      {withdrawn === null ? (
-        <Reminder props={props} proposal={proposal} hasVoted={mine.hasVoted} />
-      ) : null}
-      {withdrawn === null && ballotShown(reason, proposal) ? (
+      {shown ? <Reminder props={props} proposal={proposal} hasVoted={mine.hasVoted} /> : null}
+      {shown ? (
         <CarriedOrBallot props={props} proposal={proposal} mine={mine} closed={closed}>
           {(carried) => (
             <Ballot
@@ -607,15 +606,25 @@ function Vote({ props, proposal, versions, motion }: VoteProps) {
           <ChoiceList versions={versions} current={comparison.current} layout={layout}>
             {meters}
           </ChoiceList>
-          {withdrawn === null ? null : <Withdrawn group={withdrawn} />}
-          {reason === null || withdrawn !== null ? null : (
-            <NoVote state={state} me={me} reason={reason} leaving={readsOnly(props)} />
-          )}
+          <NoBallot props={props} reason={reason} withdrawn={withdrawn} />
         </>
       )}
       <AddVersion props={props} proposal={proposal} />
     </Block>
   );
+}
+
+/** Why there's no ballot: a withdrawn reconcile vote's line (#250), else the reason, if any. */
+function NoBallot(props: {
+  readonly props: ProposalViewProps;
+  readonly reason: string | null;
+  readonly withdrawn: string | null;
+}) {
+  const { reason, withdrawn } = props;
+  const { state, me } = props.props;
+  if (withdrawn !== null) return <Withdrawn group={withdrawn} />;
+  if (reason === null) return null;
+  return <NoVote state={state} me={me} reason={reason} leaving={readsOnly(props.props)} />;
 }
 
 /**

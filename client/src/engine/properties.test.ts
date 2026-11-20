@@ -2098,7 +2098,11 @@ function outcomeOver(results: readonly ('pass' | 'fail' | null)[], expired: bool
 
 const STATEMENT_D = { name: 'Metro Renters', title: 'Shared ground', atoms: ['Rent stays fair.'] };
 
-const STATEMENT_F = { name: 'State Renters', title: 'Shared ground', atoms: ['Renters have a voice.'] };
+const STATEMENT_F = {
+  name: 'State Renters',
+  title: 'Shared ground',
+  atoms: ['Renters have a voice.'],
+};
 
 /** The text F's motion gives its first section in the staggered property (#387). */
 const STAGGERED_TEXT = 'Renters have a voice everywhere.';
@@ -2171,19 +2175,36 @@ function seatsNamed(reports: readonly LowerReport[], seat: string, who: string) 
  */
 function staggeredNest(logs: NestedLogs, run: StaggeredRun): string {
   const c = seatsNamed(run.lower, 'L', 'l');
-  logs.formedIn('C', R, c.map((s) => [s.seat] as const), c.map((s) => s.who));
+  logs.formedIn(
+    'C',
+    R,
+    c.map((s) => [s.seat] as const),
+    c.map((s) => s.who),
+  );
   const intoD = logs.sealedInto('C', R + 3, 'l0', 'D', STATEMENT_D);
   c.forEach(({ seat, who }) => logs.resultIn('C', R + 4, who, intoD, seat, 'pass'));
   const d = [{ seat: 'C', who: 'q' }, ...seatsNamed(run.middle, 'E', 'e')];
   const dSeats = d.map((s, i): NestedSeat => (i === 0 ? ['C', 1] : [s.seat]));
-  logs.formedIn('D', R + 5, dSeats, d.map((s) => s.who), STATEMENT_D);
+  logs.formedIn(
+    'D',
+    R + 5,
+    dSeats,
+    d.map((s) => s.who),
+    STATEMENT_D,
+  );
   const intoF = logs.sealedInto('D', R + 8, 'q', 'F', STATEMENT_F);
   // C decides D's motion to take F's seat for its own seat too, so C's seats pass it as D's do.
   c.forEach(({ seat, who }) => logs.resultIn('C', R + 9, who, intoF, seat, 'pass'));
   d.forEach(({ seat, who }) => logs.resultIn('D', R + 9, who, intoF, seat, 'pass'));
   const f = [{ seat: 'D', who: 'r' }, ...seatsNamed(run.upper, 'G', 'g')];
   const fSeats = f.map((s, i): NestedSeat => (i === 0 ? ['D', 2] : [s.seat]));
-  logs.formedIn('F', R + 10, fSeats, f.map((s) => s.who), STATEMENT_F);
+  logs.formedIn(
+    'F',
+    R + 10,
+    fSeats,
+    f.map((s) => s.who),
+    STATEMENT_F,
+  );
   return logs.motionIn('F', R + 30, 'g0', STAGGERED_TEXT);
 }
 
@@ -2419,8 +2440,20 @@ describe('properties of nested coalitions (#122)', { timeout: 120_000 }, () => {
       second: timing,
     });
     // #375's counterexample: of C's five seats four pass, C's devices cross, then L0's contest.
-    const early = { times: [0, 5000, 100, 200, 300], crossC: [400], crossD: [], lastC: 0, lastD: 0 };
-    const late = { times: [0, 5000, 100, 200, 300], crossC: [], crossD: [], lastC: 9999, lastD: 9999 };
+    const early = {
+      times: [0, 5000, 100, 200, 300],
+      crossC: [400],
+      crossD: [],
+      lastC: 0,
+      lastD: 0,
+    };
+    const late = {
+      times: [0, 5000, 100, 200, 300],
+      crossC: [],
+      crossD: [],
+      lastC: 9999,
+      lastD: 9999,
+    };
     const pad = (t: StaggeredTiming) => ({
       ...t,
       times: [...t.times, ...Array<number>(TIMES - t.times.length).fill(9000)],

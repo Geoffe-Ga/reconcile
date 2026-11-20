@@ -9,13 +9,7 @@
  * groups are still deciding, and, once the counts settle it, the outcome
  * `coalitionOutcome` gives.
  */
-import {
-  coalitionOutcome,
-  horizonOf,
-  seatCounts,
-  seatResult,
-  UNANIMOUS_UP_TO,
-} from './coalition';
+import { coalitionOutcome, horizonOf, seatCounts, seatResult, UNANIMOUS_UP_TO } from './coalition';
 import type { GroupResultValue } from './event';
 import type { GroupState } from './fold';
 
