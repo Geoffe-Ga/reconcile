@@ -20,7 +20,7 @@
  * Proposals change no section, so none of them appears. `describeChange` says what a pass did as data; the
  * screens put it into words, since src/engine imports no app code.
  */
-import { RESULT_GRACE_MINUTES } from './coalition';
+import { motionHorizon } from './coalition';
 import { coalitionProgress, type GroupStanding } from './coalitionProgress';
 import { documentOf, documentSections } from './documents';
 import { closeTime, type GroupState, type Proposal, proposalTally, type Version } from './fold';
@@ -280,12 +280,11 @@ function steps(state: GroupState): Step[] {
  * When a decision took effect, as the coalition home dates it too: a
  * Proposal's close, its early close or its deadline. A coalition motion
  * closes at the result that fails it (#100); otherwise it's decided once
- * results stop counting, its deadline plus 10,080 minutes, when a pass
- * becomes final and a motion short of results fails.
+ * results stop counting, at its horizon (#387), when a pass becomes final and
+ * a motion short of results fails. A group's horizon is its deadline.
  */
 function decidedAt(state: GroupState, proposal: Proposal): number {
-  const settles = state.coalition !== null && proposal.closedAt === null;
-  return settles ? proposal.deadline + RESULT_GRACE_MINUTES : closeTime(proposal);
+  return proposal.closedAt ?? motionHorizon(state.coalition, proposal);
 }
 
 /** The winning version's totals: from a cleared archive's kept tally (#108), else the Proposal's own. */

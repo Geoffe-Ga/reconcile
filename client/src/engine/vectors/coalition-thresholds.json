@@ -430,7 +430,7 @@
       }
     },
     {
-      "name": "threshold-4-all: at 4 seats, all 4 passes pass, final once results stop counting at deadline + 10,080, when the Atom changes",
+      "name": "threshold-4-all: at 4 seats, all 4 passes pass, final once results stop counting at deadline + 1,440, its horizon at level 1, when the Atom changes",
       "logs": {
         "coalition": [
           {
@@ -639,7 +639,7 @@
           }
         ]
       },
-      "relayNow": 29395180,
+      "relayNow": 29386540,
       "expect": {
         "coalition": {
           "proposals": [
@@ -662,7 +662,7 @@
       }
     },
     {
-      "name": "threshold-4-all-not-yet: at 4 seats, all 4 passes read as a pass a minute before deadline + 10,080, but it isn't final, so the Atom hasn't changed",
+      "name": "threshold-4-all-not-yet: at 4 seats, all 4 passes read as a pass a minute before deadline + 1,440, its horizon at level 1, but it isn't final, so the Atom hasn't changed",
       "logs": {
         "coalition": [
           {
@@ -871,7 +871,7 @@
           }
         ]
       },
-      "relayNow": 29395179,
+      "relayNow": 29386539,
       "expect": {
         "coalition": {
           "proposals": [
@@ -1165,7 +1165,7 @@
       }
     },
     {
-      "name": "threshold-5-four: at 5 seats, 4 passes with the fifth missing read as a pass before deadline + 10,080",
+      "name": "threshold-5-four: at 5 seats, 4 passes with the fifth missing read as a pass before deadline + 1,440, its horizon at level 1",
       "logs": {
         "coalition": [
           {
@@ -2135,7 +2135,7 @@
       }
     },
     {
-      "name": "threshold-5-expired: at 5 seats, 3 passes with two seats missing fail once deadline + 10,080 arrives, when missing results count as fail",
+      "name": "threshold-5-expired: at 5 seats, 3 passes with two seats missing fail once deadline + 1,440, its horizon at level 1 arrives, when missing results count as fail",
       "logs": {
         "coalition": [
           {
@@ -2361,7 +2361,7 @@
           }
         ]
       },
-      "relayNow": 29395182,
+      "relayNow": 29386542,
       "expect": {
         "coalition": {
           "proposals": [

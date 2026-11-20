@@ -2721,9 +2721,14 @@ export const messages = {
     composerLinkHint: 'Where the groups can talk it over.',
     composerVisibility:
       'Your draft stays on this device until you propose it. Then every group in the coalition sees this Proposal, under the name you take part as.',
-    /** Under "Send a Dispatch if this passes" on a coalition's composer (#124). */
-    composerDispatchHint:
-      'If the coalition passes this, the Dispatch goes out once the pass is final, a week after voting ends. Everyone who reads the coalition gets it: its followers, and people in its groups who open it.',
+    /**
+     * Under "Send a Dispatch if this passes" on a coalition's composer (#124):
+     * its pass is final a day after voting ends for each level it has (#387).
+     */
+    composerDispatchHint: (days: number) =>
+      `If the coalition passes this, the Dispatch goes out once the pass is final, ${
+        days === 1 ? 'a day' : `${count(days)} days`
+      } after voting ends. Everyone who reads the coalition gets it: its followers, and people in its groups who open it.`,
     /** The coalition home of someone who only follows it (#124). */
     followingEyebrow: 'Following',
     /** Between member groups' names under a followed coalition's name: "Riverside Tenants · Oak St Co-op". */

@@ -2,7 +2,7 @@
   "kind": "coalition",
   "vectors": [
     {
-      "name": "follow-motion-dispatch: a coalition motion may carry a Dispatch (#124), and once every seat's pass is final, at deadline + 10,080, it goes out from the motion, pointing to the coalition's Document, received in that minute",
+      "name": "follow-motion-dispatch: a coalition motion may carry a Dispatch (#124), and once every seat's pass is final, at deadline + 1,440, its horizon at level 1, it goes out from the motion, pointing to the coalition's Document, received in that minute",
       "logs": {
         "coalition": [
           {
@@ -133,7 +133,7 @@
           }
         ]
       },
-      "relayNow": 29395176,
+      "relayNow": 29386536,
       "expect": {
         "coalition": {
           "proposals": [
@@ -163,7 +163,7 @@
               "title": "Banks too",
               "text": "The coalition now keeps the banks clean as well.",
               "doc": "@1",
-              "received": 29395176
+              "received": 29386536
             }
           ],
           "ignored": []
@@ -302,7 +302,7 @@
           }
         ]
       },
-      "relayNow": 29395175,
+      "relayNow": 29386535,
       "expect": {
         "coalition": {
           "proposals": [
@@ -602,7 +602,7 @@
           },
           {
             "seq": 9,
-            "received": 29395175,
+            "received": 29386535,
             "event": {
               "v": 1,
               "type": "group-result",
@@ -614,7 +614,7 @@
           }
         ]
       },
-      "relayNow": 29396616,
+      "relayNow": 29387976,
       "expect": {
         "coalition": {
           "proposals": [
@@ -939,7 +939,7 @@
           },
           {
             "seq": 12,
-            "received": 29395176,
+            "received": 29386536,
             "event": {
               "v": 1,
               "type": "leave",
@@ -951,7 +951,7 @@
           }
         ]
       },
-      "relayNow": 29395260,
+      "relayNow": 29386620,
       "expect": {
         "coalition": {
           "dispatches": [
@@ -961,7 +961,7 @@
               "title": "Banks too",
               "text": "The coalition now keeps the banks clean as well.",
               "doc": "@1",
-              "received": 29395176
+              "received": 29386536
             },
             {
               "id": "@9",
@@ -969,7 +969,7 @@
               "title": "Meetings move",
               "text": "We now meet on the second Sunday.",
               "doc": "@1",
-              "received": 29395260
+              "received": 29386620
             }
           ],
           "ignored": []
@@ -1573,7 +1573,7 @@
           }
         ]
       },
-      "relayNow": 29395180,
+      "relayNow": 29386540,
       "expect": {
         "A": {
           "proposals": [
@@ -1591,7 +1591,7 @@
               "title": "Banks too",
               "text": "The coalition now keeps the banks clean as well.",
               "doc": "@6",
-              "received": 29395180
+              "received": 29386540
             }
           ]
         }

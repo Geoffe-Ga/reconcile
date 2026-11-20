@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 
 import { fromBase64url } from '../crypto/base64url';
 import { deriveCoalitionEntryId } from '../crypto/card';
-import { RESULT_GRACE_MINUTES } from '../engine/coalition';
+import { HORIZON_STEP_MINUTES } from '../engine/coalition';
 import { signEvent } from '../engine/event';
 import { fold } from '../engine/fold';
 import { DAY_MINUTES } from '../engine/rules';
@@ -123,19 +123,19 @@ describe('coalitionHome', () => {
     expect(genesis).not.toBe('');
   });
 
-  it('dates a pass when it became final, a week after its deadline', () => {
+  it('dates a pass when it became final, a day after its deadline at level 1 (#387)', () => {
     const logs = new Logs();
     const at = formed(logs);
     const motion = logs.motion(at, 'kim');
     logs.result(at + 1, 'kim', motion, 'Riverside', 'pass');
     logs.result(at + 2, 'zed', motion, 'Oak St', 'pass');
-    const later = at + WEEK + RESULT_GRACE_MINUTES;
+    const later = at + WEEK + HORIZON_STEP_MINUTES;
     const home = coalitionHome(heldBy(logs, later, 'kim'), []);
 
     expect(home?.open).toEqual([]);
     expect(home?.decided[0]).toMatchObject({
       id: motion,
-      decidedAt: at + WEEK + RESULT_GRACE_MINUTES,
+      decidedAt: at + WEEK + HORIZON_STEP_MINUTES,
       closedAt: null,
       groupId: null,
       progress: { outcome: 'pass', final: true },
@@ -203,10 +203,11 @@ describe('coalitionHome’s Dispatches (#126)', () => {
     const m = logs.promoteIn('coalition', R + 30, 'kim', { target, title: words.title, why: '' });
     logs.result(R + 31, 'kim', m, 'Riverside', 'pass');
     logs.result(R + 31, 'zed', m, 'Oak St', 'pass');
-    const before = coalitionHome(heldBy(logs, R + 30 + 2 * WEEK - 1, 'kim'), []);
+    // Final at its horizon, its deadline plus a day at level 1 (#387).
+    const before = coalitionHome(heldBy(logs, R + 30 + WEEK + DAY_MINUTES - 1, 'kim'), []);
     expect(before?.dispatches).toEqual([]);
 
-    const final = R + 30 + 2 * WEEK;
+    const final = R + 30 + WEEK + DAY_MINUTES;
     const held = heldBy(logs, final, 'kim');
     const view = coalitionHome(held, []);
     expect(view?.dispatches).toEqual([
@@ -264,7 +265,8 @@ describe('a coalition home for followers and sharers (#124)', () => {
     const first = logs.motion(at, 'kim', 'Banks too.', { title: 'First', text: '' });
     logs.result(at + 1, 'kim', first, 'Riverside', 'pass');
     logs.result(at + 2, 'zed', first, 'Oak St', 'pass');
-    const later = at + 8 * DAY_MINUTES;
+    // After the first closes and before its horizon, a day later (#387).
+    const later = at + 7 * DAY_MINUTES + 60;
     const second = logs.motion(later, 'zed', 'Banks and bridges.', { title: 'Second', text: '' });
     logs.result(later + 1, 'kim', second, 'Riverside', 'pass');
     logs.result(later + 2, 'zed', second, 'Oak St', 'pass');

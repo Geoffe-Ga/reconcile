@@ -55,7 +55,10 @@ describe('CoalitionComposer', () => {
     );
     const dispatch = screen.getByRole('checkbox', { name: 'Send a Dispatch if this passes' });
     expect(dispatch).not.toBeChecked();
-    expect(dispatch).toHaveAccessibleDescription(messages.coalitions.composerDispatchHint);
+    // A coalition of groups: its pass is final a day after voting ends (#387).
+    expect(dispatch).toHaveAccessibleDescription(messages.coalitions.composerDispatchHint(1));
+    expect(messages.coalitions.composerDispatchHint(1)).toContain('a day after voting ends');
+    expect(messages.coalitions.composerDispatchHint(3)).toContain('3 days after voting ends');
     expect(screen.getByText(messages.coalitions.composerVisibility)).toBeVisible();
     expect(screen.getByRole('textbox', { name: 'Why' })).toHaveAccessibleDescription(
       messages.coalitions.composerWhyHint,

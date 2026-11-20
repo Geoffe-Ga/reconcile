@@ -23,7 +23,7 @@ import {
   TALLY_VECTORS,
   VECTOR_FILES,
 } from '../test/vectors';
-import { settlesAt } from './coalition';
+import { motionHorizon } from './coalition';
 import {
   foldTogether,
   promotionsOwed,
@@ -133,6 +133,7 @@ describe('vector files', () => {
       'move-unchanged.json',
       'nested-contest.json',
       'nested-forgery.json',
+      'nested-horizons.json',
       'nested-levels.json',
       'nested-three-levels.json',
       'nested-two-levels.json',
@@ -305,6 +306,7 @@ describe('vector files', () => {
       'fold',
       'fold',
       'fold',
+      'nested',
       'nested',
       'nested',
       'nested',
@@ -1131,6 +1133,7 @@ describe('nested vector files (#122)', () => {
     'two-levels-pass',
     'two-levels-fail',
     'two-levels-owed-groups',
+    'two-levels-owed-coalition-not-final',
     'two-levels-owed-coalition',
     'forgery-straight-to-higher',
     'three-levels',
@@ -1156,10 +1159,25 @@ describe('nested vector files (#122)', () => {
     'forgery-reconcile-sealed-in-group',
     'early-pass-contested-owed',
     'early-pass-contested',
-    'withdrawn-pass-owed',
-    'withdrawn-pass',
-    'withdrawn-pass-recovered',
-    'withdrawn-pass-genesis',
+    'horizon-level-0',
+    'horizon-level-0-at',
+    'horizon-level-1-not-final',
+    'horizon-level-1',
+    'horizon-level-1-at',
+    'horizon-level-2-not-final',
+    'horizon-level-2',
+    'horizon-level-2-at',
+    'horizon-level-3-not-final',
+    'horizon-level-3',
+    'horizon-level-3-at',
+    'five-seats-certain',
+    'five-seats-contested',
+    'five-seats',
+    'five-seats-crossed',
+    'five-seats-forged-early',
+    'five-seats-forged-early-contested',
+    'recovery',
+    'recovery-crossed',
   ])('include "%s"', (name) => {
     expect(NESTED_VECTORS.map((vector) => vector.name.split(':')[0])).toContain(name);
   });
@@ -1180,6 +1198,7 @@ describe('promotion vector files (#126)', () => {
     'ceiling-1-stops-at-C',
     'ceiling-1-passed-not-final',
     'ceiling-2-stops-at-D',
+    'coalitions-owed-D-not-final',
     'coalitions-owed-D',
     'coalitions-opens-in-E',
     'coalitions-to-D-stops',
@@ -1268,7 +1287,7 @@ describe('a Dispatch on a nested motion (#122, #124)', () => {
         id,
         by: { proposal: id },
         title: 'Rent stays fair',
-        received: settlesAt(proposal),
+        received: motionHorizon(d.coalition, proposal),
       }),
     ]);
     // C decides the motion for its seat and A, B and E vote on it, but none of them sends it.
@@ -1281,8 +1300,9 @@ describe('a Dispatch on a nested motion (#122, #124)', () => {
 
   it('sends nothing from D while its pass can still be contested', () => {
     const { states, id } = withDispatch(null);
-    const proposal = stateOf(states, 'D').proposals.find((p) => p.id === id);
-    const before = withDispatch(settlesAt(proposal ?? { deadline: 0 }) - 1);
+    const d = stateOf(states, 'D');
+    const proposal = d.proposals.find((p) => p.id === id);
+    const before = withDispatch(motionHorizon(d.coalition, proposal ?? { id, deadline: 0 }) - 1);
     expect(stateOf(before.states, 'D').dispatches).toEqual([]);
   });
 });

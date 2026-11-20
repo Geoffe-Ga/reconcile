@@ -27,17 +27,35 @@ import type {
 } from './event';
 import { type Bar, DAY_MINUTES, type ProposalClass, type Rules } from './rules';
 
-/** How long after a motion's deadline its results still count: 7 days, in relay minutes. */
-export const RESULT_GRACE_MINUTES = 7 * DAY_MINUTES;
+/**
+ * The gap `g` between one level's results horizon and the next: 1 day, in
+ * relay minutes (#250, #387; the founder's decision of 2026-11-14). A level-k
+ * coalition counts results on a motion until its deadline plus k·g, so every
+ * level below stops at least `g` before the level above.
+ */
+export const HORIZON_STEP_MINUTES = DAY_MINUTES;
 
 /**
- * The relay minute a motion's outcome turns final at the latest: its
- * deadline plus {@link RESULT_GRACE_MINUTES}, when results on it stop
- * counting and a pass can no longer be contested into a fail. A pass is
- * final only then, and so is a coalition Dispatch it carries (#124).
+ * The relay minute from which results on a motion no longer count at its
+ * `level` (#387): its deadline plus `level` × {@link HORIZON_STEP_MINUTES}. A
+ * group's, at level 0, is its deadline. A coalition's pass is final there,
+ * and so is a coalition Dispatch it carries (#124); a fail is final at once.
  */
-export function settlesAt(motion: { readonly deadline: number }): number {
-  return motion.deadline + RESULT_GRACE_MINUTES;
+export function horizonOf(motion: { readonly deadline: number; readonly level: number }): number {
+  return motion.deadline + motion.level * HORIZON_STEP_MINUTES;
+}
+
+/**
+ * The horizon of the Proposal `motion` in the log `coalition` holds (#387):
+ * at the level its snapshot kept when it opened there, else the coalition's
+ * level now; for a group's log (`coalition` null), at level 0, its deadline.
+ */
+export function motionHorizon(
+  coalition: Pick<Coalition, 'motions' | 'level'> | null,
+  motion: { readonly id: string; readonly deadline: number },
+): number {
+  const level = coalition?.motions.find((m) => m.id === motion.id)?.level ?? coalition?.level;
+  return horizonOf({ deadline: motion.deadline, level: level ?? 0 });
 }
 
 /** The largest coalition in which every seat must pass. From one more, two-thirds will do. */
@@ -63,8 +81,8 @@ export function levelOf(seats: readonly Pick<SeatEntry, 'level'>[]): number {
 /**
  * What a coalition's seats have reported on one motion: how many seats its
  * snapshot holds, how many passed and how many failed (a contested seat
- * counts as a fail), and whether it has expired, at deadline + 10,080
- * minutes, when every missing result counts as a fail. `everySeat` is true
+ * counts as a fail), and whether it has expired, at its horizon
+ * ({@link horizonOf}), when every missing result counts as a fail. `everySeat` is true
  * for a motion that needs every seat whatever the coalition's size, as
  * admitting a group does (#114).
  */
@@ -135,13 +153,16 @@ export interface AdmitSeat extends SeatEntry {
 
 /**
  * A motion's deadline, and the seats in its snapshot at receipt: who decides
- * it. `admit` is the seat an admit motion would add (#114), or null for an
+ * it. `level` is the coalition's level when the motion opened here, which
+ * sets its horizon ({@link horizonOf}, #387) and never moves, though an
+ * admission may raise the coalition's own. `admit` is the seat an admit motion would add (#114), or null for an
  * edit, a reconcile motion (#122), or a motion from a coalition above that
  * this coalition decides for its seat there (#122).
  */
 export interface MotionSeats {
   readonly id: string;
   readonly deadline: number;
+  readonly level: number;
   readonly seats: readonly string[];
   readonly admit: AdmitSeat | null;
 }
@@ -184,10 +205,11 @@ export interface RoomWrap {
  * then each admitted group's, in the order they were admitted (#114), and
  * `founding` its name and its one Document's title and Atoms as written
  * (#92), which each founding group checks against the target it passed.
- * `formsBy` is the relay minute from which results on the genesis no longer
- * count: the latest a founding group's reconcile vote can close,
- * `windows.ordinary.max` days after the genesis, plus
- * {@link RESULT_GRACE_MINUTES}. `bindings` holds every
+ * `formsFinal` is the relay minute from which results on the genesis no
+ * longer count (#250): the latest a founding group's reconcile vote can
+ * close, `windows.ordinary.max` days after the genesis, plus the level's
+ * gaps, `level` × {@link HORIZON_STEP_MINUTES}. A coalition still forming
+ * then is declined. `bindings` holds every
  * participant's seat in join order, and `results` every valid result in relay
  * order. `motions` holds each motion's snapshot of seats, and `admitted`
  * each group admitted after the genesis, in order (#114). `wraps` holds each
@@ -204,7 +226,7 @@ export interface Coalition {
   readonly declinedAt: number | null;
   readonly seats: readonly SeatEntry[];
   readonly founding: CoalitionStatement;
-  readonly formsBy: number;
+  readonly formsFinal: number;
   readonly bindings: readonly SeatBinding[];
   readonly results: readonly GroupResult[];
   readonly motions: readonly MotionSeats[];
@@ -337,7 +359,8 @@ export function newCoalition(
     declinedAt: null,
     seats: [...seats],
     founding: { name, title: statement.title, atoms: statement.atoms },
-    formsBy: received + rules.windows.ordinary.max * DAY_MINUTES + RESULT_GRACE_MINUTES,
+    formsFinal:
+      received + rules.windows.ordinary.max * DAY_MINUTES + levelOf(seats) * HORIZON_STEP_MINUTES,
     bindings: [],
     results: [],
     motions: [],
@@ -469,18 +492,18 @@ export function seatsDeciding(
 
 /** The relay minute from which results on `motion` no longer count, or null for no such motion. */
 function resultsEnd(
-  coalition: Pick<Coalition, 'formsBy' | 'motions'>,
+  coalition: Pick<Coalition, 'formsFinal' | 'motions'>,
   coalitionId: string,
   motion: string,
 ): number | null {
-  if (motion === coalitionId) return coalition.formsBy;
+  if (motion === coalitionId) return coalition.formsFinal;
   const found = coalition.motions.find((m) => m.id === motion);
-  return found === undefined ? null : found.deadline + RESULT_GRACE_MINUTES;
+  return found === undefined ? null : horizonOf(found);
 }
 
 /** Whether results on `motion` still count at relay minute `at`. */
 export function resultsCount(
-  coalition: Pick<Coalition, 'formsBy' | 'motions'>,
+  coalition: Pick<Coalition, 'formsFinal' | 'motions'>,
   coalitionId: string,
   motion: string,
   at: number,
@@ -573,19 +596,21 @@ function formation(coalition: CoalitionDraft, coalitionId: string): CoalitionSta
 }
 
 /**
- * Declines a coalition still forming once relay time reaches `formsBy`, when
- * results on its genesis stop counting. Relay time stops there.
+ * The close-out (#250): declines a coalition still forming once relay time
+ * reaches `formsFinal`, when every founding group's reconcile vote has closed
+ * and results on its genesis stop counting. Relay time stops there. So no
+ * holder of a seat secret can form it later with a forged pass.
  */
 export function expireFormation(coalition: CoalitionDraft, at: number): void {
-  if (coalition.status === 'forming' && at >= coalition.formsBy) {
+  if (coalition.status === 'forming' && at >= coalition.formsFinal) {
     coalition.status = 'declined';
-    coalition.declinedAt = coalition.formsBy;
+    coalition.declinedAt = coalition.formsFinal;
   }
 }
 
 /**
  * A motion's outcome from the results recorded so far, over the seats in its
- * snapshot; `expired` once relay time has reached its deadline + 10,080. An
+ * snapshot; `expired` once relay time has reached its horizon. An
  * admit motion needs every seat in its snapshot, however many (#114).
  */
 export function motionOutcome(

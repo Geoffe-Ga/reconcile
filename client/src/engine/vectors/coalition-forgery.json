@@ -1287,7 +1287,7 @@
       "unchangedWithout": { "coalition": [7, 8, 9, 10, 11, 12, 13, 14] }
     },
     {
-      "name": "forgery-late: a result received at the motion's deadline + 10,080 is ignored, and one a minute before counts",
+      "name": "forgery-late: a result received at the motion's deadline + 1,440, its horizon at level 1 is ignored, and one a minute before counts",
       "logs": {
         "coalition": [
           {
@@ -1390,7 +1390,7 @@
           },
           {
             "seq": 7,
-            "received": 29395175,
+            "received": 29386535,
             "event": {
               "v": 1,
               "type": "group-result",
@@ -1402,7 +1402,7 @@
           },
           {
             "seq": 8,
-            "received": 29395176,
+            "received": 29386536,
             "event": {
               "v": 1,
               "type": "group-result",
@@ -1414,7 +1414,7 @@
           }
         ]
       },
-      "relayNow": 29395176,
+      "relayNow": 29386536,
       "expect": {
         "coalition": {
           "coalition": { "results": [{}, {}, { "seq": 7 }] },

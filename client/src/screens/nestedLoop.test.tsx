@@ -33,7 +33,7 @@ import { deriveRoomEntryId } from '../crypto/room';
 import { seatKeyOf } from '../crypto/seat';
 import { newSigningKeys } from '../crypto/sign';
 import { parseCardLink } from '../coalition/card';
-import { RESULT_GRACE_MINUTES } from '../engine/coalition';
+import { HORIZON_STEP_MINUTES } from '../engine/coalition';
 import { seatIn } from '../engine/crossing';
 import { signEvent } from '../engine/event';
 import { fold, type GroupState } from '../engine/fold';
@@ -65,8 +65,9 @@ afterEach(() => {
   closeAll();
 });
 
-/** Relay time a week past a motion's deadline, by which every pass on it is final. */
-const PAST_FINAL = DEFAULT_RULES.windows.ordinary.default * DAY_MINUTES + RESULT_GRACE_MINUTES + 60;
+/** Relay time an hour past a motion's level-1 horizon, its deadline plus a day (#387). */
+const PAST_LEVEL_ONE =
+  DEFAULT_RULES.windows.ordinary.default * DAY_MINUTES + HORIZON_STEP_MINUTES + 60;
 
 /** Three passes on every device: ballots up, each line's result, then every device reads it. */
 const SETTLE = 4;
@@ -114,6 +115,25 @@ function showAt(device: TestDevice, hash: string): void {
   render(<App services={device.services} />);
 }
 
+/**
+ * Moves relay time past a motion's horizon at each of `levels` levels, one
+ * level at a time, syncing every device at each (#387): an hour past the
+ * level-1 horizon, then a day more per level, so each level's final outcome
+ * crosses up a day before the level above stops counting.
+ */
+async function pastHorizons(fake: FakeRelay, levels: number): Promise<void> {
+  act(() => {
+    fake.minute += PAST_LEVEL_ONE;
+  });
+  await syncAll(SETTLE);
+  for (let level = 2; level <= levels; level += 1) {
+    act(() => {
+      fake.minute += HORIZON_STEP_MINUTES;
+    });
+    await syncAll(SETTLE);
+  }
+}
+
 /** Riverside and Oak St, reconciled into Eastside Housing (#114): both groups passed. */
 async function eastsideFormed(fake: FakeRelay) {
   const groups = await twoGroups(fake);
@@ -136,15 +156,17 @@ async function cardFor(maker: TestDevice, from: string, opener: TestDevice, valu
   await syncAll(1);
   const lookup = await lookupCard(opener.services, seed);
   if (lookup.kind !== 'found') throw new Error(`Expected the card to open, not ${lookup.kind}.`);
-  return { proposal: made.proposalId, found: lookup.found, seed };
+  return { proposal: made.proposalId, found: lookup.found, seed, card: made.card };
 }
 
 /**
  * Riverside and Oak St form Eastside Housing; Ana makes its card for another
  * coalition, Eve brings it to Elm Row, and every group passes: Metro Renters
- * forms, with Eastside Housing's seat and Elm Row's.
+ * forms, with Eastside Housing's seat and Elm Row's, once Eastside Housing's
+ * pass is final at its horizon (#387), unless `settled` is false, which
+ * leaves relay time in the week the motions opened.
  */
-async function nested(fake: FakeRelay) {
+async function nested(fake: FakeRelay, settled = true) {
   const groups = await eastsideFormed(fake);
   const { ana, ben, cy, riverside, oak } = groups;
   const eve = await open(fake, 'eve');
@@ -164,6 +186,8 @@ async function nested(fake: FakeRelay) {
   await vote(oak, made.proposalId, [ben, cy]);
   await vote(elm, elmProposal, [eve]);
   await syncAll(SETTLE);
+  // Eastside Housing's pass crosses up to Metro Renters' genesis once final, at its horizon.
+  if (settled) await pastHorizons(fake, 1);
   return { ...groups, eve, elm, eastside, intoMetro: made.proposalId, card: lookup.found };
 }
 
@@ -419,6 +443,8 @@ describe('nested coalitions', SLOW, () => {
     await vote(riverside, into, [ana, cy]);
     await vote(oak, into, [ben, cy]);
     await syncAll(SETTLE);
+    // Ana's device asks in once Eastside Housing's pass is final, at its horizon (#387).
+    await pastHorizons(fake, 1);
     const admit = admitMotion(await coalitionNamed(eve, 'Metro Renters'));
 
     // During the vote Eve writes again, and Elm Row and Pine Row pass it.
@@ -431,10 +457,7 @@ describe('nested coalitions', SLOW, () => {
     const ids = { metroId, metroEntry };
     await expectNoMetroRoom([ana, ben, cy], ids, metroInner, [BEFORE, DURING]);
 
-    act(() => {
-      fake.minute += PAST_FINAL;
-    });
-    await syncAll(SETTLE);
+    await pastHorizons(fake, 1);
 
     // Seated, a participant from a seated group wraps inner to Eastside Housing's seat, and every
     // device in its groups keeps Metro Renters' room and reads it; Ana, taking part, writes.
@@ -541,6 +564,7 @@ describe('nested coalitions', SLOW, () => {
     await vote(oak, motion, [ben, cy]);
     await vote(pineGroup, card.proposal, [pine]);
     await syncAll(SETTLE);
+    await pastHorizons(fake, 1);
 
     const westside = await coalitionNamed(ana, 'Westside Renters');
     expect(westside.coalition?.status).toBe('formed');
@@ -549,8 +573,11 @@ describe('nested coalitions', SLOW, () => {
       ['Pine Row', 0],
       ['Eastside Housing', 1],
     ]);
-    // Eastside Housing holds the card now, so it isn't offered it again.
-    const again = await lookupCard(ana.services, card.seed);
+    // Eastside Housing holds the card now, so it isn't offered it again: Pine posts it anew,
+    // since the first link lasted only while Westside Renters waited on its horizon (#387).
+    const seed = parseCardLink(await postCard(pine.services, card.card, pine.services.origin));
+    if (seed === null) throw new Error('Expected a card link.');
+    const again = await lookupCard(ana.services, seed);
     const offered = again.kind === 'found' ? again.found.groups.map((g) => g.name) : [];
     expect(offered).toEqual(['Riverside Tenants', 'Metro Renters']);
   });
@@ -579,6 +606,8 @@ describe('nested coalitions', SLOW, () => {
     await vote(riverside, into, [ana, cy]);
     await vote(oak, into, [ben, cy]);
     await syncAll(SETTLE);
+    // Ana's device asks in once Eastside Housing's pass is final, at its horizon (#387).
+    await pastHorizons(fake, 1);
 
     // Until it's seated, Eastside Housing's devices hold Metro Renters' secret and their seat
     // there, but not its inner: neither the card nor the sealed motion carried it (#313).
@@ -606,10 +635,7 @@ describe('nested coalitions', SLOW, () => {
     await vote(elm, admit.id, [eve]);
     await vote(pineGroup, admit.id, [pine]);
     await syncAll(SETTLE);
-    act(() => {
-      fake.minute += PAST_FINAL;
-    });
-    await syncAll(SETTLE);
+    await pastHorizons(fake, 1);
 
     const after = await coalitionNamed(ana, 'Metro Renters');
     expect(after.coalition?.level).toBe(2);
@@ -661,6 +687,7 @@ describe('nested coalitions', SLOW, () => {
     await vote(riverside, into, [ana, cy]);
     await vote(oak, into, [ben, cy]);
     await syncAll(SETTLE);
+    await pastHorizons(fake, 1);
     const eastside = await coalitionNamed(ana, 'Eastside Housing');
     expect(eastside.coalitions.find((held) => held.proposal === into)?.outcome).toBe('pass');
     const metro = await coalitionNamed(eve, 'Metro Renters');
@@ -696,17 +723,24 @@ describe('nested coalitions', SLOW, () => {
     await vote(elm, motion, [eve]);
     await syncAll(SETTLE);
 
+    // Each group's result went to Eastside Housing; its pass isn't final until its horizon (#387).
     const eastside = await coalitionNamed(ana, 'Eastside Housing');
-    const metro = await coalitionNamed(ana, 'Metro Renters');
-    // Each group's result went to Eastside Housing, and only Eastside Housing's to Metro Renters.
     expect(resultsOn(eastside, motion)).toEqual(everySeatPassed(eastside));
+    const metroSeat = seatIn(eastside, await coalitionNamed(ana, 'Metro Renters'));
+    expect(resultsOn(await coalitionNamed(ana, 'Metro Renters'), motion)).not.toContain(
+      `${metroSeat ?? ''} pass`,
+    );
+
+    // At Eastside Housing's horizon, a day after the deadline, only its final pass crosses up.
+    await pastHorizons(fake, 1);
+    const metro = await coalitionNamed(ana, 'Metro Renters');
     expect(resultsOn(metro, motion)).toEqual(everySeatPassed(metro));
-    expect(metro.coalition?.seats[0]?.key).toBe(seatIn(eastside, metro));
-    // Both passed, but results still count for a week: the text hasn't changed yet.
+    expect(metro.coalition?.seats[0]?.key).toBe(metroSeat);
+    // Both passed, but results count in Metro Renters a day longer: the text hasn't changed yet.
     expect(firstSection(metro)).toBe(METRO.statement);
 
     act(() => {
-      fake.minute += PAST_FINAL;
+      fake.minute += HORIZON_STEP_MINUTES;
     });
     await syncAll(SETTLE);
 
@@ -757,7 +791,7 @@ describe('nested coalitions', SLOW, () => {
 
   it('lets a follower of Eastside Housing, holding its secret but no inner, keep no entry above and open nothing', async () => {
     const fake = createFakeRelay();
-    const { ana, intoMetro } = await nested(fake);
+    const { ana, intoMetro } = await nested(fake, false);
     const { keys, canaries, eastside } = await secretsAbove(ana);
     const follower = await open(fake, 'follower');
     await follower.services.store.addGroup(newEntry(eastside.secret));

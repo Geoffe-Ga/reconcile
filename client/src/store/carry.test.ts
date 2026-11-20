@@ -13,7 +13,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { fromBase64url } from '../crypto/base64url';
 import { deriveCoalitionEntryId } from '../crypto/card';
 import { type Ceiling, parseRecord, type ParsedEvent } from '../engine/event';
-import { RESULT_GRACE_MINUTES } from '../engine/coalition';
+import { HORIZON_STEP_MINUTES } from '../engine/coalition';
 import type { LogRecord } from '../engine/fold';
 import { DAY_MINUTES } from '../engine/rules';
 import { Logs, seatKey, testSecret } from '../test/coalitions';
@@ -389,7 +389,7 @@ describe('settleCarries', () => {
     logs.result(R + 50, 'kim', motion, 'A', 'pass');
     logs.result(R + 50, 'dee', motion, 'B', 'pass');
     await pullAt(store, ENTRY, (logs.logs.coalition ?? []).slice(-2), R + 50);
-    const final = R + 30 + WINDOW + RESULT_GRACE_MINUTES;
+    const final = R + 30 + WINDOW + HORIZON_STEP_MINUTES;
     await tick(store, final - 1);
     await settle(store, fixed(0));
     expect((await store.getGroup(a))?.scores).toHaveLength(1);
@@ -408,7 +408,7 @@ describe('settleCarries', () => {
     logs.result(R + 50, 'kim', motion, 'A', 'pass');
     logs.result(R + 50, 'dee', motion, 'B', 'pass');
     await pullAt(store, ENTRY, (logs.logs.coalition ?? []).slice(-2), R + 50);
-    const final = R + 30 + WINDOW + RESULT_GRACE_MINUTES;
+    const final = R + 30 + WINDOW + HORIZON_STEP_MINUTES;
     await tick(store, final);
     await settle(store, fixed(0));
     const until = final + KEEP_DAYS * DAY_MINUTES;

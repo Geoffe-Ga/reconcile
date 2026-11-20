@@ -4,7 +4,7 @@
  * and Cy in both, reconciled into Eastside Housing (#114). Ana proposes a
  * change from the coalition's home; it opens as a coalition vote in both
  * groups; each group votes inside itself; and only once the coalition's pass
- * is final, a week after its deadline (#100), does its Document change for
+ * is final, a day after its deadline (#100, #387), does its Document change for
  * everyone. A fail leaves it byte for byte as it was. Neither group's
  * ballots, notes, counts or voters' names reach the other, nor the
  * coalition's section history (#104).
@@ -19,7 +19,7 @@ import { parseInviteLink } from '../app/invite';
 import { messages } from '../app/messages';
 import { propose } from '../app/proposals';
 import { bringCard } from '../app/reconcile';
-import { RESULT_GRACE_MINUTES } from '../engine/coalition';
+import { HORIZON_STEP_MINUTES } from '../engine/coalition';
 import { LEVELS } from '../engine/capabilities';
 import type { GroupState } from '../engine/fold';
 import { DAY_MINUTES, DEFAULT_RULES } from '../engine/rules';
@@ -49,8 +49,8 @@ afterEach(() => {
 
 const [, VOTING] = LEVELS;
 
-/** Relay time a week past a motion's deadline, by which every pass on it is final. */
-const PAST_FINAL = DEFAULT_RULES.windows.ordinary.default * DAY_MINUTES + RESULT_GRACE_MINUTES + 60;
+/** Relay time an hour past a motion's level-1 horizon, a day after its deadline, by which every pass on it is final (#387). */
+const PAST_FINAL = DEFAULT_RULES.windows.ordinary.default * DAY_MINUTES + HORIZON_STEP_MINUTES + 60;
 
 /** What Ana proposes for the coalition's first section. */
 const CHANGE = {
@@ -175,7 +175,7 @@ describe('a coalition’s mission statement through the normal loop', SLOW, () =
     await vote(riverside, motion.id, [ana, cy]);
     await vote(oak, motion.id, [ben, cy]);
     await syncAll(SETTLE);
-    // Both passed, but results still count for a week: the text hasn't changed yet.
+    // Both passed, but results still count for a day: the text hasn't changed yet.
     await motionIn(ben, oak, motion.id);
     const pending = screen.getByRole('region', { name: 'The coalition’s result' });
     expect(pending).toHaveTextContent('The coalition passed this. It takes effect on');

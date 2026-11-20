@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest';
 
 import { discoverFeed, type FeedPlace } from '../app/discoverFeed';
 import { messages } from '../app/messages';
-import { RESULT_GRACE_MINUTES } from '../engine/coalition';
+import { HORIZON_STEP_MINUTES } from '../engine/coalition';
 import { fold, type GroupState } from '../engine/fold';
 import { DAY_MINUTES } from '../engine/rules';
 import { axeViolations } from '../test/axe';
@@ -49,7 +49,7 @@ function coalitionWithRisen(): GroupState {
   const risen = logs.promoteIn('coalition', at, 'kim', { target, title: words.title, why: '' });
   logs.result(at + 1, 'kim', risen, 'Riverside Tenants', 'pass');
   logs.result(at + 2, 'zed', risen, 'Oak St Co-op', 'pass');
-  return fold(logs.logs.coalition ?? [], at + 7 * DAY_MINUTES + RESULT_GRACE_MINUTES);
+  return fold(logs.logs.coalition ?? [], at + 7 * DAY_MINUTES + HORIZON_STEP_MINUTES);
 }
 
 /** Each card on screen, in order: its eyebrow's words and its title. */

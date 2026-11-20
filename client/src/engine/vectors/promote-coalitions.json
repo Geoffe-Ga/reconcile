@@ -2,7 +2,7 @@
   "kind": "nested",
   "vectors": [
     {
-      "name": "coalitions-owed-D: with “as far as the coalitions go”, once C’s pass is certain C owes D one record, at level 2 from C’s seat",
+      "name": "coalitions-owed-D: with “as far as the coalitions go”, once C’s pass is final, at its horizon, the deadline plus a day (#387), C owes D one record, at level 2 from C’s seat",
       "logs": {
         "A": [
           {
@@ -581,14 +581,14 @@
           }
         ]
       },
-      "relayNow": 29375016,
+      "relayNow": 29386534,
       "expect": {
         "C": {
           "proposals": [
             {},
             {
               "id": "@27",
-              "final": false,
+              "final": true,
               "outcome": {
                 "kind": "pass"
               }
@@ -624,7 +624,613 @@
       }
     },
     {
-      "name": "coalitions-opens-in-E: fay, bound to C’s seat in D, posts it; it opens in E to vote on, and no new vote in C, A or B, which already passed it; C’s result on it comes from C’s own fold",
+      "name": "coalitions-owed-D-not-final: with “as far as the coalitions go”, a minute before C’s horizon its pass is certain but not final, so C owes D no record yet (#387), at level 2 from C’s seat",
+      "logs": {
+        "A": [
+          {
+            "seq": 1,
+            "received": 29375000,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%ana",
+              "ts": 1762500060000,
+              "body": {
+                "name": "Riverside",
+                "founder": "ANA",
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
+              }
+            }
+          },
+          {
+            "seq": 3,
+            "received": 29375001,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@1",
+              "author": "%ana",
+              "ts": 1762500180000,
+              "body": {
+                "target": {
+                  "kind": "reconcile",
+                  "secret": "~C",
+                  "inner": "~innerC",
+                  "seat": "!A",
+                  "name": "Eastside Housing",
+                  "title": "Shared ground",
+                  "atoms": ["Everyone has a safe home."]
+                },
+                "title": "Reconcile into Eastside Housing",
+                "why": "We share a landlord."
+              }
+            }
+          },
+          {
+            "seq": 5,
+            "received": 29375002,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@1",
+              "author": "%ana",
+              "ts": 1762500300000,
+              "body": {
+                "proposal": "@3",
+                "scores": {
+                  "@3": 4
+                }
+              }
+            }
+          },
+          {
+            "seq": 13,
+            "received": 29375007,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@1",
+              "author": "%ana",
+              "ts": 1762500780000,
+              "body": {
+                "proposal": "@12",
+                "scores": {
+                  "@12": 4
+                }
+              }
+            }
+          },
+          {
+            "seq": 25,
+            "received": 29375012,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@1",
+              "author": "%ana",
+              "ts": 1762501500000,
+              "body": {
+                "target": {
+                  "kind": "dispatch",
+                  "ceiling": "coalitions"
+                },
+                "title": "Send: Rally Saturday",
+                "why": "The coalitions should hear.",
+                "dispatch": {
+                  "title": "Rally Saturday",
+                  "text": "Meet at the river at ten."
+                }
+              }
+            }
+          },
+          {
+            "seq": 26,
+            "received": 29375013,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@1",
+              "author": "%ana",
+              "ts": 1762501560000,
+              "body": {
+                "proposal": "@25",
+                "scores": {
+                  "@25": 4
+                }
+              }
+            }
+          }
+        ],
+        "B": [
+          {
+            "seq": 2,
+            "received": 29375000,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%ben",
+              "ts": 1762500120000,
+              "body": {
+                "name": "Oak St",
+                "founder": "BEN",
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
+              }
+            }
+          },
+          {
+            "seq": 4,
+            "received": 29375001,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@2",
+              "author": "%ben",
+              "ts": 1762500240000,
+              "body": {
+                "target": {
+                  "kind": "reconcile",
+                  "secret": "~C",
+                  "inner": "~innerC",
+                  "seat": "!B",
+                  "name": "Eastside Housing",
+                  "title": "Shared ground",
+                  "atoms": ["Everyone has a safe home."]
+                },
+                "title": "Reconcile into Eastside Housing",
+                "why": "We share a landlord."
+              }
+            }
+          },
+          {
+            "seq": 6,
+            "received": 29375002,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@2",
+              "author": "%ben",
+              "ts": 1762500360000,
+              "body": {
+                "proposal": "@4",
+                "scores": {
+                  "@4": 4
+                }
+              }
+            }
+          },
+          {
+            "seq": 14,
+            "received": 29375007,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@2",
+              "author": "%ben",
+              "ts": 1762500840000,
+              "body": {
+                "proposal": "@12",
+                "scores": {
+                  "@12": 4
+                }
+              }
+            }
+          },
+          {
+            "seq": 28,
+            "received": 29375015,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@2",
+              "author": "%ben",
+              "ts": 1762501680000,
+              "body": {
+                "proposal": "@27",
+                "scores": {
+                  "@27": 4
+                }
+              }
+            }
+          }
+        ],
+        "C": [
+          {
+            "seq": 7,
+            "received": 29375003,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%kim",
+              "ts": 1762500420000,
+              "body": {
+                "kind": "coalition",
+                "name": "Eastside Housing",
+                "documents": [{ "title": "Shared ground", "atoms": ["Everyone has a safe home."] }],
+                "seats": [
+                  {
+                    "name": "Riverside",
+                    "key": "^A"
+                  },
+                  {
+                    "name": "Oak St",
+                    "key": "^B"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "seq": 8,
+            "received": 29375004,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@7",
+              "author": "%cal",
+              "ts": 1762500480000,
+              "body": {
+                "name": "CAL",
+                "seat": "^A",
+                "proof": {
+                  "$seatProof": ["A", "@7", "%cal"]
+                }
+              }
+            }
+          },
+          {
+            "seq": 9,
+            "received": 29375004,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@7",
+              "author": "%dee",
+              "ts": 1762500540000,
+              "body": {
+                "name": "DEE",
+                "seat": "^B",
+                "proof": {
+                  "$seatProof": ["B", "@7", "%dee"]
+                }
+              }
+            }
+          },
+          {
+            "seq": 10,
+            "received": 29375005,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@7",
+              "author": "%cal",
+              "ts": 1762500600000,
+              "body": {
+                "motion": "@7",
+                "seat": "^A",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 11,
+            "received": 29375005,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@7",
+              "author": "%dee",
+              "ts": 1762500660000,
+              "body": {
+                "motion": "@7",
+                "seat": "^B",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 12,
+            "received": 29375006,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@7",
+              "author": "%cal",
+              "ts": 1762500720000,
+              "body": {
+                "target": {
+                  "kind": "reconcile",
+                  "sealed": {
+                    "$sealed": ["@7", "~innerC", "~D", "~innerD", "C"]
+                  },
+                  "key": "^C",
+                  "name": "Metro Renters",
+                  "title": "Shared ground",
+                  "atoms": ["Rent stays fair."]
+                },
+                "title": "Reconcile into Metro Renters",
+                "why": "Renters across the city."
+              }
+            }
+          },
+          {
+            "seq": 15,
+            "received": 29375008,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@7",
+              "author": "%cal",
+              "ts": 1762500900000,
+              "body": {
+                "motion": "@12",
+                "seat": "^A",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 16,
+            "received": 29375008,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@7",
+              "author": "%dee",
+              "ts": 1762500960000,
+              "body": {
+                "motion": "@12",
+                "seat": "^B",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 27,
+            "received": 29375014,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@7",
+              "author": "%cal",
+              "ts": 1762501620000,
+              "body": {
+                "target": {
+                  "kind": "promote",
+                  "dispatch": {
+                    "id": "@25",
+                    "title": "Rally Saturday",
+                    "text": "Meet at the river at ten."
+                  },
+                  "ceiling": "coalitions",
+                  "level": 1,
+                  "from": "^A"
+                },
+                "title": "Rally Saturday",
+                "why": ""
+              }
+            }
+          },
+          {
+            "seq": 29,
+            "received": 29375016,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@7",
+              "author": "%cal",
+              "ts": 1762501740000,
+              "body": {
+                "motion": "@27",
+                "seat": "^A",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 30,
+            "received": 29375016,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@7",
+              "author": "%dee",
+              "ts": 1762501800000,
+              "body": {
+                "motion": "@27",
+                "seat": "^B",
+                "result": "pass"
+              }
+            }
+          }
+        ],
+        "E": [
+          {
+            "seq": 17,
+            "received": 29375000,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%eve",
+              "ts": 1762501020000,
+              "body": {
+                "name": "Elm Row",
+                "founder": "EVE",
+                "documents": [{ "title": "House rules", "atoms": ["Quiet after 11pm."] }]
+              }
+            }
+          },
+          {
+            "seq": 18,
+            "received": 29375001,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@17",
+              "author": "%eve",
+              "ts": 1762501080000,
+              "body": {
+                "target": {
+                  "kind": "reconcile",
+                  "secret": "~D",
+                  "inner": "~innerD",
+                  "seat": "!E",
+                  "name": "Metro Renters",
+                  "title": "Shared ground",
+                  "atoms": ["Rent stays fair."]
+                },
+                "title": "Reconcile into Metro Renters",
+                "why": "We share a landlord."
+              }
+            }
+          },
+          {
+            "seq": 19,
+            "received": 29375002,
+            "event": {
+              "v": 1,
+              "type": "vote",
+              "group": "@17",
+              "author": "%eve",
+              "ts": 1762501140000,
+              "body": {
+                "proposal": "@18",
+                "scores": {
+                  "@18": 4
+                }
+              }
+            }
+          }
+        ],
+        "D": [
+          {
+            "seq": 20,
+            "received": 29375009,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%zed",
+              "ts": 1762501200000,
+              "body": {
+                "kind": "coalition",
+                "name": "Metro Renters",
+                "documents": [{ "title": "Shared ground", "atoms": ["Rent stays fair."] }],
+                "seats": [
+                  {
+                    "name": "Eastside Housing",
+                    "key": "^C",
+                    "level": 1
+                  },
+                  {
+                    "name": "Elm Row",
+                    "key": "^E"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "seq": 21,
+            "received": 29375010,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@20",
+              "author": "%fay",
+              "ts": 1762501260000,
+              "body": {
+                "name": "FAY",
+                "seat": "^C",
+                "proof": {
+                  "$seatProof": ["C", "@20", "%fay"]
+                }
+              }
+            }
+          },
+          {
+            "seq": 22,
+            "received": 29375010,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@20",
+              "author": "%hal",
+              "ts": 1762501320000,
+              "body": {
+                "name": "HAL",
+                "seat": "^E",
+                "proof": {
+                  "$seatProof": ["E", "@20", "%hal"]
+                }
+              }
+            }
+          },
+          {
+            "seq": 23,
+            "received": 29375011,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@20",
+              "author": "%fay",
+              "ts": 1762501380000,
+              "body": {
+                "motion": "@20",
+                "seat": "^C",
+                "result": "pass"
+              }
+            }
+          },
+          {
+            "seq": 24,
+            "received": 29375011,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@20",
+              "author": "%hal",
+              "ts": 1762501440000,
+              "body": {
+                "motion": "@20",
+                "seat": "^E",
+                "result": "pass"
+              }
+            }
+          }
+        ]
+      },
+      "relayNow": 29386533,
+      "expect": {
+        "C": {
+          "proposals": [
+            {},
+            {
+              "id": "@27",
+              "final": false,
+              "outcome": {
+                "kind": "pass"
+              }
+            }
+          ]
+        }
+      },
+      "promote": {
+        "C": {
+          "D": []
+        }
+      },
+      "report": {
+        "C": {
+          "D": []
+        }
+      }
+    },
+    {
+      "name": "coalitions-opens-in-E: once C’s pass is final, at its horizon (#387), fay, bound to C’s seat in D, posts it; it opens in E to vote on, and no new vote in C, A or B, which already passed it; C’s result on it comes from C’s own fold",
       "logs": {
         "A": [
           {
@@ -1203,7 +1809,7 @@
           },
           {
             "seq": 31,
-            "received": 29375017,
+            "received": 29386534,
             "event": {
               "v": 1,
               "type": "proposal",
@@ -1229,7 +1835,7 @@
           }
         ]
       },
-      "relayNow": 29375017,
+      "relayNow": 29386535,
       "expect": {
         "D": {
           "proposals": [
@@ -1312,7 +1918,7 @@
       }
     },
     {
-      "name": "coalitions-to-D-stops: E passes D’s motion and D passes it; D has nothing above it, so it stops there, and once each pass is final the Dispatch has gone out in A, C and D, under one id",
+      "name": "coalitions-to-D-stops: E passes D’s motion and D passes it; D has nothing above it, so it stops there, and once each pass is final, C’s at its horizon a day after its deadline and D’s two days after its own (#387), the Dispatch has gone out in A, C and D, under one id",
       "logs": {
         "A": [
           {
@@ -1794,7 +2400,7 @@
           },
           {
             "seq": 32,
-            "received": 29375018,
+            "received": 29386535,
             "event": {
               "v": 1,
               "type": "vote",
@@ -1908,7 +2514,7 @@
           },
           {
             "seq": 31,
-            "received": 29375017,
+            "received": 29386534,
             "event": {
               "v": 1,
               "type": "proposal",
@@ -1934,7 +2540,7 @@
           },
           {
             "seq": 33,
-            "received": 29375019,
+            "received": 29386536,
             "event": {
               "v": 1,
               "type": "group-result",
@@ -1950,7 +2556,7 @@
           },
           {
             "seq": 34,
-            "received": 29375019,
+            "received": 29386536,
             "event": {
               "v": 1,
               "type": "group-result",
@@ -1966,7 +2572,7 @@
           }
         ]
       },
-      "relayNow": 29395177,
+      "relayNow": 29399494,
       "expect": {
         "A": {
           "dispatches": [
@@ -1992,7 +2598,7 @@
               "title": "Rally Saturday",
               "text": "Meet at the river at ten.",
               "doc": null,
-              "received": 29395174
+              "received": 29386534
             }
           ]
         },
@@ -2015,7 +2621,7 @@
               "title": "Rally Saturday",
               "text": "Meet at the river at ten.",
               "doc": null,
-              "received": 29395177
+              "received": 29399494
             }
           ]
         },
@@ -2036,7 +2642,7 @@
       }
     },
     {
-      "name": "coalitions-owed-F: with three levels, D owes F a record at level 3, the highest there is; F, at level 3, has nothing above it",
+      "name": "coalitions-owed-F: with three levels, once D’s pass is final, at its horizon two days after its deadline (#387), D owes F a record at level 3, the highest there is; F, at level 3, has nothing above it",
       "logs": {
         "A": [
           {
@@ -2518,7 +3124,7 @@
           },
           {
             "seq": 32,
-            "received": 29375018,
+            "received": 29386535,
             "event": {
               "v": 1,
               "type": "vote",
@@ -2632,7 +3238,7 @@
           },
           {
             "seq": 31,
-            "received": 29375017,
+            "received": 29386534,
             "event": {
               "v": 1,
               "type": "proposal",
@@ -2658,7 +3264,7 @@
           },
           {
             "seq": 33,
-            "received": 29375019,
+            "received": 29386536,
             "event": {
               "v": 1,
               "type": "group-result",
@@ -2674,7 +3280,7 @@
           },
           {
             "seq": 34,
-            "received": 29375019,
+            "received": 29386536,
             "event": {
               "v": 1,
               "type": "group-result",
@@ -2690,7 +3296,7 @@
           },
           {
             "seq": 35,
-            "received": 29375030,
+            "received": 29386547,
             "event": {
               "v": 1,
               "type": "proposal",
@@ -2715,7 +3321,7 @@
           },
           {
             "seq": 36,
-            "received": 29375031,
+            "received": 29386548,
             "event": {
               "v": 1,
               "type": "group-result",
@@ -2731,7 +3337,7 @@
           },
           {
             "seq": 37,
-            "received": 29375031,
+            "received": 29386548,
             "event": {
               "v": 1,
               "type": "group-result",
@@ -2749,7 +3355,7 @@
         "G": [
           {
             "seq": 38,
-            "received": 29375000,
+            "received": 29386517,
             "event": {
               "v": 1,
               "type": "genesis",
@@ -2765,7 +3371,7 @@
           },
           {
             "seq": 39,
-            "received": 29375001,
+            "received": 29386518,
             "event": {
               "v": 1,
               "type": "proposal",
@@ -2789,7 +3395,7 @@
           },
           {
             "seq": 40,
-            "received": 29375002,
+            "received": 29386519,
             "event": {
               "v": 1,
               "type": "vote",
@@ -2808,7 +3414,7 @@
         "F": [
           {
             "seq": 41,
-            "received": 29375032,
+            "received": 29386549,
             "event": {
               "v": 1,
               "type": "genesis",
@@ -2835,7 +3441,7 @@
           },
           {
             "seq": 42,
-            "received": 29375033,
+            "received": 29386550,
             "event": {
               "v": 1,
               "type": "join",
@@ -2853,7 +3459,7 @@
           },
           {
             "seq": 43,
-            "received": 29375033,
+            "received": 29386550,
             "event": {
               "v": 1,
               "type": "join",
@@ -2871,7 +3477,7 @@
           },
           {
             "seq": 44,
-            "received": 29375034,
+            "received": 29386551,
             "event": {
               "v": 1,
               "type": "group-result",
@@ -2887,7 +3493,7 @@
           },
           {
             "seq": 45,
-            "received": 29375034,
+            "received": 29386551,
             "event": {
               "v": 1,
               "type": "group-result",
@@ -2903,7 +3509,7 @@
           }
         ]
       },
-      "relayNow": 29375040,
+      "relayNow": 29399494,
       "expect": {
         "F": {
           "coalition": {

@@ -1,6 +1,6 @@
 /**
  * A coalition's Dispatches (#124; ADR-0075 §1): they ride only on a passed
- * motion, and go out only once that pass is final, at deadline + 10,080,
+ * motion, and go out only once that pass is final, at its horizon, deadline + 1,440 at level 1 (#387),
  * whatever order the seats' results arrive in. The golden vectors in
  * `vectors/follow-dispatch.json` pin the exact cases; this checks the rule
  * over every order and every relay minute around the edge.
@@ -9,7 +9,7 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import { folded, foldLogs, Logs } from '../test/coalitions';
-import { RESULT_GRACE_MINUTES } from './coalition';
+import { HORIZON_STEP_MINUTES } from './coalition';
 import { DAY_MINUTES, DEFAULT_RULES } from './rules';
 
 const SEATS = ['A', 'B', 'C', 'D'] as const;
@@ -35,7 +35,7 @@ function coalitionWith(size: number, reports: readonly string[], order: readonly
     if (value === 'fail' || value === 'contest') logs.result((at += 1), who, motion, seat, 'fail');
   }
   const settles =
-    opened + DEFAULT_RULES.windows.ordinary.default * DAY_MINUTES + RESULT_GRACE_MINUTES;
+    opened + DEFAULT_RULES.windows.ordinary.default * DAY_MINUTES + HORIZON_STEP_MINUTES;
   return { logs, motion, settles };
 }
 
@@ -100,7 +100,7 @@ describe('a coalition’s Dispatch (#124)', () => {
     logs.vote('A', opened + 2, 'ben', motion, 4);
     logs.result(opened + 3, 'kim', motion, 'A', 'pass');
     logs.result(opened + 4, 'zed', motion, 'B', 'pass');
-    const settles = opened + 7 * DAY_MINUTES + RESULT_GRACE_MINUTES;
+    const settles = opened + 7 * DAY_MINUTES + HORIZON_STEP_MINUTES;
     const all = foldLogs(logs.logs, settles);
     expect(folded(all, 'coalition').state.dispatches.map((d) => d.id)).toEqual([motion]);
     const group = folded(all, 'A').state;

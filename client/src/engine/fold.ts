@@ -81,11 +81,14 @@ import {
   mayRecordThread,
 } from './chatPosts';
 import {
+  type AdmitSeat,
   bindsSeat,
   type Coalition,
   type CoalitionDraft,
   expireFormation,
+  horizonOf,
   type Motion,
+  motionHorizon,
   motionOutcome,
   type ReconcileChange,
   admitSeat,
@@ -93,7 +96,6 @@ import {
   mayPromote,
   mayReconcile,
   newCoalition,
-  settlesAt,
   recordResult,
   recordWrap,
   seatKeyFor,
@@ -1725,8 +1727,7 @@ function applySealedReconcile(
   if (body.dispatch !== undefined || !mayReconcile(coalition, body.target.key)) return false;
   const motion = openReconcile(draft, body, author, at, body.target);
   if (motion === null) return false;
-  const seats = coalition.seats.map((s) => s.key);
-  coalition.motions.push({ id: motion.id, deadline: motion.deadline, seats, admit: null });
+  snapshotMotion(coalition, motion);
   return true;
 }
 
@@ -1746,6 +1747,21 @@ function extendSuspension(
   if (suspension !== undefined) {
     draft.suspensions[index] = extendedBy(suspension, draft.rules, proposal);
   }
+}
+
+/**
+ * Keeps a motion's snapshot (#100): the seats deciding it now, and the
+ * coalition's level now (#387), which fixes its horizon for good, with the
+ * seat it would admit, if any (#114).
+ */
+function snapshotMotion(
+  coalition: CoalitionDraft,
+  motion: Pick<OpenProposal, 'id' | 'deadline'>,
+  admit: AdmitSeat | null = null,
+): void {
+  const { id, deadline } = motion;
+  const seats = coalition.seats.map((s) => s.key);
+  coalition.motions.push({ id, deadline, level: coalition.level, seats, admit });
 }
 
 /**
@@ -1785,8 +1801,7 @@ function applyMotion(
   if (body.text === '') return false;
   const motion = openEdit(draft, body, author, at);
   if (motion === null) return false;
-  const seats = coalition.seats.map((s) => s.key);
-  coalition.motions.push({ id: motion.id, deadline: motion.deadline, seats, admit: null });
+  snapshotMotion(coalition, motion);
   return true;
 }
 
@@ -1826,13 +1841,7 @@ function applyAdmit(
     eligible: [],
     versions: [{ id: at.id, author, text: '' }],
   });
-  const seats = coalition.seats.map((s) => s.key);
-  coalition.motions.push({
-    id: at.id,
-    deadline: proposal.deadline,
-    seats,
-    admit: { ...body.target.seat, kx: body.target.kx },
-  });
+  snapshotMotion(coalition, proposal, { ...body.target.seat, kx: body.target.kx });
   return true;
 }
 
@@ -1866,8 +1875,7 @@ function applyPromote(
     eligible: [],
     versions: [{ id: at.id, author, text: '' }],
   });
-  const seats = coalition.seats.map((s) => s.key);
-  coalition.motions.push({ id: motion.id, deadline: motion.deadline, seats, admit: null });
+  snapshotMotion(coalition, motion);
   return true;
 }
 
@@ -2849,8 +2857,8 @@ function barOf(proposal: Pick<Proposal, 'target' | 'class'>, rules: Rules): Bar 
 /**
  * Fixes a coalition motion's finality and outcome from the results its seats
  * posted (#100): a fail is final at once, and a pass once results stop
- * counting, at deadline + 10,080, since until then a contest can turn it into
- * a fail. Its one version wins a pass. Until it is decided it reads as a
+ * counting, at its horizon (#250, #387), since until then a contest can turn
+ * it into a fail. Its one version wins a pass. Until it is decided it reads as a
  * lapse, as a Proposal no one has scored does.
  */
 function settleMotion(
@@ -2859,7 +2867,7 @@ function settleMotion(
   bar: Bar,
   relayNow: number | null,
 ): Proposal {
-  const expired = relayNow !== null && relayNow >= settlesAt(proposal);
+  const expired = relayNow !== null && relayNow >= motionHorizon(coalition, proposal);
   const { kind } = motionOutcome(coalition, proposal.id, expired);
   const final = kind === 'fail' || expired;
   const outcome: TallyOutcome =
@@ -3159,7 +3167,7 @@ function advanceAll(draft: Draft): void {
 
 /**
  * Brings a coalition's Dispatches up to `draft.at` (#124): each motion
- * carrying one sends it once its pass is final, at deadline + 10,080, since
+ * carrying one sends it once its pass is final, at its horizon (#387), since
  * until then a contest could still turn the pass into a fail (#100). They go
  * out once each, in the order they turn final and then relay order, from the
  * motion, under its id, pointing to the coalition's one Document (#92),
@@ -3168,11 +3176,12 @@ function advanceAll(draft: Draft): void {
  * time stops.
  */
 function advanceMotionDispatches(draft: Draft, coalition: CoalitionDraft): void {
+  const horizon = (p: Pick<OpenProposal, 'id' | 'deadline'>) => motionHorizon(coalition, p);
   const due = draft.proposals.filter(
-    (p) => p.dispatch !== null && !draft.dispatched.has(p.id) && draft.at >= settlesAt(p),
+    (p) => p.dispatch !== null && !draft.dispatched.has(p.id) && draft.at >= horizon(p),
   );
-  // `proposals` is in relay order and sort is stable, so equal deadlines keep relay order.
-  for (const proposal of due.sort((a, b) => a.deadline - b.deadline)) {
+  // `proposals` is in relay order and sort is stable, so equal horizons keep relay order.
+  for (const proposal of due.sort((a, b) => horizon(a) - horizon(b))) {
     draft.dispatched.add(proposal.id);
     const settled = settleMotion(proposal, coalition, barOf(proposal, draft.rules), draft.at);
     if (proposal.dispatch === null || settled.outcome.kind !== 'pass') continue;
@@ -3183,7 +3192,7 @@ function advanceMotionDispatches(draft: Draft, coalition: CoalitionDraft): void 
       by: { proposal: id },
       ...dispatch,
       doc,
-      received: settlesAt(proposal),
+      received: horizon(proposal),
     });
   }
 }
@@ -3466,7 +3475,7 @@ function foldPass(pass: Pass): { state: GroupState; distrusted: string[] } {
     recoveryShares: draft.recoveryShares,
     recoveryAlerts: draft.recoveryAlerts,
     recoveryCancels: draft.recoveryCancels,
-    coalitions: heldSeats(proposals, draft.coalition !== null),
+    coalitions: heldSeats(proposals),
     coalition: draft.coalition,
     focus: focusOf(proposals),
     founding: draft.founding,
@@ -3478,8 +3487,8 @@ function foldPass(pass: Pass): { state: GroupState; distrusted: string[] } {
 /**
  * Where relay time stands once every record is in: `relayNow`, unless the
  * group dissolved (#108) or the coalition was declined (#100), when it stopped
- * there. A coalition still forming when `relayNow` reaches its `formsBy` is
- * declined then.
+ * there. A coalition still forming when `relayNow` reaches its `formsFinal`
+ * is declined then (#250).
  */
 function endTime(draft: Draft, relayNow: number | null): number | null {
   if (draft.coalition !== null) expireFormation(draft.coalition, relayNow ?? draft.at);
@@ -3487,30 +3496,22 @@ function endTime(draft: Draft, relayNow: number | null): number | null {
 }
 
 /**
- * A reconcile Proposal's outcome as its seat crosses: a group's once its vote
- * is final, a lapse as `fail`. A coalition's (#122) passes as soon as its
- * seats' pass is certain, before results on it stop counting, since a pass
- * that waited for that would reach the coalition above too late; a contest
- * that later turns it into a fail crosses as a fail, and one that leaves it
- * open is answered above with a fail too (`withdrawnPass` in crossing.ts,
- * #375), since this fold can't see the pass that crossed.
+ * A reconcile Proposal's outcome as its seat crosses: once final, a lapse as
+ * `fail`, a group's and a coalition's (#122) alike. Only a final outcome
+ * crosses up a level (#387): a coalition's pass is final at its horizon,
+ * before results stop counting in the coalition above it.
  */
-function heldOutcome(proposal: Proposal, certain: boolean): HeldSeat['outcome'] {
-  const pass = proposal.outcome.kind === 'pass';
-  if (certain && pass) return 'pass';
+function heldOutcome(proposal: Proposal): HeldSeat['outcome'] {
   if (!proposal.final) return 'open';
-  return pass ? 'pass' : 'fail';
+  return proposal.outcome.kind === 'pass' ? 'pass' : 'fail';
 }
 
-/**
- * The reconcile Proposals as seats (#100): each one's key, statement and
- * outcome, a coalition's (#122) as soon as it is certain.
- */
-function heldSeats(proposals: readonly Proposal[], certain: boolean): HeldSeat[] {
+/** The reconcile Proposals as seats (#100): each one's key, statement and outcome once final. */
+function heldSeats(proposals: readonly Proposal[]): HeldSeat[] {
   return proposals.flatMap((p) => {
     if (p.target.kind !== 'reconcile') return [];
     const { key, name, title, atoms } = p.target;
-    return [{ proposal: p.id, key, name, title, atoms, outcome: heldOutcome(p, certain) }];
+    return [{ proposal: p.id, key, name, title, atoms, outcome: heldOutcome(p) }];
   });
 }
 
@@ -3568,33 +3569,32 @@ function openMotion(draft: Draft, motion: Motion): void {
     number: 0,
     dispatch: null,
   });
-  const seats = draft.coalition?.seats.map((s) => s.key);
-  if (seats !== undefined) draft.coalition?.motions.push({ id, deadline, seats, admit: null });
+  if (draft.coalition !== null) snapshotMotion(draft.coalition, { id, deadline });
 }
 
 /**
  * Seats each group whose admit motion's pass has become final by `draft.at`
- * (#114), once, in order of when it became final, deadline + 10,080, and
+ * (#114), once, in order of when it became final, at its horizon (#387), and
  * then relay order: a later motion's snapshot, and a later join, see it.
  */
 function advanceAdmissions(draft: Draft, coalition: CoalitionDraft): void {
   const due = coalition.motions
-    .filter((m) => m.admit !== null && draft.at >= settlesAt(m))
-    .sort((a, b) => a.deadline - b.deadline);
+    .filter((m) => m.admit !== null && draft.at >= horizonOf(m))
+    .sort((a, b) => horizonOf(a) - horizonOf(b));
   for (const motion of due) {
     const proposal = draft.proposals.find((p) => p.id === motion.id);
     if (proposal === undefined) continue;
     // Results on it have stopped counting, so its outcome is final here.
     const settled = settleMotion(proposal, coalition, barOf(proposal, draft.rules), draft.at);
     if (settled.outcome.kind === 'pass') {
-      admitSeat(coalition, motion, settlesAt(motion));
+      admitSeat(coalition, motion, horizonOf(motion));
     }
   }
 }
 
 /**
  * Sends out each Dispatch a promotion motion here has passed (#126), once its
- * pass is final, at deadline + 10,080, when results on it stop counting, in
+ * pass is final, at its horizon (#387), when results on it stop counting, in
  * order of when that is, then relay order: under the Dispatch's own id, as a
  * Dispatch from the motion, pointing to no Document, received at that
  * minute. A fail, final at once, sends nothing.
@@ -3602,15 +3602,15 @@ function advanceAdmissions(draft: Draft, coalition: CoalitionDraft): void {
 function advancePromotions(draft: Draft, coalition: CoalitionDraft): void {
   const due = draft.proposals
     .filter((p) => p.target.kind === 'promote' && !draft.dispatched.has(p.id))
-    .filter((p) => draft.at >= settlesAt(p))
-    .sort((a, b) => a.deadline - b.deadline);
+    .filter((p) => draft.at >= motionHorizon(coalition, p))
+    .sort((a, b) => motionHorizon(coalition, a) - motionHorizon(coalition, b));
   for (const proposal of due) {
     draft.dispatched.add(proposal.id);
     const { target } = proposal;
     const settled = settleMotion(proposal, coalition, barOf(proposal, draft.rules), draft.at);
     if (target.kind !== 'promote' || settled.outcome.kind !== 'pass') continue;
     const { id, title, text } = target.dispatch;
-    const received = settlesAt(proposal);
+    const received = motionHorizon(coalition, proposal);
     draft.dispatches.push({ id, by: { proposal: proposal.id }, title, text, doc: null, received });
   }
 }
@@ -3658,7 +3658,7 @@ function closeReadAhead(draft: Draft, seq: number): void {
  * seq `seq`, closes each cleared Proposal the fold has passed the early
  * close of (#289), and brings the removals (#115), seats, opt-ins and
  * carried Dispatches (#112) up to it ({@link advanceAll}). A coalition still
- * forming when it reaches its `formsBy` is declined there, and relay time
+ * forming when it reaches its `formsFinal` is declined there (#250), and relay time
  * stops at that minute (#100). A coalition seats each group admitted by then
  * (#114), and sends each Dispatch it passed whose pass is final by then
  * (#126).
