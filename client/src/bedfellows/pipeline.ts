@@ -11,7 +11,9 @@
  * 3. An entry's coverage is the share of its claims with a counterpart. One
  *    with no candidate, or (at three claims or more) coverage above
  *    `nearCopy`, stays out.
- * 4. Its best three pairs go to the stance check. An agreeing pair is a
+ * 4. Its best three pairs go to the stance check, less any whose entry claim
+ *    the shared-enemy check flags (#481; off as it ships, `hostility.ts`;
+ *    term overlap's rows don't pass through it). An agreeing pair is a
  *    verified anchor, an unsure one a shared subject; an opposed pair is
  *    dropped, and an entry left with none stays out, with nothing said.
  * 5. Its tier comes from strangeness, one minus coverage, or for an entry
@@ -61,6 +63,7 @@ import type {
   BedfellowsInput,
   BedfellowsView,
   Embedder,
+  HostilityCheck,
   Models,
   Reason,
   Row,
@@ -124,6 +127,8 @@ interface Context {
   /** The centroid of each covered Document's vectors, for the bridging bonus. */
   readonly centroids: readonly Vector[];
   readonly judge: StanceJudge;
+  /** The shared-enemy check (#481), when the run has one. */
+  readonly hostility: HostilityCheck | undefined;
   readonly thresholds: Thresholds;
 }
 
@@ -156,14 +161,18 @@ function reasonFrom(pair: Candidate, verified: boolean): Reason {
 
 /**
  * The reason among `best`, judged in order: the first pair the judge says
- * agrees, else the first it's unsure of, else null (every pair opposed).
+ * agrees, else the first it's unsure of, else null (every pair opposed). A
+ * pair whose entry claim `hostility` flags is never the reason (#481): with
+ * the stance check off, every reason stands where an anchor would.
  */
 async function reasonOf(
   best: readonly Candidate[],
   judge: StanceJudge,
+  hostility: HostilityCheck | undefined,
 ): Promise<{ reason: Reason; strength: number } | null> {
   let unsure: Candidate | null = null;
   for (const pair of best) {
+    if (hostility !== undefined && (await hostility.isMainlyHostile(pair.entrySentence))) continue;
     const stance = await judge.judge(pair.readerSentence, pair.entrySentence);
     if (stance === 'agrees') return { reason: reasonFrom(pair, true), strength: pair.similarity };
     if (stance === 'unsure') unsure ??= pair;
@@ -192,7 +201,11 @@ async function placeByModel(
   if (found.candidates.length === 0) return null;
   const short = entry.claims.length < t.shortEntry.claims;
   if (!short && found.coverage > t.nearCopy) return null;
-  const best = await reasonOf(found.candidates.slice(0, t.judged), context.judge);
+  const best = await reasonOf(
+    found.candidates.slice(0, t.judged),
+    context.judge,
+    context.hostility,
+  );
   if (best === null) return null;
   const tier = short
     ? tierOfShortEntry(best.strength, nearestDocument(vectors, context.reader.byDocument), t)
@@ -326,6 +339,7 @@ export async function bedfellows(
     uncovered: documents.filter((doc) => !doc.covered).map((doc) => doc.claims),
     vectors: await coveredEntryVectors(entries, reader, embedder, options),
     judge: models.judge,
+    hostility: models.hostility,
     thresholds: t,
   };
   const seen = new Set(input.shown);

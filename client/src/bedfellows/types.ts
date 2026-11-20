@@ -86,6 +86,15 @@ export interface StanceJudge {
 }
 
 /**
+ * The shared-enemy check's port (#481; ADR-0080 §6): whether a sentence is
+ * mainly hostility toward a group of people. A claim it flags can't be an
+ * entry's reason.
+ */
+export interface HostilityCheck {
+  isMainlyHostile(sentence: string): Promise<boolean>;
+}
+
+/**
  * The models a run uses. Without an embedder (the model hasn't loaded), every
  * entry is matched by term overlap (`fallback.ts`); without a splitter,
  * `split.ts` cuts claims.
@@ -94,6 +103,8 @@ export interface Models {
   readonly embedder?: Embedder | undefined;
   readonly judge: StanceJudge;
   readonly splitter?: Splitter;
+  /** The shared-enemy check (#481): without one, as it ships, no claim is held back for hostility. */
+  readonly hostility?: HostilityCheck | undefined;
 }
 
 /** How far an entry sits from the reader (ADR-0080 §4). */

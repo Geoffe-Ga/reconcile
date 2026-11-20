@@ -789,3 +789,52 @@ describe('bedfellows picks and orders a view (#479)', () => {
     });
   });
 });
+
+describe('bedfellows holds back claims the shared-enemy check flags (#481)', () => {
+  // One reader claim R, and entry claims at falling similarity: A best, then B. Two
+  // claims each, so no entry is a near-copy.
+  const models: Models = {
+    embedder: scripted({ R: at(0), A: at(5), B: at(10) }),
+    judge: standInJudge,
+    splitter: (text) => text.split(' '),
+  };
+  const flagging = (...hostile: string[]): Models['hostility'] => ({
+    isMainlyHostile: (sentence) => Promise.resolve(hostile.includes(sentence)),
+  });
+
+  it('gives an entry whose best claim is flagged its next claim as the reason', async () => {
+    const rows = await bedfellows(
+      { reader: [doc('R')], entries: [entry('e1', 'A B')], dial: 0 },
+      { ...models, hostility: flagging('A') },
+    );
+
+    expect(rows.map((row) => row.reason.entrySentence)).toEqual(['B']);
+  });
+
+  it('leaves out an entry whose every judged claim is flagged, saying nothing', async () => {
+    const rows = await bedfellows(
+      { reader: [doc('R')], entries: [entry('e1', 'A B'), entry('e2', 'B')], dial: 0 },
+      { ...models, hostility: flagging('A', 'B') },
+    );
+
+    expect(rows).toEqual([]);
+  });
+
+  it('never makes a flagged claim an anchor, even one the judge agrees with', async () => {
+    const rows = await bedfellows(
+      { reader: [doc('R')], entries: [entry('e1', 'A B')], dial: 0 },
+      { ...models, judge: judging({ 'R|A': 'agrees' }), hostility: flagging('A') },
+    );
+
+    expect(rows[0]?.reason).toEqual({ entrySentence: 'B', readerSentence: 'R', verified: false });
+  });
+
+  it('changes nothing without a check, as it ships', async () => {
+    const rows = await bedfellows(
+      { reader: [doc('R')], entries: [entry('e1', 'A B')], dial: 0 },
+      models,
+    );
+
+    expect(rows.map((row) => row.reason.entrySentence)).toEqual(['A']);
+  });
+});
