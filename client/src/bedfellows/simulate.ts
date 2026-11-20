@@ -17,8 +17,9 @@
  * The history is modelled here as `src/store/bedfellows.ts` (#480) keeps it,
  * since Bedfellows may not import the store: a record per entry shown, with
  * the day first shown and its mark, forgotten 30 days on; a new mark nudges
- * the dial, the same mark again doesn't. `simulate.test.ts` holds the two to
- * the same rules.
+ * the dial, the same mark again doesn't, and at most one mark nudges in a
+ * view (each {@link opened} starts one). `src/store/bedfellows.simulate.test.ts`
+ * holds the two to the same rules.
  *
  * It is deterministic for a seed: each reader's view seed comes from it, and
  * every date from `start`. It reads and writes nothing outside memory: entry
@@ -32,7 +33,14 @@ import { bedfellows, type RunOptions } from './pipeline';
 import { splitClaims } from './split';
 import { standInEmbedder, standInJudge } from './standIns';
 import type { Thresholds } from './thresholds';
-import type { BedfellowsEntry, Models, Row, Splitter } from './types';
+import type {
+  BedfellowsEntry,
+  BedfellowsInput,
+  BedfellowsView,
+  Models,
+  Row,
+  Splitter,
+} from './types';
 
 /** How a simulated reader marks what they're shown. */
 export type MarkKind = 'none' | 'common-ground' | 'too-far';
@@ -105,23 +113,31 @@ export interface SimulatedHistory {
   readonly dial: number;
   readonly lastStepWeek: number | null;
   readonly shown: ReadonlyMap<string, HistoryRecord>;
+  /** Whether a mark has nudged the dial in this view: at most one does (#480). */
+  readonly nudged: boolean;
 }
 
 /** A history before the first view. */
-export const NEW_HISTORY: SimulatedHistory = { dial: 0, lastStepWeek: null, shown: new Map() };
+export const NEW_HISTORY: SimulatedHistory = {
+  dial: 0,
+  lastStepWeek: null,
+  shown: new Map(),
+  nudged: false,
+};
 
 /**
  * `history` as Bedfellows opens on `date`: records 30 days old or more
- * forgotten, then the dial stepped for the week (the first view only notes it).
+ * forgotten, then the dial stepped for the week (the first view only notes it),
+ * and a new view begins, with its one nudge unspent.
  */
 export function opened(history: SimulatedHistory, date: string): SimulatedHistory {
   const today = dayOf(date);
   const week = weekOf(date);
   const shown = new Map([...history.shown].filter(([, r]) => today < r.day + HISTORY_DAYS));
   const last = history.lastStepWeek;
-  if (last !== null && week <= last) return { ...history, shown };
+  if (last !== null && week <= last) return { ...history, shown, nudged: false };
   const dial = last === null ? history.dial : nextDial(history.dial, last, week, true);
-  return { dial, lastStepWeek: week, shown };
+  return { dial, lastStepWeek: week, shown, nudged: false };
 }
 
 /** `history` once `ids` were shown on `date`: each not yet recorded is, as first shown that day. */
@@ -135,7 +151,10 @@ export function showed(
   return { ...history, shown };
 }
 
-/** `history` once `id` is marked `mark`: a new mark nudges the dial, the same mark again doesn't. */
+/**
+ * `history` once `id` is marked `mark`: a new mark nudges the dial if none
+ * has yet in this view, and the same mark again doesn't.
+ */
 export function marked(
   history: SimulatedHistory,
   id: string,
@@ -143,13 +162,11 @@ export function marked(
   date: string,
 ): SimulatedHistory {
   const held = history.shown.get(id);
-  const dial =
-    held?.mark === mark
-      ? history.dial
-      : nudge(history.dial, mark === 'common-ground' ? 'out' : 'in');
+  const nudges = !history.nudged && held?.mark !== mark;
+  const dial = nudges ? nudge(history.dial, mark === 'common-ground' ? 'out' : 'in') : history.dial;
   const shown = new Map(history.shown);
   shown.set(id, { day: held?.day ?? dayOf(date), mark });
-  return { ...history, dial, shown };
+  return { ...history, dial, shown, nudged: history.nudged || nudges };
 }
 
 /** The mark a reader of `kind` puts on `row`, or none. */
@@ -185,6 +202,8 @@ interface Run {
   readonly input: SimulationInput;
   /** The corpus entries, as the shelf, by id. */
   readonly entries: ReadonlyMap<string, Entry>;
+  /** The whole shelf, as the pipeline reads it: every run is handed all of it (§5). */
+  readonly shelf: readonly BedfellowsEntry[];
   readonly models: Models;
   /** The shelf's public vectors, in memory, shared by every reader of the run. */
   readonly store: VectorStore;
@@ -199,20 +218,25 @@ function onShelf({ id, title, text }: Entry): BedfellowsEntry {
 }
 
 /**
- * The entries of `run`'s shelf the pipeline gives `reader` any row for. An
- * entry is placed on its own claims and the reader's alone, so one with no
- * row never gets one, whatever the dial, the history or the date: each week
- * can run on these alone and give the same view, at a fraction of the cost.
+ * The pipeline's input for one reader's view: the whole shelf, as ADR-0080 §5
+ * asks of every run (#477), with the history's entries shown and those marked
+ * Too far, which leave the rows, never the run (#480). No corpus reader
+ * belongs to a publishing group, so none of the shelf is their own (`own`).
  */
-async function placeable(reader: Reader, run: Run): Promise<BedfellowsEntry[]> {
-  const shelf = [...run.entries.values()].map(onShelf);
-  const rows = await bedfellows(
-    { reader: reader.documents, entries: shelf, dial: 0 },
-    run.models,
-    run.options,
-  );
-  const ids = new Set(rows.map((row) => row.entryId));
-  return shelf.filter((entry) => ids.has(entry.id));
+export function weekInput(
+  reader: Reader,
+  shelf: readonly BedfellowsEntry[],
+  history: SimulatedHistory,
+  view: Omit<BedfellowsView, 'own'>,
+): BedfellowsInput {
+  return {
+    reader: reader.documents,
+    entries: shelf,
+    dial: history.dial,
+    view: { ...view, own: [] },
+    shown: [...history.shown.keys()],
+    leaveOut: [...history.shown].flatMap(([id, r]) => (r.mark === 'too-far' ? [id] : [])),
+  };
 }
 
 /** `rows` with the corpus entry each shows. */
@@ -227,7 +251,6 @@ function shownOf(rows: readonly Row[], entries: ReadonlyMap<string, Entry>): Sho
 async function readerYear(reader: Reader, run: Run): Promise<ViewStats[]> {
   const { input } = run;
   const seed = turn(0, input.seed, reader.id);
-  const entries = await placeable(reader, run);
   const weeks: ViewStats[] = [];
   const groups = new Set<string>();
   const subjects = new Set<string>();
@@ -236,14 +259,7 @@ async function readerYear(reader: Reader, run: Run): Promise<ViewStats[]> {
     const date = weeksAfter(run.start, w);
     history = opened(history, date);
     const rows = await bedfellows(
-      {
-        reader: reader.documents,
-        entries,
-        dial: history.dial,
-        view: { size: run.size, date, seed },
-        shown: [...history.shown.keys()],
-        leaveOut: [...history.shown].flatMap(([id, r]) => (r.mark === 'too-far' ? [id] : [])),
-      },
+      weekInput(reader, run.shelf, history, { size: run.size, date, seed }),
       run.models,
       run.options,
     );
@@ -360,6 +376,7 @@ export async function simulate(input: SimulationInput): Promise<WeekReport[]> {
   const run: Run = {
     input,
     entries: new Map(input.shelf.map((e) => [e.id, e])),
+    shelf: input.shelf.map(onShelf),
     models: { ...models, splitter: remembered(models.splitter ?? splitClaims) },
     store,
     options: { store, ...(input.thresholds === undefined ? {} : { thresholds: input.thresholds }) },

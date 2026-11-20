@@ -26,6 +26,8 @@ import {
   type Reader,
   type Split,
 } from './corpus';
+import { claimsIn, splitClaims } from './split';
+import type { HostilityCheck } from './types';
 
 /** What a matcher says of one reader and one entry. */
 export type Verdict = 'common-ground' | 'shared-subject' | 'nothing';
@@ -180,4 +182,107 @@ export function heldOutReportAsync(
   corpus: Corpus = loadCorpus(),
 ): Promise<Report> {
   return reportAsync(matcher, 'held-out', corpus);
+}
+
+/*
+ * The shared-enemy check (#481; ADR-0080 §6), scored here because only the
+ * harness reads the corpus: how many of each split's `hostile` entries a
+ * check catches, how many others it wrongly flags, and how anger at the
+ * powerful fares. The check itself is `hostility.ts`.
+ */
+
+/** How a check did on one kind of entry. */
+export interface HostilityCounts {
+  readonly entries: number;
+  /** Entries with at least one claim flagged. */
+  readonly flagged: number;
+  readonly claims: number;
+  readonly claimsFlagged: number;
+}
+
+/** How a check did on one split. */
+export interface HostilityReport {
+  readonly split: Split;
+  /** Entries labelled `hostile`: flagged is caught. */
+  readonly hostile: HostilityCounts;
+  /** Every other entry: flagged is wrongly flagged. */
+  readonly others: HostilityCounts;
+  /** The others that are anger at the powerful, the control (`corpus/README.md`). */
+  readonly angerAtPowerful: HostilityCounts;
+  /** Wrongly flagged entries by subject, to see whether they lean toward one kind of group. */
+  readonly othersFlaggedBySubject: Readonly<Record<string, number>>;
+  /** The ids of wrongly flagged entries, in corpus order. */
+  readonly flaggedOthers: readonly string[];
+  /** The ids of hostile entries with no claim flagged, in corpus order. */
+  readonly missedHostile: readonly string[];
+}
+
+/** One entry's claims and how many `check` flags. */
+interface Checked {
+  readonly entry: Entry;
+  readonly claims: number;
+  readonly flagged: number;
+}
+
+/** The counts over `checked`. */
+function countsOf(checked: readonly Checked[]): HostilityCounts {
+  return {
+    entries: checked.length,
+    flagged: checked.filter((c) => c.flagged > 0).length,
+    claims: checked.reduce((sum, c) => sum + c.claims, 0),
+    claimsFlagged: checked.reduce((sum, c) => sum + c.flagged, 0),
+  };
+}
+
+/** `check`'s report on `split` of `corpus`, asking about one claim at a time. */
+async function hostilityReportOf(
+  check: HostilityCheck,
+  split: Split,
+  corpus: Corpus,
+): Promise<HostilityReport> {
+  const checked: Checked[] = [];
+  for (const entry of corpus.entries.filter((e) => e.split === split)) {
+    const claims = claimsIn(entry.title, entry.text, splitClaims);
+    let flagged = 0;
+    for (const claim of claims) if (await check.isMainlyHostile(claim)) flagged += 1;
+    checked.push({ entry, claims: claims.length, flagged });
+  }
+  const hostile = checked.filter((c) => c.entry.hostile);
+  const others = checked.filter((c) => !c.entry.hostile);
+  const wrong = others.filter((c) => c.flagged > 0);
+  const bySubject: Record<string, number> = {};
+  for (const { entry } of wrong) bySubject[entry.subject] = (bySubject[entry.subject] ?? 0) + 1;
+  return {
+    split,
+    hostile: countsOf(hostile),
+    others: countsOf(others),
+    angerAtPowerful: countsOf(others.filter((c) => c.entry.angerAtPowerful === true)),
+    othersFlaggedBySubject: bySubject,
+    flaggedOthers: wrong.map((c) => c.entry.id),
+    missedHostile: hostile.filter((c) => c.flagged === 0).map((c) => c.entry.id),
+  };
+}
+
+/**
+ * `check`'s report on `split`, which must be `tune`: held-out numbers come
+ * only from {@link heldOutHostilityReport}, as the harness's do.
+ *
+ * @throws {Error} for `held-out`.
+ */
+export async function hostilityReport(
+  check: HostilityCheck,
+  split: Split,
+  corpus: Corpus = loadCorpus(),
+): Promise<HostilityReport> {
+  if (split === 'held-out')
+    throw new Error('Held-out numbers come only from heldOutHostilityReport.');
+  return hostilityReportOf(check, split, corpus);
+}
+
+/** `check`'s report on `held-out`: read once its bar is set on `tune`. */
+export function heldOutHostilityReport(
+  check: HostilityCheck,
+  corpus: Corpus = loadCorpus(),
+): Promise<HostilityReport> {
+  return hostilityReportOf(check, 'held-out', corpus);
 }

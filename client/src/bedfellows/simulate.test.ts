@@ -1,20 +1,15 @@
 /**
  * A year of the stretch, simulated (#481; ADR-0080 §8): the history's rules,
- * the reader kinds, and the year itself with the stand-in models, whose
- * numbers ADR-0080 §6 and §8 report beside the real model's.
- *
- * The year's tests assert what is true of the stand-ins on the corpus, and
- * say where it isn't what #481 hoped: a reader's candidate set on the
- * 329-entry corpus shelf is 2 to 29 entries, nearly none of them close kin,
- * so a weekly view of 10 shows most of it from the first week, and the dial
- * has little to stretch (ADR-0080 §6's amendment).
+ * the reader kinds, and what one week's run is handed. The year itself over
+ * the whole corpus with the stand-in models, whose numbers ADR-0080 §6 and §8
+ * report beside the real model's, is in `simulate.year-none.test.ts` and
+ * `simulate.year-too-far.test.ts`.
  */
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { loadCorpus } from './corpus';
 import { TOP } from './mix';
 import { THRESHOLDS } from './thresholds';
-import { bedfellows } from './pipeline';
 import {
   HISTORY_DAYS,
   MARK_KINDS,
@@ -26,9 +21,9 @@ import {
   simulate,
   START,
   VIEW_SIZE,
-  type WeekReport,
+  weekInput,
 } from './simulate';
-import { claimsIn, splitClaims } from './split';
+import { splitClaims } from './split';
 import { standInEmbedder, standInJudge } from './standIns';
 import type { Row } from './types';
 
@@ -90,14 +85,39 @@ describe('the simulated history keeps the store’s rules (#480)', () => {
     const start = { ...NEW_HISTORY, dial: 3 };
     const out = marked(start, 'e1', 'common-ground', START);
     const again = marked(out, 'e1', 'common-ground', START);
-    const back = marked(again, 'e1', 'too-far', START);
 
-    expect([out.dial, again.dial, back.dial]).toEqual([4, 4, 3]);
-    expect(back.shown.get('e1')?.mark).toBe('too-far');
+    expect([out.dial, again.dial]).toEqual([4, 4]);
+    expect(opened(again, START).dial).toBe(4);
+    expect(marked(opened(again, START), 'e1', 'too-far', START).dial).toBe(3);
+  });
+
+  it('nudges at most once a view, and a new view (each open) has its own nudge', () => {
+    const view = opened({ ...NEW_HISTORY, dial: 3 }, START);
+    const first = marked(view, 'e1', 'too-far', START);
+    const second = marked(first, 'e2', 'too-far', START);
+    const third = marked(second, 'e3', 'common-ground', START);
+    const next = marked(opened(third, START), 'e4', 'too-far', START);
+
+    expect([first.dial, second.dial, third.dial, next.dial]).toEqual([2, 2, 2, 1]);
+    expect(third.shown.get('e2')?.mark).toBe('too-far');
+    expect(third.shown.get('e3')?.mark).toBe('common-ground');
+  });
+
+  it('spends no nudge on the same mark again', () => {
+    const view = opened({ ...NEW_HISTORY, dial: 3 }, START);
+    const once = marked(marked(view, 'e1', 'common-ground', START), 'e2', 'too-far', START);
+    const held = marked(opened(once, START), 'e1', 'common-ground', START);
+
+    expect(once.dial).toBe(4);
+    expect(marked(held, 'e2', 'common-ground', START).dial).toBe(5);
   });
 });
 
 describe('markFor: each kind of simulated reader (#481)', () => {
+  it('has the three kinds #481 names', () => {
+    expect(MARK_KINDS).toEqual(['none', 'common-ground', 'too-far']);
+  });
+
   it('marks nothing for a reader who marks nothing', () => {
     expect(markFor('none', row('strange', true))).toBeNull();
   });
@@ -166,27 +186,39 @@ describe('simulate (#481)', () => {
     expect(unlabelled[0]).toMatchObject({ verified: 1, verifiedPrecision: null });
   });
 
-  it('may run each week on the entries placed at all: their view is the full shelf’s', async () => {
-    // The shortcut `simulate` takes: an entry is placed on its own claims and
-    // the reader's, so the rest of the shelf never changes a view.
-    const models = { embedder: standInEmbedder, judge: standInJudge };
+  it('hands every week’s run the whole shelf, and leaves Too far out of the rows only (ADR-0080 §5)', () => {
+    // §5 (#477, #480): the run is handed every entry on the shelf, so a cache
+    // of its vectors says nothing about the reader; the reader's own groups'
+    // entries (`own`) and those marked Too far leave the rows, never the run.
     const shelf = corpus.entries.map(({ id, title, text }) => ({ id, title, text }));
-    for (const reader of few.readers) {
-      const all = await bedfellows({ reader: reader.documents, entries: shelf, dial: 0 }, models);
-      const placed = shelf.filter((e) => all.some((r) => r.entryId === e.id));
-      const ids = placed.map((e) => e.id);
-      const input = {
-        reader: reader.documents,
-        dial: 5,
-        view: { size: VIEW_SIZE, date: '2027-03-01', seed: 9 },
-        shown: ids.slice(0, 3),
-        leaveOut: ids.slice(3, 4),
-      };
+    const reader = must(few.readers[0]);
+    let history = opened(NEW_HISTORY, '2027-03-01');
+    history = showed(history, ['e001', 'e002', 'e003'], '2027-03-01');
+    history = marked(history, 'e002', 'too-far', '2027-03-01');
+    history = marked(history, 'e003', 'common-ground', '2027-03-01');
 
-      expect(await bedfellows({ ...input, entries: placed }, models)).toEqual(
-        await bedfellows({ ...input, entries: shelf }, models),
-      );
-    }
+    const input = weekInput(reader, shelf, history, {
+      size: VIEW_SIZE,
+      date: '2027-03-01',
+      seed: 9,
+    });
+
+    expect(input.entries).toEqual(shelf);
+    expect(input.reader).toBe(reader.documents);
+    expect(input.dial).toBe(history.dial);
+    expect(input.view).toEqual({ size: VIEW_SIZE, date: '2027-03-01', seed: 9, own: [] });
+    expect([...(input.shown ?? [])].sort()).toEqual(['e001', 'e002', 'e003']);
+    expect(input.leaveOut).toEqual(['e002']);
+  });
+
+  it('is the same for a reader who marks Common ground as for one who marks nothing, with nothing verified', async () => {
+    // The stand-in judge never agrees, so no reason is verified and the
+    // Common ground reader has nothing to mark (ADR-0080 §8).
+    const none = await simulate({ ...few, weeks: 13, seed: 1, marks: 'none' });
+    const commonGround = await simulate({ ...few, weeks: 13, seed: 1, marks: 'common-ground' });
+
+    expect(commonGround).toEqual(none);
+    expect(none.every((w) => w.verified === 0 && w.verifiedPrecision === null)).toBe(true);
   });
 
   it('takes a view’s size, a first date, thresholds and a splitter when a run by hand passes them', async () => {
@@ -222,91 +254,5 @@ describe('simulate (#481)', () => {
     await simulate({ ...few, weeks: 2, seed: 1, marks: 'too-far' });
 
     for (const door of [...doors, open]) expect(door).not.toHaveBeenCalled();
-  });
-});
-
-describe('a year with the stand-in models over the corpus (#481)', () => {
-  const corpus = loadCorpus();
-  const years = new Map<string, WeekReport[]>();
-  /** The mean of `field` over weeks `from` to `to` (1-based, inclusive). */
-  const quarter = (
-    year: readonly WeekReport[],
-    field: keyof WeekReport,
-    from: number,
-    to: number,
-  ) => year.slice(from - 1, to).reduce((sum, w) => sum + Number(w[field]), 0) / (to - from + 1);
-
-  beforeAll(async () => {
-    for (const marks of MARK_KINDS) {
-      const input = { readers: corpus.readers, shelf: corpus.entries, pairs: corpus.pairs };
-      years.set(marks, await simulate({ ...input, weeks: 52, seed: 1, marks }));
-    }
-  }, 60_000);
-
-  it.each(MARK_KINDS)('meets more groups and subjects as the year goes on: %s', (marks) => {
-    const year = must(years.get(marks));
-
-    expect(must(year.at(-1)).groupsSoFar).toBeGreaterThan(must(year[0]).groupsSoFar);
-    expect(must(year.at(-1)).subjectsSoFar).toBeGreaterThan(must(year[0]).subjectsSoFar);
-  });
-
-  it('fails #481’s example, as the PR reports: the week’s view doesn’t widen and hostility doesn’t fall', () => {
-    // The example expects week 52 to show more groups than week 1, and no
-    // greater a hostile share. Neither holds: a reader's candidate set on the
-    // corpus shelf is small, so a view of 10 holds most of it from the first
-    // week, and the stretch moves the view from middle toward strange entries,
-    // where the hostile ones mostly sit (ADR-0080 §6 and §8's amendments).
-    const year = must(years.get('none'));
-    const [first, last] = [must(year[0]), must(year.at(-1))];
-
-    expect(last.distinctGroups).toBeLessThanOrEqual(first.distinctGroups);
-    expect(last.topGroupShare).toBeGreaterThanOrEqual(first.topGroupShare);
-    expect(last.hostileShare).toBeGreaterThan(first.hostileShare);
-  });
-
-  it('verifies nothing, as the stand-in judge never agrees: precision has nothing to judge', () => {
-    for (const year of years.values()) {
-      expect(year.every((w) => w.verified === 0 && w.verifiedPrecision === null)).toBe(true);
-    }
-  });
-
-  it('is the same for a reader who marks Common ground as for one who marks nothing, with nothing verified', () => {
-    expect(years.get('common-ground')).toEqual(years.get('none'));
-  });
-
-  it('keeps the hostile share between 3% and 8% every week, for every kind, with the check off', () => {
-    for (const year of years.values()) {
-      expect(year.every((w) => w.hostileShare >= 0.03 && w.hostileShare <= 0.08)).toBe(true);
-    }
-  });
-
-  it('raises the hostile share for a reader who marks strange entries Too far (a finding for the founder)', () => {
-    const year = must(years.get('too-far'));
-
-    expect(quarter(year, 'hostileShare', 40, 52)).toBeGreaterThan(
-      quarter(year, 'hostileShare', 1, 13),
-    );
-  });
-
-  it('shows nothing hostile once a check flags every hostile claim', async () => {
-    const hostile = new Set(
-      corpus.entries
-        .filter((e) => e.hostile)
-        .flatMap((e) => claimsIn(e.title, e.text, splitClaims)),
-    );
-    const year = await simulate({
-      readers: corpus.readers.slice(0, 12),
-      shelf: corpus.entries,
-      weeks: 8,
-      seed: 1,
-      marks: 'too-far',
-      models: {
-        embedder: standInEmbedder,
-        judge: standInJudge,
-        hostility: { isMainlyHostile: (s) => Promise.resolve(hostile.has(s)) },
-      },
-    });
-
-    expect(year.every((w) => w.hostileShare === 0)).toBe(true);
   });
 });

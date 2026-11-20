@@ -5,13 +5,8 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Corpus, Entry } from './corpus';
-import {
-  heldOutHostilityReport,
-  HOSTILITY_HYPOTHESIS,
-  hostilityReport,
-  modelHostility,
-  SHARED_ENEMY_CHECK,
-} from './hostility';
+import { heldOutHostilityReport, hostilityReport } from './harness';
+import { HOSTILITY_HYPOTHESIS, modelHostility, SHARED_ENEMY_CHECK } from './hostility';
 import type { PairClassifier } from './runtime';
 import { THRESHOLDS } from './thresholds';
 import type { HostilityCheck } from './types';
