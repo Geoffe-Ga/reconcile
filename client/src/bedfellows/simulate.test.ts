@@ -219,7 +219,8 @@ describe('simulate (#481)', () => {
 
     expect(commonGround).toEqual(none);
     expect(none.every((w) => w.verified === 0 && w.verifiedPrecision === null)).toBe(true);
-  });
+    // Two 13-week runs over the whole shelf each week: about 10 s on CI's runner, beside the year files.
+  }, 60_000);
 
   it('takes a view’s size, a first date, thresholds and a splitter when a run by hand passes them', async () => {
     const year = await simulate({

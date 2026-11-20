@@ -248,7 +248,8 @@ describe('classifierLoader (#493)', () => {
       files === undefined ? [] : [files.model, files.tokenizer, files.runtime].map(hexOf),
     ).toEqual([TINY.model, TINY.tokenizer, TINY.runtime].map(hexOf));
     expect(fetchFile.mock.calls.map(([url]) => url).sort()).toEqual(MODEL_URLS);
-  });
+    // Hashes and starts the model files: allow for a CI runner busy with the Bedfellows year beside it.
+  }, 20_000);
 
   it('refuses a file that doesn’t match its pin, and never starts the model', async () => {
     const tampered = TINY.model.slice();
