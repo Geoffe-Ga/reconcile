@@ -44,6 +44,7 @@ function Line({ line }: { readonly line: CoalitionLine }) {
         <p>
           {coalitions.waitingBefore} <bdi>{line.group}</bdi>
           {coalitions.waitingAfter}
+          {line.notPassing === true ? ` ${coalitions.tagSeparator} ${coalitions.notPassing}` : null}
         </p>
       );
     case 'didnt-pass':

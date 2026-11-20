@@ -75,7 +75,10 @@ import {
   motionWords,
   reconcileView,
   type ReconcileView,
+  withdrawnBy,
 } from '../app/coalitionLines';
+import { formatMinute, minuteIso } from '../app/time';
+import { reminds } from '../engine/nudges';
 import { CoalitionProgress } from '../app/CoalitionProgress';
 import { MotionTagText } from '../app/MotionTag';
 import { decisionOf } from '../app/versionViews';
@@ -559,6 +562,8 @@ function Vote({ props, proposal, versions, motion }: VoteProps) {
   const { state, me, now, reachable, onVote } = props;
   const comparison = voteComparison(state, proposal, motion);
   const layout = layoutOf(comparison);
+  // Once another founding group's fail has declined the coalition, its reconcile ballot is withdrawn.
+  const withdrawn = withdrawnBy(proposal, props.coalitions ?? []);
   const reason = whyNoVote(props, proposal);
   const closed = proposal.final || now >= proposal.deadline;
   const suspended = isSuspended(state, me);
@@ -570,7 +575,10 @@ function Vote({ props, proposal, versions, motion }: VoteProps) {
       <HigherBar proposal={proposal} />
       <NarrowedNote state={state} proposal={proposal} />
       <Legend comparison={comparison} open={!proposal.final} />
-      {ballotShown(reason, proposal) ? (
+      {withdrawn === null ? (
+        <Reminder props={props} proposal={proposal} hasVoted={mine.hasVoted} />
+      ) : null}
+      {withdrawn === null && ballotShown(reason, proposal) ? (
         <CarriedOrBallot props={props} proposal={proposal} mine={mine} closed={closed}>
           {(carried) => (
             <Ballot
@@ -599,13 +607,50 @@ function Vote({ props, proposal, versions, motion }: VoteProps) {
           <ChoiceList versions={versions} current={comparison.current} layout={layout}>
             {meters}
           </ChoiceList>
-          {reason === null ? null : (
+          {withdrawn === null ? null : <Withdrawn group={withdrawn} />}
+          {reason === null || withdrawn !== null ? null : (
             <NoVote state={state} me={me} reason={reason} leaving={readsOnly(props)} />
           )}
         </>
       )}
       <AddVersion props={props} proposal={proposal} />
     </Block>
+  );
+}
+
+/**
+ * In place of the ballot on the group's open reconcile vote once another
+ * founding group's fail has declined its coalition (#250): "<group> didn't
+ * pass this, so the coalition won't form.", the group's name in a `<bdi>`.
+ */
+function Withdrawn({ group }: { readonly group: string }) {
+  return (
+    <p className="lede">
+      <bdi>{group}</bdi> {messages.coalitions.withdrawnAfter}
+    </p>
+  );
+}
+
+/**
+ * The reminder on an open reconcile or coalition vote (#250), from 3 days
+ * before it closes, for someone in its eligible set who hasn't scored it,
+ * on this device or waiting to send: "If you don't vote by <date>, you won't
+ * be counted." Its push carried nothing (ADR-0012); the words are only here.
+ */
+function Reminder(props: {
+  readonly props: ProposalViewProps;
+  readonly proposal: Proposal;
+  readonly hasVoted: boolean;
+}) {
+  const { proposal, hasVoted } = props;
+  const { me, now } = props.props;
+  if (hasVoted || !reminds(proposal, me, now)) return null;
+  return (
+    <p className="lede">
+      {messages.coalitions.reminderBefore}{' '}
+      <time dateTime={minuteIso(proposal.deadline)}>{formatMinute(proposal.deadline)}</time>
+      {messages.coalitions.reminderAfter}
+    </p>
   );
 }
 

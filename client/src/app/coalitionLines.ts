@@ -22,9 +22,15 @@ import {
   misstatesSeat,
 } from '../store/coalitions';
 
-/** One line under a coalition's name: whom it waits for, or who didn't pass it. */
+/**
+ * One line under a coalition's name: whom it waits for, or who didn't pass
+ * it. `notPassing` marks the group's own line while its reconcile vote is
+ * open, someone has scored it, and its count isn't a pass (#250): read from
+ * the group's own ballots on its own members' devices, so never another's.
+ * `lapsed` is the close-out: still forming at `formsFinal`, it didn't form.
+ */
 export type CoalitionLine =
-  | { readonly kind: 'waiting'; readonly group: string }
+  | { readonly kind: 'waiting'; readonly group: string; readonly notPassing?: true }
   | { readonly kind: 'didnt-pass'; readonly group: string }
   | { readonly kind: 'waiting-card' }
   | { readonly kind: 'lapsed' };
@@ -97,38 +103,67 @@ export function coalitionFor(
   return coalitions.find(({ entry }) => entry.groupId === id);
 }
 
+/**
+ * Whether the group's own reconcile vote `held` reads as currently not
+ * passing (#250): open, scored by at least one member, and its count short
+ * of a pass. Before anyone scores it, every open vote would read that way,
+ * so it says nothing then. A coalition's seat above has no ballots of its
+ * own, so its line never says it.
+ */
+function notPassingNow(state: GroupState, held: HeldSeat): boolean {
+  const own = state.proposals.find((p) => p.id === held.proposal);
+  return own !== undefined && !own.final && own.ballots.length > 0 && own.outcome.kind !== 'pass';
+}
+
+/** The waiting line for `group`, marked currently not passing when `notPassing` (#250). */
+function waitingLine(group: string, notPassing: boolean): CoalitionLine {
+  return notPassing ? { kind: 'waiting', group, notPassing } : { kind: 'waiting', group };
+}
+
 /** Lines for a coalition with no genesis yet: the group's own vote, then the card waiting. */
 function beforeGenesis(state: GroupState, held: HeldSeat): Pick<CoalitionRow, 'status' | 'lines'> {
   if (held.outcome === 'fail') {
     return { status: 'declined', lines: [{ kind: 'didnt-pass', group: state.name }] };
   }
   const own: CoalitionLine[] =
-    held.outcome === 'open' ? [{ kind: 'waiting', group: state.name }] : [];
+    held.outcome === 'open' ? [waitingLine(state.name, notPassingNow(state, held))] : [];
   return { status: 'forming', lines: [...own, { kind: 'waiting-card' }] };
 }
 
-/** One line per seat: whom `motion` still waits for, and who failed it. */
+/**
+ * One line per seat: whom `motion` still waits for, and who failed it. The
+ * line of `notPassing`'s seat, the group's own, is marked when it holds (#250).
+ */
 function seatLines(
   coalition: GroupState,
   motion: string,
   seats: readonly SeatEntry[],
+  notPassing: string | null = null,
 ): CoalitionLine[] {
   const results = coalition.coalition?.results ?? [];
   return seats.flatMap((seat): CoalitionLine[] => {
     const result = seatResult(results, motion, seat.key);
     if (result === 'fail') return [{ kind: 'didnt-pass', group: seat.name }];
-    return result === null ? [{ kind: 'waiting', group: seat.name }] : [];
+    return result === null ? [waitingLine(seat.name, seat.key === notPassing)] : [];
   });
 }
 
-/** The status and lines of a coalition whose genesis names this group's seat. */
-function seated(coalition: GroupState): Pick<CoalitionRow, 'status' | 'lines'> {
+/**
+ * The status and lines of a coalition whose genesis names this group's seat
+ * `held`, its own line marked while its vote reads as not passing (#250).
+ */
+function seated(
+  state: GroupState,
+  held: HeldSeat,
+  coalition: GroupState,
+): Pick<CoalitionRow, 'status' | 'lines'> {
   const info = coalition.coalition;
   const status = info?.status ?? 'forming';
   if (status === 'formed' || coalition.group === null || info === null)
     return { status, lines: [] };
   const founding = info.seats.filter((seat) => !info.admitted.some((a) => a.key === seat.key));
-  const lines = seatLines(coalition, coalition.group, founding);
+  const own = notPassingNow(state, held) ? held.key : null;
+  const lines = seatLines(coalition, coalition.group, founding, own);
   if (status === 'forming') return { status, lines };
   const failed = lines.filter((line) => line.kind === 'didnt-pass');
   return { status, lines: failed.length > 0 ? failed : [{ kind: 'lapsed' }] };
@@ -172,7 +207,7 @@ function standingOf(
   seat: SeatEntry | undefined,
 ): Pick<CoalitionRow, 'status' | 'lines'> {
   if (coalition.group === null) return beforeGenesis(state, held);
-  return seat === undefined ? admitting(state, held, coalition) : seated(coalition);
+  return seat === undefined ? admitting(state, held, coalition) : seated(state, held, coalition);
 }
 
 /** The coalition on this device whose seats name `key`, once its genesis is back (#122). */
@@ -374,6 +409,32 @@ export function reconcileView(
     atoms: target.atoms,
     others: others === null ? null : others.map((s) => s.name),
   };
+}
+
+/**
+ * The founding group whose fail declined the coalition `proposal`, the
+ * group's own reconcile vote, would found, while that vote is still open
+ * (#250): its ballot is withdrawn, since the coalition won't form whatever
+ * this group decides. Null for any other Proposal, a vote that has closed,
+ * or a coalition that isn't declined, or was declined with no fail, at its
+ * close-out, by when every founding group's vote has closed.
+ */
+export function withdrawnBy(
+  proposal: Pick<Proposal, 'target' | 'final'>,
+  coalitions: readonly HeldCoalition[],
+): string | null {
+  const { target } = proposal;
+  if (proposal.final || target.kind !== 'reconcile' || !('secret' in target)) return null;
+  return failedFounding(coalitionFor(coalitions, target.secret)?.state);
+}
+
+/** The first founding seat whose fail declined `coalition`, by name, or null while it isn't declined. */
+function failedFounding(coalition: GroupState | undefined): string | null {
+  const info = coalition?.coalition;
+  if (coalition?.group == null || info?.status !== 'declined') return null;
+  const genesis = coalition.group;
+  const failed = info.seats.find((s) => seatResult(info.results, genesis, s.key) === 'fail');
+  return failed?.name ?? null;
 }
 
 /**

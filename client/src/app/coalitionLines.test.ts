@@ -26,11 +26,11 @@ import {
   motionWords,
   reconcileView,
   sitsInFormed,
+  withdrawnBy,
   withMotionWords,
 } from './coalitionLines';
 
 const R = 29_375_000;
-const WEEK = 10_080;
 
 /** The coalition's entry as a device keeps it, for `who`, with `plan`. */
 function heldCoalition(
@@ -176,14 +176,19 @@ describe('coalitionRows', () => {
     });
   });
 
-  it('says not every group voted in time once results stop counting with none failed', () => {
+  it('says not every group voted in time once still forming at formsFinal, its genesis plus 15 days (#250)', () => {
     const logs = new Logs();
     riverside(logs);
     logs.coalition(R + 10, ['A', 'B']);
-    const later = R + 10 + 14 * 1440 + WEEK + 1;
-    const held = heldCoalition(logs, later, 'cal');
+    const formsFinal = R + 10 + 14 * 1440 + 1440;
+    const before = heldCoalition(logs, formsFinal - 1, 'cal');
+    const held = heldCoalition(logs, formsFinal, 'cal');
 
-    const [row] = coalitionRows(groupState(logs, 'A', later, held), authorOf('ana'), [held]);
+    const [still] = coalitionRows(groupState(logs, 'A', formsFinal - 1, before), authorOf('ana'), [
+      before,
+    ]);
+    expect(still?.status).toBe('forming');
+    const [row] = coalitionRows(groupState(logs, 'A', formsFinal, held), authorOf('ana'), [held]);
     expect(row).toMatchObject({ status: 'declined', lines: [{ kind: 'lapsed' }] });
   });
 
@@ -250,6 +255,110 @@ function asking(cPasses = true) {
   logs.vote('C', at + 2, 'cal', proposal, cPasses ? 4 : 0, cPasses ? undefined : 'No.');
   return { logs, at: at + 3 };
 }
+
+describe('currently not passing on the group’s own line (#250)', () => {
+  /**
+   * Riverside (Ana, Ben, Cal)'s open reconcile Proposal, scored as `scores`
+   * say, in a coalition with B unless `genesis` is false. With three voters,
+   * quorum takes all three, which closes the vote, so `passing` stands in for
+   * a larger group's open count that passes: the Proposal's live outcome.
+   */
+  function scored(
+    scores: readonly (readonly [string, 0 | 4])[],
+    { genesis = true, passing = false } = {},
+  ) {
+    const logs = new Logs();
+    logs.group('A', R, ['ana', 'ben', 'cal'], 'Riverside');
+    const proposal = logs.reconcile('A', R + 3, 'ana', 'A');
+    scores.forEach(([who, score], i) =>
+      logs.vote('A', R + 4 + i, who, proposal, score, score === 0 ? 'Not yet.' : undefined),
+    );
+    if (genesis) logs.coalition(R + 10, ['A', 'B']);
+    const held = heldCoalition(logs, R + 20, 'cal');
+    const state = groupState(logs, 'A', R + 20, held);
+    const live = passing
+      ? {
+          ...state,
+          proposals: state.proposals.map((p) =>
+            p.id === proposal
+              ? { ...p, outcome: { kind: 'pass' as const, version: proposal, bar: p.outcome.bar } }
+              : p,
+          ),
+        }
+      : state;
+    return coalitionRows(live, authorOf('ana'), [held])[0];
+  }
+
+  it('marks the group’s own line while its open vote has a ballot and its count isn’t a pass, and never another group’s', () => {
+    expect(scored([['ben', 0]])?.lines).toEqual([
+      { kind: 'waiting', group: 'A', notPassing: true },
+      { kind: 'waiting', group: 'B' },
+    ]);
+  });
+
+  it('marks it before a genesis too, while the card waits', () => {
+    expect(scored([['ben', 0]], { genesis: false })?.lines).toEqual([
+      { kind: 'waiting', group: 'Riverside', notPassing: true },
+      { kind: 'waiting-card' },
+    ]);
+  });
+
+  it('marks nothing before anyone has scored it, nor while its count passes', () => {
+    const plain = [
+      { kind: 'waiting', group: 'A' },
+      { kind: 'waiting', group: 'B' },
+    ];
+    expect(scored([])?.lines).toEqual(plain);
+    expect(scored([['ben', 4]], { passing: true })?.lines).toEqual(plain);
+    // One 4 of three voters isn't at quorum, so it wouldn't pass if voting ended now.
+    expect(scored([['ben', 4]])?.lines[0]).toEqual({
+      kind: 'waiting',
+      group: 'A',
+      notPassing: true,
+    });
+  });
+});
+
+describe('withdrawnBy (#250)', () => {
+  /** Riverside (Ana, Ben)'s reconcile Proposal, still open, and a genesis naming A and B. */
+  function open() {
+    const logs = new Logs();
+    logs.group('A', R, ['ana', 'ben'], 'Riverside');
+    const proposal = logs.reconcile('A', R + 3, 'ana', 'A');
+    logs.coalition(R + 10, ['A', 'B']);
+    logs.join(R + 11, 'zed', 'B');
+    return { logs, proposal };
+  }
+
+  /** The Proposal `id` as group A folds it at `at`, with the coalition held. */
+  function viewed(logs: Logs, id: string, at: number) {
+    const held = heldCoalition(logs, at, 'cal');
+    const state = groupState(logs, 'A', at, held);
+    const proposal = state.proposals.find((p) => p.id === id);
+    if (proposal === undefined) throw new Error('Expected the Proposal.');
+    return withdrawnBy(proposal, [held]);
+  }
+
+  it('names the group whose fail declined the coalition, while this group’s own vote is still open', () => {
+    const { logs, proposal } = open();
+    logs.result(R + 12, 'zed', logs.ids.coalition ?? '', 'B', 'fail');
+    expect(viewed(logs, proposal, R + 20)).toBe('B');
+  });
+
+  it('is null while the coalition forms, once this group’s vote has closed, and for any other Proposal', () => {
+    const { logs, proposal } = open();
+    expect(viewed(logs, proposal, R + 20)).toBeNull();
+    logs.result(R + 12, 'zed', logs.ids.coalition ?? '', 'B', 'fail');
+    logs.vote('A', R + 13, 'ana', proposal, 4);
+    logs.vote('A', R + 14, 'ben', proposal, 4);
+    expect(viewed(logs, proposal, R + 20)).toBeNull();
+    const other = logs.add('A', R + 15, 'ana', {
+      type: 'proposal',
+      body: { atom: `${logs.ids.A ?? ''}.0`, title: 'T', why: 'W', text: 'New words.' },
+    });
+    expect(viewed(logs, other, R + 20)).toBeNull();
+  });
+});
 
 describe('coalitionRows for a group asking in', () => {
   it('reads as forming with nothing to wait on before the admission is proposed', () => {
