@@ -172,44 +172,94 @@ describe('CoalitionSection', () => {
     expect(within(section()).queryByRole('link')).not.toBeInTheDocument();
   });
 
-  it('says the group’s own vote is currently not passing on its own line alone, its name in a <bdi> (#250)', async () => {
-    const row: CoalitionRow = {
+  /** A forming row whose own line reads `standing`, beside Oak St Co-op's plain one. */
+  function standingRow(standing: 'short' | 'not-passing'): CoalitionRow {
+    return {
       ...ROW,
       status: 'forming',
       members: [],
       makesCards: false,
       me: { kind: 'none' },
       lines: [
-        { kind: 'waiting', group: 'Riverside Tenants', notPassing: true },
+        { kind: 'waiting', group: 'Riverside Tenants', standing },
         { kind: 'waiting', group: 'Oak St Co-op' },
       ],
     };
-    render(<CoalitionSection {...props({ rows: [row], starts: false })} />);
+  }
+
+  it('says the group’s own vote is currently not passing on its own line alone, its name in a <bdi> (#250)', async () => {
+    render(<CoalitionSection {...props({ rows: [standingRow('not-passing')], starts: false })} />);
 
     const [own, other] = within(section()).getAllByText(/Waiting for/);
-    expect(own).toHaveTextContent('Waiting for Riverside Tenants’s vote · Currently not passing');
+    expect(own).toHaveTextContent(/^Waiting for Riverside Tenants’s vote · Currently not passing$/);
     expect(own?.querySelector('bdi')).toHaveTextContent('Riverside Tenants');
     expect(other).toHaveTextContent(/^Waiting for Oak St Co-op’s vote$/);
+    expect(section()).not.toHaveTextContent(messages.coalitions.notEnough);
     expect(await axeViolations()).toEqual([]);
   });
 
-  it('says a coalition didn’t form when not every group voted in time, at its close-out (#250)', async () => {
-    const row: CoalitionRow = {
-      ...ROW,
-      status: 'declined',
-      members: [],
-      makesCards: false,
-      me: { kind: 'none' },
-      lines: [{ kind: 'lapsed' }],
-    };
-    render(<CoalitionSection {...props({ rows: [row], starts: false })} />);
+  it('says not enough votes yet on the group’s own line alone while its vote is short of quorum (#550)', async () => {
+    render(<CoalitionSection {...props({ rows: [standingRow('short')], starts: false })} />);
+
+    const [own, other] = within(section()).getAllByText(/Waiting for/);
+    expect(messages.coalitions.notEnough).toBe('Not enough votes yet');
+    expect(own).toHaveTextContent(/^Waiting for Riverside Tenants’s vote · Not enough votes yet$/);
+    expect(other).toHaveTextContent(/^Waiting for Oak St Co-op’s vote$/);
+    expect(section()).not.toHaveTextContent(messages.coalitions.notPassing);
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  const LAPSED: CoalitionRow = {
+    ...ROW,
+    status: 'declined',
+    members: [],
+    makesCards: false,
+    me: { kind: 'none' },
+    lines: [{ kind: 'lapsed' }],
+  };
+
+  it('says a coalition didn’t form when not every group voted in time, at its close-out, and that it can start again (#250, #550)', async () => {
+    render(<CoalitionSection {...props({ rows: [LAPSED], starts: false })} />);
 
     expect(section()).toHaveTextContent(messages.coalitions.declined);
     expect(messages.coalitions.lapsed).toBe(
       'Not every group voted in time, so the coalition won’t form.',
     );
-    expect(section()).toHaveTextContent(messages.coalitions.lapsed);
+    expect(messages.coalitions.startAgain).toBe('You can start it again.');
+    const line = within(section()).getByText(/^Not every group voted in time/);
+    expect(line).toHaveTextContent(
+      /^Not every group voted in time, so the coalition won’t form\. You can start it again\.$/,
+    );
+    // Whoever can't start one here reads it as plain text.
+    expect(within(section()).queryByRole('link')).toBeNull();
     expect(await axeViolations()).toEqual([]);
+  });
+
+  it('leads “You can start it again.” to a new reconcile Proposal for whoever may start one (#550)', async () => {
+    render(<CoalitionSection {...props({ rows: [LAPSED] })} />);
+
+    const line = within(section()).getByText(/^Not every group voted in time/);
+    const again = within(line).getByRole('link', { name: messages.coalitions.startAgain });
+    expect(again).toHaveAttribute('href', '#/g/group-1/reconcile');
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('keeps “You can start it again.” plain on a coalition above that didn’t form (#550)', () => {
+    const above: CoalitionRow['above'] = [
+      {
+        key: 'seat-c',
+        name: 'Metro Renters',
+        coalitionId: null,
+        status: 'declined',
+        lines: [{ kind: 'lapsed' }],
+        chain: ['Riverside Tenants', 'Eastside Housing', 'Metro Renters'],
+      },
+    ];
+    render(<CoalitionSection {...props({ rows: [{ ...ROW, above }] })} />);
+
+    const list = within(section()).getByRole('list', { name: messages.coalitions.above });
+    expect(list).toHaveTextContent(messages.coalitions.startAgain);
+    expect(within(list).queryByRole('link', { name: messages.coalitions.startAgain })).toBeNull();
   });
 
   it('shows nothing with no coalition and nothing to start, and the start link alone with none yet', () => {

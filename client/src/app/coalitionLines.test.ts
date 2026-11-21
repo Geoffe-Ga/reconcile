@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest';
 import { fromBase64url } from '../crypto/base64url';
 import { deriveCoalitionEntryId } from '../crypto/card';
 import { fold, type GroupState } from '../engine/fold';
+import { DAY_MINUTES, DEFAULT_RULES } from '../engine/rules';
 import type { HeldCoalition } from '../store/coalitions';
 import { foldCoalitions, foldWithCoalitions } from '../store/coalitions';
 import type { Group } from '../store/db';
@@ -256,66 +257,79 @@ function asking(cPasses = true) {
   return { logs, at: at + 3 };
 }
 
-describe('currently not passing on the group’s own line (#250)', () => {
+describe('where the group’s own open vote stands, on its own line (#250, #550)', () => {
   /**
-   * Riverside (Ana, Ben, Cal)'s open reconcile Proposal, scored as `scores`
-   * say, in a coalition with B unless `genesis` is false. With three voters,
-   * quorum takes all three, which closes the vote, so `passing` stands in for
-   * a larger group's open count that passes: the Proposal's live outcome.
+   * Riverside (Ana, Ben, Cal, Dan)'s open reconcile Proposal, scored as
+   * `scores` say, in a coalition with B unless `genesis` is false. With four
+   * voters (Dan vouched in), quorum takes three, and the vote stays open until all four have
+   * scored, so three scores reach quorum on a vote that is still open.
    */
-  function scored(
-    scores: readonly (readonly [string, 0 | 4])[],
-    { genesis = true, passing = false } = {},
-  ) {
+  function scored(scores: readonly (readonly [string, 0 | 4])[], { genesis = true } = {}) {
     const logs = new Logs();
-    logs.group('A', R, ['ana', 'ben', 'cal'], 'Riverside');
-    const proposal = logs.reconcile('A', R + 3, 'ana', 'A');
+    logs.group('A', R, ['ana', 'ben', 'cal', 'dan'], 'Riverside');
+    // Dan joins after the first three: two of them vouch for him, and his wait ends, before it opens (#101).
+    for (const voucher of ['ana', 'ben']) {
+      logs.add('A', R + 4, voucher, { type: 'vouch', body: { member: authorOf('dan') } });
+    }
+    const opens = R + 4 + DEFAULT_RULES.waitDays * DAY_MINUTES;
+    const proposal = logs.reconcile('A', opens, 'ana', 'A');
     scores.forEach(([who, score], i) =>
-      logs.vote('A', R + 4 + i, who, proposal, score, score === 0 ? 'Not yet.' : undefined),
+      logs.vote('A', opens + 1 + i, who, proposal, score, score === 0 ? 'Not yet.' : undefined),
     );
-    if (genesis) logs.coalition(R + 10, ['A', 'B']);
-    const held = heldCoalition(logs, R + 20, 'cal');
-    const state = groupState(logs, 'A', R + 20, held);
-    const live = passing
-      ? {
-          ...state,
-          proposals: state.proposals.map((p) =>
-            p.id === proposal
-              ? { ...p, outcome: { kind: 'pass' as const, version: proposal, bar: p.outcome.bar } }
-              : p,
-          ),
-        }
-      : state;
-    return coalitionRows(live, authorOf('ana'), [held])[0];
+    if (genesis) logs.coalition(opens + 10, ['A', 'B']);
+    const held = heldCoalition(logs, opens + 20, 'cal');
+    return coalitionRows(groupState(logs, 'A', opens + 20, held), authorOf('ana'), [held])[0];
   }
 
-  it('marks the group’s own line while its open vote has a ballot and its count isn’t a pass, and never another group’s', () => {
-    expect(scored([['ben', 0]])?.lines).toEqual([
-      { kind: 'waiting', group: 'A', notPassing: true },
+  const AT_QUORUM_FAILING = [
+    ['ben', 0],
+    ['cal', 0],
+    ['dan', 0],
+  ] as const;
+
+  it('says not enough votes yet while it is short of quorum, from before anyone scores, so it says nothing of who has', () => {
+    const short = [
+      { kind: 'waiting', group: 'A', standing: 'short' },
+      { kind: 'waiting', group: 'B' },
+    ];
+    expect(scored([])?.lines).toEqual(short);
+    expect(scored([['ben', 0]])?.lines).toEqual(short);
+    expect(
+      scored([
+        ['ben', 4],
+        ['cal', 4],
+      ])?.lines,
+    ).toEqual(short);
+  });
+
+  it('says currently not passing once it is at quorum and still isn’t a pass, and never on another group’s line', () => {
+    expect(scored(AT_QUORUM_FAILING)?.lines).toEqual([
+      { kind: 'waiting', group: 'A', standing: 'not-passing' },
       { kind: 'waiting', group: 'B' },
     ]);
   });
 
   it('marks it before a genesis too, while the card waits', () => {
-    expect(scored([['ben', 0]], { genesis: false })?.lines).toEqual([
-      { kind: 'waiting', group: 'Riverside', notPassing: true },
+    expect(scored([], { genesis: false })?.lines).toEqual([
+      { kind: 'waiting', group: 'Riverside', standing: 'short' },
+      { kind: 'waiting-card' },
+    ]);
+    expect(scored(AT_QUORUM_FAILING, { genesis: false })?.lines).toEqual([
+      { kind: 'waiting', group: 'Riverside', standing: 'not-passing' },
       { kind: 'waiting-card' },
     ]);
   });
 
-  it('marks nothing before anyone has scored it, nor while its count passes', () => {
-    const plain = [
+  it('marks nothing while its count passes', () => {
+    const passing = [
+      ['ben', 4],
+      ['cal', 4],
+      ['dan', 4],
+    ] as const;
+    expect(scored(passing)?.lines).toEqual([
       { kind: 'waiting', group: 'A' },
       { kind: 'waiting', group: 'B' },
-    ];
-    expect(scored([])?.lines).toEqual(plain);
-    expect(scored([['ben', 4]], { passing: true })?.lines).toEqual(plain);
-    // One 4 of three voters isn't at quorum, so it wouldn't pass if voting ended now.
-    expect(scored([['ben', 4]])?.lines[0]).toEqual({
-      kind: 'waiting',
-      group: 'A',
-      notPassing: true,
-    });
+    ]);
   });
 });
 

@@ -23,14 +23,22 @@ import {
 } from '../store/coalitions';
 
 /**
+ * Where the group's own open reconcile vote stands, when it isn't passing
+ * (#250, #550): `short` while no version is at quorum, which reads "Not
+ * enough votes yet" and says nothing of who has voted, and `not-passing`
+ * once one is and the count still isn't a pass.
+ */
+export type OwnStanding = 'short' | 'not-passing';
+
+/**
  * One line under a coalition's name: whom it waits for, or who didn't pass
- * it. `notPassing` marks the group's own line while its reconcile vote is
- * open, someone has scored it, and its count isn't a pass (#250): read from
- * the group's own ballots on its own members' devices, so never another's.
- * `lapsed` is the close-out: still forming at `formsFinal`, it didn't form.
+ * it. `standing` marks the group's own line while its reconcile vote is open
+ * and its count isn't a pass (#250, #550): read from the group's own ballots
+ * on its own members' devices, so never another's. `lapsed` is the
+ * close-out: still forming at `formsFinal`, it didn't form.
  */
 export type CoalitionLine =
-  | { readonly kind: 'waiting'; readonly group: string; readonly notPassing?: true }
+  | { readonly kind: 'waiting'; readonly group: string; readonly standing?: OwnStanding }
   | { readonly kind: 'didnt-pass'; readonly group: string }
   | { readonly kind: 'waiting-card' }
   | { readonly kind: 'lapsed' }
@@ -117,20 +125,28 @@ export function coalitionFor(
 }
 
 /**
- * Whether the group's own reconcile vote `held` reads as currently not
- * passing (#250): open, scored by at least one member, and its count short
- * of a pass. Before anyone scores it, every open vote would read that way,
- * so it says nothing then. A coalition's seat above has no ballots of its
- * own, so its line never says it.
+ * Where the group's own reconcile vote `held` stands while it is open and
+ * isn't a pass (#250, #550): short of quorum, a lapse if voting ended now,
+ * from before anyone scores it; or at quorum and still not a pass. Null
+ * while it passes, or once it has closed. A coalition's seat above has no
+ * ballots of its own, so its line never says either.
  */
-function notPassingNow(state: GroupState, held: HeldSeat): boolean {
+function standingNow(state: GroupState, held: HeldSeat): OwnStanding | null {
   const own = state.proposals.find((p) => p.id === held.proposal);
-  return own !== undefined && !own.final && own.ballots.length > 0 && own.outcome.kind !== 'pass';
+  if (own === undefined || own.final) return null;
+  switch (own.outcome.kind) {
+    case 'pass':
+      return null;
+    case 'lapse':
+      return 'short';
+    case 'fail':
+      return 'not-passing';
+  }
 }
 
-/** The waiting line for `group`, marked currently not passing when `notPassing` (#250). */
-function waitingLine(group: string, notPassing: boolean): CoalitionLine {
-  return notPassing ? { kind: 'waiting', group, notPassing } : { kind: 'waiting', group };
+/** The waiting line for `group`, marked with its own vote's `standing` when it has one (#250, #550). */
+function waitingLine(group: string, standing: OwnStanding | null): CoalitionLine {
+  return standing === null ? { kind: 'waiting', group } : { kind: 'waiting', group, standing };
 }
 
 /** Lines for a coalition with no genesis yet: the group's own vote, then the card waiting. */
@@ -139,31 +155,41 @@ function beforeGenesis(state: GroupState, held: HeldSeat): Pick<CoalitionRow, 's
     return { status: 'declined', lines: [{ kind: 'didnt-pass', group: state.name }] };
   }
   const own: CoalitionLine[] =
-    held.outcome === 'open' ? [waitingLine(state.name, notPassingNow(state, held))] : [];
+    held.outcome === 'open' ? [waitingLine(state.name, standingNow(state, held))] : [];
   return { status: 'forming', lines: [...own, { kind: 'waiting-card' }] };
 }
 
 /**
+ * The group's own seat and where its open vote stands (#250, #550), which
+ * marks that seat's waiting line alone.
+ */
+interface OwnSeat {
+  readonly key: string;
+  readonly standing: OwnStanding | null;
+}
+
+/**
  * One line per seat: whom `motion` still waits for, and who failed it. The
- * line of `notPassing`'s seat, the group's own, is marked when it holds (#250).
+ * line of `own`'s seat, the group's own, is marked with its standing (#250, #550).
  */
 function seatLines(
   coalition: GroupState,
   motion: string,
   seats: readonly SeatEntry[],
-  notPassing: string | null = null,
+  own: OwnSeat | null = null,
 ): CoalitionLine[] {
   const results = coalition.coalition?.results ?? [];
   return seats.flatMap((seat): CoalitionLine[] => {
     const result = seatResult(results, motion, seat.key);
     if (result === 'fail') return [{ kind: 'didnt-pass', group: seat.name }];
-    return result === null ? [waitingLine(seat.name, seat.key === notPassing)] : [];
+    const standing = seat.key === own?.key ? own.standing : null;
+    return result === null ? [waitingLine(seat.name, standing)] : [];
   });
 }
 
 /**
  * The status and lines of a coalition whose genesis names this group's seat
- * `held`, its own line marked while its vote reads as not passing (#250).
+ * `held`, its own line marked with where its open vote stands (#250, #550).
  */
 function seated(
   state: GroupState,
@@ -175,7 +201,7 @@ function seated(
   if (status === 'formed' || coalition.group === null || info === null)
     return { status, lines: [] };
   const founding = info.seats.filter((seat) => !info.admitted.some((a) => a.key === seat.key));
-  const own = notPassingNow(state, held) ? held.key : null;
+  const own = { key: held.key, standing: standingNow(state, held) };
   const lines = seatLines(coalition, coalition.group, founding, own);
   if (status === 'forming') return { status, lines };
   const failed = lines.filter((line) => line.kind === 'didnt-pass');

@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
+import { folded, foldLogs, Logs } from '../test/coalitions';
 import { authorOf } from '../test/keys';
 import { publicKeyNamed, vector as goldenVector, type VectorLog } from '../test/vectors';
 import { deadlineOf, groupLog, START_MINUTE } from '../test/votes';
 import { LEVELS } from './capabilities';
 import { fold as foldRecords } from './fold';
 import { homeLists } from './home';
+import { REMINDER_MINUTES } from './nudges';
+import { DAY_MINUTES } from './rules';
 
 const [FOLLOWING] = LEVELS;
 
@@ -133,5 +136,62 @@ describe('homeLists in a dissolved group (#108)', () => {
     expect(ids(lists.otherOpen)).toEqual([open]);
     expect(ids(lists.open)).toEqual([open]);
     expect(ids(lists.decided)).toEqual([motion]);
+  });
+});
+
+describe('the last days of a reconcile or coalition vote under Needs your vote (#550)', () => {
+  const R = 29_375_000;
+  const ANA = authorOf('ana');
+
+  /** Riverside (Ana, Ben, Cal) and Ana's reconcile Proposal, which Ben has scored. */
+  function reconciling() {
+    const logs = new Logs();
+    logs.group('A', R, ['ana', 'ben', 'cal']);
+    const proposal = logs.reconcile('A', R + 3, 'ana', 'A');
+    logs.vote('A', R + 4, 'ben', proposal, 4);
+    return { logs, proposal, deadline: R + 3 + 7 * DAY_MINUTES };
+  }
+
+  /** Group A's lists for `me` at relay minute `now`. */
+  const listsAt = (logs: Logs, me: string, now: number) =>
+    homeLists(folded(foldLogs(logs.logs, now), 'A').state, me, now);
+
+  it('marks the vote from 3 days before it closes, for someone eligible who hasn’t scored it, as the reminder does', () => {
+    const { logs, proposal, deadline } = reconciling();
+    const from = deadline - REMINDER_MINUTES;
+
+    expect([...listsAt(logs, ANA, from).lastDays]).toEqual([proposal]);
+    expect([...listsAt(logs, authorOf('cal'), deadline - 1).lastDays]).toEqual([proposal]);
+    // Not a minute earlier, and not for Ben, who has scored it.
+    expect(ids(listsAt(logs, ANA, from - 1).needsYourVote)).toEqual([proposal]);
+    expect(listsAt(logs, ANA, from - 1).lastDays.size).toBe(0);
+    expect(listsAt(logs, authorOf('ben'), from).lastDays.size).toBe(0);
+  });
+
+  it('marks a coalition’s motion opened in the group too', () => {
+    const logs = new Logs();
+    logs.group('A', R, ['ana', 'ben']);
+    const reconcile = logs.reconcile('A', R + 3, 'ana', 'A');
+    logs.vote('A', R + 4, 'ana', reconcile, 4);
+    logs.vote('A', R + 5, 'ben', reconcile, 4);
+    const at = logs.formed(R + 10, ['A', 'B'], ['kim', 'zed']);
+    const motion = logs.motion(at, 'zed');
+    const opened = folded(foldLogs(logs.logs, at + 5), 'A').state.proposals.find(
+      (p) => p.id === motion,
+    );
+    if (opened === undefined) throw new Error('Expected the motion in A.');
+    const from = opened.deadline - REMINDER_MINUTES;
+
+    expect([...listsAt(logs, ANA, from).lastDays]).toEqual([motion]);
+    expect(listsAt(logs, ANA, from - 1).lastDays.size).toBe(0);
+  });
+
+  it('never marks an ordinary Proposal, however close it is to closing', () => {
+    const log = groupLog({ members: ['Ben'] });
+    const p = log.propose('ana');
+    const deadline = deadlineOf(log.minute);
+    const lists = homeLists(log.state(deadline - 1), authorOf('ben'), deadline - 1);
+    expect(ids(lists.needsYourVote)).toEqual([p]);
+    expect(lists.lastDays.size).toBe(0);
   });
 });

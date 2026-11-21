@@ -36,7 +36,7 @@ import { latestDispatch } from '../engine/dispatches';
 import { type Dissolution, mayProposeDissolve, wipeMinute } from '../engine/dissolve';
 import type { ParsedEvent } from '../engine/event';
 import { closeTime, type GroupState, type Member, type Proposal } from '../engine/fold';
-import { homeLists } from '../engine/home';
+import { homeLists, type HomeLists } from '../engine/home';
 import { displayName } from '../engine/names';
 import { isPriority, openPriority } from '../engine/priority';
 import { mayProposeRemoval, type Removal, removedFrom } from '../engine/removal';
@@ -171,6 +171,8 @@ interface ProposalCardsProps {
   readonly line?: string;
   /** Each coalition's name, for its motions' tags (#120). */
   readonly names?: CoalitionNames | undefined;
+  /** The Proposals in their last 3 days, whose cards say so under the countdown (#550). */
+  readonly lastDays?: ReadonlySet<string> | undefined;
 }
 
 /**
@@ -193,9 +195,11 @@ function MotionTag({ proposal, names }: { proposal: Proposal; names: CoalitionNa
 /**
  * Open Proposals as cards, each led by the Document it changes or creates
  * (#92), or by its coalition for a coalition vote (#120), with its title and
- * countdown, opening its ballot.
+ * countdown, opening its ballot; one in `lastDays` adds "If you don't vote,
+ * you won't be counted." under the countdown (#550).
  */
-function ProposalCards({ state, groupId, proposals, now, line, names }: ProposalCardsProps) {
+function ProposalCards(props: ProposalCardsProps) {
+  const { state, groupId, proposals, now, line, names, lastDays } = props;
   return (
     <ul className="card-list">
       {proposals.map((proposal) => (
@@ -219,6 +223,9 @@ function ProposalCards({ state, groupId, proposals, now, line, names }: Proposal
                 <Countdown deadline={proposal.deadline} closedAt={proposal.closedAt} now={now} />
               )}
             </span>
+            {lastDays?.has(proposal.id) === true ? (
+              <span className="card-link-reminder">{messages.coalitions.lastDays}</span>
+            ) : null}
           </Link>
         </li>
       ))}
@@ -235,6 +242,8 @@ interface OpenListsProps {
   readonly after?: ReactNode;
   /** What waits on this person; nothing while they're leaving. */
   readonly needsYourVote: readonly Proposal[];
+  /** Those of them in their last 3 days, whose cards say so (#550). */
+  readonly lastDays: ReadonlySet<string>;
   /** The other open Proposals, or every open one while they're leaving. */
   readonly otherOpen: readonly Proposal[];
   readonly now: number;
@@ -250,7 +259,7 @@ interface OpenListsProps {
  * Needs your vote, ahead of the focus, when nothing else is open.
  */
 function OpenLists(props: OpenListsProps) {
-  const { state, groupId, needsYourVote, otherOpen, now, children, after, names } = props;
+  const { state, groupId, needsYourVote, lastDays, otherOpen, now, children, after, names } = props;
   const { home } = messages;
   const waits = needsYourVote.length > 0;
   const others = otherOpen.length > 0;
@@ -266,6 +275,7 @@ function OpenLists(props: OpenListsProps) {
             proposals={needsYourVote}
             now={now}
             names={names}
+            lastDays={lastDays}
           />
         </Section>
       ) : null}
@@ -1039,7 +1049,7 @@ function TopNotes(props: GroupHomeProps) {
 interface OpenSectionsProps {
   readonly groupId: string;
   readonly state: GroupState;
-  readonly lists: ReturnType<typeof homeLists>;
+  readonly lists: HomeLists;
   readonly now: number;
   /** True while the group takes nothing new on this device: leaving (#77), or read-only (#231). */
   readonly leaving: boolean;
@@ -1084,6 +1094,7 @@ function OpenSections(props: OpenSectionsProps) {
       state={state}
       groupId={groupId}
       needsYourVote={leaving ? [] : lists.needsYourVote}
+      lastDays={lists.lastDays}
       otherOpen={leaving ? lists.open : lists.otherOpen}
       now={now}
       after={after}
@@ -1213,6 +1224,26 @@ function takesNothing(props: GroupHomeProps, removed: boolean): boolean {
 }
 
 /**
+ * Group home's lists for `me` at `now` (#77), marking no vote in its last 3
+ * days while this person's ballot on it waits in the outbox (#550), as the
+ * reminder on its page doesn't.
+ */
+function listsFor(
+  state: GroupState,
+  me: string,
+  now: number,
+  pending: readonly ParsedEvent[],
+): HomeLists {
+  const lists = homeLists(state, me, now);
+  const sending = new Set(
+    pending.flatMap(({ event }) =>
+      event.type === 'vote' && event.author === me ? [event.body.proposal] : [],
+    ),
+  );
+  return { ...lists, lastDays: new Set([...lists.lastDays].filter((id) => !sending.has(id))) };
+}
+
+/**
  * Group home (`#/g/{groupId}`; spec §8), in order: Needs your vote (#77), the
  * group's current focus (#107), the other open Proposals and, under them, the
  * backup card (#78) and the recovery shares held here (#109), the latest
@@ -1234,7 +1265,7 @@ export function GroupHome(props: GroupHomeProps) {
   const { state, me, now } = props;
   const groupId = state.group ?? '';
   const discussion = latestLink(state);
-  const lists = homeLists(state, me, now);
+  const lists = listsFor(state, me, now, props.pending);
   const removed = removedFrom(state, me) !== undefined;
   const readOnly = takesNothing(props, removed);
   // Every level follows the group (ADR-0003): for someone who doesn't vote, Dispatches lead (#112).

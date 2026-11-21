@@ -469,6 +469,12 @@ a[data-focus-visible] {
   font: var(--type-ui);
 }
 
+/* A reconcile or coalition vote's last 3 days, under its countdown (#550): in words, in body ink. */
+.card-link-reminder {
+  color: var(--body);
+  font: var(--type-ui);
+}
+
 /* A passed priority vote's top option, on its Decided card (#107). */
 .card-link-focus {
   color: var(--body);

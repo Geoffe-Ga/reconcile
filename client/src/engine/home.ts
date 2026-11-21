@@ -5,13 +5,15 @@
  * 'Needs your vote' brings people back without push: the open Proposals they
  * can vote on now and haven't fully scored, closing soonest first. The other
  * open Proposals follow by closing date, and Decided keeps the group's
- * history, newest first. In a dissolved group nothing waits on anyone, and
- * a Proposal still open at the dissolve stays with the open ones, which the
- * screen marks closed (#108). Pure: it reads folded state and a relay minute,
+ * history, newest first. A reconcile or coalition vote in its last 3 days
+ * is marked there, as its reminder comes then (#550). In a dissolved group
+ * nothing waits on anyone, and a Proposal still open at the dissolve stays
+ * with the open ones, which the screen marks closed (#108). Pure: it reads folded state and a relay minute,
  * and nothing else.
  */
 import { can } from './capabilities';
 import { closeTime, type GroupState, type Proposal } from './fold';
+import { reminds } from './nudges';
 
 /** Group home's three lists of Proposals. */
 export interface HomeLists {
@@ -20,6 +22,12 @@ export interface HomeLists {
    * may vote now, and hasn't scored every version, closing soonest first.
    */
   readonly needsYourVote: readonly Proposal[];
+  /**
+   * The ids of those that are reconcile or coalition votes in their last 3
+   * days, which `me` hasn't scored (#550): the window of their reminder
+   * ({@link reminds}), so the row is marked while the reminder shows.
+   */
+  readonly lastDays: ReadonlySet<string>;
   /** Every other Proposal the fold hasn't closed, by closing date. */
   readonly otherOpen: readonly Proposal[];
   /** Every Proposal the fold hasn't closed, by closing date: the two lists above, together. */
@@ -68,6 +76,7 @@ export function homeLists(state: GroupState, me: string, now: number): HomeLists
     .sort((a, b) => closeTime(b) - closeTime(a));
   return {
     needsYourVote: byClosingDate(waiting),
+    lastDays: new Set(waiting.filter((p) => reminds(p, me, now)).map((p) => p.id)),
     otherOpen: byClosingDate(open.filter((proposal) => !waiting.includes(proposal))),
     open: byClosingDate(open),
     decided,
