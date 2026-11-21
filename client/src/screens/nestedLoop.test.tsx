@@ -582,6 +582,43 @@ describe('nested coalitions', SLOW, () => {
     expect(offered).toEqual(['Riverside Tenants', 'Metro Renters']);
   });
 
+  it('won’t bring a seated coalition’s card to a coalition that would raise its level, and says why and the route (#549)', async () => {
+    const fake = createFakeRelay();
+    const { ana, riverside, eastside } = await nested(fake);
+    // Pat and Fay form Westside Renters, a coalition of their two groups, at level 1.
+    const pat = await open(fake, 'pat');
+    const pine = await found(pat, 'Pine Row', 'Pat');
+    const fay = await open(fake, 'fay');
+    const fir = await found(fay, 'Fir Row', 'Fay');
+    const west = await cardFor(pat, pine, fay, {
+      ...METRO,
+      name: 'Westside Renters',
+      yourName: 'Pat W.',
+    });
+    const firProposal = await bringCard(fay.services, west.found, fir, 'Fay W.');
+    await syncAll(1);
+    await vote(pine, west.proposal, [pat]);
+    await vote(fir, firProposal, [fay]);
+    await syncAll(SETTLE);
+    expect((await coalitionNamed(pat, 'Westside Renters')).coalition).toMatchObject({
+      status: 'formed',
+      level: 1,
+    });
+
+    // Eastside Housing sits in Metro Renters, so it can't take Westside Renters: Pat's
+    // group may still bring its card, and Pat reads why the coalition can't, and the route.
+    const card = await admitCardFor(ana, eastside, riverside, pat);
+    expect(card.mode).toBe('admit');
+    expect(card.groups.map(({ name, kind }) => `${name} (${kind})`)).toEqual(['Pine Row (group)']);
+    expect(card.refused).toEqual([
+      { name: 'Westside Renters', coalition: 'Eastside Housing', above: 'Metro Renters' },
+    ]);
+    // Ana takes part in Metro Renters, which Eastside Housing sits in: it isn't offered at all.
+    const own = await admitCardFor(ana, eastside, riverside, ana);
+    expect(own.groups.map((group) => group.name)).not.toContain('Metro Renters');
+    expect(own.refused).toEqual([]);
+  });
+
   it('admits Eastside Housing into a formed coalition of groups, at the level its admit motion states', async () => {
     const fake = createFakeRelay();
     const { ana, ben, cy, riverside, oak } = await eastsideFormed(fake);

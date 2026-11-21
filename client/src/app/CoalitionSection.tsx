@@ -7,6 +7,7 @@ import { messages } from './messages';
 import { ResultMismatch } from './ResultMismatch';
 import { routeHref } from './router';
 import { SectionGlyph } from './SectionGlyph';
+import { Worded } from './Worded';
 import type { SharePort } from './share';
 import { Field } from './ui';
 
@@ -36,7 +37,10 @@ const STATUS: Readonly<Record<CoalitionRow['status'], string>> = {
   declined: coalitions.declined,
 };
 
-/** One line under a coalition's name, each group's name in its own `<bdi>`. */
+/**
+ * One line under a coalition's name, each group's name in its own `<bdi>`: a
+ * refused admission (#549) reads as why, then the route instead.
+ */
 function Line({ line }: { readonly line: CoalitionLine }) {
   switch (line.kind) {
     case 'waiting':
@@ -57,6 +61,17 @@ function Line({ line }: { readonly line: CoalitionLine }) {
       return <p>{coalitions.waitingCard}</p>;
     case 'lapsed':
       return <p>{coalitions.lapsed}</p>;
+    case 'refused':
+      return (
+        <>
+          <p>
+            <Worded words={coalitions.refusedWhy(line.coalition, line.above, line.asking)} />
+          </p>
+          <p>
+            <Worded words={coalitions.refusedRoute(line.asking, line.above)} />
+          </p>
+        </>
+      );
   }
 }
 

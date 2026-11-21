@@ -10,9 +10,10 @@ import {
 } from 'react-aria-components';
 
 import { messages } from '../app/messages';
-import type { CardGroup, CardLookup, FoundCard } from '../app/reconcile';
+import type { CardGroup, CardLookup, FoundCard, RefusedCard } from '../app/reconcile';
 import { replaceRoute } from '../app/router';
 import { BackLink, Field, PageHeader } from '../app/ui';
+import { Worded } from '../app/Worded';
 import { type Card, parseCardPayload } from '../coalition/card';
 
 /** Props for {@link BringCard}. */
@@ -154,6 +155,33 @@ export function GroupPicker({ groups, value, onChange, words }: PickerProps) {
   );
 }
 
+/**
+ * A coalition this person takes part in that can't take the card (#549):
+ * that it can't, why, and the route instead, every name in `<bdi>`.
+ */
+function Refused({ refused }: { readonly refused: RefusedCard }) {
+  const lead = useId();
+  const { name, coalition, above } = refused;
+  return (
+    <div role="note" aria-labelledby={lead} className="notice">
+      <p>
+        <span id={lead}>
+          <Worded words={bring.refusedLead(name)} />
+        </span>{' '}
+        <Worded words={bring.refusedWhy(coalition, above, name)} />
+      </p>
+      <p>
+        <Worded words={bring.refusedRoute(name, above)} />
+      </p>
+    </div>
+  );
+}
+
+/** Each coalition the card can't go to, and why (#549). */
+function RefusedList({ refused }: { readonly refused: readonly RefusedCard[] }) {
+  return refused.map((one, index) => <Refused key={index} refused={one} />);
+}
+
 interface BringFormProps {
   readonly found: FoundCard;
   readonly onBring: BringCardProps['onBring'];
@@ -204,11 +232,13 @@ function BringFields({ found, onBring, onNotNow }: BringFormProps) {
       {found.groups.length === 0 ? (
         <>
           <p>{bring.noGroups}</p>
+          <RefusedList refused={found.refused} />
           <div className="row">{notNow}</div>
         </>
       ) : (
         <Form className="form" onSubmit={submit}>
           <GroupPicker groups={found.groups} value={groupId} onChange={setGroupId} />
+          <RefusedList refused={found.refused} />
           <Field
             name="name"
             label={bring.yourNameLabel}

@@ -56,6 +56,7 @@ function foundFor(state: GroupState): FoundCard {
     mode: 'found',
     log: { records: [], cursor: 0, relayNow: state.at, instance: 'i' },
     groups: [{ groupId: state.group ?? '', name: 'Riverside Tenants', kind: 'group' }],
+    refused: [],
   };
 }
 

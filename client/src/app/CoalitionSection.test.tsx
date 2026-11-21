@@ -81,6 +81,41 @@ describe('CoalitionSection, nested (#122)', () => {
     expect(await axeViolations()).toEqual([]);
   });
 
+  it('says, under a coalition above that refused this one’s admission, why and the route instead (#549)', async () => {
+    const refused: CoalitionRow['above'] = [
+      {
+        key: 'seat-w',
+        name: 'Eastside Housing',
+        coalitionId: 'eastside-1',
+        status: 'declined',
+        lines: [
+          {
+            kind: 'refused',
+            coalition: 'Eastside Housing',
+            above: 'Metro Renters',
+            asking: 'Westside Renters',
+          },
+        ],
+        chain: ['Pine Row', 'Westside Renters', 'Eastside Housing'],
+      },
+    ];
+    const row = { ...ROW, name: 'Westside Renters', above: refused };
+    render(<CoalitionSection {...props({ rows: [row] })} />);
+    const above = within(section()).getByRole('list', { name: messages.coalitions.above });
+    const [item] = within(above).getAllByRole('listitem');
+    if (item === undefined) throw new Error('Expected Eastside Housing’s row.');
+    expect(item).toHaveTextContent(messages.coalitions.declined);
+    const [why, route] = within(item).getAllByRole('paragraph').slice(-2);
+    expect(why).toHaveTextContent(
+      'Eastside Housing sits in Metro Renters. Admitting Westside Renters would put Eastside Housing a level higher than its seat there, so its votes there would arrive too late to count.',
+    );
+    expect(route).toHaveTextContent(
+      'Westside Renters can ask into Metro Renters directly instead: ask a group in Metro Renters for its card.',
+    );
+    expect(why?.querySelectorAll('bdi')).toHaveLength(4);
+    expect(await axeViolations()).toEqual([]);
+  });
+
   it('offers Reconcile with another coalition only to whoever may make its card', () => {
     const { unmount } = render(
       <CoalitionSection {...props({ rows: [{ ...ROW, reconciles: true }] })} />,

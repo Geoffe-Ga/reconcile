@@ -30,6 +30,42 @@ function leftOut(skipped: number, skippedDocuments: number, where: string): stri
   return [...(skipped === 0 ? [] : [groups]), ...(skippedDocuments === 0 ? [] : [documents])];
 }
 
+/**
+ * A sentence with names in it (#549): its words in order, each name marked,
+ * so a screen sets every name in its own `<bdi>` (`Worded`), since names come
+ * from other devices.
+ */
+export type Words = readonly (string | { readonly name: string })[];
+
+/** A name in {@link Words}. */
+const named = (name: string) => ({ name });
+
+/**
+ * Why a coalition that sits in `above` refuses to admit `asking` (#549): its
+ * seat there keeps the level it stated, so a level higher its votes there
+ * would come as they stop counting (ADR-0036's 2026-11-21 amendment).
+ */
+const refusedWhy = (coalition: string, above: string, asking: string): Words => [
+  named(coalition),
+  ' sits in ',
+  named(above),
+  '. Admitting ',
+  named(asking),
+  ' would put ',
+  named(coalition),
+  ' a level higher than its seat there, so its votes there would arrive too late to count.',
+];
+
+/** The route instead (#549): `asking` asks into `above` itself, with a card one of its groups makes. */
+const refusedRoute = (asking: string, above: string): Words => [
+  named(asking),
+  ' can ask into ',
+  named(above),
+  ' directly instead: ask a group in ',
+  named(above),
+  ' for its card.',
+];
+
 /** What a result says once a device has deleted its ballots: by expiry (#111), or in an archive (#108). */
 const CLEARED_ON = 'Individual scores and notes were cleared on';
 
@@ -2558,6 +2594,14 @@ export const messages = {
     failed: 'Bringing the card didn’t finish. Try again.',
     badLinkTitle: 'This card doesn’t work',
     badLink: 'This card has expired or is damaged. Ask the group that sent it for a new one.',
+    /**
+     * A coalition this person takes part in that can't take the card (#549):
+     * the card's coalition sits in a coalition above, and `asking` would raise
+     * its level. The lead names the note; then why, and the route.
+     */
+    refusedLead: (asking: string): Words => [named(asking), ' can’t take this card.'],
+    refusedWhy,
+    refusedRoute,
     usedTitle: 'Can’t bring this card',
     used: 'This card has already been used.',
     offlineTitle: 'Can’t open the card yet',
@@ -2607,6 +2651,12 @@ export const messages = {
     /** After a group's own waiting line, while its open vote has a ballot and isn't passing (#250). */
     notPassing: 'Currently not passing',
     waitingCard: 'Waiting for another group to bring the card.',
+    /**
+     * Under a coalition this coalition asked into, which refused it (#549):
+     * it sits in a coalition above, and admitting this one would raise its level.
+     */
+    refusedWhy,
+    refusedRoute,
     /** A coalition still forming at `formsFinal`, declined by the close-out (#250). */
     lapsed: 'Not every group voted in time, so the coalition won’t form.',
     /**
