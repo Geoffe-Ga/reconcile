@@ -39,7 +39,7 @@ It's the only option that keeps every ballot in its group and protects small gro
 4. **Formation is final once every founding vote must have closed:** `formsFinal = genesis + 14 days + level·g`, replacing `formsBy`. Until then a founding seat's fail declines the coalition, even after it formed.
 5. **Close-out:** a coalition still forming at `formsFinal` is declined for every founding group, and relay time stops there. That closes the path where a seat-secret holder forms a coalition with a forged late pass for a group whose own result never crossed.
 6. **Reminder:** a member who hasn't scored an open reconcile or coalition vote is reminded 3 days before it closes: "If you don't vote by <date>, you won't be counted." Reconcile and coalition votes only, not every Proposal. The push is a nudge like the vote's other two, at the same shift (#284's group offset for a coalition motion), and carries nothing (ADR-0012): the words show only in the app, on the device of a member who hasn't scored it.
-7. **Screens:** "Currently not passing" shows on the group's own line of a forming coalition's row, only while its reconcile vote is open and someone has scored it, and never for another group. Once another founding group's fail declines a coalition, a group's still-open reconcile ballot is replaced by "<group> didn't pass this, so the coalition won't form."
+7. **Screens:** "Currently not passing" shows on the group's own line of a forming coalition's row, only while its reconcile vote is open, someone has scored it, and its live outcome is not a pass, and never for another group (#546). The 2026-11-21 amendment below (#550) narrows it to a vote at quorum and adds "Not enough votes yet" short of quorum. Once another founding group's fail declines a coalition, a group's still-open reconcile ballot is replaced by "<group> didn't pass this, so the coalition won't form."
 
 ### Why
 
@@ -93,3 +93,18 @@ The 2026-11-14 amendment staggered horizons a day per level, and a coalition's s
 ### Privacy
 
 The refusal reads only the device's own coalition state: the refusing coalition's seats, its level and its own reconcile motions, whose name above is already readable in its log. Nothing new leaves a log or reaches the relay, and nothing about the coalition above is shown beyond the name the device already holds.
+
+## Amendment (2026-11-21, #550, #545's questions 2, 3 and 5): What a Group's Own Vote Says While a Coalition Forms
+
+- **Decided by:** the founder, 2026-11-21, answering #545's questions 2, 3 and 5 (question 4: a 3-day reconcile window still takes no reminder).
+- **Settles:** #550, and folds in #546.
+
+### Decision
+
+1. **"Not enough votes yet" short of quorum.** On the group's own line of a forming coalition's row, while its reconcile vote is open and isn't a pass, the line reads " · Not enough votes yet" while no version is at quorum (a lapse if it ended now), from before anyone scores it, and " · Currently not passing" only once a version is at quorum and the count still isn't a pass. This replaces the 2026-11-14 amendment's "someone has scored it" condition in point 7.
+2. **The reminder on group home.** In the reminder's window (point 6 above: the last 3 days of a reconcile or coalition vote, for an eligible member who hasn't scored it), the vote's card under Needs your vote adds "If you don't vote, you won't be counted.", the reminder's words without the date its countdown already gives. Not while the member's ballot on it waits in the outbox.
+3. **Starting again.** The close-out line adds "You can start it again.", a link to a new reconcile Proposal for whoever may start one in the group, and plain text otherwise and under a coalition above.
+
+### Privacy
+
+Each state reads only the device's own group's ballots, never another group's tally. "Not enough votes yet" shows from before anyone has scored, so it says nothing of who has voted. The group-home mark is worked out on the device from folded state and its outbox; nothing new goes to the relay or into a push.
