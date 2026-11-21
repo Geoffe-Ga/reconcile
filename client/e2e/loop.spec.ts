@@ -24,6 +24,7 @@ import {
   pick,
   test,
 } from './support/fixtures';
+import { expectSent } from './support/steps';
 
 const GROUP = 'Riverside Tenants';
 const CHAT = 'https://chat.example.org/riverside';
@@ -276,14 +277,14 @@ test('three members propose, vote and see the Update', async ({ openProfile }) =
   await test.step('A and B score', async () => {
     await score(ana, '4 · Strongly supportive');
     await score(ben, '3 · Supportive');
-    for (const person of [ana, ben]) await expect(sendStatus(person.page)).toHaveText('Sent');
+    for (const person of [ana, ben]) await expectSent(person.page);
     await expectAccessible(ben, 'ballot, sent');
   });
 
   await test.step('C comes back online and its ballot sends', async () => {
     // Coming back online syncs at once, whatever the backoff (spec §7, #168).
     await cal.page.context().setOffline(false);
-    await expect(sendStatus(cal.page)).toHaveText('Sent');
+    await expectSent(cal.page);
   });
 
   await test.step('the vote closes early, and all three show the new section', async () => {

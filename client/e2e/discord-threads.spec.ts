@@ -33,6 +33,7 @@ import {
   test,
   visit,
 } from './support/fixtures';
+import { expectSent } from './support/steps';
 
 const GROUP = 'Riverside Tenants';
 const CHAT = 'https://chat.example.org/riverside';
@@ -50,7 +51,7 @@ async function vote(person: Person, url: string): Promise<void> {
   await visit(page, url);
   await pick(page, '4 · Strongly supportive');
   await page.getByRole('button', { name: 'Send your vote' }).click();
-  await expect(page.locator('.ballot-send').getByRole('status')).toHaveText('Sent');
+  await expectSent(page);
 }
 
 /** A vote link at `origin` (#472): `#vote/` and a 22-character token. */

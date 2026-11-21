@@ -17,8 +17,12 @@ import type { FakeRelay } from './fakeRelay';
 /** The creating level, so every person here may propose and bring cards. */
 const [, , CREATING] = LEVELS;
 
-/** Several devices syncing in turn: these tests run longer than one device's. */
-export const SLOW = { timeout: 30_000 };
+/**
+ * Several devices syncing in turn: these tests run longer than one device's,
+ * up to about 23 s on CI's runner, so the limit that catches a hang is three
+ * times that (see `testTimeout` in vite.config.ts).
+ */
+export const SLOW = { timeout: 90_000 };
 
 /** The devices a test opened, in order: `syncAll` syncs them, `closeAll` closes them. */
 const devices: TestDevice[] = [];

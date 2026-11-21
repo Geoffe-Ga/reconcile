@@ -42,7 +42,7 @@ import {
 } from './support/fixtures';
 import { type Canary, describeFinding, findIn, keyCanaries } from './support/scan';
 import { postedEvents } from './support/recovery';
-import { SYNC_MS } from './support/steps';
+import { expectSent, SYNC_MS } from './support/steps';
 import { derive, groupMailboxes, onlyGroup, queuedRecords, storedLogs } from './support/stored';
 
 const GROUP = 'Riverside Tenants';
@@ -182,7 +182,7 @@ async function vote(person: Person, pill: string): Promise<void> {
   const { page } = person;
   await pick(page, pill);
   await page.getByRole('button', { name: 'Send your vote' }).click();
-  await expect(page.locator('.ballot-send').getByRole('status')).toHaveText('Sent');
+  await expectSent(page);
 }
 
 /** Group home lists `PEOPLE`; the Document reads the passed text, then the second section. */

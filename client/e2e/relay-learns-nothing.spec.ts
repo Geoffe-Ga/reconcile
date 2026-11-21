@@ -32,6 +32,7 @@ import {
   textCanary,
 } from './support/scan';
 import { derive, groupMailboxes, storedGroups } from './support/stored';
+import { expectSent } from './support/steps';
 
 /**
  * TEST-NET-3 (RFC 5737): an address no tester has. Loopback can't be the
@@ -51,7 +52,7 @@ async function vote(person: Person, pill: string, note?: string): Promise<void> 
   await pick(page, pill);
   if (note !== undefined) await page.getByRole('textbox', { name: 'Note (optional)' }).fill(note);
   await page.getByRole('button', { name: 'Send your vote' }).click();
-  await expect(page.locator('.ballot-send').getByRole('status')).toHaveText('Sent');
+  await expectSent(page);
 }
 
 test('the scan finds a canary in every spelling, at every byte alignment', () => {

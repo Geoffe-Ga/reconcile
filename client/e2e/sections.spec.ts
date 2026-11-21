@@ -22,7 +22,7 @@ import {
   pick,
   test,
 } from './support/fixtures';
-import { SYNC_MS } from './support/steps';
+import { expectSent, SYNC_MS } from './support/steps';
 
 const GROUP = 'Riverside Tenants';
 const TITLE = 'House rules';
@@ -39,11 +39,6 @@ function scores(page: Page, n: number): Locator {
   return page.getByRole('radiogroup', { name: `Score for version ${String(n)}` });
 }
 
-/** The ballot's send status. */
-function sendStatus(page: Page): Locator {
-  return page.locator('.ballot-send').getByRole('status');
-}
-
 /** True when nothing on the page scrolls sideways: the document, nor the region it scrolls in under the link bar (#444). */
 async function fitsWidth(page: Page): Promise<boolean> {
   return page.evaluate(() =>
@@ -58,7 +53,7 @@ async function vote(person: Person, pills: readonly string[]): Promise<void> {
   const { page } = person;
   for (const [index, pill] of pills.entries()) await pick(page, pill, scores(page, index + 1));
   await page.getByRole('button', { name: /your vote$/ }).click();
-  await expect(sendStatus(page)).toHaveText('Sent');
+  await expectSent(page);
 }
 
 /** From anywhere in the group, Group home, then the Document view. */
@@ -200,7 +195,7 @@ test('a group adds one section and removes another, and every profile shows the 
     ).toBeVisible({ timeout: SYNC_MS });
     await pick(page, '4 · Strongly supportive', scores(page, 2));
     await page.getByRole('button', { name: 'Update your vote' }).click();
-    await expect(sendStatus(page)).toHaveText('Sent');
+    await expectSent(page);
     await expect(page.getByRole('region', { name: 'Result' })).toContainText(
       'Version 2 passed. The Document no longer has this section.',
     );

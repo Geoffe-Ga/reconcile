@@ -55,6 +55,7 @@ import {
   textCanary,
 } from './support/scan';
 import { storedGroups, storedLogs } from './support/stored';
+import { expectSent } from './support/steps';
 
 const GROUP = 'Riverside Tenants';
 const DOCUMENT = 'House rules';
@@ -433,7 +434,7 @@ test('a new device recovers Ana through two contacts after the wait, and her can
       .click();
     await pick(page, '4 · Strongly supportive');
     await page.getByRole('button', { name: /your vote$/ }).click();
-    await expect(page.getByText('Sent', { exact: true })).toBeVisible(SYNCED);
+    await expectSent(page);
     // Ana's laptop is the same person: once it syncs that ballot, nothing needs her vote.
     await visit(ana.page, '/#/');
     await ana.page.getByRole('link', { name: new RegExp(GROUP) }).click();

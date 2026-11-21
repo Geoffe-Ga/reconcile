@@ -30,6 +30,11 @@ export default defineConfig(({ mode }) => {
       // Hands the tests ONNX Runtime Web's WebAssembly from node_modules (#476).
       globalSetup: ['./test/globalSetup.ts'],
       include: ['src/**/*.test.{ts,tsx}', 'plugins/**/*.test.ts'],
+      // A test's time limit is there to catch a hang, never to time the test,
+      // so it stays about three times what the test takes on CI's runner: a
+      // tighter one fails a passing test whenever the runner is busy. Vitest's
+      // own 5 s left tests that take 2 to 3 s there failing on a slow day.
+      testTimeout: 15_000,
       // Vitest blanks stylesheets unless told otherwise. A `?raw` import of one
       // returns its text, as in a build, so a test can check what ships.
       css: { include: [/\.css\?raw$/] },

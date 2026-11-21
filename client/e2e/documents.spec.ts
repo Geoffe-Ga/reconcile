@@ -23,6 +23,7 @@ import {
   test,
   visit,
 } from './support/fixtures';
+import { expectSent } from './support/steps';
 
 const GROUP = 'Riverside Tenants';
 const MISSION = 'Mission statement';
@@ -55,7 +56,7 @@ async function voteFor(person: Person): Promise<void> {
   const pills = page.getByRole('radiogroup', { name: 'Score for version 1' });
   await pick(page, '4 · Strongly supportive', pills);
   await page.getByRole('button', { name: /your vote$/ }).click();
-  await expect(page.locator('.ballot-send').getByRole('status')).toHaveText('Sent');
+  await expectSent(page);
 }
 
 /** Group home's list of Documents. */

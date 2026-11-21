@@ -29,6 +29,7 @@ import {
 } from './support/fixtures';
 import { describeFinding, findIn, keyCanaries, textCanary } from './support/scan';
 import { onlyGroup, storedLogs } from './support/stored';
+import { expectSent } from './support/steps';
 
 const CANARY = {
   group: 'Canary Street Commons',
@@ -106,7 +107,7 @@ async function vote(person: Person, pill: string, list: string): Promise<void> {
   await listed.getByRole('link', { name: new RegExp(CANARY.title) }).click();
   await pick(page, pill);
   await page.getByRole('button', { name: /your vote$/ }).click();
-  await expect(page.getByText('Sent', { exact: true })).toBeVisible();
+  await expectSent(page);
 }
 
 test('a backup restores on two fresh devices, holds nothing readable, and votes as one person', async ({

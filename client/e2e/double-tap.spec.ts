@@ -23,6 +23,7 @@
 import { type Page } from '@playwright/test';
 
 import { acceptNotice, expect, foundGroup, heading, pick, test } from './support/fixtures';
+import { expectSent } from './support/steps';
 
 const GROUP = 'Riverside Tenants';
 const TITLE = 'House rules';
@@ -170,7 +171,7 @@ test('a double tap on a busy Send your vote or Propose submits once', async ({ o
     );
     await doubleTapWhileHeld(page, 'Send your vote');
     await releaseGroups(page);
-    await expect(page.locator('.ballot-send').getByRole('status')).toHaveText('Sent');
+    await expectSent(page);
     await pastPressFallback(page);
     await expect(page.getByRole('button', { name: /your vote$/ })).toBeEnabled();
     expect(await submits(page)).toBe(1);
