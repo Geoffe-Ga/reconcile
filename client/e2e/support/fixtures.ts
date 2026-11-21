@@ -297,20 +297,18 @@ export async function expectAccessible(person: Person, screen: string): Promise<
 
 /**
  * Presses the React Aria radio `name`, inside `within` when given: React Aria
- * hides the native input under its label, so this presses the label. A ballot
- * re-renders as the device syncs, and WebKit once dropped a press that landed
- * then (#297's CI), so this presses again until the radio is checked. Whether a
- * real voter's choice can be lost that way is #354.
+ * hides the native input under its label, so this presses the label, once. A
+ * ballot holds still while the device syncs (`useSteadyInView`, #407), so a
+ * press lands where it was aimed; a press that doesn't is a bug, never
+ * something to press again for.
  */
 export async function pick(page: Page, name: string, within?: Locator): Promise<void> {
   const scope = within ?? page;
   const radio = scope.getByRole('radio', { name });
   // `has` is matched inside each label, so it names the radio from the page, not the scope.
   const label = scope.locator('label', { has: page.getByRole('radio', { name }) });
-  await expect(async () => {
-    if (!(await radio.isChecked())) await label.click();
-    await expect(radio).toBeChecked({ timeout: 2_000 });
-  }).toPass({ timeout: 15_000 });
+  await label.click();
+  await expect(radio).toBeChecked();
 }
 
 /**

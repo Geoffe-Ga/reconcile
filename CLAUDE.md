@@ -83,6 +83,7 @@ When work depends on one of these, flag it instead of silently picking an answer
 5. **Quality first:** ≥90% line and ≥85% branch coverage, complexity ≤10, ≥95% docstring coverage.
 6. **Work from the project root** and use relative paths.
 7. **Verify before every commit:** `./scripts/check-all.sh` must exit 0.
+8. **A flaky test is worse than no test.** Fix its root cause, decouple what it tests, or delete it with a stated reason. Never retry, quarantine or skip it to get green.
 
 **The gates** ([ADR-0061](docs/adr/0061-quality-gates.md); this list is canonical, other docs link here):
 
