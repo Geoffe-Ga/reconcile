@@ -26,6 +26,7 @@ import {
   test,
   visit,
 } from './support/fixtures';
+import { expectSent } from './support/steps';
 
 const GROUP = 'Riverside Tenants';
 const MISSION = 'Mission statement';
@@ -75,7 +76,7 @@ async function voteFor(person: Person, pills: string): Promise<void> {
   const { page } = person;
   await pick(page, '4 · Strongly supportive', page.getByRole('radiogroup', { name: pills }));
   await page.getByRole('button', { name: /your vote$/ }).click();
-  await expect(page.locator('.ballot-send').getByRole('status')).toHaveText('Sent');
+  await expectSent(page);
 }
 
 /** From Group home's Needs your vote, the Proposal titled `title`. */

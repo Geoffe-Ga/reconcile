@@ -26,6 +26,17 @@ import {
  */
 export const SYNC_MS = 45_000;
 
+/**
+ * Waits for "Sent" under the ballot: the vote has left this device's outbox.
+ * A vote cast while a sync pass runs goes out on the pass after that one, so
+ * this waits as long as anything else that crosses the relay ({@link SYNC_MS}).
+ */
+export async function expectSent(page: Page): Promise<void> {
+  await expect(page.locator('.ballot-send').getByRole('status')).toHaveText('Sent', {
+    timeout: SYNC_MS,
+  });
+}
+
 /** A fresh profile's first run: Start, through the pilot notice, with nothing on the device yet. */
 export async function firstRun(person: Person): Promise<void> {
   const { page } = person;
@@ -114,7 +125,7 @@ export async function vote(person: Person, pill: string, note?: string): Promise
   await pick(page, pill);
   if (note !== undefined) await page.getByRole('textbox', { name: noteLabel(pill) }).fill(note);
   await page.getByRole('button', { name: 'Send your vote' }).click();
-  await expect(page.locator('.ballot-send').getByRole('status')).toHaveText('Sent');
+  await expectSent(page);
 }
 
 /** Group rules' front door card. */
@@ -213,7 +224,7 @@ export async function voteTwoLines(
     await page.getByRole('textbox', { name: 'Your reason for a 0' }).fill(reason);
   }
   await page.getByRole('button', { name: 'Send your vote' }).click();
-  await expect(page.locator('.ballot-send').getByRole('status')).toHaveText('Sent');
+  await expectSent(page);
 }
 
 /**

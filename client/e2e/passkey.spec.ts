@@ -61,6 +61,7 @@ import {
 } from './support/fixtures';
 import { type Canary, describeFinding, findIn, keyCanaries } from './support/scan';
 import { onlyGroup } from './support/stored';
+import { expectSent } from './support/steps';
 
 const GROUP = 'Canary Lane Allotments';
 const TITLE = 'Canary title: water at dusk';
@@ -608,7 +609,7 @@ test('with PRF, the keys live only in the vault, and the passkey unlocks voting 
     await needs.getByRole('link', { name: new RegExp(TITLE) }).click();
     await pick(page, '4 · Strongly supportive');
     await page.getByRole('button', { name: /your vote$/ }).click();
-    await expect(page.getByText('Sent', { exact: true })).toBeVisible();
+    await expectSent(page);
     await openSettings(page);
     await expect(
       page.getByRole('region', { name: 'Lock with a passkey' }).getByRole('button'),

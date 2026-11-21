@@ -42,6 +42,7 @@ import {
   textCanary,
 } from './support/scan';
 import { onlyGroup, type StoredGroup, storedLogs } from './support/stored';
+import { expectSent } from './support/steps';
 
 const CANARY = {
   group: 'Canary Linked Commons',
@@ -75,7 +76,7 @@ async function vote(person: Person, pill: string, region: string): Promise<void>
   await listed.getByRole('link', { name: new RegExp(CANARY.title) }).click();
   await pick(page, pill);
   await page.getByRole('button', { name: /your vote$/ }).click();
-  await expect(page.getByText('Sent', { exact: true })).toBeVisible();
+  await expectSent(page);
 }
 
 /** The six digits on `page`'s number card. */

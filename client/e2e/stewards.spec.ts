@@ -20,6 +20,7 @@ import {
   pick,
   test,
 } from './support/fixtures';
+import { expectSent } from './support/steps';
 
 const GROUP = 'Riverside Tenants';
 const TITLE = 'House rules';
@@ -94,7 +95,7 @@ test('a steward suspends Kim, everyone sees it, and Ben proposes himself for sea
     await kim.page.goto(proposalUrl);
     await pick(kim.page, '3 · Supportive');
     await kim.page.getByRole('button', { name: 'Send your vote' }).click();
-    await expect(kim.page.locator('.ballot-send').getByRole('status')).toHaveText('Sent');
+    await expectSent(kim.page);
   });
 
   await test.step('Ana, the steward, suspends Kim through the dialog', async () => {

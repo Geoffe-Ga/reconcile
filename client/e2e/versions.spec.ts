@@ -20,6 +20,7 @@ import {
   pick,
   test,
 } from './support/fixtures';
+import { expectSent } from './support/steps';
 
 const GROUP = 'Riverside Tenants';
 const TITLE = 'House rules';
@@ -42,17 +43,12 @@ function scores(page: Page, n: number): Locator {
   return page.getByRole('radiogroup', { name: `Score for version ${String(n)}` });
 }
 
-/** The ballot's send status. */
-function sendStatus(page: Page): Locator {
-  return page.locator('.ballot-send').getByRole('status');
-}
-
 /** Scores each version with its pill, in order, and sends the ballot. */
 async function vote(person: Person, pills: readonly string[]): Promise<void> {
   const { page } = person;
   for (const [index, pill] of pills.entries()) await pick(page, pill, scores(page, index + 1));
   await page.getByRole('button', { name: /your vote$/ }).click();
-  await expect(sendStatus(page)).toHaveText('Sent');
+  await expectSent(page);
 }
 
 /** True when nothing on the page scrolls sideways: the document, nor the region it scrolls in under the link bar (#444). */
@@ -175,7 +171,7 @@ test('B adds a version to A’s Proposal, both score both, and the better one pa
     await expectAccessible(ana, 'ballot with two versions, side by side');
     await pick(page, '4 · Strongly supportive', scores(page, 2));
     await page.getByRole('button', { name: 'Update your vote' }).click();
-    await expect(sendStatus(page)).toHaveText('Sent');
+    await expectSent(page);
   });
 
   await test.step('B scores both, and the vote closes early', async () => {

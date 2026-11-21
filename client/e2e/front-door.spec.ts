@@ -51,6 +51,7 @@ import {
   textCanary,
 } from './support/scan';
 import { derive, onlyGroup, storedBytes, storedGroups, storedLogs } from './support/stored';
+import { expectSent } from './support/steps';
 
 /** A random tag, so no two runs plant the same canaries. */
 const TAG = randomBytes(6).toString('hex');
@@ -98,7 +99,7 @@ async function vote(person: Person, url: string): Promise<void> {
   await page.goto(url);
   await pick(page, '4 · Strongly supportive');
   await page.getByRole('button', { name: 'Send your vote' }).click();
-  await expect(page.locator('.ballot-send').getByRole('status')).toHaveText('Sent');
+  await expectSent(page);
 }
 
 /** The front door's card on Group rules. */

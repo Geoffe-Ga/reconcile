@@ -25,6 +25,7 @@ import {
   test,
 } from './support/fixtures';
 import { groupMailboxes } from './support/stored';
+import { expectSent } from './support/steps';
 
 const GROUP = 'Riverside Tenants';
 const TITLE = 'House rules';
@@ -83,7 +84,7 @@ async function vote(person: Person): Promise<void> {
   const { page } = person;
   await pick(page, '4 · Strongly supportive', page.getByRole('radiogroup', { name: 'Your score' }));
   await page.getByRole('button', { name: 'Send your vote' }).click();
-  await expect(page.locator('.ballot-send').getByRole('status')).toHaveText('Sent');
+  await expectSent(page);
 }
 
 /**

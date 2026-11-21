@@ -37,6 +37,7 @@ import {
 import { relayMinute } from './support/relayNow';
 import { describeFinding, keyCanaries, scan, textCanary } from './support/scan';
 import { derive, onlyGroup, storedLogs, WEEK_MINUTES, weekMailbox, weekOf } from './support/stored';
+import { expectSent } from './support/steps';
 
 const GROUP = 'Riverside Tenants';
 const TITLE = 'House rules';
@@ -147,7 +148,7 @@ test('a group writes to a new mailbox each week, still reads last week’s, and 
     await needs.getByRole('link', { name: new RegExp(canary) }).click();
     await pick(page, '3 · Supportive');
     await page.getByRole('button', { name: 'Send your vote' }).click();
-    await expect(page.locator('.ballot-send').getByRole('status')).toHaveText('Sent');
+    await expectSent(page);
     await expectAccessible(ben, 'the Proposal, voted');
     await expect.poll(() => heldRecords(ana)).toEqual(await heldRecords(ben));
     expect(await heldRecords(ana)).toHaveLength(4);

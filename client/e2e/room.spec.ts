@@ -32,6 +32,7 @@ import {
 } from './support/fixtures';
 import { type Canary, describeFinding, keyCanaries, scan, textCanary } from './support/scan';
 import { derive, groupMailboxes, storedGroups } from './support/stored';
+import { expectSent } from './support/steps';
 
 /** A random tag, so no two runs plant the same canaries. */
 function tag(): string {
@@ -56,7 +57,7 @@ async function passes(person: Person): Promise<void> {
   const { page } = person;
   await pick(page, '4 · Strongly supportive');
   await page.getByRole('button', { name: 'Send your vote' }).click();
-  await expect(page.locator('.ballot-send').getByRole('status')).toHaveText('Sent');
+  await expectSent(page);
 }
 
 /** From `group`'s home, opens the coalition's home, then its room. */

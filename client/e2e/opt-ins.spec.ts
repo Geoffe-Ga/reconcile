@@ -28,6 +28,7 @@ import {
   test,
   visit,
 } from './support/fixtures';
+import { expectSent } from './support/steps';
 
 const GROUP = 'Riverside Tenants';
 const WEBHOOK = 'https://discord.com/api/webhooks/1199000000000000001/sEcReT-tokenWXYZ';
@@ -82,7 +83,7 @@ async function vote(person: Person, url: string): Promise<void> {
   await visit(page, url);
   await pick(page, '4 · Strongly supportive');
   await page.getByRole('button', { name: 'Send your vote' }).click();
-  await expect(page.locator('.ballot-send').getByRole('status')).toHaveText('Sent');
+  await expectSent(page);
 }
 
 test('the group turns its chat bot on by an entrenched vote, and a steward turns it off now', async ({

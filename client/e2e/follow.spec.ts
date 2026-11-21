@@ -49,6 +49,7 @@ import {
   textCanary,
 } from './support/scan';
 import { derive, groupMailboxes, storedGroups, storedLogs } from './support/stored';
+import { expectSent } from './support/steps';
 
 /** A random tag, so no two runs plant the same canaries. */
 const TAG = randomBytes(6).toString('hex');
@@ -81,7 +82,7 @@ async function passes(person: Person): Promise<void> {
   const { page } = person;
   await pick(page, '4 · Strongly supportive');
   await page.getByRole('button', { name: 'Send your vote' }).click();
-  await expect(page.locator('.ballot-send').getByRole('status')).toHaveText('Sent');
+  await expectSent(page);
 }
 
 /** Riverside and Oak St reconcile into the canary coalition, and both group homes say it formed. */

@@ -29,7 +29,16 @@ import {
   visit,
 } from './support/fixtures';
 import { bringCard, makeCard, type NewCoalition } from './support/coalition';
-import { firstRun, found, join, openVote, people, SYNC_MS, vote } from './support/steps';
+import {
+  expectSent,
+  firstRun,
+  found,
+  join,
+  openVote,
+  people,
+  SYNC_MS,
+  vote,
+} from './support/steps';
 
 /** Group names long enough that the waiting line wraps at either width. */
 const RIVERSIDE = 'Riverside Tenants Association';
@@ -229,7 +238,7 @@ test('a coalition motion’s ballot holds still while a ballot and another group
     await Promise.all(
       viewers.map(async ({ page }) => {
         await page.getByRole('button', { name: 'Send your vote' }).click();
-        await expect(page.locator('.ballot-send').getByRole('status')).toHaveText('Sent');
+        await expectSent(page);
       }),
     );
   });

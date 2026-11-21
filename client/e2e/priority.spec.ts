@@ -20,6 +20,7 @@ import {
   pick,
   test,
 } from './support/fixtures';
+import { expectSent } from './support/steps';
 
 const GROUP = 'Riverside Tenants';
 const QUESTION = 'What should we focus on?';
@@ -62,7 +63,7 @@ async function vote(person: Person, pills: readonly number[], reason?: string): 
     await page.getByRole('textbox', { name: 'Your reason for a 0' }).fill(reason);
   }
   await page.getByRole('button', { name: /your vote$/ }).click();
-  await expect(page.locator('.ballot-send').getByRole('status')).toHaveText('Sent');
+  await expectSent(page);
 }
 
 /** The result, once the vote has closed: the focus, then the ranking, then the rest. */

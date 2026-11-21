@@ -40,6 +40,7 @@ import {
 } from './support/fixtures';
 import { type Canary, describeFinding, keyCanaries, scan, textCanary } from './support/scan';
 import { derive, groupMailboxes, onlyGroup, storedLogs } from './support/stored';
+import { expectSent } from './support/steps';
 
 const GROUP = 'Riverside Tenants';
 const TITLE = 'House rules';
@@ -105,7 +106,7 @@ async function vote(person: Person): Promise<void> {
   const { page } = person;
   await pick(page, '4 · Strongly supportive', page.getByRole('radiogroup', { name: 'Your score' }));
   await page.getByRole('button', { name: 'Send your vote' }).click();
-  await expect(page.locator('.ballot-send').getByRole('status')).toHaveText('Sent');
+  await expectSent(page);
 }
 
 test('Ana and Ben remove Cal: his device keeps what it had, and nothing after opens with his key', async ({
