@@ -1,4 +1,4 @@
-import { type ReactNode, type SyntheticEvent, useId, useState } from 'react';
+import { type ReactNode, type SyntheticEvent, useId, useRef, useState } from 'react';
 import {
   Button,
   FieldError,
@@ -18,6 +18,7 @@ import { holdPresses } from './holdPresses';
 import { messages } from './messages';
 import { ChoiceList } from './Options';
 import { SendStatus } from './SendStatus';
+import { useSteadyInView } from './steadyInView';
 import { Field } from './ui';
 import { useSaving } from './useSaving';
 import type { VersionView } from './versionViews';
@@ -250,6 +251,9 @@ export function Ballot(props: BallotProps) {
   const [note, setNote] = useState(props.initialNote);
   const { run: vote, running, outcome } = useSaving(props.onVote);
   const hint = useId();
+  // A sync that changes what's above the ballot moves the page, not the ballot, so a tap lands (#407).
+  const form = useRef<HTMLFormElement>(null);
+  useSteadyInView(form);
   const scores = scoresOn(versions, chosen);
   const ask = noteAsk(scores);
   const forZero = ask === 'reason';
@@ -263,7 +267,7 @@ export function Ballot(props: BallotProps) {
   };
 
   return (
-    <Form className="ballot" onSubmit={submit}>
+    <Form ref={form} className="ballot" onSubmit={submit}>
       <BallotNotices props={props} missing={missing} />
       <p id={hint} className="field-hint">
         {messages.ballot.visibility}

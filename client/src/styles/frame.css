@@ -36,7 +36,9 @@
  * lay the page out again every frame. The app keeps it steady instead: it
  * scrolls by the room that changed, or at the top slides the words by a
  * transform (`useSteadyPage` in barGestures.ts). The browser's own scroll
- * anchoring is off, so it never adds a second correction to that one.
+ * anchoring is off, so it never adds a second correction to that one, and
+ * Safari has none anyway: a ballot holds its own place while a sync changes
+ * what's above it (`useSteadyInView` in steadyInView.ts).
  */
 .app-page {
   overflow-y: auto;

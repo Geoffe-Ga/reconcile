@@ -217,7 +217,7 @@ function canSlide(page: HTMLElement): boolean {
 }
 
 /** The page's top padding, in px: the room it leaves for the bar. */
-function roomOf(page: HTMLElement): number {
+export function roomOf(page: HTMLElement): number {
   return Number.parseFloat(getComputedStyle(page).paddingTop) || 0;
 }
 
