@@ -1,7 +1,7 @@
 import { type ReactNode, type SyntheticEvent, useId, useRef, useState } from 'react';
 import { Button, Form, Link } from 'react-aria-components';
 
-import type { AboveRow, CoalitionLine, CoalitionRow } from './coalitionLines';
+import type { AboveRow, CoalitionLine, CoalitionRow, OwnStanding } from './coalitionLines';
 import { CopyLink } from './CopyLink';
 import { messages } from './messages';
 import { ResultMismatch } from './ResultMismatch';
@@ -37,18 +37,42 @@ const STATUS: Readonly<Record<CoalitionRow['status'], string>> = {
   declined: coalitions.declined,
 };
 
+/** What the group's own waiting line adds for where its open vote stands (#250, #550). */
+const STANDING: Readonly<Record<OwnStanding, string>> = {
+  short: coalitions.notEnough,
+  'not-passing': coalitions.notPassing,
+};
+
+/**
+ * "You can start it again." after the close-out (#550): a link to a new
+ * reconcile Proposal when `again` gives its route, plain text otherwise.
+ */
+function StartAgain({ again }: { readonly again: string | null }) {
+  if (again === null) return coalitions.startAgain;
+  return <Link href={again}>{coalitions.startAgain}</Link>;
+}
+
 /**
  * One line under a coalition's name, each group's name in its own `<bdi>`: a
- * refused admission (#549) reads as why, then the route instead.
+ * refused admission (#549) reads as why, then the route instead. `again` is
+ * where the close-out's "You can start it again." leads, or null (#550).
  */
-function Line({ line }: { readonly line: CoalitionLine }) {
+function Line({
+  line,
+  again = null,
+}: {
+  readonly line: CoalitionLine;
+  readonly again?: string | null;
+}) {
   switch (line.kind) {
     case 'waiting':
       return (
         <p>
           {coalitions.waitingBefore} <bdi>{line.group}</bdi>
           {coalitions.waitingAfter}
-          {line.notPassing === true ? ` ${coalitions.tagSeparator} ${coalitions.notPassing}` : null}
+          {line.standing === undefined
+            ? null
+            : ` ${coalitions.tagSeparator} ${STANDING[line.standing]}`}
         </p>
       );
     case 'didnt-pass':
@@ -60,7 +84,11 @@ function Line({ line }: { readonly line: CoalitionLine }) {
     case 'waiting-card':
       return <p>{coalitions.waitingCard}</p>;
     case 'lapsed':
-      return <p>{coalitions.lapsed}</p>;
+      return (
+        <p>
+          {coalitions.lapsed} <StartAgain again={again} />
+        </p>
+      );
     case 'refused':
       return (
         <>
@@ -298,12 +326,14 @@ function ReconcileCoalition({ row }: { readonly row: CoalitionRow }) {
 /**
  * One coalition: whether it's forming, formed or didn't form, its name, its
  * member groups and a link to its home once formed (#120), whom it waits
- * for or who didn't pass it, any
- * result that doesn't match the group's own vote, and how this person takes
- * part; then the way to reconcile it with another coalition, and the
- * coalitions above it (#122).
+ * for or who didn't pass it (after a close-out, the way to start again,
+ * #550), any result that doesn't match the group's own vote, and how this
+ * person takes part; then the way to reconcile it with another coalition,
+ * and the coalitions above it (#122).
  */
 function Row({ row, props }: RowProps) {
+  // A new reconcile Proposal is one tap away for whoever may start one (#550).
+  const again = props.starts ? routeHref({ name: 'reconcile', groupId: props.groupId }) : null;
   return (
     <li className="card coalition">
       <p className="eyebrow">{STATUS[row.status]}</p>
@@ -315,7 +345,7 @@ function Row({ row, props }: RowProps) {
       {row.lines.length > 0 ? (
         <div className="coalition-lines">
           {row.lines.map((line, index) => (
-            <Line key={index} line={line} />
+            <Line key={index} line={line} again={again} />
           ))}
         </div>
       ) : null}

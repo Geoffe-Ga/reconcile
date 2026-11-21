@@ -2625,8 +2625,13 @@ export const messages = {
     waitingAfter: '’s vote',
     /** Around a group's name: "Oak St Co-op didn’t pass this". */
     didntPassAfter: 'didn’t pass this',
-    /** After a group's own waiting line, while its open vote has a ballot and isn't passing (#250). */
+    /** After a group's own waiting line, while its open vote is at quorum and isn't passing (#250, #550). */
     notPassing: 'Currently not passing',
+    /**
+     * After a group's own waiting line, while its open vote is short of
+     * quorum (#550): it says nothing of who has voted.
+     */
+    notEnough: 'Not enough votes yet',
     waitingCard: 'Waiting for another group to bring the card.',
     /**
      * Under a coalition this coalition asked into, which refused it (#549):
@@ -2636,6 +2641,11 @@ export const messages = {
     refusedRoute,
     /** A coalition still forming at `formsFinal`, declined by the close-out (#250). */
     lapsed: 'Not every group voted in time, so the coalition won’t form.',
+    /**
+     * After the close-out (#550): a link to a new reconcile Proposal for
+     * whoever may start one, plain text otherwise.
+     */
+    startAgain: 'You can start it again.',
     /**
      * In place of the ballot on a group's open reconcile vote once another
      * founding group's fail has declined its coalition (#250), after that
@@ -2649,6 +2659,12 @@ export const messages = {
      */
     reminderBefore: 'If you don’t vote by',
     reminderAfter: ', you won’t be counted.',
+    /**
+     * Under the countdown on such a vote's row in group home's Needs your
+     * vote, in the same window (#550): the reminder's words, without the
+     * date the countdown above it gives.
+     */
+    lastDays: 'If you don’t vote, you won’t be counted.',
     youTakePart: 'You take part as',
     takePart: 'Take part',
     takePartHint: 'Join the coalition under your group’s seat.',
