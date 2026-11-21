@@ -1374,6 +1374,493 @@
       }
     },
     {
+      "name": "forgery-admit-raises-seated-level: while C’s motion to take a seat in Metro Renters is open, an admit motion whose seat says level 1 would raise C to level 2, a level higher than its seat there, so it is ignored (#549)",
+      "logs": {
+        "X": [
+          {
+            "seq": 1,
+            "received": 29375000,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%kim",
+              "ts": 1762500060000,
+              "body": {
+                "kind": "coalition",
+                "name": "Upper Valley",
+                "documents": [{ "title": "Shared ground", "atoms": ["We share the valley."] }],
+                "seats": [
+                  { "name": "Riverside", "key": "^A" },
+                  { "name": "Oak St", "key": "^B" }
+                ]
+              }
+            }
+          },
+          {
+            "seq": 2,
+            "received": 29375001,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%cal",
+              "ts": 1762500120000,
+              "body": {
+                "name": "CAL",
+                "seat": "^A",
+                "proof": { "$seatProof": ["A", "@1", "%cal"] }
+              }
+            }
+          },
+          {
+            "seq": 3,
+            "received": 29375001,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%dee",
+              "ts": 1762500180000,
+              "body": {
+                "name": "DEE",
+                "seat": "^B",
+                "proof": { "$seatProof": ["B", "@1", "%dee"] }
+              }
+            }
+          },
+          {
+            "seq": 4,
+            "received": 29375002,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%cal",
+              "ts": 1762500240000,
+              "body": { "motion": "@1", "seat": "^A", "result": "pass" }
+            }
+          },
+          {
+            "seq": 5,
+            "received": 29375002,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%dee",
+              "ts": 1762500300000,
+              "body": { "motion": "@1", "seat": "^B", "result": "pass" }
+            }
+          },
+          {
+            "seq": 6,
+            "received": 29375005,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@1",
+              "author": "%cal",
+              "ts": 1762500360000,
+              "body": {
+                "target": {
+                  "kind": "reconcile",
+                  "sealed": { "$sealed": ["@1", "~innerX", "~D", "~innerD", "X"] },
+                  "key": "^X",
+                  "name": "Metro Renters",
+                  "title": "Shared ground",
+                  "atoms": ["Rent stays fair."]
+                },
+                "title": "Reconcile into Metro Renters",
+                "why": "Renters across the city."
+              }
+            }
+          },
+          {
+            "seq": 7,
+            "received": 29375006,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@1",
+              "author": "%fay",
+              "ts": 1762500420000,
+              "body": {
+                "target": {
+                  "kind": "admit",
+                  "seat": { "name": "Eastside Housing", "key": "^C", "level": 1 },
+                  "proof": { "$seatProof": ["C", "@1", "%fay"] },
+                  "kx": "&^C",
+                  "groups": ["Hill Co-op", "Elm Row"]
+                },
+                "title": "Admit Eastside Housing",
+                "why": "They share the city."
+              }
+            }
+          }
+        ]
+      },
+      "relayNow": 29375010,
+      "expect": {
+        "X": {
+          "coalition": {
+            "level": 1,
+            "admitted": [],
+            "refusedAdmits": [],
+            "motions": [{ "id": "@6", "admit": null }]
+          },
+          "proposals": [{ "id": "@6" }]
+        }
+      },
+      "unchangedWithout": { "X": [7] }
+    },
+    {
+      "name": "admit-raises-seated-level-at-final: an admit motion both seats pass opens before C’s motion to take a seat in Metro Renters; at its horizon C sits above, and the seat would raise its level, so it is refused there: it reads as a final fail, and C seats nobody and stays at level 1 (#549)",
+      "logs": {
+        "X": [
+          {
+            "seq": 1,
+            "received": 29375000,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%kim",
+              "ts": 1762500060000,
+              "body": {
+                "kind": "coalition",
+                "name": "Upper Valley",
+                "documents": [{ "title": "Shared ground", "atoms": ["We share the valley."] }],
+                "seats": [
+                  { "name": "Riverside", "key": "^A" },
+                  { "name": "Oak St", "key": "^B" }
+                ]
+              }
+            }
+          },
+          {
+            "seq": 2,
+            "received": 29375001,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%cal",
+              "ts": 1762500120000,
+              "body": {
+                "name": "CAL",
+                "seat": "^A",
+                "proof": { "$seatProof": ["A", "@1", "%cal"] }
+              }
+            }
+          },
+          {
+            "seq": 3,
+            "received": 29375001,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%dee",
+              "ts": 1762500180000,
+              "body": {
+                "name": "DEE",
+                "seat": "^B",
+                "proof": { "$seatProof": ["B", "@1", "%dee"] }
+              }
+            }
+          },
+          {
+            "seq": 4,
+            "received": 29375002,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%cal",
+              "ts": 1762500240000,
+              "body": { "motion": "@1", "seat": "^A", "result": "pass" }
+            }
+          },
+          {
+            "seq": 5,
+            "received": 29375002,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%dee",
+              "ts": 1762500300000,
+              "body": { "motion": "@1", "seat": "^B", "result": "pass" }
+            }
+          },
+          {
+            "seq": 6,
+            "received": 29375005,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@1",
+              "author": "%fay",
+              "ts": 1762500360000,
+              "body": {
+                "target": {
+                  "kind": "admit",
+                  "seat": { "name": "Eastside Housing", "key": "^C", "level": 1 },
+                  "proof": { "$seatProof": ["C", "@1", "%fay"] },
+                  "kx": "&^C",
+                  "groups": ["Hill Co-op", "Elm Row"]
+                },
+                "title": "Admit Eastside Housing",
+                "why": "They share the city."
+              }
+            }
+          },
+          {
+            "seq": 7,
+            "received": 29375006,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%cal",
+              "ts": 1762500420000,
+              "body": { "motion": "@6", "seat": "^A", "result": "pass" }
+            }
+          },
+          {
+            "seq": 8,
+            "received": 29375006,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%dee",
+              "ts": 1762500480000,
+              "body": { "motion": "@6", "seat": "^B", "result": "pass" }
+            }
+          },
+          {
+            "seq": 9,
+            "received": 29375007,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@1",
+              "author": "%cal",
+              "ts": 1762500540000,
+              "body": {
+                "target": {
+                  "kind": "reconcile",
+                  "sealed": { "$sealed": ["@1", "~innerX", "~D", "~innerD", "X"] },
+                  "key": "^X",
+                  "name": "Metro Renters",
+                  "title": "Shared ground",
+                  "atoms": ["Rent stays fair."]
+                },
+                "title": "Reconcile into Metro Renters",
+                "why": "Renters across the city."
+              }
+            }
+          }
+        ]
+      },
+      "relayNow": 29386525,
+      "expect": {
+        "X": {
+          "coalition": {
+            "level": 1,
+            "seats": [{ "key": "^A" }, { "key": "^B" }],
+            "admitted": [],
+            "refusedAdmits": ["@6"],
+            "motions": [{ "id": "@6", "admit": { "key": "^C", "level": 1 } }, { "id": "@9" }]
+          },
+          "proposals": [
+            { "id": "@6", "final": true, "outcome": { "kind": "fail" } },
+            { "id": "@9", "final": false }
+          ]
+        }
+      }
+    },
+    {
+      "name": "admit-raises-unseated-level: once C’s motion to take a seat in Metro Renters has failed, C sits nowhere above, so the same admit motion opens, passes and raises C to level 2 at its horizon (#549)",
+      "logs": {
+        "X": [
+          {
+            "seq": 1,
+            "received": 29375000,
+            "event": {
+              "v": 1,
+              "type": "genesis",
+              "group": "",
+              "author": "%kim",
+              "ts": 1762500060000,
+              "body": {
+                "kind": "coalition",
+                "name": "Upper Valley",
+                "documents": [{ "title": "Shared ground", "atoms": ["We share the valley."] }],
+                "seats": [
+                  { "name": "Riverside", "key": "^A" },
+                  { "name": "Oak St", "key": "^B" }
+                ]
+              }
+            }
+          },
+          {
+            "seq": 2,
+            "received": 29375001,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%cal",
+              "ts": 1762500120000,
+              "body": {
+                "name": "CAL",
+                "seat": "^A",
+                "proof": { "$seatProof": ["A", "@1", "%cal"] }
+              }
+            }
+          },
+          {
+            "seq": 3,
+            "received": 29375001,
+            "event": {
+              "v": 1,
+              "type": "join",
+              "group": "@1",
+              "author": "%dee",
+              "ts": 1762500180000,
+              "body": {
+                "name": "DEE",
+                "seat": "^B",
+                "proof": { "$seatProof": ["B", "@1", "%dee"] }
+              }
+            }
+          },
+          {
+            "seq": 4,
+            "received": 29375002,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%cal",
+              "ts": 1762500240000,
+              "body": { "motion": "@1", "seat": "^A", "result": "pass" }
+            }
+          },
+          {
+            "seq": 5,
+            "received": 29375002,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%dee",
+              "ts": 1762500300000,
+              "body": { "motion": "@1", "seat": "^B", "result": "pass" }
+            }
+          },
+          {
+            "seq": 6,
+            "received": 29375005,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@1",
+              "author": "%cal",
+              "ts": 1762500360000,
+              "body": {
+                "target": {
+                  "kind": "reconcile",
+                  "sealed": { "$sealed": ["@1", "~innerX", "~D", "~innerD", "X"] },
+                  "key": "^X",
+                  "name": "Metro Renters",
+                  "title": "Shared ground",
+                  "atoms": ["Rent stays fair."]
+                },
+                "title": "Reconcile into Metro Renters",
+                "why": "Renters across the city."
+              }
+            }
+          },
+          {
+            "seq": 7,
+            "received": 29375006,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%cal",
+              "ts": 1762500420000,
+              "body": { "motion": "@6", "seat": "^A", "result": "fail" }
+            }
+          },
+          {
+            "seq": 8,
+            "received": 29375007,
+            "event": {
+              "v": 1,
+              "type": "proposal",
+              "group": "@1",
+              "author": "%fay",
+              "ts": 1762500480000,
+              "body": {
+                "target": {
+                  "kind": "admit",
+                  "seat": { "name": "Eastside Housing", "key": "^C", "level": 1 },
+                  "proof": { "$seatProof": ["C", "@1", "%fay"] },
+                  "kx": "&^C",
+                  "groups": ["Hill Co-op", "Elm Row"]
+                },
+                "title": "Admit Eastside Housing",
+                "why": "They share the city."
+              }
+            }
+          },
+          {
+            "seq": 9,
+            "received": 29375008,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%cal",
+              "ts": 1762500540000,
+              "body": { "motion": "@8", "seat": "^A", "result": "pass" }
+            }
+          },
+          {
+            "seq": 10,
+            "received": 29375008,
+            "event": {
+              "v": 1,
+              "type": "group-result",
+              "group": "@1",
+              "author": "%dee",
+              "ts": 1762500600000,
+              "body": { "motion": "@8", "seat": "^B", "result": "pass" }
+            }
+          }
+        ]
+      },
+      "relayNow": 29386527,
+      "expect": {
+        "X": {
+          "coalition": {
+            "level": 2,
+            "refusedAdmits": [],
+            "admitted": [{ "motion": "@8", "key": "^C" }]
+          },
+          "proposals": [
+            { "id": "@6", "final": true, "outcome": { "kind": "fail" } },
+            { "id": "@8", "final": true, "outcome": { "kind": "pass" } }
+          ]
+        }
+      }
+    },
+    {
       "name": "genesis-level-stated: a genesis that states C’s seat at C’s own level, 1, gets C’s pass once C’s reconcile motion is final, at its horizon, its deadline plus a day (#387)",
       "logs": {
         "C": [

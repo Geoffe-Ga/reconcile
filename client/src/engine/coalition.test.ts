@@ -9,6 +9,7 @@ import {
   type MotionSeats,
   motionHorizon,
   newCoalition,
+  raisesLevel,
   resultsCount,
 } from './coalition';
 import { DEFAULT_RULES } from './rules';
@@ -166,5 +167,31 @@ describe('horizons (#250, #387)', () => {
     expect(two?.formsFinal).toBe(1_000 + 14 * 1_440 + 2_880);
     expect(resultsCount({ formsFinal: 5, motions: [] }, 'g', 'g', 4)).toBe(true);
     expect(resultsCount({ formsFinal: 5, motions: [] }, 'g', 'g', 5)).toBe(false);
+  });
+});
+
+describe('raising a seated coalition’s level (#549)', () => {
+  const seat = (key: string, level?: number) => ({ name: key, key, ...(level ? { level } : {}) });
+
+  it('raises a coalition’s level only with a seat at or above it', () => {
+    const one = { level: 1, seats: [seat('a'), seat('b')] };
+    expect(raisesLevel(one, seat('c'))).toBe(false);
+    expect(raisesLevel(one, seat('c', 1))).toBe(true);
+    expect(raisesLevel(one, seat('c', 2))).toBe(true);
+    const two = { level: 2, seats: [seat('a', 1), seat('b')] };
+    expect(raisesLevel(two, seat('c'))).toBe(false);
+    expect(raisesLevel(two, seat('c', 1))).toBe(false);
+    expect(raisesLevel(two, seat('c', 2))).toBe(true);
+  });
+
+  it('agrees with levelOf for every seat level and coalition', () => {
+    const levels = fc.array(fc.integer({ min: 0, max: 2 }), { minLength: 2, maxLength: 5 });
+    fc.assert(
+      fc.property(levels, fc.integer({ min: 0, max: 2 }), (stated, added) => {
+        const seats = stated.map((level, i) => seat(String(i), level));
+        const level = 1 + Math.max(...stated);
+        expect(raisesLevel({ level, seats }, seat('new', added))).toBe(added >= level);
+      }),
+    );
   });
 });

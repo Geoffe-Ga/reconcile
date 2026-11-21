@@ -90,6 +90,8 @@ import {
   type Motion,
   motionHorizon,
   motionOutcome,
+  type MotionSeats,
+  raisesLevel,
   type ReconcileChange,
   admitSeat,
   mayAdmit,
@@ -1633,6 +1635,24 @@ function seatKeysAbove(draft: Pick<Draft, 'proposals'>): string[] {
 }
 
 /**
+ * Whether this coalition sits in a coalition above, or is on its way to a
+ * seat there, at relay minute `at` (#549): one of its reconcile motions
+ * hasn't failed by then. A fail, a lapse included, is final at once, so a
+ * motion that failed leaves it seated nowhere.
+ */
+function standsAbove(
+  draft: Pick<Draft, 'proposals' | 'rules'>,
+  coalition: CoalitionDraft,
+  at: number,
+) {
+  return draft.proposals.some((p) => {
+    if (p.target.kind !== 'reconcile') return false;
+    const settled = settleMotion(p, coalition, barOf(p, draft.rules), at);
+    return !settled.final || settled.outcome.kind === 'pass';
+  });
+}
+
+/**
  * Opens a removal (ADR-0049, ADR-0075 §3, #115) when its author may propose
  * one against its member now (removal.ts). It runs the removal class's fixed
  * window, whatever the proposer wrote, at removal's own bar; its one version
@@ -1813,9 +1833,10 @@ function applyMotion(
  * room's `inner` to reach the group once it's admitted (#313). A coalition
  * asking in states its level and member groups (#122); a level that would put
  * this coalition past level 3, or this coalition's own seat key above, is
- * ignored. It is ordinary, for the window its proposer chose or the default,
- * with one version that has no text, and every seat in its snapshot must pass
- * it, whatever their number. Once its pass is final, the group takes its seat
+ * ignored, and so, while this coalition sits above, is a seat that would
+ * raise its level (#549). It is ordinary, for the window its proposer chose or
+ * the default, with one version that has no text, and every seat in its
+ * snapshot must pass it, whatever their number. Once its pass is final, the group takes its seat
  * ({@link advanceAdmissions}).
  */
 function applyAdmit(
@@ -1830,7 +1851,10 @@ function applyAdmit(
   if (body.dispatch !== undefined) return false;
   // The room's inner is wrapped to its seat's kx once it's admitted (#313): it must take a box.
   if (usableKx(body.target.kx) === null) return false;
-  if (!mayAdmit(coalition, draft.group, author, body.target, seatKeysAbove(draft))) return false;
+  const seated = standsAbove(draft, coalition, draft.at);
+  if (!mayAdmit(coalition, draft.group, author, body.target, seatKeysAbove(draft), seated)) {
+    return false;
+  }
   const window = chosenWindow(draft.rules, 'ordinary', body.window);
   if (window === null) return false;
   const proposal = openProposal(draft, {
@@ -2859,7 +2883,8 @@ function barOf(proposal: Pick<Proposal, 'target' | 'class'>, rules: Rules): Bar 
  * posted (#100): a fail is final at once, and a pass once results stop
  * counting, at its horizon (#250, #387), since until then a contest can turn
  * it into a fail. Its one version wins a pass. Until it is decided it reads as a
- * lapse, as a Proposal no one has scored does.
+ * lapse, as a Proposal no one has scored does. An admit motion refused at its
+ * horizon (#549) reads as a final fail.
  */
 function settleMotion(
   proposal: Omit<OpenProposal, 'readAhead'>,
@@ -2867,6 +2892,9 @@ function settleMotion(
   bar: Bar,
   relayNow: number | null,
 ): Proposal {
+  if (coalition.refusedAdmits.includes(proposal.id)) {
+    return { ...proposal, final: true, outcome: { kind: 'fail', bar } };
+  }
   const expired = relayNow !== null && relayNow >= motionHorizon(coalition, proposal);
   const { kind } = motionOutcome(coalition, proposal.id, expired);
   const final = kind === 'fail' || expired;
@@ -3575,7 +3603,9 @@ function openMotion(draft: Draft, motion: Motion): void {
 /**
  * Seats each group whose admit motion's pass has become final by `draft.at`
  * (#114), once, in order of when it became final, at its horizon (#387), and
- * then relay order: a later motion's snapshot, and a later join, see it.
+ * then relay order: a later motion's snapshot, and a later join, see it. A
+ * seat that would raise the level of a coalition sitting above then is
+ * refused instead ({@link seatOrRefuse}, #549).
  */
 function advanceAdmissions(draft: Draft, coalition: CoalitionDraft): void {
   const due = coalition.motions
@@ -3586,9 +3616,23 @@ function advanceAdmissions(draft: Draft, coalition: CoalitionDraft): void {
     if (proposal === undefined) continue;
     // Results on it have stopped counting, so its outcome is final here.
     const settled = settleMotion(proposal, coalition, barOf(proposal, draft.rules), draft.at);
-    if (settled.outcome.kind === 'pass') {
-      admitSeat(coalition, motion, horizonOf(motion));
-    }
+    if (settled.outcome.kind === 'pass') seatOrRefuse(draft, coalition, motion);
+  }
+}
+
+/**
+ * Seats the group a passed admit motion names (#114), unless the coalition
+ * sits above at the motion's horizon and the seat would raise its level
+ * (#549), so its results above would arrive as they stop counting: then the
+ * motion is refused, once, seats nobody and reads as a fail.
+ */
+function seatOrRefuse(draft: Draft, coalition: CoalitionDraft, motion: MotionSeats): void {
+  const at = horizonOf(motion);
+  const raises = motion.admit !== null && raisesLevel(coalition, motion.admit);
+  if (!raises || !standsAbove(draft, coalition, at)) {
+    admitSeat(coalition, motion, at);
+  } else if (!coalition.refusedAdmits.includes(motion.id)) {
+    coalition.refusedAdmits.push(motion.id);
   }
 }
 
