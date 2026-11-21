@@ -27,6 +27,7 @@ const FOUND: FoundCard = {
     { groupId: 'oak', name: 'Oak St Co-op', kind: 'group' },
     { groupId: 'elm', name: 'Elm Row', kind: 'group' },
   ],
+  refused: [],
 };
 
 function props(overrides: Partial<BringCardProps> = {}): BringCardProps {
@@ -71,6 +72,56 @@ describe('BringCard, into a coalition (#122)', () => {
     await user.type(screen.getByRole('textbox', { name: 'Your name in the coalition' }), 'Ana');
     await user.click(screen.getByRole('button', { name: messages.bring.submitCoalition }));
     expect(onBring).toHaveBeenCalledWith({ ...FOUND, groups }, 'eastside', 'Ana');
+  });
+});
+
+describe('BringCard, refused by a coalition sitting above (#549)', () => {
+  const REFUSED = {
+    name: 'Westside Renters',
+    coalition: 'Eastside Housing',
+    above: 'Metro Renters',
+  } as const;
+  const WHY =
+    'Westside Renters can’t take this card. Eastside Housing sits in Metro Renters. ' +
+    'Admitting Westside Renters would put Eastside Housing a level higher than its seat there, ' +
+    'so its votes there would arrive too late to count.';
+  const ROUTE =
+    'Westside Renters can ask into Metro Renters directly instead: ask a group in Metro Renters for its card.';
+
+  it('says why a coalition can’t take the card, and the route, beside the groups that can', async () => {
+    const found = { ...FOUND, mode: 'admit' as const, refused: [REFUSED] };
+    const lookup = vi.fn(() => Promise.resolve<CardLookup>({ kind: 'found', found }));
+    render(<BringCard {...props({ lookup })} />);
+    const picker = await screen.findByRole('radiogroup', { name: messages.bring.groupLabel });
+    expect(within(picker).queryByRole('radio', { name: 'Westside Renters' })).toBeNull();
+    const note = screen.getByRole('note', { name: 'Westside Renters can’t take this card.' });
+    const [why, route] = within(note).getAllByRole('paragraph');
+    expect(why).toHaveTextContent(WHY);
+    expect(route).toHaveTextContent(ROUTE);
+    // Every name sits in its own bdi, since each came from another device.
+    expect([...note.querySelectorAll('bdi')].map((bdi) => bdi.textContent)).toEqual([
+      'Westside Renters',
+      'Eastside Housing',
+      'Metro Renters',
+      'Westside Renters',
+      'Eastside Housing',
+      'Westside Renters',
+      'Metro Renters',
+      'Metro Renters',
+    ]);
+    expect(await axeViolations()).toEqual([]);
+  });
+
+  it('says why when no group or coalition here can take the card', async () => {
+    const found = { ...FOUND, mode: 'admit' as const, groups: [], refused: [REFUSED] };
+    const lookup = vi.fn(() => Promise.resolve<CardLookup>({ kind: 'found', found }));
+    render(<BringCard {...props({ lookup })} />);
+    expect(await screen.findByText(messages.bring.noGroups)).toBeVisible();
+    expect(
+      screen.getByRole('note', { name: 'Westside Renters can’t take this card.' }),
+    ).toHaveTextContent(ROUTE);
+    expect(screen.queryByRole('button', { name: messages.bring.submit })).toBeNull();
+    expect(await axeViolations()).toEqual([]);
   });
 });
 

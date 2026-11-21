@@ -43,6 +43,7 @@ import {
   HORIZON_STEP_MINUTES,
   type Motion,
   motionHorizon,
+  raisesLevel,
   resultsCount,
   seatLevel,
   withinCeiling,
@@ -52,6 +53,7 @@ import type {
   GroupResultValue,
   PromoteProposalBody,
   PromoteTarget,
+  SeatEntry,
 } from './event';
 import {
   closeTime,
@@ -70,6 +72,30 @@ export function seatIn(
   const seats = coalition.coalition?.seats ?? [];
   const held = group.coalitions.find((c) => seats.some((seat) => seat.key === c.key));
   return held?.key ?? null;
+}
+
+/**
+ * The seat above in which the coalition folded in `coalition` sits, or is on
+ * its way to a seat (#549): its first reconcile motion that hasn't failed, as
+ * its log names it, or undefined. Only that coalition's own log is read.
+ */
+export function seatAbove(coalition: Pick<GroupState, 'coalitions'>): HeldSeat | undefined {
+  return coalition.coalitions.find((held) => held.outcome !== 'fail');
+}
+
+/**
+ * The seat above that makes the coalition folded in `coalition` refuse to
+ * admit `seat` (#549), as the fold does: it sits there, or is on its way, and
+ * the seat would raise its level. Undefined when it would take the seat, and
+ * for a group's log, which admits no one.
+ */
+export function refusedBy(
+  coalition: Pick<GroupState, 'coalition' | 'coalitions'>,
+  seat: Pick<SeatEntry, 'level'>,
+): HeldSeat | undefined {
+  const info = coalition.coalition;
+  if (info === null || !raisesLevel(info, seat)) return undefined;
+  return seatAbove(coalition);
 }
 
 /** The coalitions a motion came through above `proposal`'s log: none for the log's own (#122). */

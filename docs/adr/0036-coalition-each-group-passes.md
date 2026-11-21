@@ -63,3 +63,33 @@ It's the only option that keeps every ballot in its group and protects small gro
 ### Privacy
 
 Nothing new leaves a group's log or reaches the relay. A motion's level and `formsFinal` are folded state, not records, and a withdrawal is derived from the log every device folds, so it adds no event. The reminder is one more content-free nudge at a minute shifted as the vote's others are, from the devices that nudge it already, whether or not anyone has scored it, so its timing says nothing of who has voted. "Currently not passing" is read from the group's own ballots on its own members' devices. The coalition graph is no more enumerable than before.
+
+## Amendment (2026-11-21, #549, #545's question 1): A Coalition Seated Above Keeps Its Level
+
+- **Decided by:** the founder, 2026-11-21, answering #545's question 1: a coalition already seated in a coalition above it must refuse an admission that would raise its own level, and "We need to provide and communicate a clear route to fix it along with explaining why it's being refused."
+- **Settles:** #549.
+
+### Context
+
+The 2026-11-14 amendment staggered horizons a day per level, and a coalition's seat above keeps the level its genesis or admit motion stated. `mayAdmit` still let a coalition admit a seat at or above its own level, so `admitSeat` raised it. Its later motions then took the horizon of the level above, so their results arrived there as results stopped counting, and counted as not passing. That failed safe, but the coalition silently stopped counting above, and nothing said why.
+
+### Decision
+
+1. **A coalition that sits above refuses a seat that would raise its level.** It sits above, or is on its way to a seat there, while one of its reconcile motions hasn't failed. A seat raises its level when its stated level is at or above the coalition's (`raisesLevel` in `client/src/engine/coalition.ts`). A group's seat never does, so a group is never refused.
+2. **Checked at the open and at the final step.** `mayAdmit` ignores such an admit motion when it opens. One that opened before the coalition's motion above, and whose pass becomes final while the coalition sits there, is refused at its horizon (`seatOrRefuse` in `fold.ts`): it seats nobody, `refusedAdmits` records it, and it reads as a final fail, never as a pass that seats nobody.
+3. **Said where the person tries, with the route.** Bring a card doesn't offer a coalition that the card's coalition would refuse, and says why and what to do instead: "<it> can ask into <the coalition above> directly instead: ask a group in <the coalition above> for its card." A refusal at the final step reads the same under the coalition asking in, on group home.
+
+### Why
+
+- A coalition counts above only while its level matches the seat it holds there. Refusing the admission keeps that true, where the old behaviour let it lapse silently.
+- The route exists: a coalition at the refusing coalition's level asks into the coalition above as any coalition asks into a formed one, one level below it, within level 3, and raises nothing there.
+
+### Consequences
+
+- A coalition whose motion above failed sits nowhere above, so it may admit a seat at any level again.
+- A coalition on its way to a seat above (its motion open) refuses too, so an admission can't change its level while its seat there is decided.
+- Pinned by `vectors/nested-levels.json`'s `forgery-admit-raises-seated-level`, `admit-raises-seated-level-at-final` and `admit-raises-unseated-level`, and the fast-check property that no admission ever raises the level of a coalition seated above. No existing vector changed.
+
+### Privacy
+
+The refusal reads only the device's own coalition state: the refusing coalition's seats, its level and its own reconcile motions, whose name above is already readable in its log. Nothing new leaves a log or reaches the relay, and nothing about the coalition above is shown beyond the name the device already holds.

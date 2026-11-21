@@ -627,3 +627,79 @@ describe('nested coalitions on group home and a ballot (#122)', () => {
     });
   });
 });
+
+describe('a coalition asking into one seated above, refused at the final step (#549)', () => {
+  const WEST = { name: 'Westside Renters', title: 'Shared ground', atoms: ['We rent.'] };
+  const EAST = NESTED_STATEMENTS.C;
+  const WINDOW_AND_DAY = 7 * 1_440 + 1_440;
+
+  /**
+   * Pine Row (pat) and seat Q form Westside Renters (W), which asks into
+   * Eastside Housing (C), formed of seats A and B; C's seats pass the admit
+   * motion, then C opens its motion to take a seat in Metro Renters.
+   */
+  function refusedLate() {
+    const logs = new NestedLogs();
+    logs.group('P', R, ['pat'], 'Pine Row');
+    const intoW = logs.reconcileInto('P', R + 1, 'pat', 'W', 'P', WEST);
+    logs.vote('P', R + 2, 'pat', intoW, 4);
+    const formed = logs.formedIn('W', R + 3, [['P'], ['Q']], ['pia', 'quinn'], WEST);
+    const intoC = logs.sealedInto('W', formed, 'pia', 'C', EAST);
+    logs.resultIn('W', formed + 1, 'pia', intoC, 'P', 'pass');
+    logs.resultIn('W', formed + 1, 'quinn', intoC, 'Q', 'pass');
+    const at = logs.formedIn('C', R, [['A'], ['B']], ['cal', 'dee'], EAST);
+    const admit = logs.admitIn('C', formed + 2, 'pia', { seat: 'W', name: WEST.name, level: 1 });
+    logs.resultIn('C', formed + 3, 'cal', admit, 'A', 'pass');
+    logs.resultIn('C', formed + 3, 'dee', admit, 'B', 'pass');
+    logs.sealedInto('C', at + 20, 'cal', 'D', NESTED_STATEMENTS.D);
+    return { logs, now: formed + 2 + WINDOW_AND_DAY };
+  }
+
+  /** W and C as Pat's device keeps them, at `now`. */
+  function heldBoth(logs: NestedLogs, now: number) {
+    const entries = (['W', 'C'] as const).map(
+      (log) =>
+        ({
+          kind: 'coalition',
+          groupId: deriveCoalitionEntryId(fromBase64url(testSecret(log))),
+          me: { author: authorOf(log === 'W' ? 'pat' : 'nobody'), name: '' },
+          outbox: [],
+          log: logs.logs[log] ?? [],
+          relayNow: now,
+        }) as unknown as Group,
+    );
+    return foldCoalitions(entries);
+  }
+
+  it('says, under Westside Renters, why Eastside Housing refused it and the route instead', () => {
+    const { logs, now } = refusedLate();
+    const held = heldBoth(logs, now);
+    const state = foldWithCoalitions({ log: logs.logs.P ?? [], relayNow: now }, held);
+    const [row] = coalitionRows(state, authorOf('pat'), held);
+    expect(row?.name).toBe(WEST.name);
+    expect(row?.above).toEqual([
+      expect.objectContaining({
+        name: EAST.name,
+        status: 'declined',
+        lines: [
+          {
+            kind: 'refused',
+            coalition: EAST.name,
+            above: NESTED_STATEMENTS.D.name,
+            asking: WEST.name,
+          },
+        ],
+      }),
+    ]);
+  });
+
+  it('waits on Eastside Housing’s seats while the admission is open, before the refusal', () => {
+    const { logs, now } = refusedLate();
+    const held = heldBoth(logs, now - 1);
+    const state = foldWithCoalitions({ log: logs.logs.P ?? [], relayNow: now - 1 }, held);
+    const [row] = coalitionRows(state, authorOf('pat'), held);
+    expect(row?.above).toEqual([
+      expect.objectContaining({ name: EAST.name, status: 'forming', lines: [] }),
+    ]);
+  });
+});

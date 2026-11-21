@@ -79,6 +79,18 @@ export function levelOf(seats: readonly Pick<SeatEntry, 'level'>[]): number {
 }
 
 /**
+ * Whether admitting `seat` would raise `coalition`'s level (#549): its stated
+ * level is at or above the coalition's. A group's seat, at level 0, never
+ * does.
+ */
+export function raisesLevel(
+  coalition: Pick<Coalition, 'seats' | 'level'>,
+  seat: Pick<SeatEntry, 'level'>,
+): boolean {
+  return levelOf([...coalition.seats, seat]) > coalition.level;
+}
+
+/**
  * What a coalition's seats have reported on one motion: how many seats its
  * snapshot holds, how many passed and how many failed (a contested seat
  * counts as a fail), and whether it has expired, at its horizon
@@ -212,8 +224,12 @@ export interface RoomWrap {
  * then is declined. `bindings` holds every
  * participant's seat in join order, and `results` every valid result in relay
  * order. `motions` holds each motion's snapshot of seats, and `admitted`
- * each group admitted after the genesis, in order (#114). `wraps` holds each
- * wrap of the room's `inner` for an admitted seat, in relay order (#313).
+ * each group admitted after the genesis, in order (#114). `refusedAdmits`
+ * holds each admit motion whose pass became final while the coalition sat
+ * above, or was on its way to a seat there, when its seat would have raised
+ * the coalition's level (#549): it seats nobody and reads as a fail. `wraps`
+ * holds each wrap of the room's `inner` for an admitted seat, in relay order
+ * (#313).
  * `level` is one above its highest seat's stated level (#122), so 1 for a
  * coalition of groups, rising when a higher-level seat is admitted.
  * `commit` is the genesis's commitment to the room's `inner` (#371), or null
@@ -231,6 +247,7 @@ export interface Coalition {
   readonly results: readonly GroupResult[];
   readonly motions: readonly MotionSeats[];
   readonly admitted: readonly Admission[];
+  readonly refusedAdmits: readonly string[];
   readonly wraps: readonly RoomWrap[];
 }
 
@@ -256,6 +273,7 @@ export interface CoalitionDraft extends Omit<
   | 'results'
   | 'motions'
   | 'admitted'
+  | 'refusedAdmits'
   | 'wraps'
 > {
   status: CoalitionStatus;
@@ -266,6 +284,7 @@ export interface CoalitionDraft extends Omit<
   readonly results: GroupResult[];
   readonly motions: MotionSeats[];
   readonly admitted: Admission[];
+  readonly refusedAdmits: string[];
   readonly wraps: RoomWrap[];
 }
 
@@ -365,6 +384,7 @@ export function newCoalition(
     results: [],
     motions: [],
     admitted: [],
+    refusedAdmits: [],
     wraps: [],
   };
 }
@@ -383,16 +403,22 @@ export function foundingSeats(coalition: Pick<Coalition, 'seats' | 'admitted'>):
  * someone who holds its seat secret. Nor may it name a seat whose stated
  * level would put this coalition above {@link MAX_LEVEL}, or one of
  * `above`, this coalition's own seat keys in coalitions above it (#122).
+ * While `seated`, when this coalition sits in a coalition above or is on its
+ * way to a seat there, it takes no seat that would raise its own level
+ * ({@link raisesLevel}, #549): its seat above keeps the level it stated, so
+ * its results there would arrive as they stop counting.
  */
 export function mayAdmit(
-  coalition: Pick<Coalition, 'seats' | 'motions'>,
+  coalition: Pick<Coalition, 'seats' | 'motions' | 'level'>,
   coalitionId: string,
   author: string,
   target: AdmitTarget,
   above: readonly string[] = [],
+  seated = false,
 ): boolean {
   const { key } = target.seat;
   if (levelOf([target.seat]) > MAX_LEVEL || above.includes(key)) return false;
+  if (seated && raisesLevel(coalition, target.seat)) return false;
   if (coalition.seats.some((seat) => seat.key === key)) return false;
   if (coalition.motions.some((m) => m.admit?.key === key)) return false;
   return verifySeatProof(

@@ -446,6 +446,30 @@ export class NestedLogs extends Logs {
     return this.add(log, received, who, { type: 'proposal', body });
   }
 
+  /**
+   * `who`, holding the test seat `seat`'s secret, proposes admitting it into
+   * the coalition `log` as `name`, stating `level` when given (#114, #122).
+   */
+  admitIn(
+    log: string,
+    received: number,
+    who: string,
+    seat: { readonly seat: string; readonly name: string; readonly level?: number },
+  ): string {
+    const id = this.ids[log] ?? '';
+    const proof = base64url(signSeatProof(seatSecret(seat.seat), id, fromBase64url(authorOf(who))));
+    const level = seat.level === undefined ? {} : { level: seat.level };
+    const entry = { name: seat.name, key: seatKey(seat.seat), ...level };
+    const target = {
+      kind: 'admit',
+      seat: entry,
+      proof,
+      kx: seatKxOf(seatSecret(seat.seat)),
+    } as const;
+    const body = { target, title: `Admit ${seat.name}`, why: 'They share the city.' };
+    return this.add(log, received, who, { type: 'proposal', body });
+  }
+
   /** Every log folded together, as a device holding them all folds them, by name. */
   foldAll(relayNow: number | null): Record<string, GroupState> {
     const names = Object.keys(this.logs);

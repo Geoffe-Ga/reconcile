@@ -2530,3 +2530,131 @@ describe('properties of nested coalitions (#122)', { timeout: 120_000 }, () => {
     );
   });
 });
+
+/** What one of C's seats does on a motion: pass, fail, or nothing. */
+const seatSays = fc.constantFrom<'pass' | 'fail' | null>('pass', 'pass', 'pass', 'fail', null);
+
+/** One of C's motions in the seated-level property (#549): when it opens, and what C's seats say, when. */
+const drawnMotion = fc.record({
+  at: fc.integer({ min: 0, max: 3 * WINDOW }),
+  says: fc.tuple(seatSays, seatSays),
+  after: fc.tuple(fc.integer({ min: 1, max: WINDOW }), fc.integer({ min: 1, max: WINDOW })),
+});
+
+/** A seat asking into C: a motion, and the level its seat states. */
+const drawnAdmit = fc.record({ motion: drawnMotion, level: fc.integer({ min: 0, max: 2 }) });
+
+/** A motion {@link drawnMotion} draws. */
+interface DrawnMotion {
+  readonly at: number;
+  readonly says: readonly ('pass' | 'fail' | null)[];
+  readonly after: readonly number[];
+}
+
+/** One step of the seated-level property, in relay order. */
+interface SeatedStep {
+  readonly at: number;
+  readonly run: (logs: NestedLogs, ids: Map<string, string>) => void;
+}
+
+/** The steps a drawn motion makes: opening it under `name` by `open`, then C's seats' results. */
+function motionSteps(
+  name: string,
+  motion: {
+    readonly at: number;
+    readonly says: readonly ('pass' | 'fail' | null)[];
+    readonly after: readonly number[];
+  },
+  open: (logs: NestedLogs, at: number) => string,
+): SeatedStep[] {
+  const results = (['A', 'B'] as const).flatMap((seat, i): SeatedStep[] => {
+    const result = motion.says[i] ?? null;
+    if (result === null) return [];
+    const at = motion.at + (motion.after[i] ?? 1);
+    const who = seat === 'A' ? 'cal' : 'dee';
+    return [
+      { at, run: (logs, ids) => logs.resultIn('C', at, who, ids.get(name) ?? '', seat, result) },
+    ];
+  });
+  return [{ at: motion.at, run: (logs, ids) => ids.set(name, open(logs, motion.at)) }, ...results];
+}
+
+/** A drawn motion, opening `at` minutes after `start`. */
+function shifted<T extends { readonly at: number }>(motion: T, start: number): T {
+  return { ...motion, at: start + motion.at };
+}
+
+/** Every step of one seated-level run, in relay order: C's motion above, if any, then each admit. */
+function seatedSteps(
+  start: number,
+  above: DrawnMotion | null,
+  admits: readonly { readonly motion: DrawnMotion; readonly level: number }[],
+): SeatedStep[] {
+  const intoD = (l: NestedLogs, at: number) => l.sealedInto('C', at, 'cal', 'D', STATEMENT_D);
+  const toD = above === null ? [] : motionSteps('above', shifted(above, start), intoD);
+  const asking = admits.flatMap(({ motion, level }, i) => {
+    const seat = {
+      seat: `X${String(i)}`,
+      name: `Group ${String(i)}`,
+      ...(level > 0 ? { level } : {}),
+    };
+    const open = (l: NestedLogs, at: number) => l.admitIn('C', at, `x${String(i)}`, seat);
+    return motionSteps(`admit${String(i)}`, shifted(motion, start), open);
+  });
+  return [...toD, ...asking].sort((a, b) => a.at - b.at);
+}
+
+/** C as it folds at minute `t` from the records of its log `records` received before it. */
+function cAt(records: readonly LogRecord[], t: number): GroupState {
+  return fold(
+    records.filter((r) => r.received < t),
+    t,
+  );
+}
+
+/** At each admission's minute in `end`, while C sits above, its level is what it was the minute before. */
+function expectNoSeatedRise(records: readonly LogRecord[], end: GroupState): void {
+  for (const admission of end.coalition?.admitted ?? []) {
+    const now = cAt(records, admission.at);
+    const seated = now.coalitions.some((held) => held.outcome !== 'fail');
+    const before = cAt(records, admission.at - 1).coalition?.level;
+    if (seated) expect(now.coalition?.level).toBe(before);
+  }
+}
+
+/** Every admit `end` refused reads as a final fail and seated nobody. */
+function expectRefusedFail(end: GroupState): void {
+  for (const refused of end.coalition?.refusedAdmits ?? []) {
+    expect(end.proposals.find((p) => p.id === refused)).toMatchObject({
+      final: true,
+      outcome: { kind: 'fail' },
+    });
+    expect(end.coalition?.admitted.map((a) => a.motion)).not.toContain(refused);
+  }
+}
+
+describe(
+  'properties of an admission into a coalition seated above (#549)',
+  { timeout: 120_000 },
+  () => {
+    it('never raises the level of a coalition seated above, and reads a refused admit as a final fail', () => {
+      const scenario = fc.record({
+        above: fc.option(drawnMotion, { nil: null }),
+        admits: fc.array(drawnAdmit, { minLength: 1, maxLength: 3 }),
+      });
+      fc.assert(
+        fc.property(scenario, ({ above, admits }) => {
+          const logs = new NestedLogs();
+          const start = logs.formedIn('C', R, [['A'], ['B']], ['cal', 'dee']);
+          const ids = new Map<string, string>();
+          for (const step of seatedSteps(start, above, admits)) step.run(logs, ids);
+          const records = logs.logs.C ?? [];
+          const end = cAt(records, start + 6 * WINDOW);
+          expectNoSeatedRise(records, end);
+          expectRefusedFail(end);
+        }),
+        { numRuns: 60 },
+      );
+    });
+  },
+);

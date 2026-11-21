@@ -37,7 +37,7 @@ import { newSigningKeys, publicKeyOf } from '../crypto/sign';
 import { genesisAtoms } from '../engine/atomText';
 import { can } from '../engine/capabilities';
 import { MAX_LEVEL } from '../engine/coalition';
-import { seatIn } from '../engine/crossing';
+import { refusedBy, seatAbove, seatIn } from '../engine/crossing';
 import { atomsOf } from '../engine/documents';
 import { type SeatEntry, signEvent } from '../engine/event';
 import { fold, type GroupState, TITLE_MAX } from '../engine/fold';
@@ -288,15 +288,29 @@ export interface CardGroup {
 }
 
 /**
+ * A coalition this person takes part in that can't take a formed
+ * coalition's card (#549): the card's coalition, `coalition`, sits in
+ * `above`, or is on its way to a seat there, and admitting `name` would raise
+ * its level. Every name comes from logs this device already holds.
+ */
+export interface RefusedCard {
+  readonly name: string;
+  readonly coalition: string;
+  readonly above: string;
+}
+
+/**
  * An opened card: the card, whether it founds a coalition or admits a group
- * into a formed one, the coalition's log as far as this device read it, and
- * the groups on this device that may take it.
+ * into a formed one, the coalition's log as far as this device read it, the
+ * groups on this device that may take it, and the coalitions it can't go to
+ * because the card's coalition would refuse them (#549).
  */
 export interface FoundCard {
   readonly card: Card;
   readonly mode: 'found' | 'admit';
   readonly log: RecentLog;
   readonly groups: readonly CardGroup[];
+  readonly refused: readonly RefusedCard[];
 }
 
 /** What opening a card found. */
@@ -329,24 +343,78 @@ export function bringsInto(state: GroupState, me: string): boolean {
   return info.bindings.some((b) => b.author === me) && can(state, me, 'propose');
 }
 
+/** The coalitions that may take a card, and those its coalition would refuse (#549). */
+interface CardCoalitions {
+  readonly groups: CardGroup[];
+  readonly refused: RefusedCard[];
+}
+
+/** Whether the coalition `state` names the seat `key`, or an admit motion of its does. */
+function seatsOrAdmits(state: GroupState, key: string): boolean {
+  const info = state.coalition;
+  if (info === null) return false;
+  return (
+    info.seats.some((seat) => seat.key === key) || info.motions.some((m) => m.admit?.key === key)
+  );
+}
+
+/**
+ * Where a coalition `state` stands with a formed coalition's card, `admit`
+ * (#549): refused, when that coalition sits above (or is on its way) and
+ * `state` would raise its level; left out, when it sits in `state` itself or
+ * asks into it, since a coalition can't sit in one inside it;
+ * else free to take it. A card that founds a coalition (`admit` null) admits
+ * no one, so nothing refuses it.
+ */
+function standingFor(state: GroupState, admit: GroupState | null): 'free' | RefusedCard | null {
+  const above = admit === null ? undefined : seatAbove(admit);
+  if (admit === null || above === undefined) return 'free';
+  if (seatsOrAdmits(state, above.key)) return null;
+  const refused = refusedBy(admit, { level: state.coalition?.level ?? 0 });
+  return refused === undefined
+    ? 'free'
+    : { name: state.name, coalition: admit.name, above: refused.name };
+}
+
 /**
  * The coalitions this person takes part in that may take a card for `secret`
  * (#122): formed, below level 3, holding its `inner`, holding no reconcile
  * motion with this secret, in their log or waiting to send, and not the
- * coalition the card names.
+ * coalition the card names. For a formed coalition's card, folded as
+ * `admit`, those it would refuse go to `refused` instead (#549), and one it
+ * sits in is left out.
  */
-async function coalitionsFor(services: Services, secret: string): Promise<CardGroup[]> {
+async function coalitionsFor(
+  services: Services,
+  secret: string,
+  admit: GroupState | null,
+): Promise<CardCoalitions> {
   const keys = await deviceKeys(services);
   const named = deriveCoalitionEntryId(fromBase64url(secret));
   const held = keys.get(named)?.from ?? [];
   const entries = await services.store.listCoalitions();
-  return entries.flatMap((entry) => {
+  const found: CardCoalitions = { groups: [], refused: [] };
+  for (const entry of entries) {
     const state = foldGroup(entry);
-    if (entry.groupId === named || (keys.get(entry.groupId)?.inner ?? null) === null) return [];
-    if (!bringsInto(state, entry.me.author)) return [];
-    if (held.some((from) => from.holder === entry.groupId)) return [];
-    return [{ groupId: entry.groupId, name: state.name, kind: 'coalition' as const }];
-  });
+    if (!takesCards(entry, state, keys) || entry.groupId === named) continue;
+    if (held.some((from) => from.holder === entry.groupId)) continue;
+    const standing = standingFor(state, admit);
+    if (standing === 'free') {
+      found.groups.push({ groupId: entry.groupId, name: state.name, kind: 'coalition' });
+    } else if (standing !== null) {
+      found.refused.push(standing);
+    }
+  }
+  return found;
+}
+
+/**
+ * Whether the coalition entry `entry`, folded as `state`, may take a card at
+ * all (#122): this device holds its `inner`, and this person may bring one in.
+ */
+function takesCards(entry: Group, state: GroupState, keys: ReadonlyMap<string, CoalitionKeys>) {
+  if ((keys.get(entry.groupId)?.inner ?? null) === null) return false;
+  return bringsInto(state, entry.me.author);
 }
 
 /**
@@ -391,14 +459,13 @@ export async function lookupCard(services: Services, seed: Uint8Array): Promise<
     );
     if (card === null) return { kind: 'missing' };
     const log = await coalitionLog(services, card, page.now, page.instance);
-    const mode = modeOf(fold(log.records, log.relayNow), card);
+    const state = fold(log.records, log.relayNow);
+    const mode = modeOf(state, card);
     if (mode === 'used' || mode === 'missing') return { kind: mode };
     const secret = base64url(card.secret);
-    const groups = [
-      ...(await groupsFor(services, secret)),
-      ...(await coalitionsFor(services, secret)),
-    ];
-    return { kind: 'found', found: { card, mode, log, groups } };
+    const coalitions = await coalitionsFor(services, secret, mode === 'admit' ? state : null);
+    const groups = [...(await groupsFor(services, secret)), ...coalitions.groups];
+    return { kind: 'found', found: { card, mode, log, groups, refused: coalitions.refused } };
   } catch {
     return { kind: 'offline' };
   }

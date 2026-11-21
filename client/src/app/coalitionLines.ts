@@ -11,7 +11,7 @@ import { deriveCoalitionEntryId } from '../crypto/card';
 import { can, isOusted } from '../engine/capabilities';
 import { MAX_LEVEL, seatLevel, seatResult } from '../engine/coalition';
 import { coalitionProgress, type CoalitionProgress } from '../engine/coalitionProgress';
-import { resultMismatches, seatIn } from '../engine/crossing';
+import { resultMismatches, seatAbove, seatIn } from '../engine/crossing';
 import type { Ceiling, ReconcileTarget, SealedReconcileTarget, SeatEntry } from '../engine/event';
 import type { GroupState, HeldSeat, Proposal } from '../engine/fold';
 import { displayName } from '../engine/names';
@@ -33,7 +33,20 @@ export type CoalitionLine =
   | { readonly kind: 'waiting'; readonly group: string; readonly notPassing?: true }
   | { readonly kind: 'didnt-pass'; readonly group: string }
   | { readonly kind: 'waiting-card' }
-  | { readonly kind: 'lapsed' };
+  | { readonly kind: 'lapsed' }
+  | RefusedLine;
+
+/**
+ * A coalition, `asking`, whose admission `coalition` refused once its pass
+ * was final (#549): `coalition` sat in `above` by then, and admitting it would
+ * have raised its level. The names come from the two coalitions' own logs.
+ */
+export interface RefusedLine {
+  readonly kind: 'refused';
+  readonly coalition: string;
+  readonly above: string;
+  readonly asking: string;
+}
 
 /** How this person stands in a coalition: in it as `name`, joining, free to take part, or neither. */
 export type CoalitionMe =
@@ -169,6 +182,25 @@ function seated(
   return { status, lines: failed.length > 0 ? failed : [{ kind: 'lapsed' }] };
 }
 
+/**
+ * The line for an admission of `state` that `coalition` refused at its final
+ * step (#549), naming the seat above it sits in, or sat in then.
+ */
+function refusedLine(state: GroupState, coalition: GroupState): RefusedLine {
+  const above = seatAbove(coalition) ?? coalition.coalitions[0];
+  return {
+    kind: 'refused',
+    coalition: coalition.name,
+    above: above?.name ?? '',
+    asking: state.name,
+  };
+}
+
+/** Whether `coalition` refused the admit motion `motion` at its final step (#549). */
+function refusedAt(coalition: GroupState, motion: string): boolean {
+  return coalition.coalition?.refusedAdmits.includes(motion) ?? false;
+}
+
 /** The status and lines of a formed coalition this group asks to be admitted into. */
 function admitting(
   state: GroupState,
@@ -180,6 +212,9 @@ function admitting(
   const decided = coalition.proposals.find((p) => p.id === motion?.id);
   if (motion === undefined || decided === undefined) {
     return { status: 'forming', lines: [] };
+  }
+  if (refusedAt(coalition, motion.id)) {
+    return { status: 'declined', lines: [refusedLine(state, coalition)] };
   }
   const seats = (coalition.coalition?.seats ?? []).filter((s) => motion.seats.includes(s.key));
   const lines = seatLines(coalition, motion.id, seats);
@@ -219,6 +254,17 @@ function coalitionSeating(
 }
 
 /**
+ * The coalition on this device that `key` sits in, or else one whose admit
+ * motion names it (#549), so a coalition asking into a formed one reads how
+ * its admission stands.
+ */
+function coalitionAbove(coalitions: readonly HeldCoalition[], key: string): GroupState | undefined {
+  const asked = (held: HeldCoalition) =>
+    held.state.coalition?.motions.some((m) => m.admit?.key === key) === true;
+  return (coalitionSeating(coalitions, key) ?? coalitions.find(asked))?.state;
+}
+
+/**
  * The coalitions above `lower` (#122): one row for each of its reconcile
  * motions, by the coalition on this device whose seats name its key, then
  * the coalitions above that one, up to level 3. `chain` is the names from
@@ -231,7 +277,7 @@ function aboveRows(
 ): AboveRow[] {
   if (chain.length > MAX_LEVEL) return [];
   return lower.coalitions.flatMap((held) => {
-    const above = coalitionSeating(coalitions, held.key)?.state;
+    const above = coalitionAbove(coalitions, held.key);
     const seat = above?.coalition?.seats.find((s) => s.key === held.key);
     const standing =
       above === undefined ? beforeGenesis(lower, held) : standingOf(lower, held, above, seat);
