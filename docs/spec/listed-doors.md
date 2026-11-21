@@ -152,7 +152,7 @@ A listed group's devices keep the shelf in step with the group's own log, as the
 
 - **The listing.** Posted when none stands, when the name or covenant changed, or when the newest copy is 7 days old.
 - **An entry.** Posted when the fold shows a Dispatch's shelf line passed. Every member's device may post it; the relay keeps one.
-- **A stray entry.** An entry under the group's address that the group's log didn't make is withdrawn by the first member's device that sees it, and Group home says so.
+- **A stray entry.** An entry under the group's address that the group's log didn't make is withdrawn by the first member's device that sees it, and Group home says so. A withdraw only hides the entry: its bytes stay on the relay until its 30 days end, since a withdraw isn't the steward's and a delete by it could let anyone holding the door's key erase the group's real entries (ADR-0081's amendment of 2026-11-21).
 - **The end.** When the door closes or the group unlists, each device posts the final listing.
 
 ## 5. Publishing and reading
@@ -287,6 +287,7 @@ Each waits for its trigger and returns through an ADR.
 | What waits | Stands in for it | Trigger |
 |---|---|---|
 | Who votes on appeals and the moderation policy | The founder's steward seat | Before any group beyond the founder's is released |
+| Counsel on how a legal demand about a shelf entry reaches the operator, and whether the operator needs a DMCA designated agent | Only the founder's groups are on the shelf | The same, beside ADR-0058's outside review (the founder, 2026-11-21, #543) |
 | Reconcile-the-group as a governed group, with the covenant as its Document | A covenant shipped in the app | The same, and ADR-0035's wording |
 | Panels drawn by lot for appeals | The steward | The electorate decision |
 | Open mode: listings live at once, a burst trip into held mode, window rollback, youngest-first eviction | Held mode | The covenant gate opens |

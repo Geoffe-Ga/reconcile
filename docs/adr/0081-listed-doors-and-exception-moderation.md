@@ -64,6 +64,14 @@ The founder weighed gates that would prevent these (a steward's list, proof of w
 - **The steward's key is one key on one device during the pilot.** A thief could hold or remove entries until it is rotated by an app release.
 - #427 closes with this ADR. #430, #431, #432 and #434 are rewritten to match.
 
+## Amendment (2026-11-21): a withdraw hides, and two shelf questions settled
+
+The founder answered #543's three questions, left over from #427's spike drafts.
+
+- **A withdraw only hides an entry.** A member's device withdraws a stray or forged entry under its group's address (spec §4.5), and the relay hides it, but its bytes stay until its 30 days end. Only the steward's uphold or suspend, or a final listing, deletes an entry's bytes. Why: a withdraw is signed by the door's key, not the steward's, so if it deleted, anyone holding that key (any member's device, or a thief of one) could erase a group's real entries for good; a hide can't destroy anything. The bytes are public and expire on their own, so keeping them 30 days stores nothing new.
+- **No line on Discover that names aren't checked.** A draft had Discover say "Reconcile doesn't check a group's name against anything outside the app." It isn't added: C3 (no impersonation) and the steward's hand release during the pilot cover the substance, and the line would be copy, not protection.
+- **Legal demands and a DMCA designated agent are a release gate.** How a legal demand about a shelf entry reaches the operator, and whether the operator needs a DMCA designated agent, is a question for counsel. It is asked before any group beyond the founder's is released onto the shelf, beside ADR-0058's outside review, and is listed in the spec's §9. No counsel is consulted now.
+
 ## Amendment (2026-11-19): steward notices can't be replayed
 
 #516's review found that a steward notice's signed bytes were the same every time and public on `GET /v1/shelf`, so anyone could replay an old notice: an old lift after a new suspension, an old suspension after a lift, an old hold or release. Every notice now carries the UTC day it was signed (`day`) and a 16-byte random nonce (`n`), both signed. The relay refuses a notice whose day is not today or yesterday (`400 stale_notice`) or whose nonce it has already stored (`409 replayed_notice`), and devices apply the same day window, against each notice's receipt, and count only the first notice with each nonce. The relay remembers spent nonces in a table of its own, `notice_nonces(n, expiry)`, holding only the public nonce and a day, purged two days after the notice's day. That is the one storage this amendment adds. The format change is safe because no notice has ever been live: production pins are null.
