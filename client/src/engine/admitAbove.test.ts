@@ -184,3 +184,21 @@ describe('what a screen reads of the refusal (#549)', () => {
     expect(foldC(logs, at + 10).proposals.some((p) => p.id === admit)).toBe(false);
   });
 });
+
+describe('the route instead (#549)', () => {
+  it('lets a level-1 coalition ask into the level-2 coalition above directly, which takes it without rising, even while it sits above in turn', () => {
+    const logs = new NestedLogs();
+    const at = logs.formedIn('D', R, [['C', 1], ['E']], ['fay', 'hal'], NESTED_STATEMENTS.D);
+    // D sits above in turn, on its way into State Renters.
+    logs.sealedInto('D', at, 'fay', 'F', NESTED_STATEMENTS.F);
+    const admit = logs.admitIn('D', at + 1, 'pia', COALITION_SEAT);
+    logs.resultIn('D', at + 2, 'fay', admit, 'C', 'pass');
+    logs.resultIn('D', at + 2, 'hal', admit, 'E', 'pass');
+    const state = fold(logs.logs.D ?? [], at + 1 + WINDOW + 2 * HORIZON_STEP_MINUTES);
+    expect(state.coalition).toMatchObject({
+      level: 2,
+      admitted: [{ motion: admit }],
+      refusedAdmits: [],
+    });
+  });
+});
