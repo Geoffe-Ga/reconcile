@@ -63,7 +63,7 @@ function reconciling(now: number) {
 
 /** `me`'s vote on `proposal`, as the outbox lists it while it waits for the relay. */
 function pendingVote(me: string, proposal: string): ParsedEvent {
-  const body = { proposal, scores: { [proposal]: 4 } };
+  const body = { proposal, scores: { [proposal]: 4 as const } };
   const input = { type: 'vote', group: 'g', author: authorOf(me), ts: 0, body } as const;
   const parsed = parseEvent(createEvent(input).bytes);
   if (parsed === null) throw new Error('Expected an event.');
