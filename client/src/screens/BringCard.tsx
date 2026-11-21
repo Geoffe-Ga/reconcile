@@ -161,17 +161,18 @@ export function GroupPicker({ groups, value, onChange, words }: PickerProps) {
  */
 function Refused({ refused }: { readonly refused: RefusedCard }) {
   const lead = useId();
-  const { name, coalition, above } = refused;
+  const { name: asking, coalition, above } = refused;
+  const names = { asking, coalition, above };
   return (
     <div role="note" aria-labelledby={lead} className="notice">
       <p>
         <span id={lead}>
-          <Worded words={bring.refusedLead(name)} />
+          <Worded template={bring.refusedLead} names={names} />
         </span>{' '}
-        <Worded words={bring.refusedWhy(coalition, above, name)} />
+        <Worded template={bring.refusedWhy} names={names} />
       </p>
       <p>
-        <Worded words={bring.refusedRoute(name, above)} />
+        <Worded template={bring.refusedRoute} names={names} />
       </p>
     </div>
   );

@@ -65,10 +65,16 @@ function Line({ line }: { readonly line: CoalitionLine }) {
       return (
         <>
           <p>
-            <Worded words={coalitions.refusedWhy(line.coalition, line.above, line.asking)} />
+            <Worded
+              template={coalitions.refusedWhy}
+              names={{ coalition: line.coalition, above: line.above, asking: line.asking }}
+            />
           </p>
           <p>
-            <Worded words={coalitions.refusedRoute(line.asking, line.above)} />
+            <Worded
+              template={coalitions.refusedRoute}
+              names={{ coalition: line.coalition, above: line.above, asking: line.asking }}
+            />
           </p>
         </>
       );
